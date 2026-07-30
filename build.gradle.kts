@@ -119,12 +119,12 @@ afterEvaluate {
                 pom {
                     name.set("AppDNA Android SDK")
                     description.set("AppDNA SDK for Android — analytics, experiments, paywalls, onboarding, surveys, and more.")
-                    url.set("https://github.com/appdna-ai/appdna-sdk-android")
+                    url.set("https://github.com/appdna-ai-inc/appdna-sdk-android")
 
                     licenses {
                         license {
                             name.set("AppDNA SDK Proprietary License")
-                            url.set("https://github.com/appdna-ai/appdna-sdk-android/blob/main/LICENSE")
+                            url.set("https://github.com/appdna-ai-inc/appdna-sdk-android/blob/main/LICENSE")
                             distribution.set("repo")
                         }
                     }
@@ -138,9 +138,9 @@ afterEvaluate {
                     }
 
                     scm {
-                        connection.set("scm:git:git://github.com/appdna-ai/appdna-sdk-android.git")
-                        developerConnection.set("scm:git:ssh://github.com/appdna-ai/appdna-sdk-android.git")
-                        url.set("https://github.com/appdna-ai/appdna-sdk-android")
+                        connection.set("scm:git:git://github.com/appdna-ai-inc/appdna-sdk-android.git")
+                        developerConnection.set("scm:git:ssh://github.com/appdna-ai-inc/appdna-sdk-android.git")
+                        url.set("https://github.com/appdna-ai-inc/appdna-sdk-android")
                     }
                 }
             }
