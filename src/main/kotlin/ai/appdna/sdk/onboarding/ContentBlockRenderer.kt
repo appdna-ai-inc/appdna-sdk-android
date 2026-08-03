@@ -8159,6 +8159,10 @@ private fun FormInputToggleBlock(
 ) {
     val fieldId = block.field_id ?: block.id
     val onColor = StyleEngine.parseColor(block.field_style?.toggle_on_color ?: (ai.appdna.sdk.AppDNA.brandAccentHex ?: "#6366F1"))
+    // Mrozu QA (2026-08-03): toggle_off_color + thumb_color were decoded but only on-color applied.
+    // Honor all four Switch colors (parity with iOS custom toggle).
+    val offColor = StyleEngine.parseColor(block.field_style?.toggle_off_color ?: "#E5E5EA")
+    val thumbColor = StyleEngine.parseColor(block.field_style?.thumb_color ?: "#FFFFFF")
     val label = block.field_label ?: block.toggle_label ?: ""
     // OB-6 audit follow-up — restore saved value on back nav.
     var checked by remember {
@@ -8193,7 +8197,12 @@ private fun FormInputToggleBlock(
             // toggleable owns the click + a11y semantics; Switch is a
             // presentational visual.
             onCheckedChange = null,
-            colors = SwitchDefaults.colors(checkedTrackColor = onColor),
+            colors = SwitchDefaults.colors(
+                checkedTrackColor = onColor,
+                uncheckedTrackColor = offColor,
+                checkedThumbColor = thumbColor,
+                uncheckedThumbColor = thumbColor,
+            ),
         )
     }
 
