@@ -1568,6 +1568,10 @@ private fun HeadingBlock(block: ContentBlock, loc: ((String, String) -> String)?
         // has no equivalent TextStyle modifier so we transform the string.
         text = block.style.applyTransform(resolved),
         style = styleWithAlign,
+        // SPEC — honor max_lines on headings (iOS added .lineLimit here too); nil
+        // → no limit (unchanged). Ellipsis is a no-op when unbounded.
+        maxLines = block.max_lines ?: Int.MAX_VALUE,
+        overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
         // SPEC-070-A J.11 — heading content blocks announce as a heading
         // to screen readers, matching iOS `accessibilityAddTraits(.isHeader)`.
         modifier = Modifier
@@ -1588,6 +1592,10 @@ private fun TextBlock(block: ContentBlock, loc: ((String, String) -> String)? = 
         // SPEC-401-A R10 — apply `style.text_transform` (uppercase/lowercase).
         text = block.style.applyTransform(resolved),
         style = styleWithAlign,
+        // SPEC — honor max_lines on text (iOS added .lineLimit here too); nil → no
+        // limit (unchanged). Ellipsis is a no-op when unbounded.
+        maxLines = block.max_lines ?: Int.MAX_VALUE,
+        overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
         modifier = Modifier.fillMaxWidth(),
     )
 }
@@ -5158,9 +5166,16 @@ private fun parseDateWheelSeed(saved: String?, default: String?): java.util.Cale
         val t = s?.trim()?.takeIf { it.isNotEmpty() } ?: return null
         val datePart = t.substringBefore(' ')
         val m = Regex("""^(\d{4})-(\d{2})-(\d{2})$""").find(datePart) ?: return null
-        val cal = java.util.Calendar.getInstance()
         val (y, mo, d) = m.destructured
+        // Reject out-of-range month/day BEFORE Calendar.set — Calendar is lenient
+        // and would roll "2000-13-45" over to a real-but-wrong date, whereas iOS's
+        // non-lenient DateFormatter returns nil. Match iOS: garbage → no seed.
+        if (mo.toInt() !in 1..12 || d.toInt() !in 1..31) return null
+        val cal = java.util.Calendar.getInstance()
+        cal.isLenient = false
         cal.set(y.toInt(), mo.toInt() - 1, d.toInt())
+        try { cal.time } catch (e: Exception) { return null }  // e.g. Feb 30 → reject like iOS
+        cal.isLenient = true  // date validated; allow normal handling for the optional time below
         Regex("""(\d{2}):(\d{2})""").find(t.substringAfter(' ', ""))?.let { tm ->
             val (h, mi) = tm.destructured
             cal.set(java.util.Calendar.HOUR_OF_DAY, h.toInt())
@@ -5282,7 +5297,20 @@ private fun DateWheelPickerBlock(block: ContentBlock, inputValues: MutableMap<St
     // answer nor an authored default, so required-field validation still
     // forces a spin. Mirrors iOS restoreDate() + default_date_value handling.
     val seedCal = remember(minYear, maxYear) {
-        parseDateWheelSeed(inputValues[fieldId] as? String, block.default_date_value)
+        val raw = parseDateWheelSeed(inputValues[fieldId] as? String, block.default_date_value)
+        // Clamp the whole seeded date into [min_date, max_date] (parity with iOS
+        // `min(max(seeded, lower), upper)`), so an authored default before min_date
+        // (or after max_date) doesn't open + emit an out-of-range value. min/max
+        // parse the same relative/ISO grammar as the default.
+        val minB = parseDateWheelSeed(null, block.min_date)
+        val maxB = parseDateWheelSeed(null, block.max_date)
+        raw?.let { s ->
+            when {
+                minB != null && s.before(minB) -> minB
+                maxB != null && s.after(maxB) -> maxB
+                else -> s
+            }
+        }
     }
     val seedYear = (seedCal?.get(java.util.Calendar.YEAR) ?: 2000).coerceIn(minYear, maxYear)
     val seedMonth = seedCal?.let { it.get(java.util.Calendar.MONTH) + 1 } ?: 1
@@ -5341,6 +5369,47 @@ private fun DateWheelPickerBlock(block: ContentBlock, inputValues: MutableMap<St
     val yearCentered by remember { derivedStateOf { centeredIndexOf(yearListState) } }
     val hourCentered by remember { derivedStateOf { centeredIndexOf(hourListState) } }
     val minuteCentered by remember { derivedStateOf { centeredIndexOf(minuteListState) } }
+
+    // SPEC — persist the centered value on SCROLL-settle, not just on tap. iOS's
+    // native DatePicker(.wheel) and the sibling WheelPickerBlock both persist on
+    // scroll; the date wheel previously only wrote selected*/emit() from the
+    // `.clickable` tap handlers, so a user who scrolled a drum and released
+    // WITHOUT tapping the centered row advanced with the OLD value while the
+    // wheel visibly showed the new one. `hasUserInteracted` gates the sync so the
+    // initial seed layout (centeredIndex settling on the seeded row) can't clobber
+    // selected* before the user actually scrolls. Keyed on isScrollInProgress so
+    // we only commit once the drum snaps.
+    var hasUserInteracted by remember { mutableStateOf(false) }
+    LaunchedEffect(monthCentered, monthListState.isScrollInProgress) {
+        if (monthListState.isScrollInProgress) hasUserInteracted = true
+        else if (hasUserInteracted && showDate && monthCentered in 0..11 && monthCentered + 1 != selectedMonth) {
+            selectedMonth = monthCentered + 1; emit()
+        }
+    }
+    LaunchedEffect(dayCentered, dayListState.isScrollInProgress) {
+        if (dayListState.isScrollInProgress) hasUserInteracted = true
+        else if (hasUserInteracted && showDate && dayCentered in 0..30 && dayCentered + 1 != selectedDay) {
+            selectedDay = dayCentered + 1; emit()
+        }
+    }
+    LaunchedEffect(yearCentered, yearListState.isScrollInProgress) {
+        if (yearListState.isScrollInProgress) hasUserInteracted = true
+        else if (hasUserInteracted && showDate && yearCentered in years.indices && years[yearCentered] != selectedYear) {
+            selectedYear = years[yearCentered]; emit()
+        }
+    }
+    LaunchedEffect(hourCentered, hourListState.isScrollInProgress) {
+        if (hourListState.isScrollInProgress) hasUserInteracted = true
+        else if (hasUserInteracted && showTime && hourCentered in 0..23 && hourCentered != selectedHour) {
+            selectedHour = hourCentered; emit()
+        }
+    }
+    LaunchedEffect(minuteCentered, minuteListState.isScrollInProgress) {
+        if (minuteListState.isScrollInProgress) hasUserInteracted = true
+        else if (hasUserInteracted && showTime && minuteCentered in 0..59 && minuteCentered != selectedMinute) {
+            selectedMinute = minuteCentered; emit()
+        }
+    }
 
     // SPEC-419 — outer Column carries the block-level label + validation message; the wheel honors
     // the authored height + background color.
@@ -6654,7 +6723,10 @@ private fun FormFieldLabel(block: ContentBlock) {
                 // SPEC-401-A R56 (Lens A R56 #3, P2) — default 15sp matches iOS
                 // .subheadline (FormInputBlockViews.swift:15). Was 14sp on every
                 // FormFieldLabel without explicit label_font_size.
-                fontSize = (block.field_style?.label_font_size ?: 15.0).sp,
+                // Parity with iOS FormFieldLabelView: field_style first, then the
+                // top-level label_font_size, then 15sp (was field_style-only, so a
+                // top-level label_font_size was honored on iOS but dropped here).
+                fontSize = (block.field_style?.label_font_size ?: block.label_font_size ?: 15.0).sp,
                 fontWeight = FontWeight.Medium,
                 color = StyleEngine.parseColor(block.field_style?.label_color ?: "#374151"),
             )
