@@ -5808,6 +5808,9 @@ private fun StarBackgroundBlock(block: ContentBlock) {
     val particleColor = StyleEngine.parseColor(fcParticleColor ?: block.active_color ?: block.text_color ?: "#FFFFFF")
     // SPEC-419 pass-15 #27 — secondary_color tints 1/3 of particles (matches editor + preview)
     val secondaryColor = block.secondary_color?.let { StyleEngine.parseColor(it) } ?: particleColor
+    // Mrozu QA (2026-08-03): particle_type was decoded but the Canvas always drew a
+    // circle, so stars/sparkles/snow all looked identical. Render the actual shape (parity with iOS).
+    val particleType = block.particle_type ?: "dots"
     val baseOpacity = (fcParticleOpacity ?: (block.block_style?.opacity ?: 0.8).toFloat())
     val particleCount = when (block.density) {
         "sparse" -> 20; "dense" -> 100; else -> 50
@@ -5871,14 +5874,34 @@ private fun StarBackgroundBlock(block: ContentBlock) {
         // ballooned them into giant blobs in fullscreen mode.
         particles.value.forEachIndexed { i, p ->
             // SPEC-419 pass-15 #27 — every 3rd particle uses secondary_color
-            val pColor = if (i % 3 == 0) secondaryColor else particleColor
-            drawCircle(
-                color = pColor.copy(alpha = p.opacity * baseOpacity),
-                radius = p.size,
-                center = Offset(p.x * scaleX, p.y * scaleY),
-            )
+            val pColor = (if (i % 3 == 0) secondaryColor else particleColor).copy(alpha = p.opacity * baseOpacity)
+            val center = Offset(p.x * scaleX, p.y * scaleY)
+            when (particleType) {
+                "stars" -> drawPath(starParticlePath(5, 0.42f, center, p.size), pColor)
+                "sparkles" -> drawPath(starParticlePath(4, 0.30f, center, p.size), pColor)
+                "snow" -> drawPath(starParticlePath(6, 0.50f, center, p.size), pColor)
+                else -> drawCircle(color = pColor, radius = p.size, center = center) // dots, bokeh
+            }
         }
     }
+}
+
+// Mrozu QA (2026-08-03): build an N-point star polygon for star_background particle_type
+// (parity with iOS ContentBlockStandaloneViews.starPath). dots/bokeh keep drawCircle.
+private fun starParticlePath(points: Int, innerRatio: Float, center: Offset, radius: Float): androidx.compose.ui.graphics.Path {
+    val path = androidx.compose.ui.graphics.Path()
+    val inner = radius * innerRatio
+    val step = (Math.PI / points).toFloat()
+    var angle = (-Math.PI / 2).toFloat() // start pointing up
+    for (i in 0 until points * 2) {
+        val r = if (i % 2 == 0) radius else inner
+        val x = center.x + r * kotlin.math.cos(angle)
+        val y = center.y + r * kotlin.math.sin(angle)
+        if (i == 0) path.moveTo(x, y) else path.lineTo(x, y)
+        angle += step
+    }
+    path.close()
+    return path
 }
 
 // MARK: - Wheel Picker Block (SPEC-089d AC-013)
