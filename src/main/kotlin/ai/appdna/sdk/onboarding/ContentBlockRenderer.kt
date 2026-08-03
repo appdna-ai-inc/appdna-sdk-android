@@ -5145,6 +5145,51 @@ private fun CircularGaugeBlock(block: ContentBlock) {
 // MARK: - Date Wheel Picker Block (SPEC-089d AC-023)
 
 /**
+ * Parse a seed date for the date wheel. Prefers a prior saved answer
+ * ("yyyy-MM-dd" or "yyyy-MM-dd HH:mm") so re-entry restores the user's pick,
+ * else the authored `default_date_value` — "today"/"now", a relative offset
+ * ("-18y", "+1y", "-30d", "-6m"), or an ISO "yyyy-MM-dd". Returns null when
+ * neither is usable so a required field with no default still forces the user
+ * to spin the wheel. Mirrors iOS restoreDate() + parseDate()
+ * (ContentBlockStandaloneViews.swift).
+ */
+private fun parseDateWheelSeed(saved: String?, default: String?): java.util.Calendar? {
+    fun fromIso(s: String?): java.util.Calendar? {
+        val t = s?.trim()?.takeIf { it.isNotEmpty() } ?: return null
+        val datePart = t.substringBefore(' ')
+        val m = Regex("""^(\d{4})-(\d{2})-(\d{2})$""").find(datePart) ?: return null
+        val cal = java.util.Calendar.getInstance()
+        val (y, mo, d) = m.destructured
+        cal.set(y.toInt(), mo.toInt() - 1, d.toInt())
+        Regex("""(\d{2}):(\d{2})""").find(t.substringAfter(' ', ""))?.let { tm ->
+            val (h, mi) = tm.destructured
+            cal.set(java.util.Calendar.HOUR_OF_DAY, h.toInt())
+            cal.set(java.util.Calendar.MINUTE, mi.toInt())
+        }
+        return cal
+    }
+    fun fromDefault(s: String?): java.util.Calendar? {
+        val t = s?.trim()?.lowercase()?.takeIf { it.isNotEmpty() } ?: return null
+        if (t == "today" || t == "now") return java.util.Calendar.getInstance()
+        val last = t.last()
+        if (last in "dmy") {
+            val amt = t.dropLast(1).toIntOrNull()
+            if (amt != null) {
+                val c = java.util.Calendar.getInstance()
+                when (last) {
+                    'd' -> c.add(java.util.Calendar.DAY_OF_YEAR, amt)
+                    'm' -> c.add(java.util.Calendar.MONTH, amt)
+                    'y' -> c.add(java.util.Calendar.YEAR, amt)
+                }
+                return c
+            }
+        }
+        return fromIso(s)
+    }
+    return fromIso(saved) ?: fromDefault(default)
+}
+
+/**
  * Date picker using Material3 DatePickerDialog or simplified column picker.
  * For simplicity, renders three side-by-side LazyColumns for day/month/year.
  */
@@ -5168,6 +5213,14 @@ private fun DateWheelPickerBlock(block: ContentBlock, inputValues: MutableMap<St
     // selectionChanged() on every wheel snap (system behavior on iOS 13+).
     // Sibling WheelPickerBlock (line ~3953) already fires SELECTION haptic.
     val view = androidx.compose.ui.platform.LocalView.current
+    // SPEC — `haptic_on_scroll == false` suppresses the wheel selection tick
+    // (author opt-out); nil/true keep the native UIPickerView-style feedback.
+    // Mirrors iOS WheelPickerBlockView gate.
+    val fireHaptic: () -> Unit = {
+        if (block.haptic_on_scroll != false) {
+            ai.appdna.sdk.core.HapticEngine.trigger(view, ai.appdna.sdk.core.HapticType.SELECTION)
+        }
+    }
 
     // SPEC-419 — honor picker_mode (date/datetime/time): add hour/minute columns for time modes.
     val mode = (block.picker_mode ?: "date").lowercase()
@@ -5183,6 +5236,8 @@ private fun DateWheelPickerBlock(block: ContentBlock, inputValues: MutableMap<St
     val validationMsg = block.date_validation_message
     // Column inner padding centers the selected row under the highlight strip (40dp): (h-40)/2.
     val colPad = (((wheelHeightDp.value - 40f) / 2f).coerceAtLeast(0f)).dp
+    // SPEC — honor authored inter-column spacing (was hardcoded 4dp).
+    val colSpacing = (block.picker_spacing ?: 4.0).dp
 
     // SPEC-419 — year range from min_date/max_date + allow_future/allow_past (was hardcoded
     // 1950..2030, ignoring the authored constraints). Mirrors iOS dateRange (-150y..+50y default).
@@ -5221,11 +5276,25 @@ private fun DateWheelPickerBlock(block: ContentBlock, inputValues: MutableMap<St
 
     // Simple day/month/year selectors
     val months = listOf("Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec")
-    var selectedDay by remember { mutableIntStateOf(1) }
-    var selectedMonth by remember { mutableIntStateOf(1) }
-    var selectedYear by remember(minYear, maxYear) { mutableIntStateOf(2000.coerceIn(minYear, maxYear)) }
-    var selectedHour by remember { mutableIntStateOf(0) }
-    var selectedMinute by remember { mutableIntStateOf(0) }
+    // SPEC — seed initial selection from a prior saved answer or the authored
+    // default_date_value ("today"/"-18y"/ISO) instead of always opening on
+    // Jan / 01 / 2000. seedCal is null only when there is neither a saved
+    // answer nor an authored default, so required-field validation still
+    // forces a spin. Mirrors iOS restoreDate() + default_date_value handling.
+    val seedCal = remember(minYear, maxYear) {
+        parseDateWheelSeed(inputValues[fieldId] as? String, block.default_date_value)
+    }
+    val seedYear = (seedCal?.get(java.util.Calendar.YEAR) ?: 2000).coerceIn(minYear, maxYear)
+    val seedMonth = seedCal?.let { it.get(java.util.Calendar.MONTH) + 1 } ?: 1
+    val seedDay = seedCal?.get(java.util.Calendar.DAY_OF_MONTH) ?: 1
+    val seedHour = seedCal?.get(java.util.Calendar.HOUR_OF_DAY) ?: 0
+    val seedMinute = seedCal?.get(java.util.Calendar.MINUTE) ?: 0
+
+    var selectedDay by remember { mutableIntStateOf(seedDay) }
+    var selectedMonth by remember { mutableIntStateOf(seedMonth) }
+    var selectedYear by remember(minYear, maxYear) { mutableIntStateOf(seedYear) }
+    var selectedHour by remember { mutableIntStateOf(seedHour) }
+    var selectedMinute by remember { mutableIntStateOf(seedMinute) }
 
     // SPEC-419 — emit the combined value honoring the active mode.
     fun emit() {
@@ -5235,11 +5304,23 @@ private fun DateWheelPickerBlock(block: ContentBlock, inputValues: MutableMap<St
         inputValues[fieldId] = parts.joinToString(" ")
     }
 
-    val dayListState = rememberLazyListState()
-    val monthListState = rememberLazyListState()
-    val yearListState = rememberLazyListState()
-    val hourListState = rememberLazyListState()
-    val minuteListState = rememberLazyListState()
+    // SPEC — persist the seed once so a restored answer or an authored default
+    // is the submitted value without requiring a spin (parity with iOS, where
+    // restoreDate() → onChange → persistDate()). Skipped when seedCal is null
+    // so a required field with no default still gates on interaction.
+    LaunchedEffect(Unit) {
+        if (seedCal != null) emit()
+    }
+
+    // Each column opens centered on the seeded value — contentPadding=colPad
+    // pushes the first visible item to the viewport midpoint. Previously all
+    // columns opened at index 0 while selectedYear=2000, so the highlighted
+    // year (min-year) disagreed with the stored value.
+    val dayListState = rememberLazyListState(initialFirstVisibleItemIndex = (seedDay - 1).coerceIn(0, 30))
+    val monthListState = rememberLazyListState(initialFirstVisibleItemIndex = (seedMonth - 1).coerceIn(0, 11))
+    val yearListState = rememberLazyListState(initialFirstVisibleItemIndex = years.indexOf(seedYear).coerceAtLeast(0))
+    val hourListState = rememberLazyListState(initialFirstVisibleItemIndex = seedHour.coerceIn(0, 23))
+    val minuteListState = rememberLazyListState(initialFirstVisibleItemIndex = seedMinute.coerceIn(0, 59))
 
     // SPEC-401-A R62 (Lens C P1) — viewport-center math instead of
     // `firstVisibleItemIndex == index`. Without this, only the literal
@@ -5293,7 +5374,7 @@ private fun DateWheelPickerBlock(block: ContentBlock, inputValues: MutableMap<St
         modifier = Modifier
             .fillMaxWidth()
             .height(wheelHeightDp),
-        horizontalArrangement = Arrangement.spacedBy(4.dp),
+        horizontalArrangement = Arrangement.spacedBy(colSpacing),
     ) {
         // Month column
         if (showDate) {
@@ -5322,9 +5403,9 @@ private fun DateWheelPickerBlock(block: ContentBlock, inputValues: MutableMap<St
                             .clickable {
                                 selectedMonth = index + 1
                                 emit()
-                                // SPEC-401-A R57 (Lens C R57 #2, P3) — SELECTION
-                                // haptic mirrors iOS UIPickerView system tick.
-                                ai.appdna.sdk.core.HapticEngine.trigger(view, ai.appdna.sdk.core.HapticType.SELECTION)
+                                // SPEC-401-A R57 — SELECTION haptic mirrors iOS
+                                // UIPickerView tick; gated by haptic_on_scroll.
+                                fireHaptic()
                             },
                         textAlign = TextAlign.Center,
                     )
@@ -5362,9 +5443,9 @@ private fun DateWheelPickerBlock(block: ContentBlock, inputValues: MutableMap<St
                             .clickable {
                                 selectedDay = day
                                 emit()
-                                // SPEC-401-A R57 (Lens C R57 #2, P3) — SELECTION
-                                // haptic mirrors iOS UIPickerView system tick.
-                                ai.appdna.sdk.core.HapticEngine.trigger(view, ai.appdna.sdk.core.HapticType.SELECTION)
+                                // SPEC-401-A R57 — SELECTION haptic mirrors iOS
+                                // UIPickerView tick; gated by haptic_on_scroll.
+                                fireHaptic()
                             },
                         textAlign = TextAlign.Center,
                     )
@@ -5399,9 +5480,9 @@ private fun DateWheelPickerBlock(block: ContentBlock, inputValues: MutableMap<St
                             .clickable {
                                 selectedYear = year
                                 emit()
-                                // SPEC-401-A R57 (Lens C R57 #2, P3) — SELECTION
-                                // haptic mirrors iOS UIPickerView system tick.
-                                ai.appdna.sdk.core.HapticEngine.trigger(view, ai.appdna.sdk.core.HapticType.SELECTION)
+                                // SPEC-401-A R57 — SELECTION haptic mirrors iOS
+                                // UIPickerView tick; gated by haptic_on_scroll.
+                                fireHaptic()
                             },
                         textAlign = TextAlign.Center,
                     )
@@ -5434,7 +5515,7 @@ private fun DateWheelPickerBlock(block: ContentBlock, inputValues: MutableMap<St
                                 .clickable {
                                     selectedHour = index
                                     emit()
-                                    ai.appdna.sdk.core.HapticEngine.trigger(view, ai.appdna.sdk.core.HapticType.SELECTION)
+                                    fireHaptic()  // gated by haptic_on_scroll
                                 },
                             textAlign = TextAlign.Center,
                         )
@@ -5463,7 +5544,7 @@ private fun DateWheelPickerBlock(block: ContentBlock, inputValues: MutableMap<St
                                 .clickable {
                                     selectedMinute = index
                                     emit()
-                                    ai.appdna.sdk.core.HapticEngine.trigger(view, ai.appdna.sdk.core.HapticType.SELECTION)
+                                    fireHaptic()  // gated by haptic_on_scroll
                                 },
                             textAlign = TextAlign.Center,
                         )
@@ -5995,10 +6076,22 @@ private fun WheelPickerBlock(
             hasUserInteracted = true
         }
         if (hasUserInteracted && centeredIndex != lastHapticIndex && centeredIndex in values.indices) {
-            ai.appdna.sdk.core.HapticEngine.trigger(view, ai.appdna.sdk.core.HapticType.SELECTION)
+            // SPEC — respect haptic_on_scroll == false (author opt-out); nil/true keep the tick.
+            if (block.haptic_on_scroll != false) {
+                ai.appdna.sdk.core.HapticEngine.trigger(view, ai.appdna.sdk.core.HapticType.SELECTION)
+            }
             lastHapticIndex = centeredIndex
         }
     }
+
+    // SPEC — honor visible_items / wheel_height on the vertical drum (was
+    // hardcoded 150dp height / 55dp contentPadding). ~44dp per row; the
+    // contentPadding keeps boundary values reachable at viewport center.
+    // When neither is authored the exact legacy 150dp / 55dp is preserved.
+    val drumH: Float? = block.wheel_height?.toFloat()
+        ?: block.visible_items?.let { (it.coerceIn(1, 9) * 44).toFloat() }
+    val drumHeightDp = (drumH ?: 150f).dp
+    val drumPadDp = (drumH?.let { ((it - 44f) / 2f).coerceAtLeast(0f) } ?: 55f).dp
 
     Column(
         modifier = Modifier.fillMaxWidth(),
@@ -6093,7 +6186,7 @@ private fun WheelPickerBlock(
             }
         } else {
             Box(
-                modifier = Modifier.fillMaxWidth().height(150.dp),
+                modifier = Modifier.fillMaxWidth().height(drumHeightDp),
                 contentAlignment = Alignment.Center,
             ) {
                 // Highlight strip at center
@@ -6117,7 +6210,7 @@ private fun WheelPickerBlock(
                 LazyColumn(
                     state = listState,
                     modifier = Modifier.fillMaxSize(),
-                    contentPadding = androidx.compose.foundation.layout.PaddingValues(vertical = 55.dp),
+                    contentPadding = androidx.compose.foundation.layout.PaddingValues(vertical = drumPadDp),
                     horizontalAlignment = Alignment.CenterHorizontally,
                     flingBehavior = rememberSnapFlingBehavior(lazyListState = listState),
                 ) {
