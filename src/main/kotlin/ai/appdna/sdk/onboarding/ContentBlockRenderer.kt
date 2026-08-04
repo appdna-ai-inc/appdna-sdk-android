@@ -5828,6 +5828,28 @@ private fun RowBlock(
             } else {
                 Modifier.fillMaxWidth()
             }
+            if (block.wrap == true && ratios.isEmpty()) {
+                // Mrozu QA: row.wrap flows children onto multiple lines (chips/badges)
+                // instead of a single clipped Row. Parity with iOS WrapLayout. FlowRow
+                // takes no weight(), so wrapped children are wrap-content (fractional
+                // widths still honored via applyRelativeSizing).
+                androidx.compose.foundation.layout.FlowRow(
+                    modifier = modifier.then(baseMod),
+                    horizontalArrangement = Arrangement.spacedBy(rowGap),
+                    verticalArrangement = Arrangement.spacedBy(rowGap),
+                ) {
+                    LeadingIconSlot()
+                    childBlocks.forEach { child ->
+                        val cw = child.element_width
+                        val cwFractional = cw != null && cw.endsWith("%")
+                        val childSizeMod = Modifier.applyRelativeSizing(if (cwFractional) cw else null, if (child.type.startsWith("input_")) null else child.element_height)
+                        Box(modifier = childSizeMod) {
+                            RenderBlock(child, onAction, toggleValues, inputValues, loc)
+                        }
+                    }
+                }
+                return
+            }
             Row(
                 modifier = modifier.then(baseMod),
                 horizontalArrangement = hArrangement,
