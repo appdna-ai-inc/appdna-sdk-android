@@ -438,6 +438,10 @@ data class ContentBlock(
     val bg_color: String? = null,
     val text_color: String? = null,
     val button_corner_radius: Double? = null,
+    // Mrozu (Duolingo s20/s22) — sound_button: remote audio clip (mp3/wav/aac)
+    // played on tap; `autoplay` (declared below with the video fields) plays it
+    // when the block appears. Reuses all button styling fields.
+    val audio_url: String? = null,
     val spacer_height: Double? = null,
     // SPEC-070-A J.22 — ImmutableList for Compose stability (list block items).
     val items: kotlinx.collections.immutable.ImmutableList<String>? = null,
@@ -1513,6 +1517,8 @@ private fun RenderBlockContent(
         "memory_match" -> MemoryMatchBlock(block, onInteract)
         "calendar_month" -> CalendarMonthBlock(block, inputValues, onInteract)
         "button" -> ButtonBlock(block, onAction, loc, stepBlocks, inputValues)
+        // Mrozu (Duolingo s20/s22) — CTA-style button that plays `audio_url` on tap.
+        "sound_button" -> SoundButtonBlock(block, onAction, loc, stepBlocks, inputValues)
         "spacer" -> Spacer(modifier = Modifier.height((block.spacer_height ?: 24.0).dp)) // SPEC-419 pass-14 #11 — unset default 24 to match editor+preview (was 16)
         "list" -> ListBlock(block, loc)
         "divider" -> DividerBlock(block)
@@ -2110,6 +2116,9 @@ private fun ButtonBlock(
     // Mrozu QA (2026-08-04) — Flo consent CTA: step siblings + live inputs drive the consent-reactive bg.
     stepBlocks: List<ContentBlock> = emptyList(),
     inputValues: Map<String, Any> = emptyMap(),
+    // Mrozu (Duolingo s20/s22) — when set (sound_button), tap runs this instead of
+    // the flow-action routing below (e.g. play an audio clip).
+    onClickOverride: (() -> Unit)? = null,
 ) {
     val text = block.text ?: "Continue"
     // SPEC-401-A R54 (Lens A R54 #4, P2) — 16→17sp matching iOS
@@ -2139,7 +2148,7 @@ private fun ButtonBlock(
     val cornerRadius = (block.button_corner_radius ?: 12.0).dp
     val displayText = loc?.invoke("block.${block.id}.text", text) ?: text
 
-    val onClick: () -> Unit = {
+    val onClick: () -> Unit = onClickOverride ?: {
         val action = block.action ?: "next"
         when (action) {
             "link" -> {
@@ -2170,7 +2179,16 @@ private fun ButtonBlock(
             // only path the console emits today) never reached it
             // because of this rewrite. Forwarding the original action
             // keeps the iOS-canonical behavior as the single source.
-            "permission" -> onAction("permission")
+            //
+            // Mrozu (alarmy s4.1) — forward the button's OWN `action_value` (the per-CTA permission
+            // type, e.g. "alarm") colon-encoded so handleAction's pair-parser routes it to
+            // emitPermissionAction's `actionValue`. iOS already forwards block.action_value directly
+            // (ContentBlockRendererView.swift `onAction(block.action ?? "next", block.action_value)`);
+            // Android dropped it here, so a per-CTA permission type resolved to null and only the
+            // step-level permission_type worked. Blank/absent → bare "permission" (unchanged).
+            "permission" -> onAction(
+                block.action_value?.takeIf { it.isNotBlank() }?.let { "permission:$it" } ?: "permission",
+            )
             else -> onAction(action)
         }
     }
@@ -2336,6 +2354,32 @@ private fun ButtonBlock(
             }
         }
     }
+}
+
+/**
+ * Mrozu (Duolingo s20/s22) — sound_button: a CTA-style button (reuses ALL of
+ * ButtonBlock's styling) that plays a remote audio clip (mp3/wav/aac) from
+ * `block.audio_url` on tap. When `block.autoplay == true` the clip plays as the
+ * block first appears. Playback is routed through the shared AudioPlayer helper.
+ */
+@Composable
+private fun SoundButtonBlock(
+    block: ContentBlock,
+    onAction: (String) -> Unit,
+    loc: ((String, String) -> String)? = null,
+    stepBlocks: List<ContentBlock> = emptyList(),
+    inputValues: Map<String, Any> = emptyMap(),
+) {
+    val context = LocalContext.current
+    LaunchedEffect(block.id) {
+        if (block.autoplay == true) {
+            ai.appdna.sdk.core.AudioPlayer.play(context, block.audio_url)
+        }
+    }
+    ButtonBlock(
+        block, onAction, loc, stepBlocks, inputValues,
+        onClickOverride = { ai.appdna.sdk.core.AudioPlayer.play(context, block.audio_url) },
+    )
 }
 
 /** EPIC-11 — OTP / code-input: a row of N single-character boxes (verification codes). The entered value

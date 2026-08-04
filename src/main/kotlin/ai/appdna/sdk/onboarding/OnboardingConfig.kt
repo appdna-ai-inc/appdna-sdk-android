@@ -1257,6 +1257,8 @@ internal object OnboardingConfigParser {
             bg_color = bm["bg_color"] as? String,
             text_color = bm["text_color"] as? String,
             button_corner_radius = (bm["button_corner_radius"] as? Number)?.toDouble(),
+            // Mrozu (Duolingo s20/s22) — sound_button remote audio clip.
+            audio_url = bm["audio_url"] as? String,
             spacer_height = (bm["spacer_height"] as? Number)?.toDouble(),
             items = (bm["items"] as? List<*>)?.filterIsInstance<String>()?.toImmutableList(),
             list_style = bm["list_style"] as? String,

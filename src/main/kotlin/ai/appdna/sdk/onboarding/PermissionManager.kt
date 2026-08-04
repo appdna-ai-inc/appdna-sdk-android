@@ -2,6 +2,7 @@ package ai.appdna.sdk.onboarding
 
 import android.Manifest
 import android.app.Activity
+import android.app.AlarmManager
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
@@ -66,11 +67,27 @@ class PermissionManager(private val context: Context) {
 
     private var pending: CompletableDeferred<Boolean>? = null
 
+    /**
+     * Mrozu (alarmy s4.1) — bridge to a composition-registered `StartActivityForResult` launcher that
+     * opens the ACTION_REQUEST_SCHEDULE_EXACT_ALARM Settings screen (SCHEDULE_EXACT_ALARM has no
+     * runtime-permission dialog). The result arrives via [completePendingExactAlarm], which re-reads
+     * [canScheduleExactAlarms] once the user returns. When null (no launcher wired) an `alarm` request
+     * safe-falls-back to the current grant state without launching.
+     */
+    var exactAlarmSettingsLauncher: (() -> Unit)? = null
+
+    private var pendingExactAlarm: CompletableDeferred<Boolean>? = null
+
     companion object {
         /** Whether [type] is a supported permission type at all. */
         fun isSupported(type: String): Boolean = when (type) {
             "notification", "att", "location", "camera",
-            "microphone", "photos", "contacts", "calendar" -> true
+            "microphone", "photos", "contacts", "calendar",
+            // Mrozu (alarmy s4.1) — `alarm` = the SCHEDULE_EXACT_ALARM capability. Not a dangerous
+            // runtime permission (no RequestPermission dialog); it's a Settings toggle reached via
+            // ACTION_REQUEST_SCHEDULE_EXACT_ALARM on API 31+ and auto-granted below API 31. Routed
+            // through [status]/[request] special-cases below. Parity with iOS PermissionManager.isSupported.
+            "alarm" -> true
             // Mrozu QA (2026-08-04, Flo s26) — `health` (Health Connect) is a console-authorable
             // permission_type that already ROUTES through this manager (resolvePermissionType → here),
             // but the native Health Connect authorization request is DEFERRED (needs the
@@ -97,6 +114,10 @@ class PermissionManager(private val context: Context) {
             "contacts" -> Manifest.permission.READ_CONTACTS
             "calendar" -> Manifest.permission.READ_CALENDAR
             "att" -> null // no Android equivalent
+            // `alarm` (SCHEDULE_EXACT_ALARM) is NOT a dangerous runtime permission — it can't be
+            // requested through RequestPermission. Returns null (no manifest gate); [status]/[request]
+            // handle it via AlarmManager.canScheduleExactAlarms + the settings intent. Mrozu alarmy s4.1.
+            "alarm" -> null
             else -> null
         }
 
@@ -161,6 +182,14 @@ class PermissionManager(private val context: Context) {
             // fires and `permission_granted` is emitted (parity with iOS ATT<14.5).
             "att" -> return PermissionStatus.UNDETERMINED
             "notification" -> if (notificationGrantedWithoutPrompt(sdk)) return PermissionStatus.GRANTED
+            // Mrozu (alarmy s4.1) — SCHEDULE_EXACT_ALARM. Already granted → GRANTED (no prompt); else
+            // UNDETERMINED so request() opens the exact-alarm Settings screen. Below API 31 exact
+            // alarms are always allowed → GRANTED.
+            "alarm" -> return if (canScheduleExactAlarms()) {
+                PermissionStatus.GRANTED
+            } else {
+                PermissionStatus.UNDETERMINED
+            }
         }
 
         val perm = androidPermission(type, sdk) ?: return PermissionStatus.UNDETERMINED
@@ -184,6 +213,7 @@ class PermissionManager(private val context: Context) {
         val sdk = Build.VERSION.SDK_INT
         if (type == "att") return true
         if (type == "notification" && notificationGrantedWithoutPrompt(sdk)) return true
+        if (type == "alarm") return requestExactAlarm()
 
         val perm = androidPermission(type, sdk) ?: return false
         val launcher = requestLauncher ?: return false
@@ -198,6 +228,56 @@ class PermissionManager(private val context: Context) {
     fun completePending(granted: Boolean) {
         pending?.complete(granted)
         pending = null
+    }
+
+    // MARK: Exact-alarm (SCHEDULE_EXACT_ALARM) — Mrozu alarmy s4.1
+
+    /**
+     * Whether this app can schedule exact alarms right now. Below API 31 exact alarms are always
+     * permitted; on API 31+ it reflects the SCHEDULE_EXACT_ALARM Settings toggle (or a granted
+     * USE_EXACT_ALARM). Pure read — never launches anything.
+     */
+    fun canScheduleExactAlarms(): Boolean {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.S) return true
+        val am = context.getSystemService(Context.ALARM_SERVICE) as? AlarmManager ?: return false
+        return am.canScheduleExactAlarms()
+    }
+
+    /**
+     * The Settings intent that opens the per-app "Alarms & reminders" (exact-alarm) toggle. Null below
+     * API 31 (exact alarms are allowed by default there, so no toggle exists). Built here — not in the
+     * composable — so the host layer stays a thin launcher registration.
+     */
+    fun exactAlarmSettingsIntent(): Intent? {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.S) return null
+        return Intent(Settings.ACTION_REQUEST_SCHEDULE_EXACT_ALARM).apply {
+            data = Uri.fromParts("package", context.packageName, null)
+        }
+    }
+
+    /**
+     * Fire the exact-alarm request. If already granted → true (no launch). Otherwise open the
+     * exact-alarm Settings screen via [exactAlarmSettingsLauncher] and await the user's return, at
+     * which point [completePendingExactAlarm] re-reads [canScheduleExactAlarms]. No launcher wired
+     * (e.g. running headless) → returns the current grant state without launching (safe fallback).
+     */
+    private suspend fun requestExactAlarm(): Boolean {
+        if (canScheduleExactAlarms()) return true
+        val launch = exactAlarmSettingsLauncher ?: return canScheduleExactAlarms()
+        val deferred = CompletableDeferred<Boolean>()
+        pendingExactAlarm = deferred
+        launch()
+        return deferred.await()
+    }
+
+    /**
+     * Completes the in-flight [requestExactAlarm] by re-reading [canScheduleExactAlarms] once the user
+     * returns from the ACTION_REQUEST_SCHEDULE_EXACT_ALARM Settings screen. Called from the
+     * composition-registered `StartActivityForResult` callback.
+     */
+    fun completePendingExactAlarm() {
+        pendingExactAlarm?.complete(canScheduleExactAlarms())
+        pendingExactAlarm = null
     }
 
     /** Whether the OS would still show a rationale/prompt for [type] (false when permanently denied). */
