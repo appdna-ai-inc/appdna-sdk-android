@@ -936,6 +936,8 @@ fun PaywallScreen(
                 PaywallStickyFooter(
                     section = stickyFooterSection,
                     isPurchasing = isPurchasing,
+                    // Round-MZ — selected plan's per-plan cta_text overrides the footer label.
+                    selectedPlanCtaText = effectivePlans().firstOrNull { it.id == selectedPlanId }?.cta_text?.takeIf { it.isNotBlank() },
                     onCTATap = {
                         // PW-2 — top-level plans fallback (sticky footer path).
                         val plans = effectivePlans()
@@ -1383,13 +1385,22 @@ private fun PaywallSectionView(
                 // .frame(maxHeight: 200)`. Was missing — paywall headers
                 // authored with `image_url` showed nothing on Android.
                 section.data?.image_url?.takeIf { it.isNotBlank() }?.let { url ->
-                    ai.appdna.sdk.core.NetworkImage(
-                        url = url,
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .heightIn(max = 200.dp),
-                        contentScale = androidx.compose.ui.layout.ContentScale.Fit,
-                    )
+                    // Round-MZ — honor image_alignment (leading|center|trailing) + image_max_height,
+                    // mirroring iOS HeaderSection.swift `.frame(maxHeight:).frame(maxWidth:.infinity,
+                    // alignment:)`. Box gives the image full width to align within; heightIn caps it.
+                    val imgAlignment = when (section.data?.image_alignment) {
+                        "leading" -> Alignment.CenterStart
+                        "trailing" -> Alignment.CenterEnd
+                        else -> Alignment.Center
+                    }
+                    val imgMaxHeight = (section.data?.image_max_height ?: 200f).dp
+                    Box(modifier = Modifier.fillMaxWidth(), contentAlignment = imgAlignment) {
+                        ai.appdna.sdk.core.NetworkImage(
+                            url = url,
+                            modifier = Modifier.heightIn(max = imgMaxHeight),
+                            contentScale = androidx.compose.ui.layout.ContentScale.Fit,
+                        )
+                    }
                     Spacer(Modifier.height(8.dp))
                 }
                 section.data?.title?.let {
@@ -1646,11 +1657,26 @@ private fun PaywallSectionView(
 
                             Spacer(Modifier.height(4.dp))
                             // PW-12 — `plan.displayPrice` mirrors `price_display ?? price`.
-                            Text(
-                                text = loc("plan.$planIdx.price", plan.displayPrice),
-                                style = priceStyle,
-                                color = resolvedTextColor,
-                            )
+                            // Round-MZ — render struck original_price_display beside the price
+                            // (mirrors iOS PlanCard.swift Row-2). strikethrough_color is section-level.
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(4.dp),
+                            ) {
+                                plan.original_price_display?.takeIf { it.isNotBlank() }?.let { original ->
+                                    Text(
+                                        text = original,
+                                        fontSize = 12.sp,
+                                        textDecoration = androidx.compose.ui.text.style.TextDecoration.LineThrough,
+                                        color = section.data?.strikethrough_color?.let { parseHexColor(it) } ?: Color.Gray,
+                                    )
+                                }
+                                Text(
+                                    text = loc("plan.$planIdx.price", plan.displayPrice),
+                                    style = priceStyle,
+                                    color = resolvedTextColor,
+                                )
+                            }
                             plan.period?.let {
                                 Text(
                                     text = loc("plan.$planIdx.period", it),
@@ -2600,7 +2626,11 @@ private fun PaywallSectionView(
                             // separate @Composable scope from PaywallScreen.
                             text = loc(
                                 "cta.text",
-                                config.cta?.text?.takeIf { it.isNotBlank() }
+                                // Round-MZ — selected plan's per-plan cta_text overrides the
+                                // section/top-level CTA label (mirrors iOS selectedPlanCtaText).
+                                (section.data?.plans ?: config.plans)
+                                    ?.firstOrNull { it.id == selectedPlanId }?.cta_text?.takeIf { it.isNotBlank() }
+                                    ?: config.cta?.text?.takeIf { it.isNotBlank() }
                                     ?: section.data?.cta?.text?.takeIf { it.isNotBlank() }
                                     ?: section.data?.cta_text?.takeIf { it.isNotBlank() }
                                     ?: section.data?.text?.takeIf { it.isNotBlank() }
@@ -3996,6 +4026,8 @@ private fun PaywallStickyFooter(
     onCTATap: () -> Unit,
     onRestore: () -> Unit,
     loc: (String, String) -> String,
+    // Round-MZ — selected plan's per-plan cta_text (overrides section cta_text when non-empty).
+    selectedPlanCtaText: String? = null,
 ) {
     // SPEC-401-A R86 (Lens A F1) — default background #FFFFFF matches iOS
     // PaywallRenderer.swift:1054. Was Color.Black 0.95 alpha → light-mode
@@ -4011,17 +4043,17 @@ private fun PaywallStickyFooter(
             .padding(horizontal = (section.data?.padding ?: 20f).dp, vertical = 16.dp)
             .run { with(StyleEngine) { applyContainerStyle(section.style?.container) } },
     ) {
-        // CTA button
-        section.data?.cta_text?.let { ctaText ->
+        // CTA button — selected plan's per-plan cta_text overrides the footer's configured label.
+        (selectedPlanCtaText ?: section.data?.cta_text)?.let { ctaText ->
             Button(
                 onClick = onCTATap,
                 enabled = !isPurchasing,
                 // SPEC-401-A R86 (Lens A F2) — honor cta_height + cta_font_size
                 // matching iOS PaywallRenderer.swift:1067,1072. Was hardcoded.
-                modifier = Modifier.fillMaxWidth().height((section.data.cta_height ?: 52f).dp),
-                shape = RoundedCornerShape((section.data.cta_corner_radius ?: 14f).dp),
+                modifier = Modifier.fillMaxWidth().height((section.data?.cta_height ?: 52f).dp),
+                shape = RoundedCornerShape((section.data?.cta_corner_radius ?: 14f).dp),
                 colors = ButtonDefaults.buttonColors(
-                    containerColor = section.data.cta_bg_color?.let { parseHexColor(it) } ?: ai.appdna.sdk.AppDNA.brandAccentColor(),
+                    containerColor = section.data?.cta_bg_color?.let { parseHexColor(it) } ?: ai.appdna.sdk.AppDNA.brandAccentColor(),
                 ),
             ) {
                 if (isPurchasing) {
@@ -4030,8 +4062,8 @@ private fun PaywallStickyFooter(
                     Text(
                         text = loc("sticky_footer.cta", ctaText),
                         fontWeight = FontWeight.SemiBold,
-                        fontSize = (section.data.cta_font_size ?: 17f).sp,
-                        color = section.data.cta_text_color?.let { parseHexColor(it) } ?: Color.White,
+                        fontSize = (section.data?.cta_font_size ?: 17f).sp,
+                        color = section.data?.cta_text_color?.let { parseHexColor(it) } ?: Color.White,
                     )
                 }
             }

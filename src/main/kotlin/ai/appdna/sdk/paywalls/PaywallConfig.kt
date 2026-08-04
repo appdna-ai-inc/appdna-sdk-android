@@ -98,6 +98,10 @@ data class PaywallSectionData(
     val title: String? = null,
     val subtitle: String? = null,
     val image_url: String? = null,
+    /** Header graphic alignment: "leading" | "center" (default) | "trailing". */
+    val image_alignment: String? = null,
+    /** Max height for the header graphic (default 200). */
+    val image_max_height: Float? = null,
     // SPEC-401-A R77 (Lens A P1) — data-level text style overrides for
     // header title + subtitle matching iOS PaywallSectionData.title_style /
     // subtitle_style at PaywallConfig.swift:88-89. Renderer prefers data-
@@ -302,6 +306,8 @@ data class PaywallSectionData(
     /** Optional divider between plan rows (e.g. radio_list). */
     val show_divider: Boolean? = null,
     val divider_color: String? = null,
+    /** Color of the struck-through original price (plans[].original_price_display). */
+    val strikethrough_color: String? = null,
     /** Badge border styling (iOS PaywallConfig.swift:266-268). */
     val badge_border_color: String? = null,
     val badge_border_width: Float? = null,
@@ -408,6 +414,8 @@ data class PaywallPlan(
     val cta_text: String? = null,
     val icon: String? = null,
     val image_url: String? = null,
+    /** Struck-through "old" price shown beside displayPrice (iOS original_price_display). */
+    val original_price_display: String? = null,
 ) {
     // SPEC-070-A finalization PW-12 — computed accessors mirroring iOS:
     // `displayName: label ?? name`, `displayPrice: price_display ?? price`,
@@ -925,6 +933,8 @@ internal object PaywallConfigParser {
                 title = d["title"] as? String,
                 subtitle = d["subtitle"] as? String,
                 image_url = d["image_url"] as? String,
+                image_alignment = d["image_alignment"] as? String,
+                image_max_height = (d["image_max_height"] as? Number)?.toFloat(),
                 // SPEC-401-A R77 (Lens A P1) — data-level title_style /
                 // subtitle_style decoded from text-style maps.
                 title_style = parseDataTextStyle(d["title_style"]),
@@ -1166,6 +1176,7 @@ internal object PaywallConfigParser {
                 selected_bg_color = d["selected_bg_color"] as? String,
                 show_divider = d["show_divider"] as? Boolean,
                 divider_color = d["divider_color"] as? String,
+                strikethrough_color = d["strikethrough_color"] as? String,
                 badge_border_color = d["badge_border_color"] as? String,
                 badge_border_width = (d["badge_border_width"] as? Number)?.toFloat(),
                 badge_icon = d["badge_icon"] as? String,
@@ -1337,6 +1348,7 @@ internal object PaywallConfigParser {
             cta_text = map["cta_text"] as? String,
             icon = map["icon"] as? String,
             image_url = map["image_url"] as? String,
+            original_price_display = map["original_price_display"]?.let { it as? String ?: it.toString() },
         )
     }
 }
