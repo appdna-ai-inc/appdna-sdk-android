@@ -6651,17 +6651,22 @@ private fun StarBackgroundBlock(block: ContentBlock) {
                 else if (i % 3 == 0) secondaryColor else particleColor
             val pColor = baseColor.copy(alpha = p.opacity * baseOpacity)
             val center = Offset(p.x * scaleX, p.y * scaleY)
+            // Mrozu QA (2026-08-04): iOS treats p.size as a BOX/diameter (particle
+            // drawn inside a size×size CGRect — StarBackgroundBlockView), so the
+            // effective radius is p.size/2. Android previously used p.size as the
+            // RADIUS, rendering every particle ~2× larger than iOS. Halve the geometry
+            // so all particle_type shapes match iOS box semantics.
             when (particleType) {
-                "stars" -> drawPath(starParticlePath(5, 0.42f, center, p.size), pColor)
-                "sparkles" -> drawPath(starParticlePath(4, 0.30f, center, p.size), pColor)
-                "snow" -> drawPath(starParticlePath(6, 0.50f, center, p.size), pColor)
+                "stars" -> drawPath(starParticlePath(5, 0.42f, center, p.size / 2f), pColor)
+                "sparkles" -> drawPath(starParticlePath(4, 0.30f, center, p.size / 2f), pColor)
+                "snow" -> drawPath(starParticlePath(6, 0.50f, center, p.size / 2f), pColor)
                 "confetti" -> drawRoundRect(
                     color = pColor,
-                    topLeft = Offset(center.x - p.size, center.y - p.size),
-                    size = androidx.compose.ui.geometry.Size(p.size * 2f, p.size * 2f),
-                    cornerRadius = androidx.compose.ui.geometry.CornerRadius(p.size * 0.6f),
+                    topLeft = Offset(center.x - p.size / 2f, center.y - p.size / 2f),
+                    size = androidx.compose.ui.geometry.Size(p.size, p.size),
+                    cornerRadius = androidx.compose.ui.geometry.CornerRadius(p.size * 0.3f),
                 )
-                else -> drawCircle(color = pColor, radius = p.size, center = center) // dots, bokeh
+                else -> drawCircle(color = pColor, radius = p.size / 2f, center = center) // dots, bokeh
             }
         }
     }
@@ -8978,10 +8983,10 @@ private fun FormInputSliderBlock(
             valueRange = minVal..maxVal,
             steps = stepCount,
             colors = SliderDefaults.colors(
-                // Mrozu QA: honor authored thumb_color; else keep the Material
-                // accent-thumb default (iOS defaults to a white thumb — documented
-                // platform-convention difference; the authored case matches).
-                thumbColor = block.field_style?.thumb_color?.let { StyleEngine.parseColor(it) } ?: fillCol,
+                // Mrozu QA: honor authored thumb_color; else default to a WHITE thumb
+                // to match iOS FormInputSliderBlock + the console preview (previously
+                // fell back to the accent fillCol, diverging from both).
+                thumbColor = block.field_style?.thumb_color?.let { StyleEngine.parseColor(it) } ?: StyleEngine.parseColor("#FFFFFF"),
                 activeTrackColor = fillCol,
                 inactiveTrackColor = trackCol,
             ),
