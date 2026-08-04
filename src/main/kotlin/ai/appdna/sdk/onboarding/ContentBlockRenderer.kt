@@ -534,6 +534,12 @@ data class ContentBlock(
     val spacing: Double? = null,
     val show_divider: Boolean? = null,
     val divider_text: String? = null,
+    // Social-Login styling v2 — divider placement ("top" | "bottom", default
+    // "bottom") and in-button text alignment ("leading" | "center", default
+    // "center"). divider_color (declared with the divider block above) tints the
+    // separator rules.
+    val divider_position: String? = null,
+    val button_text_align: String? = null,
     // SPEC-401-A R13 — match iOS ContentBlockTypes.swift:964-965.
     // `with_providers` (default) renders providers in author order;
     // `below_inputs` extracts the email provider, renders it FIRST,
@@ -796,6 +802,9 @@ data class SocialProvider(
     val border_width: Float? = null,
     val corner_radius: Float? = null,
     val icon_style: String? = null, // "logo" | "monochrome" | "filled"
+    // Social-Login styling v2 — per-provider custom icon override. When set to a
+    // non-empty URL the SDK loads the remote image instead of the built-in glyph.
+    val icon_url: String? = null,
 )
 
 /** Countdown labels config (SPEC-089d §3.7). */
@@ -3087,6 +3096,10 @@ private fun SocialLoginBlock(
     val spacing = (block.spacing ?: 12.0).dp
     val showDivider = block.show_divider ?: false
     val dividerText = block.divider_text ?: "or"
+    // Social-Login styling v2 — divider color/placement + in-button text align.
+    val dividerColor = block.divider_color?.let { StyleEngine.parseColor(it) } ?: Color.Gray.copy(alpha = 0.3f)
+    val dividerPosition = block.divider_position ?: "bottom"
+    val textAlign = block.button_text_align ?: "center"
 
     // SPEC-401-A R13 — match iOS ContentBlockRendererView.swift:684-715
     // `email_login_placement: "below_inputs"`: pull the email provider
@@ -3227,6 +3240,31 @@ private fun SocialLoginBlock(
             val socialClick: () -> Unit = {
                 socialProviderActions(provider.type).forEach(onAction)
             }
+            // Social-Login styling v2 — shared button content so icon_url override
+            // and button_text_align (leading|center) apply identically across the
+            // filled / outlined / minimal branches. A custom icon_url replaces the
+            // built-in provider glyph; leading alignment left-justifies icon+label.
+            val buttonContent: @androidx.compose.runtime.Composable androidx.compose.foundation.layout.RowScope.() -> Unit = {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = if (textAlign == "leading") Arrangement.Start else Arrangement.Center,
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    val customIcon = provider.icon_url
+                    if (!customIcon.isNullOrBlank()) {
+                        ai.appdna.sdk.core.NetworkImage(
+                            url = customIcon,
+                            modifier = Modifier.size(20.dp).padding(end = 8.dp),
+                        )
+                    } else if (providerIcon.isNotBlank()) {
+                        Text(providerIcon, fontSize = providerIconFontSize, fontWeight = providerIconFontWeight, modifier = Modifier.padding(end = 8.dp), color = providerIconColor)
+                    }
+                    // SPEC-401-A R56 (Lens A R56 #2, P1) — explicit 17sp matches
+                    // iOS .body.weight(.semibold) (ContentBlockRendererView.swift:759).
+                    // Material Button content defaults to labelLarge=14sp.
+                    Text(displayLabel, fontSize = 17.sp, fontWeight = FontWeight.SemiBold, color = textColor)
+                }
+            }
             // SPEC-070-A finalization OB-2 audit follow-up — apply per-provider
             // colors + provider-level corner/border-width across ALL three
             // button styles (filled, outlined, minimal). Audit round 1 caught
@@ -3242,13 +3280,8 @@ private fun SocialLoginBlock(
                         colors = ButtonDefaults.outlinedButtonColors(
                             contentColor = textColor,
                         ),
-                    ) {
-                        if (providerIcon.isNotBlank()) Text(providerIcon, fontSize = providerIconFontSize, fontWeight = providerIconFontWeight, modifier = Modifier.padding(end = 8.dp), color = providerIconColor)
-                        // SPEC-401-A R56 (Lens A R56 #2, P1) — explicit 17sp matches
-                        // iOS .body.weight(.semibold) (ContentBlockRendererView.swift:759).
-                        // Material Button content defaults to labelLarge=14sp.
-                        Text(displayLabel, fontSize = 17.sp, fontWeight = FontWeight.SemiBold, color = textColor)
-                    }
+                        content = buttonContent,
+                    )
                 }
                 "minimal" -> {
                     TextButton(
@@ -3256,13 +3289,8 @@ private fun SocialLoginBlock(
                         modifier = Modifier.fillMaxWidth().height(buttonHeight),
                         shape = RoundedCornerShape(providerCorner),
                         colors = ButtonDefaults.textButtonColors(contentColor = textColor),
-                    ) {
-                        if (providerIcon.isNotBlank()) Text(providerIcon, fontSize = providerIconFontSize, fontWeight = providerIconFontWeight, modifier = Modifier.padding(end = 8.dp), color = providerIconColor)
-                        // SPEC-401-A R56 (Lens A R56 #2, P1) — explicit 17sp matches
-                        // iOS .body.weight(.semibold) (ContentBlockRendererView.swift:759).
-                        // Material Button content defaults to labelLarge=14sp.
-                        Text(displayLabel, fontSize = 17.sp, fontWeight = FontWeight.SemiBold, color = textColor)
-                    }
+                        content = buttonContent,
+                    )
                 }
                 else -> { // filled
                     Button(
@@ -3286,13 +3314,8 @@ private fun SocialLoginBlock(
                             focusedElevation = 0.dp,
                             hoveredElevation = 0.dp,
                         ),
-                    ) {
-                        if (providerIcon.isNotBlank()) Text(providerIcon, fontSize = providerIconFontSize, fontWeight = providerIconFontWeight, modifier = Modifier.padding(end = 8.dp), color = providerIconColor)
-                        // SPEC-401-A R56 (Lens A R56 #2, P1) — explicit 17sp matches
-                        // iOS .body.weight(.semibold) (ContentBlockRendererView.swift:759).
-                        // Material Button content defaults to labelLarge=14sp.
-                        Text(displayLabel, fontSize = 17.sp, fontWeight = FontWeight.SemiBold, color = textColor)
-                    }
+                        content = buttonContent,
+                    )
                 }
             }
 
@@ -3302,6 +3325,40 @@ private fun SocialLoginBlock(
             // The old per-provider divider gave a column of repeating
             // "or" rows which doesn't exist on iOS at all.
         }
+
+        // Social-Login styling v2 — divider composable honoring divider_color;
+        // placed at the top or bottom per divider_position.
+        val dividerRow: @androidx.compose.runtime.Composable () -> Unit = {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Box(
+                    modifier = Modifier
+                        .weight(1f)
+                        .height(1.dp)
+                        .background(dividerColor),
+                )
+                Text(
+                    text = loc?.invoke("block.${block.id}.divider", dividerText) ?: dividerText,
+                    // SPEC-401-A R55 (Lens A R55 #1, P3) — 14→15sp matching iOS
+                    // ContentBlockRendererView.swift:713 .subheadline (~15pt).
+                    fontSize = 15.sp,
+                    // SPEC-401-A R44 — theme-adaptive secondary (was Color.Gray).
+                    // iOS .secondary (ContentBlockRendererView.swift:714).
+                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
+                    modifier = Modifier.padding(horizontal = 12.dp),
+                )
+                Box(
+                    modifier = Modifier
+                        .weight(1f)
+                        .height(1.dp)
+                        .background(dividerColor),
+                )
+            }
+        }
+
+        if (showDivider && dividerPosition == "top") dividerRow()
 
         // SPEC-401-A R13 — render top group (email-first when
         // `below_inputs` placement, full author-order list otherwise),
@@ -3318,37 +3375,8 @@ private fun SocialLoginBlock(
             renderProvider(topGroup.size + idx, provider)
         }
 
-        // SPEC-401-A — single bottom divider gated on show_divider,
-        // matching iOS placement.
-        if (showDivider) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Box(
-                    modifier = Modifier
-                        .weight(1f)
-                        .height(1.dp)
-                        .background(Color.Gray.copy(alpha = 0.3f)),
-                )
-                Text(
-                    text = loc?.invoke("block.${block.id}.divider", dividerText) ?: dividerText,
-                    // SPEC-401-A R55 (Lens A R55 #1, P3) — 14→15sp matching iOS
-                    // ContentBlockRendererView.swift:713 .subheadline (~15pt).
-                    fontSize = 15.sp,
-                    // SPEC-401-A R44 — theme-adaptive secondary (was Color.Gray).
-                    // iOS .secondary (ContentBlockRendererView.swift:714).
-                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
-                    modifier = Modifier.padding(horizontal = 12.dp),
-                )
-                Box(
-                    modifier = Modifier
-                        .weight(1f)
-                        .height(1.dp)
-                        .background(Color.Gray.copy(alpha = 0.3f)),
-                )
-            }
-        }
+        // SPEC-401-A — single divider gated on show_divider, bottom by default.
+        if (showDivider && dividerPosition != "top") dividerRow()
     }
 }
 

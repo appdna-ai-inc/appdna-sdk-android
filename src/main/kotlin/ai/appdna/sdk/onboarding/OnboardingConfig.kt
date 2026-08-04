@@ -1325,6 +1325,7 @@ internal object OnboardingConfigParser {
                         border_width = (pm["border_width"] as? Number)?.toFloat(),
                         corner_radius = (pm["corner_radius"] as? Number)?.toFloat(),
                         icon_style = pm["icon_style"] as? String,
+                        icon_url = pm["icon_url"] as? String,
                     )
                 } else null
             }?.toImmutableList(),
@@ -1333,6 +1334,9 @@ internal object OnboardingConfigParser {
             spacing = (bm["spacing"] as? Number)?.toDouble(),
             show_divider = bm["show_divider"] as? Boolean,
             divider_text = bm["divider_text"] as? String,
+            // Social-Login styling v2
+            divider_position = bm["divider_position"] as? String,
+            button_text_align = bm["button_text_align"] as? String,
             // SPEC-089d: countdown_timer fields
             target_type = bm["target_type"] as? String,
             duration_seconds = (bm["duration_seconds"] as? Number)?.toInt(),
