@@ -1309,6 +1309,7 @@ internal object OnboardingConfigParser {
             dot_size = (bm["dot_size"] as? Number)?.toDouble(),
             dot_spacing = (bm["dot_spacing"] as? Number)?.toDouble(),
             active_dot_width = (bm["active_dot_width"] as? Number)?.toDouble(),
+            dot_shape = bm["dot_shape"] as? String,
             // SPEC-089d: social_login fields
             providers = (bm["providers"] as? List<*>)?.mapNotNull { p ->
                 if (p is Map<*, *>) {
@@ -1452,6 +1453,8 @@ internal object OnboardingConfigParser {
             date_validation_message = bm["date_validation_message"] as? String,
             picker_presentation = bm["picker_presentation"] as? String,
             picker_mode = bm["picker_mode"] as? String,
+            time_format = bm["time_format"] as? String,
+            time_text_size = (bm["time_text_size"] as? Number)?.toDouble(),
             picker_spacing = (bm["picker_spacing"] as? Number)?.toDouble(),
             wheel_bg_color = bm["wheel_bg_color"] as? String,
             wheel_height = (bm["wheel_height"] as? Number)?.toDouble(),

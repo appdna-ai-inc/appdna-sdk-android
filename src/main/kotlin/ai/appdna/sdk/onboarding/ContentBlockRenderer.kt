@@ -12,6 +12,7 @@ import androidx.compose.material3.HorizontalDivider
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.GenericShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.ui.graphics.RectangleShape
 import androidx.compose.material3.*
@@ -526,6 +527,8 @@ data class ContentBlock(
     val dot_size: Double? = null,
     val dot_spacing: Double? = null,
     val active_dot_width: Double? = null,
+    // SPEC — page_indicator dot shape: "circle" (default) | "triangle" | "rectangle" | "star"
+    val dot_shape: String? = null,
     // SPEC-089d: social_login fields
     // SPEC-070-A J.22 — ImmutableList for Compose stability.
     val providers: kotlinx.collections.immutable.ImmutableList<SocialProvider>? = null,
@@ -755,6 +758,9 @@ data class ContentBlock(
     val date_validation_message: String? = null,
     val picker_presentation: String? = null,
     val picker_mode: String? = null,
+    // SPEC — input_time clock presentation: "12h" (default) | "24h"; time_text_size = displayed-time font size (sp)
+    val time_format: String? = null,
+    val time_text_size: Double? = null,
     val picker_spacing: Double? = null,
     val wheel_bg_color: String? = null,
     val wheel_height: Double? = null,
@@ -3017,6 +3023,31 @@ private fun RiveContentBlock(block: ContentBlock) {
  * Renders a row of indicator dots. Active dot can be wider (pill) if active_dot_width is set.
  * SDK auto-binds active_index to current step index when inside an onboarding flow.
  */
+/** Upward-pointing triangle for page_indicator `dot_shape = "triangle"`. */
+private val TriangleDotShape = GenericShape { size, _ ->
+    moveTo(size.width / 2f, 0f)
+    lineTo(size.width, size.height)
+    lineTo(0f, size.height)
+    close()
+}
+
+/** Five-point star for page_indicator `dot_shape = "star"`. */
+private val StarDotShape = GenericShape { size, _ ->
+    val cx = size.width / 2f
+    val cy = size.height / 2f
+    val outer = minOf(cx, cy)
+    val inner = outer * 0.5f
+    // 10 alternating outer/inner vertices, starting at the top point (-90°).
+    for (i in 0 until 10) {
+        val r = if (i % 2 == 0) outer else inner
+        val angle = Math.toRadians((-90 + i * 36).toDouble())
+        val x = cx + (r * Math.cos(angle)).toFloat()
+        val y = cy + (r * Math.sin(angle)).toFloat()
+        if (i == 0) moveTo(x, y) else lineTo(x, y)
+    }
+    close()
+}
+
 @Composable
 private fun PageIndicatorBlock(block: ContentBlock, currentStepIndex: Int = 0, totalSteps: Int = 1) {
     val dotCount = block.dot_count ?: totalSteps
@@ -3030,6 +3061,8 @@ private fun PageIndicatorBlock(block: ContentBlock, currentStepIndex: Int = 0, t
     val dotSize = (block.dot_size ?: 8.0).dp
     val dotSpacing = (block.dot_spacing ?: 8.0).dp
     val activeDotWidth = block.active_dot_width?.dp
+    // SPEC — per-dot shape (default "circle" preserves the legacy pill/circle look).
+    val dotShape = (block.dot_shape ?: "circle").lowercase()
 
     // SPEC-401-A R45 (Lens A #6) — match iOS PageIndicator alignment
     // resolution: only `block.alignment` is read (no icon_alignment
@@ -3056,21 +3089,20 @@ private fun PageIndicatorBlock(block: ContentBlock, currentStepIndex: Int = 0, t
         for (i in 0 until dotCount) {
             if (i > 0) Spacer(modifier = Modifier.width(dotSpacing))
             val isActive = i == activeIndex
-            if (isActive && activeDotWidth != null) {
-                // Pill shape for active dot
-                Box(
-                    modifier = Modifier
-                        .size(width = activeDotWidth, height = dotSize)
-                        .clip(RoundedCornerShape(50))
-                        .background(activeColor),
-                )
-            } else {
-                Box(
-                    modifier = Modifier
-                        .size(dotSize)
-                        .clip(CircleShape)
-                        .background(if (isActive) activeColor else inactiveColor),
-                )
+            val color = if (isActive) activeColor else inactiveColor
+            val w = if (isActive && activeDotWidth != null) activeDotWidth else dotSize
+            when (dotShape) {
+                "rectangle" -> Box(modifier = Modifier.size(width = w, height = dotSize).clip(RectangleShape).background(color))
+                "triangle" -> Box(modifier = Modifier.size(width = w, height = dotSize).clip(TriangleDotShape).background(color))
+                "star" -> Box(modifier = Modifier.size(width = w, height = dotSize).clip(StarDotShape).background(color))
+                else -> {
+                    // "circle" — legacy behaviour: active pill when active_dot_width set, else circle.
+                    if (isActive && activeDotWidth != null) {
+                        Box(modifier = Modifier.size(width = activeDotWidth, height = dotSize).clip(RoundedCornerShape(50)).background(color))
+                    } else {
+                        Box(modifier = Modifier.size(dotSize).clip(CircleShape).background(color))
+                    }
+                }
             }
         }
     }
@@ -7162,10 +7194,19 @@ private fun FormInputDateBlock(
         if (years < 0) return
         inputValues["${fieldId}_age"] = years
     }
-    val displayFormatter = remember(mode) {
+    // SPEC — honor time_format ("12h"/"24h") on the displayed time. When set,
+    // build an explicit SimpleDateFormat (HH:mm 24h / h:mm a 12h) instead of the
+    // locale-default SHORT time; unset keeps the device-locale behaviour.
+    val timeFmt = block.time_format?.lowercase()
+    val displayFormatter = remember(mode, timeFmt) {
+        val timePattern = if (timeFmt == "24h") "HH:mm" else "h:mm a"
         when (mode) {
-            "time" -> java.text.DateFormat.getTimeInstance(java.text.DateFormat.SHORT, java.util.Locale.getDefault())
-            "datetime" -> java.text.DateFormat.getDateTimeInstance(java.text.DateFormat.MEDIUM, java.text.DateFormat.SHORT, java.util.Locale.getDefault())
+            "time" ->
+                if (timeFmt != null) java.text.SimpleDateFormat(timePattern, java.util.Locale.US)
+                else java.text.DateFormat.getTimeInstance(java.text.DateFormat.SHORT, java.util.Locale.getDefault())
+            "datetime" ->
+                if (timeFmt != null) java.text.SimpleDateFormat("MMM d, yyyy $timePattern", java.util.Locale.US)
+                else java.text.DateFormat.getDateTimeInstance(java.text.DateFormat.MEDIUM, java.text.DateFormat.SHORT, java.util.Locale.getDefault())
             else -> java.text.DateFormat.getDateInstance(java.text.DateFormat.MEDIUM, java.util.Locale.getDefault())
         }
     }
@@ -7311,7 +7352,12 @@ private fun FormInputDateBlock(
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    Text(text = displayText, fontSize = 14.sp, color = buttonTextColor)
+                    // SPEC — honor time_text_size on the displayed time (time/datetime modes).
+                    Text(
+                        text = displayText,
+                        fontSize = (if (effectiveMode == "time" || effectiveMode == "datetime") block.time_text_size else null)?.sp ?: 14.sp,
+                        color = buttonTextColor,
+                    )
                     // SPEC-401-A R49 (Lens A #4) \u2014 use effectiveMode for icon.
                     Text(text = when (effectiveMode) {
                         "date" -> "\uD83D\uDCC5"
@@ -7379,7 +7425,8 @@ private fun FormInputDateBlock(
 
     // Material3 TimePickerDialog (using AlertDialog wrapper)
     if (showTimePicker) {
-        val timePickerState = rememberTimePickerState()
+        // SPEC — honor time_format: "24h" → 24-hour columns (no AM/PM); "12h"/unset → 12-hour + AM/PM.
+        val timePickerState = rememberTimePickerState(is24Hour = (block.time_format ?: "12h").lowercase() == "24h")
         androidx.compose.material3.AlertDialog(
             onDismissRequest = { showTimePicker = false },
             confirmButton = {
