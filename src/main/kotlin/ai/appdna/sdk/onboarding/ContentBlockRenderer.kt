@@ -1701,9 +1701,18 @@ private fun SectionBackgroundBlock(
         "bottom" -> Arrangement.Bottom
         else -> Arrangement.SpaceBetween
     }
-    // Unset height defaults to 480.dp to match iOS (ContentBlockRendererView) + the console preview
-    // (was fillMaxSize → a native↔native height divergence when the author left height unset).
-    val boxMod = block.height?.let { Modifier.fillMaxWidth().height(it.dp) } ?: Modifier.fillMaxWidth().height(480.dp)
+    // EPIC-4b v2 — background_extent (% of screen height, 1–100) lets the section fill the screen
+    // or reach a configured % from the top. When absent, fall back to the fixed height (480.dp default),
+    // matching iOS (ContentBlockRendererView) + the console preview. Screen-relative height uses
+    // screenHeightDp (LocalConfiguration already imported for screenWidthDp elsewhere in this file).
+    val extentPct = (block.field_config?.get("background_extent") as? Number)?.toDouble()
+    val fixedHeight = block.height ?: 480.0
+    val boxMod = if (extentPct != null) {
+        Modifier.fillMaxWidth()
+            .height((LocalConfiguration.current.screenHeightDp * (extentPct.coerceIn(1.0, 100.0) / 100.0)).dp)
+    } else {
+        Modifier.fillMaxWidth().height(fixedHeight.dp)
+    }
     Box(modifier = boxMod) {
         // Background: vertical weighted color zones.
         Column(modifier = Modifier.fillMaxSize()) {
