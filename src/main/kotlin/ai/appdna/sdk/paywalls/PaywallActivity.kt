@@ -1527,9 +1527,18 @@ private fun PaywallSectionView(
             )
 
             // Badge styling
-            val badgeBg = section.data?.badge_bg_color?.let { parseHexColor(it) } ?: Color(0xFF22C55E)
+            // Mrozu QA — default badge bg is the brand accent (matches iOS + the console editor
+            // default), not the hardcoded green. Other accent defaults in this file use the same
+            // accessor (e.g. selected-border/bg at :1595/:1597).
+            val badgeBg = section.data?.badge_bg_color?.let { parseHexColor(it) } ?: ai.appdna.sdk.AppDNA.brandAccentColor()
             val badgeTxt = section.data?.badge_text_color?.let { parseHexColor(it) } ?: Color.White
             val badgeFontSize = (section.data?.badge_font_size ?: 11f).sp
+            // Mrozu QA — badge border + leading icon were decoded (PaywallConfig.kt:312-314) but
+            // dropped by BadgeView; iOS PlanCard.badgeView (:298-311/:332-335) renders both.
+            val badgeBorderColor = section.data?.badge_border_color?.let { parseHexColor(it) }
+            val badgeBorderWidth = section.data?.badge_border_width ?: 0f
+            val badgeIcon = section.data?.badge_icon
+            val badgeIconColorHex = section.data?.badge_text_color ?: "#FFFFFF"
             val badgeShapeStr = section.data?.badge_shape ?: "pill"
             // Mirror iOS PlanCard.swift:314-323 — console emits "rectangle"
             // as the iOS-native naming; keep "square" alias for back-compat.
@@ -1561,15 +1570,43 @@ private fun PaywallSectionView(
 
             @Composable
             fun BadgeView(badgeText: String) {
-                Text(
-                    text = badgeText,
-                    color = badgeTxt,
-                    fontSize = badgeFontSize,
-                    fontWeight = FontWeight.SemiBold,
+                Row(
                     modifier = Modifier
                         .background(badgeBg, badgeCorner)
+                        .then(
+                            // Border only when both width>0 and a color is set (iOS PlanCard.swift:332-335).
+                            if (badgeBorderWidth > 0f && badgeBorderColor != null)
+                                Modifier.border(badgeBorderWidth.dp, badgeBorderColor, badgeCorner)
+                            else Modifier,
+                        )
                         .padding(horizontal = 8.dp, vertical = 2.dp),
-                )
+                    horizontalArrangement = Arrangement.spacedBy(4.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    // Leading badge icon (iOS PlanCard.swift:304-311): an SF Symbol / Material name
+                    // (contains "." or "_") renders via IconView; anything else (emoji/glyph) via Text.
+                    badgeIcon?.takeIf { it.isNotBlank() }?.let { icon ->
+                        if (icon.contains(".") || icon.contains("_")) {
+                            ai.appdna.sdk.core.IconView(
+                                ref = ai.appdna.sdk.core.IconReference(
+                                    library = "sf-symbols",
+                                    name = icon,
+                                    color = badgeIconColorHex,
+                                    size = 11f,
+                                ),
+                                defaultSize = 11f,
+                            )
+                        } else {
+                            Text(text = icon, color = badgeTxt, fontSize = badgeFontSize)
+                        }
+                    }
+                    Text(
+                        text = badgeText,
+                        color = badgeTxt,
+                        fontSize = badgeFontSize,
+                        fontWeight = FontWeight.SemiBold,
+                    )
+                }
             }
 
             // SPEC-070-A finalization PW-9 — pull all 5 plan-card show-flags

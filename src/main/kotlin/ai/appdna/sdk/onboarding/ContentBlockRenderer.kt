@@ -3578,10 +3578,14 @@ private fun SocialLoginBlock(
     loc: ((String, String) -> String)? = null,
 ) {
     // SPEC-419 — Apple Sign-In is iOS-only; Android has no native Apple auth and the AppDNA SDK
-    // can't perform it, so never render "Continue with Apple" on Android (iOS keeps it). This also
+    // can't perform it, so never RENDER "Continue with Apple" on Android (iOS keeps it). This also
     // frees a button's worth of vertical space so the "Already have an account?" links below the
     // social buttons stay on-screen.
-    val providers = block.providers?.filter { it.enabled && it.type.lowercase() != "apple" } ?: return
+    // IMPORTANT: apple is kept in this list so the per-provider loc index (`block.<id>.provider.<n>`)
+    // matches iOS, which indexes over the FULL enabled list (ContentBlockRendererView.swift:1295,
+    // `filter { $0.enabled != false }`). The apple button itself is skipped inside renderProvider —
+    // filtering it out here would shift every subsequent index and mis-localize the wrong provider.
+    val providers = block.providers?.filter { it.enabled } ?: return
     val buttonStyle = block.button_style ?: "filled"
     val cornerRadius = (block.button_corner_radius ?: 12.0).dp
     // SPEC-401-A R45 (Lens A #5) — match iOS social_login default
@@ -3620,6 +3624,9 @@ private fun SocialLoginBlock(
         // Local helper closes over block/loc/buttonStyle/etc to keep
         // the per-provider rendering identical in both groups.
         val renderProvider: @androidx.compose.runtime.Composable (Int, SocialProvider) -> Unit = renderer@ { index, provider ->
+            // Apple Sign-In has no native Android path — skip its render but keep its index slot
+            // (assigned by the caller) so subsequent providers keep the same loc index as iOS.
+            if (provider.type.lowercase() == "apple") return@renderer
             val label = provider.label ?: when (provider.type) {
                 "apple" -> "Continue with Apple"
                 "google" -> "Continue with Google"
@@ -3660,7 +3667,16 @@ private fun SocialLoginBlock(
             // (ContentBlockRendererView.swift:1389-1392); mirror with onSurface.
             val textColor = provider.text_color?.let { StyleEngine.parseColor(it) }
                 ?: if (buttonStyle == "outlined" || buttonStyle == "minimal") MaterialTheme.colorScheme.onSurface else defaultText
-            val borderColor = provider.border_color?.let { StyleEngine.parseColor(it) } ?: defaultBorder
+            // SPEC-419 — outlined buttons use a NEUTRAL outline, not the provider brand color.
+            // iOS socialLoginBorderColor (ContentBlockRendererView.swift:1495-1501): google=#DADCE0,
+            // else theme secondary. defaultBorder is the brand color (e.g. Google blue), which would
+            // draw a colored ring around outlined buttons — mismatching iOS. Only applies when the
+            // author hasn't set an explicit provider.border_color override.
+            val borderColor = provider.border_color?.let { StyleEngine.parseColor(it) }
+                ?: if (buttonStyle == "outlined") {
+                    if (provider.type == "google") Color(0xFFDADCE0)
+                    else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.4f)
+                } else defaultBorder
             // OB-2 — per-provider corner_radius + border_width overrides.
             val providerCorner = (provider.corner_radius ?: block.button_corner_radius?.toFloat() ?: 12f).dp
             // SPEC-401-A R27 — match iOS ContentBlockRendererView.swift:738-741
@@ -8531,7 +8547,8 @@ private fun FormInputSelectBlock(
                                             }
                                             Text(
                                                 text = option.label,
-                                                fontSize = (option.title_font_size ?: 14.0).sp,
+                                                // Grid honors block-level title default (0.85 factor, parity with iOS gridSelectView + preview).
+                                                fontSize = (option.title_font_size?.toFloat() ?: defaultTitleSize * 0.85f).sp,
                                                 color = optTitleColor,
                                                 fontWeight = option.title_font_weight?.let { wStr ->
                                                     ai.appdna.sdk.core.FontResolver.fontWeight(wStr.toIntOrNull() ?: when (wStr.lowercase()) {
@@ -8547,7 +8564,7 @@ private fun FormInputSelectBlock(
                                             option.subtitle?.takeIf { it.isNotBlank() }?.let { subtitle ->
                                                 Text(
                                                     text = subtitle,
-                                                    fontSize = (option.subtitle_font_size ?: 12.0).sp,
+                                                    fontSize = (option.subtitle_font_size?.toFloat() ?: defaultSubtitleSize).sp,
                                                     color = option.subtitle_color?.let { StyleEngine.parseColor(it) }
                                                         ?: MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
                                                     textAlign = cellTextAlign,
