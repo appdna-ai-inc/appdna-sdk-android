@@ -563,6 +563,13 @@ fun PaywallScreen(
             if (pending != null && pending != postPurchaseOverlay) {
                 postPurchaseOverlay = pending
                 PaywallActivity.postPurchaseOverlay = null
+                // A drained failure overlay (retry / show_error) means the purchase
+                // did NOT complete — re-enable the CTA so the user isn't stuck behind
+                // a permanently-disabled button. iOS resets in its failure observer;
+                // success overlays use other actions and are left untouched.
+                if (pending.action == "retry" || pending.action == "show_error") {
+                    isPurchasing = false
+                }
                 // Auto-dismiss after 4s when the overlay has no Retry CTA
                 // — without this, an error overlay shown via show_error
                 // (no retry) with allowDismiss=false leaves the user
@@ -1073,7 +1080,9 @@ fun PaywallScreen(
                                 Button(
                                     onClick = {
                                         // Re-fire purchase for currently-selected plan.
-                                        val plan = (config.plans ?: emptyList()).firstOrNull { it.id == selectedPlanId }
+                                        // Use effectivePlans() (sections OR top-level) like every
+                                        // other selected-plan lookup, so section-scoped plans retry.
+                                        val plan = effectivePlans().firstOrNull { it.id == selectedPlanId }
                                         postPurchaseOverlay = null
                                         plan?.let { onPlanSelected(it, emptyMap()) }
                                     },

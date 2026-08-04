@@ -2393,6 +2393,12 @@ private fun SoundButtonBlock(
             ai.appdna.sdk.core.AudioPlayer.play(context, block.audio_url)
         }
     }
+    // Stop autoplayed audio when the block leaves composition (step change /
+    // dismiss); AudioPlayer.stop() is idempotent and safe when idle. Mirrors
+    // iOS soundButtonBlock's .onDisappear.
+    DisposableEffect(block.id) {
+        onDispose { ai.appdna.sdk.core.AudioPlayer.stop() }
+    }
     ButtonBlock(
         block, onAction, loc, stepBlocks, inputValues,
         onClickOverride = { ai.appdna.sdk.core.AudioPlayer.play(context, block.audio_url) },
@@ -3752,6 +3758,9 @@ private fun SocialLoginBlock(
                             // iOS `.frame(width:20,height:20)` + preview `<img 20x20>`.
                             // The previous `size(20).padding(end=8)` order left only 12dp
                             // for the image → compressed/aspect-distorted logo.
+                            // ContentScale.Fit (not default Crop) matches iOS .fit +
+                            // preview object-contain so non-square provider logos aren't distorted.
+                            contentScale = androidx.compose.ui.layout.ContentScale.Fit,
                             modifier = Modifier.padding(end = 8.dp).size(20.dp),
                         )
                     } else if (providerIcon.isNotBlank()) {
@@ -7921,8 +7930,12 @@ private fun FormInputDateBlock(
 
     // Material3 TimePickerDialog (using AlertDialog wrapper)
     if (showTimePicker) {
-        // SPEC — honor time_format: "24h" → 24-hour columns (no AM/PM); "12h"/unset → 12-hour + AM/PM.
-        val timePickerState = rememberTimePickerState(is24Hour = (block.time_format ?: "12h").lowercase() == "24h")
+        // SPEC — honor time_format: "24h" → 24-hour columns; "12h" → 12-hour + AM/PM;
+        // unset → follow device locale (matches iOS, which follows locale for both the
+        // wheel and the display text).
+        val is24 = block.time_format?.lowercase()?.let { it == "24h" }
+            ?: android.text.format.DateFormat.is24HourFormat(LocalContext.current)
+        val timePickerState = rememberTimePickerState(is24Hour = is24)
         androidx.compose.material3.AlertDialog(
             onDismissRequest = { showTimePicker = false },
             confirmButton = {
