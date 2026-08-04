@@ -1425,7 +1425,9 @@ private fun PaywallSectionView(
                     // `style.elements["title"].text_style` matching iOS
                     // HeaderSection.swift:10-15 precedence.
                     val titleStyle = StyleEngine.applyTextStyle(
-                        TextStyle(color = Color.White, fontWeight = FontWeight.Bold, fontSize = 28.sp, textAlign = TextAlign.Center),
+                        // Theme-adaptive default matching iOS HeaderSection `.primary` (black on light,
+                        // white on dark) — was hardcoded white, invisible on light paywalls.
+                        TextStyle(color = MaterialTheme.colorScheme.onSurface, fontWeight = FontWeight.Bold, fontSize = 28.sp, textAlign = TextAlign.Center),
                         section.data.title_style ?: section.style?.elements?.get("title")?.text_style
                     )
                     Text(
@@ -1440,7 +1442,9 @@ private fun PaywallSectionView(
                 section.data?.subtitle?.let {
                     Spacer(Modifier.height(8.dp))
                     val subtitleStyle = StyleEngine.applyTextStyle(
-                        TextStyle(color = Color.White.copy(alpha = 0.8f), fontSize = 16.sp, textAlign = TextAlign.Center),
+                        // Shared cross-platform default: muted grey #6B7280 (iOS uses the same),
+                        // legible on both light and dark backgrounds.
+                        TextStyle(color = Color(0xFF6B7280), fontSize = 16.sp, textAlign = TextAlign.Center),
                         section.data.subtitle_style ?: section.style?.elements?.get("subtitle")?.text_style
                     )
                     Text(
@@ -1532,6 +1536,17 @@ private fun PaywallSectionView(
             val badgeCorner = when (badgeShapeStr) {
                 "square", "rectangle" -> RoundedCornerShape(2.dp)
                 "rounded" -> RoundedCornerShape(4.dp)
+                // Notched-ribbon: rectangle with a triangular notch cut into the trailing
+                // edge, matching the console PaywallPreview clipPath polygon
+                // (0,0 → 100,0 → 92,50 → 100,100 → 0,100) and the iOS RibbonBadgeShape.
+                "ribbon" -> androidx.compose.foundation.shape.GenericShape { size, _ ->
+                    moveTo(0f, 0f)
+                    lineTo(size.width, 0f)
+                    lineTo(size.width * 0.92f, size.height / 2f)
+                    lineTo(size.width, size.height)
+                    lineTo(0f, size.height)
+                    close()
+                }
                 else -> RoundedCornerShape(999.dp) // pill
             }
             // QA-R11 — default `top_right` to mirror iOS

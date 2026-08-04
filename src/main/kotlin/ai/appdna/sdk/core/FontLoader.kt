@@ -56,13 +56,19 @@ object FontLoader {
         }
         if (inFlight.add(urlString)) {
             Thread {
+                // Download to a temp file then atomically rename on success — an interrupted
+                // download that wrote straight to `dest` would leave a truncated font that
+                // createFromFile rejects forever (poisoned cache). Mirrors iOS's .atomic write.
+                val tmp = File(dest.parentFile, dest.name + ".tmp")
                 try {
                     URL(urlString).openStream().use { input ->
-                        dest.outputStream().use { output -> input.copyTo(output) }
+                        tmp.outputStream().use { output -> input.copyTo(output) }
                     }
+                    if (!tmp.renameTo(dest)) throw java.io.IOException("rename failed")
                     build(dest, urlString)
                 } catch (_: Throwable) {
-                    // best-effort — fall back to default family
+                    // best-effort — drop the partial download and fall back to default family
+                    tmp.delete()
                 } finally {
                     inFlight.remove(urlString)
                 }
@@ -78,6 +84,8 @@ object FontLoader {
             cache[urlString] = family
             family
         } catch (_: Throwable) {
+            // Poisoned/corrupt cache entry — delete it so the next launch re-downloads cleanly.
+            file.delete()
             null
         }
     }
