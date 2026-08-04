@@ -1813,6 +1813,12 @@ internal object OnboardingConfigParser {
                     height = fs["height"] as? String,
                     font_weight = fs["font_weight"] as? String,
                     focused_background_color = fs["focused_background_color"] as? String,
+                    // Select v2 (Mrozu QA) — per-option styling extras.
+                    option_font_family = fs["option_font_family"] as? String,
+                    option_corner_radius = (fs["option_corner_radius"] as? Number)?.toDouble(),
+                    option_text_wrap = fs["option_text_wrap"] as? Boolean,
+                    option_image_scale = fs["option_image_scale"] as? String,
+                    checkmark_color = fs["checkmark_color"] as? String,
                 )
             },
 

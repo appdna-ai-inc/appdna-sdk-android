@@ -903,6 +903,12 @@ data class FormFieldBlockStyle(
     val height: String? = null,
     val font_weight: String? = null,
     val focused_background_color: String? = null,
+    // Select v2 (Mrozu QA) — per-option styling extras applied by the select renderers.
+    val option_font_family: String? = null,     // font family for option title/subtitle/labels
+    val option_corner_radius: Double? = null,    // option card corner radius (falls back to corner_radius ?? 10)
+    val option_text_wrap: Boolean? = null,       // true → option text wraps fully; false → single-line truncate
+    val option_image_scale: String? = null,      // "contain" (default) | "cover" | "fit" for per-option images
+    val checkmark_color: String? = null,         // radio/checkmark indicator color, decoupled from fill/accent
 )
 
 /**
@@ -7461,7 +7467,21 @@ private fun FormInputSelectBlock(
         ?: block.active_color
         ?: (ai.appdna.sdk.AppDNA.brandAccentHex ?: "#6366F1")
     val fillCol = StyleEngine.parseColor(accentHex)
+    // Legacy corner radius — used by the GRID renderer (unchanged; ignores
+    // option_corner_radius so grid stays isolated, matching iOS gridSelectView + preview grid).
     val cornerR = (block.field_style?.corner_radius ?: 10.0).dp
+    // Select v2 — STACKED option card corner: option_corner_radius wins, else legacy, else 10.
+    val optionCornerR = (block.field_style?.option_corner_radius ?: block.field_style?.corner_radius ?: 10.0).dp
+    // Select v2 — per-option styling extras (Mrozu QA).
+    val optionFontFamily = block.field_style?.option_font_family?.let { ai.appdna.sdk.core.FontResolver.resolve(it) }
+    // Default TRUE = full wrap (preserves prior native behavior + the Mrozu ask that
+    // long option text stays fully visible). option_text_wrap=false opts into truncation.
+    val optionTextWrap = block.field_style?.option_text_wrap ?: true
+    val optionImageScale = block.field_style?.option_image_scale ?: "contain"
+    // "cover" crops/fills; "contain"/"fit" fit the whole image inside so an oversized image is not cropped.
+    val optionImageContentScale = if (optionImageScale == "cover") ContentScale.Crop else ContentScale.Fit
+    // checkmark_color decouples the indicator tint from the accent/fill; falls back to fillCol when unset.
+    val checkmarkCol = block.field_style?.checkmark_color?.let { StyleEngine.parseColor(it) } ?: fillCol
     val cfgOptBg = (cfg?.get("bg_color") as? String)?.let { StyleEngine.parseColor(it) }
     val cfgOptBorder = (cfg?.get("border_color") as? String)?.let { StyleEngine.parseColor(it) }
     val cfgSelectedBg = (cfg?.get("selected_bg_color") as? String)?.let { StyleEngine.parseColor(it) }
@@ -7608,7 +7628,7 @@ private fun FormInputSelectBlock(
                                     if (isSelected && selectionAnimation != "none") {
                                         Modifier.shadow(
                                             elevation = 12.dp,
-                                            shape = RoundedCornerShape(cornerR),
+                                            shape = RoundedCornerShape(optionCornerR),
                                             clip = false,
                                             ambientColor = fillCol,
                                             spotColor = fillCol,
@@ -7635,7 +7655,7 @@ private fun FormInputSelectBlock(
                                         )
                                     }
                                 ),
-                            shape = RoundedCornerShape(cornerR),
+                            shape = RoundedCornerShape(optionCornerR),
                             colors = CardDefaults.cardColors(
                                 // QA-R4 — multiply alpha (not overwrite).
                                 // Old `.copy(alpha = bgOpacity)` turned a base
@@ -7657,7 +7677,7 @@ private fun FormInputSelectBlock(
                                 verticalAlignment = Alignment.CenterVertically,
                             ) {
                                 if (showRadio && radioOnLeft) {
-                                    SelectRadioIndicator(isSelected = isSelected, isMulti = isMulti, fillCol = fillCol, radioFill = radioFill)
+                                    SelectRadioIndicator(isSelected = isSelected, isMulti = isMulti, fillCol = checkmarkCol, radioFill = radioFill)
                                     Spacer(Modifier.width(8.dp))
                                 }
                                 // Per-option image (with optional selected/unselected variants).
@@ -7666,7 +7686,8 @@ private fun FormInputSelectBlock(
                                         ai.appdna.sdk.core.NetworkImage(
                                             url = url,
                                             modifier = Modifier.fillMaxSize(),
-                                            contentScale = ContentScale.Crop,
+                                            // Select v2 — option_image_scale (cover=Crop, contain/fit=Fit).
+                                            contentScale = optionImageContentScale,
                                         )
                                         // EPIC-1 — image overlay tint; selected uses selected_image_overlay_*
                                         // (falls back to base). Parity with iOS imageWithOverlay (FormInputBlockViews).
@@ -7689,6 +7710,7 @@ private fun FormInputSelectBlock(
                                         fontSize = 14.sp,
                                         color = optTitleColor,
                                         fontWeight = FontWeight.SemiBold,
+                                        fontFamily = optionFontFamily,
                                         modifier = Modifier.testTag("option.$oi.leading_text"),
                                     )
                                     Spacer(Modifier.width(8.dp))
@@ -7705,6 +7727,10 @@ private fun FormInputSelectBlock(
                                         // SPEC-419 pass-15 #36 — fall back to block-level default (not hardcoded 14).
                                         fontSize = (option.title_font_size?.toFloat() ?: defaultTitleSize).sp,
                                         color = optTitleColor,
+                                        // Select v2 — option_font_family + option_text_wrap (wrap fully vs single-line truncate).
+                                        fontFamily = optionFontFamily,
+                                        maxLines = if (optionTextWrap) Int.MAX_VALUE else 1,
+                                        overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
                                         fontWeight = option.title_font_weight?.let { wStr ->
                                             ai.appdna.sdk.core.FontResolver.fontWeight(wStr.toIntOrNull() ?: when (wStr.lowercase()) {
                                                 "thin" -> 100; "extralight", "ultralight" -> 200
@@ -7732,6 +7758,10 @@ private fun FormInputSelectBlock(
                                             // SPEC-419 pass-15 #36 — fall back to block-level default (not hardcoded 12).
                                             fontSize = (option.subtitle_font_size?.toFloat() ?: defaultSubtitleSize).sp,
                                             color = optSubtitleColor,
+                                            // Select v2 — option_font_family + option_text_wrap.
+                                            fontFamily = optionFontFamily,
+                                            maxLines = if (optionTextWrap) Int.MAX_VALUE else 1,
+                                            overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
                                         )
                                     }
                                 }
@@ -7742,12 +7772,13 @@ private fun FormInputSelectBlock(
                                         text = tt,
                                         fontSize = 12.sp,
                                         color = optSubtitleColor,
+                                        fontFamily = optionFontFamily,
                                         modifier = Modifier.testTag("option.$oi.trailing_text"),
                                     )
                                 }
                                 if (showRadio && !radioOnLeft) {
                                     Spacer(Modifier.width(8.dp))
-                                    SelectRadioIndicator(isSelected = isSelected, isMulti = isMulti, fillCol = fillCol, radioFill = radioFill)
+                                    SelectRadioIndicator(isSelected = isSelected, isMulti = isMulti, fillCol = checkmarkCol, radioFill = radioFill)
                                 }
                             }
                         }
