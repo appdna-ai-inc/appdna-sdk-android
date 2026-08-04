@@ -1546,9 +1546,15 @@ internal object OnboardingConfigParser {
                 val particleSpeed = bm["particle_speed"] as? String
                 // SPEC-419 pass-15 #10 — countdown_timer `timer_variant` authored top-level by editor; fold for the renderer.
                 val timerVariant = bm["timer_variant"] as? String
+                // Progress/Loading v2 — `label_placement` (progress_bar) + `loading_text_align`
+                // (animated_loading) authored top-level by the console editor; fold into
+                // field_config since Android's top-level ContentBlock is budget-locked. iOS
+                // reads them as top-level Codable fields.
+                val labelPlacement = bm["label_placement"] as? String
+                val loadingTextAlign = bm["loading_text_align"] as? String
                 if (labelFormat == null && customLabel == null && videoControls == null &&
                     particleColor == null && particleOpacity == null && particleSpeed == null &&
-                    timerVariant == null) {
+                    timerVariant == null && labelPlacement == null && loadingTextAlign == null) {
                     base
                 } else {
                     val merged = base ?: mutableMapOf()
@@ -1559,6 +1565,8 @@ internal object OnboardingConfigParser {
                     if (particleOpacity != null) merged.putIfAbsent("particle_opacity", particleOpacity)
                     if (particleSpeed != null) merged.putIfAbsent("particle_speed", particleSpeed)
                     if (timerVariant != null) merged.putIfAbsent("timer_variant", timerVariant)
+                    if (labelPlacement != null) merged.putIfAbsent("label_placement", labelPlacement)
+                    if (loadingTextAlign != null) merged.putIfAbsent("loading_text_align", loadingTextAlign)
                     merged
                 }
             },

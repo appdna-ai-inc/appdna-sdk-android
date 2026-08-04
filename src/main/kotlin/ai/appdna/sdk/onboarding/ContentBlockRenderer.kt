@@ -3989,7 +3989,9 @@ private fun ProgressBarBlock(block: ContentBlock, loc: ((String, String) -> Stri
     // EPIC-2 — multiple progress colors at once (horizontal gradient across the fill).
     val gradColors = block.bar_gradient_colors?.takeIf { it.size >= 2 }?.map { StyleEngine.parseColor(it) }
     val trackColor = StyleEngine.parseColor(block.track_color ?: "#E5E7EB")
-    val barHeight = (block.bar_height ?: block.height ?: 8.0).dp // SPEC-419 pass-14 #14 — unset default 8 to match editor+preview (was 6)
+    // Progress/Loading v2 — clamp to the console slider max (24) so an out-of-range
+    // published value can't render a giant bar the editor can't reproduce (duolingo s7).
+    val barHeight = minOf(block.bar_height ?: block.height ?: 8.0, 24.0).dp // SPEC-419 pass-14 #14 — unset default 8 to match editor+preview (was 6)
     val cornerRadius = (block.corner_radius ?: 3.0).dp
     val segmentGap = (block.segment_gap ?: 4.0).dp
     val showLabel = block.show_label ?: true // SPEC-419 pass-14 #13 — unset default true to match editor+preview (was false)
@@ -4011,33 +4013,34 @@ private fun ProgressBarBlock(block: ContentBlock, loc: ((String, String) -> Stri
     // "0%". Mirrors iOS pvPercent.
     val pvPercent = ((pvFraction ?: 0f) * 100).roundToInt()
 
-    Column(modifier = Modifier.fillMaxWidth()) {
-        // Optional label
-        if (showLabel && segmentCount > 0) {
-            val labelText = when (labelFormat) {
-                null -> "Step $activeSegments of $segmentCount"
-                "fraction" -> if (variant == "segmented") "$activeSegments/$segmentCount" else "$pvPercent/100"
-                "custom" -> customLabel ?: ""
-                else -> if (variant == "segmented")
-                    "${((activeSegments.toFloat() / maxOf(segmentCount, 1)) * 100).toInt()}%"
-                else "$pvPercent%"
-            }
-            val labelStyle = if (block.label_style != null) {
-                // SPEC-401-A R44 — theme-adaptive secondary base (was Color.Gray).
-                StyleEngine.applyTextStyle(TextStyle(fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)), block.label_style)
-            } else {
-                // SPEC-401-A R44 — theme-adaptive secondary fallback (was Color.Gray).
-                TextStyle(fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f))
-            }
-            Text(
-                text = loc?.invoke("block.${block.id}.label", labelText) ?: labelText,
-                style = labelStyle,
-                // SPEC-401-A R47 (Lens C #7) — iOS VStack(spacing: 8)
-                // (ContentBlockRendererView.swift:1063). Was 4dp.
-                modifier = Modifier.padding(bottom = 8.dp),
-            )
-        }
+    // Progress/Loading v2 — label placement relative to the bar. Authored top-level
+    // by the console editor; folded into field_config on Android (top-level budget-locked).
+    val placement = block.field_config?.get("label_placement") as? String ?: "above"
+    val showLabelFinal = showLabel && segmentCount > 0
 
+    val labelContent: @Composable () -> Unit = {
+        val labelText = when (labelFormat) {
+            null -> "Step $activeSegments of $segmentCount"
+            "fraction" -> if (variant == "segmented") "$activeSegments/$segmentCount" else "$pvPercent/100"
+            "custom" -> customLabel ?: ""
+            else -> if (variant == "segmented")
+                "${((activeSegments.toFloat() / maxOf(segmentCount, 1)) * 100).toInt()}%"
+            else "$pvPercent%"
+        }
+        val labelStyle = if (block.label_style != null) {
+            // SPEC-401-A R44 — theme-adaptive secondary base (was Color.Gray).
+            StyleEngine.applyTextStyle(TextStyle(fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)), block.label_style)
+        } else {
+            // SPEC-401-A R44 — theme-adaptive secondary fallback (was Color.Gray).
+            TextStyle(fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f))
+        }
+        Text(
+            text = loc?.invoke("block.${block.id}.label", labelText) ?: labelText,
+            style = labelStyle,
+        )
+    }
+
+    val barContent: @Composable () -> Unit = {
         when (variant) {
             "segmented" -> {
                 Row(
@@ -4084,6 +4087,26 @@ private fun ProgressBarBlock(block: ContentBlock, loc: ((String, String) -> Stri
                     )
                 }
             }
+        }
+    }
+
+    // SPEC-401-A R47 (Lens C #7) — 8dp gap matches iOS VStack(spacing: 8).
+    when (placement) {
+        "left" -> Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+            if (showLabelFinal) { labelContent(); Spacer(modifier = Modifier.width(8.dp)) }
+            Box(modifier = Modifier.weight(1f)) { barContent() }
+        }
+        "right" -> Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+            Box(modifier = Modifier.weight(1f)) { barContent() }
+            if (showLabelFinal) { Spacer(modifier = Modifier.width(8.dp)); labelContent() }
+        }
+        "below" -> Column(modifier = Modifier.fillMaxWidth()) {
+            barContent()
+            if (showLabelFinal) { Spacer(modifier = Modifier.height(8.dp)); labelContent() }
+        }
+        else -> Column(modifier = Modifier.fillMaxWidth()) {
+            if (showLabelFinal) { labelContent(); Spacer(modifier = Modifier.height(8.dp)) }
+            barContent()
         }
     }
 }
@@ -4259,6 +4282,13 @@ private fun AnimatedLoadingBlock(block: ContentBlock, onAction: (String) -> Unit
     val loadingMessageColor = block.loading_text_color?.let { StyleEngine.parseColor(it) }
         ?: block.text_color?.let { StyleEngine.parseColor(it) }
         ?: StyleEngine.parseColor("#9CA3AF")
+    // Progress/Loading v2 — loading message horizontal alignment (default center).
+    // Authored top-level by the console editor; folded into field_config on Android.
+    val loadingTextAlign = when (block.field_config?.get("loading_text_align") as? String) {
+        "left" -> TextAlign.Left
+        "right" -> TextAlign.Right
+        else -> TextAlign.Center
+    }
 
     // Track which items have completed
     var completedCount by remember { mutableIntStateOf(0) }
@@ -4334,7 +4364,8 @@ private fun AnimatedLoadingBlock(block: ContentBlock, onAction: (String) -> Unit
                 text = loadingMessage,
                 fontSize = loadingTextSize,
                 color = loadingMessageColor,
-                textAlign = TextAlign.Center,
+                textAlign = loadingTextAlign,
+                modifier = Modifier.fillMaxWidth(),
             )
         }
         when (variant) {
@@ -4631,7 +4662,8 @@ private fun AnimatedLoadingBlock(block: ContentBlock, onAction: (String) -> Unit
                 text = loadingMessage,
                 fontSize = loadingTextSize,
                 color = loadingMessageColor,
-                textAlign = TextAlign.Center,
+                textAlign = loadingTextAlign,
+                modifier = Modifier.fillMaxWidth(),
             )
         }
     }
