@@ -1787,6 +1787,9 @@ internal object OnboardingConfigParser {
             gallery_corner_radius = (bm["gallery_corner_radius"] as? Number)?.toDouble(),
             gallery_spacing = (bm["gallery_spacing"] as? Number)?.toDouble(),
             gallery_align = bm["gallery_align"] as? String,
+            gallery_fill = bm["gallery_fill"] as? Boolean,
+            gallery_autoscroll = bm["gallery_autoscroll"] as? Boolean,
+            gallery_autoscroll_speed = (bm["gallery_autoscroll_speed"] as? Number)?.toDouble(),
 
             // Container/positioning (multiple R-rounds) — column_ratios
             // is a colon-encoded ratio string ("1:2") on both platforms

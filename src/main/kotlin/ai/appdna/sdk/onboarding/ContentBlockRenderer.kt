@@ -647,6 +647,11 @@ data class ContentBlock(
     val gallery_corner_radius: Double? = null,
     val gallery_spacing: Double? = null,
     val gallery_align: String? = null,  // "start" | "center" | "end" (default "center")
+    // Media-gallery v2 (Mrozu QA): gallery_fill = full-width edge-to-edge cover tiles; gallery_autoscroll =
+    // continuous loop; gallery_autoscroll_speed = seconds per full cycle (default 20). All default off.
+    val gallery_fill: Boolean? = null,
+    val gallery_autoscroll: Boolean? = null,
+    val gallery_autoscroll_speed: Double? = null,
     // EPIC-4b — section_background reads background_zones + content_arrangement from field_config
     // (ContentBlock has hit the JVM 255-constructor-arg limit; new fields go through field_config).
     // SPEC-089d Phase F: circular_gauge fields
@@ -1748,35 +1753,110 @@ private fun SectionBackgroundBlock(
 @Composable
 private fun MediaGalleryBlock(block: ContentBlock) {
     // EPIC-3 — horizontal scrollable gallery of image tiles (rounded, fixed size, placeholder bg).
+    // Media-gallery v2 (Mrozu QA): gallery_fill = full-width edge-to-edge cover tiles; gallery_autoscroll =
+    // seamless marquee loop (gallery_autoscroll_speed = seconds per full cycle, default 20). Both default off
+    // → existing static LazyRow (no infinite animation started when off — non-breaking, zero battery cost).
     val images = block.gallery_images ?: return
     if (images.isEmpty()) return
-    val itemW = (block.gallery_item_width ?: 140.0).dp
     val itemH = (block.gallery_item_height ?: 180.0).dp
     val cr = (block.gallery_corner_radius ?: 12.0).dp
     val spacing = (block.gallery_spacing ?: 10.0).dp
-    val align = when (block.gallery_align) {
-        "start" -> androidx.compose.ui.Alignment.Start
-        "end" -> androidx.compose.ui.Alignment.End
-        else -> androidx.compose.ui.Alignment.CenterHorizontally
+    val fill = block.gallery_fill ?: false
+    val autoscroll = block.gallery_autoscroll ?: false
+
+    if (autoscroll) {
+        MediaGalleryAutoScrollRow(images, block.gallery_item_width, itemH, cr, spacing, fill, block.gallery_autoscroll_speed ?: 20.0)
+        return
     }
-    LazyRow(
-        modifier = Modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.spacedBy(spacing, align),
-        contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 2.dp),
+
+    val itemW = (block.gallery_item_width ?: 140.0).dp
+    if (fill) {
+        androidx.compose.foundation.layout.BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
+            val tileW = maxWidth
+            LazyRow(modifier = Modifier.fillMaxWidth()) {
+                items(images.size) { i -> GalleryTile(images[i], tileW, itemH, 0.dp) }
+            }
+        }
+    } else {
+        val align = when (block.gallery_align) {
+            "start" -> androidx.compose.ui.Alignment.Start
+            "end" -> androidx.compose.ui.Alignment.End
+            else -> androidx.compose.ui.Alignment.CenterHorizontally
+        }
+        LazyRow(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(spacing, align),
+            contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 2.dp),
+        ) {
+            items(images.size) { i -> GalleryTile(images[i], itemW, itemH, cr) }
+        }
+    }
+}
+
+// Media-gallery v2 — shared tile (placeholder bg + cover image, rounded/clipped).
+@Composable
+private fun GalleryTile(
+    url: String,
+    width: androidx.compose.ui.unit.Dp,
+    height: androidx.compose.ui.unit.Dp,
+    corner: androidx.compose.ui.unit.Dp,
+) {
+    Box(
+        modifier = Modifier
+            .width(width)
+            .height(height)
+            .clip(RoundedCornerShape(corner))
+            .background(androidx.compose.ui.graphics.Color(0xFF2A2A2E)),
     ) {
-        items(images.size) { i ->
-            Box(
-                modifier = Modifier
-                    .width(itemW)
-                    .height(itemH)
-                    .clip(RoundedCornerShape(cr))
-                    .background(androidx.compose.ui.graphics.Color(0xFF2A2A2E)),
-            ) {
-                ai.appdna.sdk.core.NetworkImage(
-                    url = images[i],
-                    modifier = Modifier.fillMaxSize(),
-                    contentScale = androidx.compose.ui.layout.ContentScale.Crop,
-                )
+        ai.appdna.sdk.core.NetworkImage(
+            url = url,
+            modifier = Modifier.fillMaxSize(),
+            contentScale = androidx.compose.ui.layout.ContentScale.Crop,
+        )
+    }
+}
+
+// Media-gallery v2 — continuous auto-scroll marquee. The track is duplicated and translated by exactly one
+// copy-width per cycle, so the loop wraps seamlessly (no jump). Only composed when gallery_autoscroll == true.
+@Composable
+private fun MediaGalleryAutoScrollRow(
+    images: List<String>,
+    itemWidthDp: Double?,
+    itemH: androidx.compose.ui.unit.Dp,
+    cr: androidx.compose.ui.unit.Dp,
+    spacing: androidx.compose.ui.unit.Dp,
+    fill: Boolean,
+    cycleSeconds: Double,
+) {
+    androidx.compose.foundation.layout.BoxWithConstraints(
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(itemH)
+            .clip(RectangleShape),
+    ) {
+        val gap = if (fill) 0.dp else spacing
+        val tileW = if (fill) maxWidth else (itemWidthDp ?: 140.0).dp
+        val cornerDp = if (fill) 0.dp else cr
+        // One copy = n tiles + n gaps; shifting by this aligns the 2nd copy onto the 1st → seamless.
+        val copyWidthPx = with(androidx.compose.ui.platform.LocalDensity.current) {
+            ((tileW + gap) * images.size).toPx()
+        }
+        val transition = rememberInfiniteTransition(label = "gallery_marquee")
+        val offsetX by transition.animateFloat(
+            initialValue = 0f,
+            targetValue = -copyWidthPx,
+            animationSpec = infiniteRepeatable(
+                animation = tween(durationMillis = (maxOf(cycleSeconds, 1.0) * 1000).toInt(), easing = LinearEasing),
+                repeatMode = RepeatMode.Restart,
+            ),
+            label = "gallery_offset",
+        )
+        androidx.compose.foundation.layout.Row(
+            modifier = Modifier.graphicsLayer { translationX = offsetX },
+            horizontalArrangement = Arrangement.spacedBy(gap),
+        ) {
+            repeat(images.size * 2) { i ->
+                GalleryTile(images[i % images.size], tileW, itemH, cornerDp)
             }
         }
     }
