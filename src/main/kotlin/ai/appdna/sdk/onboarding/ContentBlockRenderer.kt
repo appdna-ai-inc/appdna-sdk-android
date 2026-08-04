@@ -720,6 +720,9 @@ data class ContentBlock(
     val density: String? = null,
     val speed: String? = null,
     val secondary_color: String? = null,
+    // Mrozu QA (2026-08-04): confetti multicolor — cycle a fixed palette instead of primary/secondary.
+    // Defaults on when particle_type == "confetti", explicit override otherwise.
+    val particle_multicolor: Boolean? = null,
     // SPEC-070-A J.22 — ImmutableList for Compose stability.
     val size_range: kotlinx.collections.immutable.ImmutableList<Double>? = null,
     val fullscreen: Boolean? = null,
@@ -2227,6 +2230,10 @@ private fun OtpInputBlock(
     val fieldId = block.field_id ?: block.id
     val accent = StyleEngine.parseColor(block.active_color ?: (ai.appdna.sdk.AppDNA.brandAccentHex ?: "#6366F1"))
     val boxBg = StyleEngine.parseColor(block.bg_color ?: "#1F2937")
+    // Mrozu QA (2026-08-04): box border/text were hardcoded (accent/gray + white). When set, border_color
+    // overrides the resting border (active box keeps the accent focus ring); text_color overrides the digit.
+    val borderOverride = block.border_color?.let { StyleEngine.parseColor(it) }
+    val digitColor = StyleEngine.parseColor(block.text_color ?: "#FFFFFF")
 
     // SPEC-419 STEP-2 — local editable state seeded from prior input / `otp_value` preview so re-entry +
     // snapshots keep the code. A hidden BasicTextField captures the number keyboard; tapping the boxes
@@ -2272,13 +2279,15 @@ private fun OtpInputBlock(
                         .background(boxBg)
                         .border(
                             width = if (isActive || ch != null) 2.dp else 1.dp,
-                            color = if (isActive) accent else if (ch != null) accent.copy(alpha = 0.5f) else Color.Gray.copy(alpha = 0.35f),
+                            color = if (isActive) accent
+                                else if (ch != null) (borderOverride ?: accent.copy(alpha = 0.5f))
+                                else (borderOverride?.copy(alpha = 0.35f) ?: Color.Gray.copy(alpha = 0.35f)),
                             shape = RoundedCornerShape(10.dp),
                         ),
                     contentAlignment = Alignment.Center,
                 ) {
                     if (ch != null) {
-                        Text(ch.toString(), fontSize = 22.sp, fontWeight = FontWeight.SemiBold, color = Color.White)
+                        Text(ch.toString(), fontSize = 22.sp, fontWeight = FontWeight.SemiBold, color = digitColor)
                     }
                 }
             }
@@ -2300,18 +2309,22 @@ private fun WarningBannerBlock(block: ContentBlock, loc: ((String, String) -> St
     val accent = StyleEngine.parseColor(block.active_color ?: accentHex)
     val icon = (block.field_config?.get("banner_icon") as? String) ?: defaultIcon
     val text = loc?.invoke("block.${block.id}.text", block.text ?: "") ?: (block.text ?: "")
+    // Mrozu QA (2026-08-04): bg_color/text_color were uneditable. When set they override the
+    // accent-tinted background / white message text; unset keeps the variant defaults (parity w/ iOS).
+    val bgOverride = block.bg_color?.let { StyleEngine.parseColor(it) }
+    val textColor = StyleEngine.parseColor(block.text_color ?: "#FFFFFF")
     Row(
         modifier = Modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(12.dp))
-            .background(accent.copy(alpha = 0.14f))
+            .background(bgOverride ?: accent.copy(alpha = 0.14f))
             .border(1.dp, accent.copy(alpha = 0.45f), RoundedCornerShape(12.dp))
             .padding(horizontal = 14.dp, vertical = 12.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(10.dp),
     ) {
         Text(icon, fontSize = 18.sp)
-        Text(text, fontSize = 14.sp, fontWeight = FontWeight.Medium, color = Color.White)
+        Text(text, fontSize = 14.sp, fontWeight = FontWeight.Medium, color = textColor)
     }
 }
 
@@ -2434,18 +2447,27 @@ private fun SummaryScreenBlock(block: ContentBlock, loc: ((String, String) -> St
     val stats = statsRaw.mapNotNull { it as? Map<*, *> }
     val headline = loc?.invoke("block.${block.id}.text", block.text ?: "") ?: (block.text ?: "")
     val defaultAccent = ai.appdna.sdk.AppDNA.brandAccentHex ?: "#6366F1"
+    // Mrozu QA (2026-08-04): cards/headline were hardcoded (#1F2937 bg, white text, center, 2-col).
+    // bg_color = card bg, text_color = headline + label, summary_align = headline align,
+    // stats_layout = horizontal (2-col, default) | vertical (single full-width column). Parity w/ iOS.
+    val cardBg = block.bg_color?.let { StyleEngine.parseColor(it) } ?: Color(0xFF1F2937)
+    val textColor = StyleEngine.parseColor(block.text_color ?: "#FFFFFF")
+    val headlineAlign = when ((block.field_config?.get("summary_align") as? String)) {
+        "left" -> TextAlign.Start; "right" -> TextAlign.End; else -> TextAlign.Center
+    }
+    val perRow = if ((block.field_config?.get("stats_layout") as? String) == "vertical") 1 else 2
     Column(modifier = Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(12.dp)) {
         if (headline.isNotEmpty()) {
             Text(
                 headline,
                 fontSize = 22.sp,
                 fontWeight = FontWeight.Bold,
-                color = Color.White,
-                textAlign = TextAlign.Center,
+                color = textColor,
+                textAlign = headlineAlign,
                 modifier = Modifier.fillMaxWidth(),
             )
         }
-        stats.chunked(2).forEach { rowStats ->
+        stats.chunked(perRow).forEach { rowStats ->
             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                 rowStats.forEach { m ->
                     // Coerce — a numeric stat value (Int/Double) cast `as? String` would blank the card.
@@ -2456,15 +2478,15 @@ private fun SummaryScreenBlock(block: ContentBlock, loc: ((String, String) -> St
                         modifier = Modifier
                             .weight(1f)
                             .clip(RoundedCornerShape(14.dp))
-                            .background(Color(0xFF1F2937))
+                            .background(cardBg)
                             .padding(16.dp),
                         verticalArrangement = Arrangement.spacedBy(4.dp),
                     ) {
                         Text(value, fontSize = 24.sp, fontWeight = FontWeight.Bold, color = color)
-                        Text(label, fontSize = 13.sp, color = Color.White.copy(alpha = 0.7f))
+                        Text(label, fontSize = 13.sp, color = textColor.copy(alpha = 0.7f))
                     }
                 }
-                if (rowStats.size == 1) Spacer(modifier = Modifier.weight(1f))
+                if (perRow == 2 && rowStats.size == 1) Spacer(modifier = Modifier.weight(1f))
             }
         }
     }
@@ -6176,6 +6198,13 @@ private fun StarBackgroundBlock(block: ContentBlock) {
     // Mrozu QA (2026-08-03): particle_type was decoded but the Canvas always drew a
     // circle, so stars/sparkles/snow all looked identical. Render the actual shape (parity with iOS).
     val particleType = block.particle_type ?: "dots"
+    // Mrozu QA (2026-08-04): confetti = falling multicolor rounded rects. `particle_multicolor` cycles
+    // a fixed palette per-particle (defaults ON for confetti). Parity with iOS confettiPalette.
+    val useMulticolor = block.particle_multicolor ?: (particleType == "confetti")
+    val confettiPalette = remember {
+        listOf("#EF4444", "#F59E0B", "#FCD34D", "#10B981", "#3B82F6", "#8B5CF6", "#EC4899")
+            .map { StyleEngine.parseColor(it) }
+    }
     val baseOpacity = (fcParticleOpacity ?: (block.block_style?.opacity ?: 0.8).toFloat())
     val particleCount = when (block.density) {
         "sparse" -> 20; "dense" -> 100; else -> 50
@@ -6238,13 +6267,22 @@ private fun StarBackgroundBlock(block: ContentBlock) {
         // by scaleX shrank particles to invisibility on narrow widths and
         // ballooned them into giant blobs in fullscreen mode.
         particles.value.forEachIndexed { i, p ->
-            // SPEC-419 pass-15 #27 — every 3rd particle uses secondary_color
-            val pColor = (if (i % 3 == 0) secondaryColor else particleColor).copy(alpha = p.opacity * baseOpacity)
+            // Mrozu QA (2026-08-04): multicolor confetti cycles the palette; otherwise every 3rd
+            // particle uses secondary_color (SPEC-419 pass-15 #27).
+            val baseColor = if (useMulticolor) confettiPalette[i % confettiPalette.size]
+                else if (i % 3 == 0) secondaryColor else particleColor
+            val pColor = baseColor.copy(alpha = p.opacity * baseOpacity)
             val center = Offset(p.x * scaleX, p.y * scaleY)
             when (particleType) {
                 "stars" -> drawPath(starParticlePath(5, 0.42f, center, p.size), pColor)
                 "sparkles" -> drawPath(starParticlePath(4, 0.30f, center, p.size), pColor)
                 "snow" -> drawPath(starParticlePath(6, 0.50f, center, p.size), pColor)
+                "confetti" -> drawRoundRect(
+                    color = pColor,
+                    topLeft = Offset(center.x - p.size, center.y - p.size),
+                    size = androidx.compose.ui.geometry.Size(p.size * 2f, p.size * 2f),
+                    cornerRadius = androidx.compose.ui.geometry.CornerRadius(p.size * 0.6f),
+                )
                 else -> drawCircle(color = pColor, radius = p.size, center = center) // dots, bokeh
             }
         }
