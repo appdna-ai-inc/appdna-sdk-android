@@ -1141,6 +1141,10 @@ private fun resolveBlockBindings(
         || (block.badge_text?.contains("{{") == true)
         || (block.toggle_label?.contains("{{") == true)
         || (block.label?.contains("{{") == true)
+        // RichText v2 — rich_text's primary content field is markdown_content; it
+        // must run the SAME {{var}} interpolation as text so a rich_text block
+        // referencing a prior-screen answer resolves on device (mirrors iOS).
+        || (block.markdown_content?.contains("{{") == true)
     if (!hasBindings && !hasTemplates) return block
 
     var resolved = block
@@ -1164,6 +1168,7 @@ private fun resolveBlockBindings(
             badge_text = resolved.badge_text?.let { if (it.contains("{{")) resolveTemplateString(it, hookData, responses) else it },
             toggle_label = resolved.toggle_label?.let { if (it.contains("{{")) resolveTemplateString(it, hookData, responses) else it },
             label = resolved.label?.let { if (it.contains("{{")) resolveTemplateString(it, hookData, responses) else it },
+            markdown_content = resolved.markdown_content?.let { if (it.contains("{{")) resolveTemplateString(it, hookData, responses) else it },
         )
     }
 
@@ -1175,6 +1180,7 @@ private fun applyBindingProperty(block: ContentBlock, property: String, value: A
     val strValue = value.toString()
     return when (property) {
         "text" -> block.copy(text = strValue)
+        "markdown_content" -> block.copy(markdown_content = strValue)
         "field_label" -> block.copy(field_label = strValue)
         "field_placeholder" -> block.copy(field_placeholder = strValue)
         "badge_text" -> block.copy(badge_text = strValue)
