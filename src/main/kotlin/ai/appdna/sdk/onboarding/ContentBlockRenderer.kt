@@ -3778,6 +3778,10 @@ private fun SocialLoginBlock(
                         colors = ButtonDefaults.outlinedButtonColors(
                             contentColor = textColor,
                         ),
+                        // Zero Material3 default contentPadding so the inner buttonContent
+                        // Row's own start=16.dp is the sole horizontal authority (matches iOS 16pt
+                        // + preview px-4). Height stays fixed via `.height(buttonHeight)`.
+                        contentPadding = androidx.compose.foundation.layout.PaddingValues(0.dp),
                         content = buttonContent,
                     )
                 }
@@ -3787,6 +3791,10 @@ private fun SocialLoginBlock(
                         modifier = Modifier.fillMaxWidth().height(buttonHeight),
                         shape = RoundedCornerShape(providerCorner),
                         colors = ButtonDefaults.textButtonColors(contentColor = textColor),
+                        // Zero Material3 default contentPadding so the inner buttonContent
+                        // Row's own start=16.dp is the sole horizontal authority (matches iOS 16pt
+                        // + preview px-4). Height stays fixed via `.height(buttonHeight)`.
+                        contentPadding = androidx.compose.foundation.layout.PaddingValues(0.dp),
                         content = buttonContent,
                     )
                 }
@@ -3812,6 +3820,10 @@ private fun SocialLoginBlock(
                             focusedElevation = 0.dp,
                             hoveredElevation = 0.dp,
                         ),
+                        // Zero Material3 default contentPadding so the inner buttonContent
+                        // Row's own start=16.dp is the sole horizontal authority (matches iOS 16pt
+                        // + preview px-4). Height stays fixed via `.height(buttonHeight)`.
+                        contentPadding = androidx.compose.foundation.layout.PaddingValues(0.dp),
                         content = buttonContent,
                     )
                 }

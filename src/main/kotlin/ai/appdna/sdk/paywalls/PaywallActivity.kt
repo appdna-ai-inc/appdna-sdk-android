@@ -856,6 +856,12 @@ fun PaywallScreen(
                 }
             }
 
+            // Footer padding — mirror iOS `.padding(.bottom, footer_padding ?? 8)`
+            // on the pinned bottom inset (PaywallRenderer.swift:245). Wrap the pinned
+            // CTA + legal + sticky-footer group so the configured gap sits below the
+            // whole group, composing with each block's own navigationBarsPadding and
+            // without touching the weighted scroll body above.
+            Column(modifier = Modifier.fillMaxWidth().padding(bottom = (config.layout.footer_padding ?: 8f).dp)) {
             // SPEC-419 Gap 7 — CTA pinned to the bottom zone: below the scroll
             // body (weight(1f)), above the pinned legal + sticky footer. Same
             // horizontal inset as the scrolled content. Mirrors iOS
@@ -965,6 +971,7 @@ fun PaywallScreen(
                     loc = ::loc,
                 )
             }
+            } // end pinned bottom group (footer_padding wrapper)
         }
 
         // SPEC-085: Confetti overlay
