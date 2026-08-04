@@ -1591,6 +1591,8 @@ internal object OnboardingConfigParser {
                     delay_ms = (ea["delay_ms"] as? Number)?.toInt() ?: 0,
                     easing = ea["easing"] as? String ?: "ease_out",
                     spring_damping = (ea["spring_damping"] as? Number)?.toDouble(),
+                    animation_delay_ms = (ea["animation_delay_ms"] as? Number)?.toInt() ?: 0,
+                    animation_order = (ea["animation_order"] as? Number)?.toInt(),
                 )
             },
             pressed_style = (bm["pressed_style"] as? Map<String, Any>)?.let { ps ->

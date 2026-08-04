@@ -1036,6 +1036,11 @@ data class EntranceAnimationConfig(
     val delay_ms: Int = 0,
     val easing: String = "ease_out",
     val spring_damping: Double? = null,
+    // Sequenced animation (Mrozu Duolingo s14 / Asana): per-block stagger + ordering.
+    // animation_delay_ms is ADDED to delay_ms to sequence blocks; animation_order is
+    // authored ordering metadata (lower plays first, full timeline engine deferred).
+    val animation_delay_ms: Int = 0,
+    val animation_order: Int? = null,
 )
 
 /** Pressed/tap style config (SPEC-089d §6.5). */
@@ -2958,9 +2963,60 @@ private fun MemoryMatchBlock(
     }
 }
 
-/** EPIC-11 — month calendar (Flo): header + weekday row + day grid. `field_config`: month_label, days_in_month,
- * start_offset (weekday of the 1st, 0=Sun), selected_days[], today. Selected = accent-filled circle; today =
- * accent ring. (Multi-month scroll is host-driven; this renders one month.) */
+/** Per-month descriptor for the (possibly multi-month) calendar grid. */
+private data class CalMonthDesc(
+    val index: Int,
+    val label: String,
+    val daysInMonth: Int,
+    val startOffset: Int,
+    val year: Int,
+    val month: Int, // 1..12
+    val today: Int, // today's day for this month, -1 if none
+)
+
+private val CAL_MONTH_NAMES = listOf(
+    "January", "February", "March", "April", "May", "June",
+    "July", "August", "September", "October", "November", "December",
+)
+
+private fun calDaysIn(year: Int, month: Int): Int {
+    val table = intArrayOf(31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31)
+    val m = month.coerceIn(1, 12)
+    if (m == 2 && ((year % 4 == 0 && year % 100 != 0) || year % 400 == 0)) return 29
+    return table[m - 1]
+}
+
+private fun calAddMonths(year: Int, month: Int, delta: Int): Pair<Int, Int> {
+    val total = (month - 1) + delta
+    return Pair(year + total / 12, total % 12 + 1)
+}
+
+/** Parse "June 2026" → (2026, 6). Falls back to (2026, 6) so all surfaces agree. */
+private fun calParseBaseMonth(label: String): Pair<Int, Int> {
+    var month = 6
+    var year = 2026
+    label.lowercase().split(" ").forEach { p ->
+        if (p.isBlank()) return@forEach
+        val idx = CAL_MONTH_NAMES.indexOfFirst { it.lowercase().startsWith(p) || p.startsWith(it.lowercase()) }
+        if (idx >= 0) {
+            month = idx + 1
+        } else {
+            p.toIntOrNull()?.let { if (it in 1901..2999) year = it }
+        }
+    }
+    return Pair(year, month)
+}
+
+private fun calIso(y: Int, m: Int, d: Int): String = "%04d-%02d-%02d".format(y, m, d)
+
+/** Month calendar (Flo). Renders `months_shown` (default 1) consecutive month grids stacked vertically.
+ * SINGLE mode (`range_selectable` false): tapping an in-month day highlights it. For a single displayed month this
+ * preserves the legacy contract — inputValues[fid]=day (Int) and ("day_selected", String(day)) — and
+ * `selected_days`/`today` seed the first month. For multi-month single-select it writes the ISO date.
+ * RANGE mode (`range_selectable` true): tapping two dates selects an inclusive range and persists
+ * inputValues[fid] = {"start":"yyyy-MM-dd","end":"yyyy-MM-dd"}, firing ("range_selected", "start..end").
+ * NOTE (deferred, needs device verification): continuous vertical scroll paging + drag-to-select the range are not
+ * implemented — this renders all N months stacked and uses tap-two-dates selection. */
 @Composable
 private fun CalendarMonthBlock(
     block: ContentBlock,
@@ -2974,57 +3030,123 @@ private fun CalendarMonthBlock(
     val startOffset = ((cfg?.get("start_offset") as? Number)?.toInt() ?: 0).coerceIn(0, 6)
     val selectedDays = (cfg?.get("selected_days") as? List<*>)?.mapNotNull { (it as? Number)?.toInt() } ?: emptyList()
     val today = (cfg?.get("today") as? Number)?.toInt() ?: -1
+    val monthsShown = ((cfg?.get("months_shown") as? Number)?.toInt() ?: 1).coerceIn(1, 12)
+    val rangeSelectable = (cfg?.get("range_selectable") as? Boolean) ?: false
     val accent = StyleEngine.parseColor(block.active_color ?: (ai.appdna.sdk.AppDNA.brandAccentHex ?: "#6366F1"))
     val weekdays = listOf("S", "M", "T", "W", "T", "F", "S")
-    val rows = (startOffset + daysInMonth + 6) / 7
 
-    // SPEC-419 STEP-2 — tapping an in-month day highlights it, writes inputValues[fid]=day, and fires
-    // ("day_selected", String(day)). Config carries no month/year — the host derives the full date.
-    // `selected_days` still seed highlights (preview parity).
-    var selectedDay by remember(fieldId) { mutableStateOf<Int?>(null) }
-
-    Column(modifier = Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        Text(monthLabel, fontSize = 20.sp, fontWeight = FontWeight.Bold, color = Color.White, textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth())
-        Row(modifier = Modifier.fillMaxWidth()) {
-            weekdays.forEach { wd ->
-                Text(wd, modifier = Modifier.weight(1f), fontSize = 12.sp, fontWeight = FontWeight.Medium, color = Color.White.copy(alpha = 0.5f), textAlign = TextAlign.Center)
+    // Build the month descriptors. Month 0 honors authored days/offset/today; later months continue the weekday
+    // flow ((prevOffset + prevDays) % 7) and use real day counts for the parsed base month.
+    val (baseYear, baseMonth) = calParseBaseMonth(monthLabel)
+    val months = remember(monthLabel, daysInMonth, startOffset, today, monthsShown) {
+        val list = mutableListOf<CalMonthDesc>()
+        var prevOffset = startOffset
+        var prevDays = daysInMonth
+        for (i in 0 until monthsShown) {
+            if (i == 0) {
+                list.add(CalMonthDesc(0, monthLabel, daysInMonth, startOffset, baseYear, baseMonth, today))
+            } else {
+                val (yi, mi) = calAddMonths(baseYear, baseMonth, i)
+                val di = calDaysIn(yi, mi)
+                val off = (prevOffset + prevDays) % 7
+                list.add(CalMonthDesc(i, "${CAL_MONTH_NAMES[mi - 1]} $yi", di, off, yi, mi, -1))
+                prevOffset = off
+                prevDays = di
             }
         }
-        for (r in 0 until rows) {
-            Row(modifier = Modifier.fillMaxWidth()) {
-                for (c in 0 until 7) {
-                    val day = r * 7 + c - startOffset + 1
-                    val inMonth = day in 1..daysInMonth
-                    Box(
-                        modifier = Modifier
-                            .weight(1f)
-                            .height(42.dp)
-                            .then(
-                                if (inMonth) Modifier.clickable {
-                                    selectedDay = day
-                                    inputValues[fieldId] = day
-                                    onInteract(block.id, "day_selected", day.toString())
-                                } else Modifier,
-                            ),
-                        contentAlignment = Alignment.Center,
-                    ) {
-                        if (inMonth) {
-                            val isSelected = day in selectedDays || day == selectedDay
-                            val isToday = day == today
+        list
+    }
+
+    // SPEC-419 STEP-2 / Mrozu Flo s16 — selection state.
+    var selectedDay by remember(fieldId) { mutableStateOf<Int?>(null) }   // legacy single-month day number
+    var selectedIso by remember(fieldId) { mutableStateOf<String?>(null) } // multi-month single-select ISO
+    var rangeStart by remember(fieldId) { mutableStateOf<String?>(null) }
+    var rangeEnd by remember(fieldId) { mutableStateOf<String?>(null) }
+
+    Column(modifier = Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(20.dp)) {
+        months.forEach { m ->
+            val rows = (m.startOffset + m.daysInMonth + 6) / 7
+            Column(modifier = Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text(m.label, fontSize = 20.sp, fontWeight = FontWeight.Bold, color = Color.White, textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth())
+                Row(modifier = Modifier.fillMaxWidth()) {
+                    weekdays.forEach { wd ->
+                        Text(wd, modifier = Modifier.weight(1f), fontSize = 12.sp, fontWeight = FontWeight.Medium, color = Color.White.copy(alpha = 0.5f), textAlign = TextAlign.Center)
+                    }
+                }
+                for (r in 0 until rows) {
+                    Row(modifier = Modifier.fillMaxWidth()) {
+                        for (c in 0 until 7) {
+                            val day = r * 7 + c - m.startOffset + 1
+                            val inMonth = day in 1..m.daysInMonth
+                            val isoStr = if (inMonth) calIso(m.year, m.month, day) else ""
+                            val isRangeStart = rangeSelectable && rangeStart != null && isoStr == rangeStart
+                            val isRangeEnd = rangeSelectable && rangeEnd != null && isoStr == rangeEnd
+                            val inRange = rangeSelectable && rangeStart != null && rangeEnd != null && isoStr > rangeStart!! && isoStr < rangeEnd!!
+                            val singleSel = when {
+                                rangeSelectable || !inMonth -> false
+                                monthsShown <= 1 -> (m.index == 0 && day in selectedDays) || day == selectedDay
+                                else -> selectedIso == isoStr
+                            }
+                            val isSelected = isRangeStart || isRangeEnd || singleSel
+                            val isToday = inMonth && day == m.today
                             Box(
                                 modifier = Modifier
-                                    .size(34.dp)
-                                    .clip(CircleShape)
-                                    .background(if (isSelected) accent else Color.Transparent)
-                                    .then(if (isToday && !isSelected) Modifier.border(1.5.dp, accent, CircleShape) else Modifier),
+                                    .weight(1f)
+                                    .height(42.dp)
+                                    .then(
+                                        if (inMonth) Modifier.clickable {
+                                            if (rangeSelectable) {
+                                                if (rangeStart == null || rangeEnd != null) {
+                                                    rangeStart = isoStr
+                                                    rangeEnd = null
+                                                    onInteract(block.id, "day_selected", isoStr)
+                                                } else {
+                                                    var s = rangeStart!!
+                                                    var e = isoStr
+                                                    if (e < s) { val t = s; s = e; e = t }
+                                                    rangeStart = s
+                                                    rangeEnd = e
+                                                    inputValues[fieldId] = mapOf("start" to s, "end" to e)
+                                                    onInteract(block.id, "range_selected", "$s..$e")
+                                                }
+                                            } else if (monthsShown <= 1) {
+                                                selectedDay = day
+                                                inputValues[fieldId] = day
+                                                onInteract(block.id, "day_selected", day.toString())
+                                            } else {
+                                                selectedIso = isoStr
+                                                inputValues[fieldId] = isoStr
+                                                onInteract(block.id, "day_selected", isoStr)
+                                            }
+                                        } else Modifier,
+                                    ),
                                 contentAlignment = Alignment.Center,
                             ) {
-                                Text(
-                                    "$day",
-                                    fontSize = 15.sp,
-                                    fontWeight = if (isToday || isSelected) FontWeight.Bold else FontWeight.Normal,
-                                    color = if (isSelected) Color.White else Color.White.copy(alpha = 0.9f),
-                                )
+                                if (inMonth) {
+                                    if (inRange) {
+                                        Box(
+                                            modifier = Modifier
+                                                .fillMaxWidth()
+                                                .height(34.dp)
+                                                .background(accent.copy(alpha = 0.22f)),
+                                        )
+                                    }
+                                    Box(
+                                        modifier = Modifier
+                                            .size(34.dp)
+                                            .clip(CircleShape)
+                                            .background(if (isSelected) accent else Color.Transparent)
+                                            .then(if (isToday && !isSelected) Modifier.border(1.5.dp, accent, CircleShape) else Modifier),
+                                        contentAlignment = Alignment.Center,
+                                    ) {
+                                        Text(
+                                            "$day",
+                                            fontSize = 15.sp,
+                                            fontWeight = if (isToday || isSelected) FontWeight.Bold else FontWeight.Normal,
+                                            color = if (isSelected) Color.White else Color.White.copy(alpha = 0.9f),
+                                        )
+                                    }
+                                }
                             }
                         }
                     }
@@ -7102,7 +7224,7 @@ fun EntranceAnimationWrapper(
     var isVisible by remember { mutableStateOf(false) }
 
     LaunchedEffect(Unit) {
-        kotlinx.coroutines.delay(animation.delay_ms.toLong())
+        kotlinx.coroutines.delay((animation.delay_ms + animation.animation_delay_ms).toLong())
         isVisible = true
     }
 

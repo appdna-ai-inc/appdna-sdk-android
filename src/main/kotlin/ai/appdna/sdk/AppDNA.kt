@@ -516,6 +516,9 @@ object AppDNA {
             // SPEC-088: Initialize cross-module session data store
             ai.appdna.sdk.core.SessionDataStore.initialize(appContext)
 
+            // Custom-font loader: lets any element render a hosted .ttf/.otf font URL.
+            ai.appdna.sdk.core.FontLoader.init(appContext)
+
             // 2. Initialize identity
             val identityMgr = IdentityManager(storage)
             this.identityManager = identityMgr
