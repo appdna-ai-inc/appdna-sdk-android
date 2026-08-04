@@ -8325,7 +8325,10 @@ private fun FormInputSliderBlock(
             valueRange = minVal..maxVal,
             steps = stepCount,
             colors = SliderDefaults.colors(
-                thumbColor = fillCol,
+                // Mrozu QA: honor authored thumb_color; else keep the Material
+                // accent-thumb default (iOS defaults to a white thumb — documented
+                // platform-convention difference; the authored case matches).
+                thumbColor = block.field_style?.thumb_color?.let { StyleEngine.parseColor(it) } ?: fillCol,
                 activeTrackColor = fillCol,
                 inactiveTrackColor = trackCol,
             ),
