@@ -71,6 +71,13 @@ class PermissionManager(private val context: Context) {
         fun isSupported(type: String): Boolean = when (type) {
             "notification", "att", "location", "camera",
             "microphone", "photos", "contacts", "calendar" -> true
+            // Mrozu QA (2026-08-04, Flo s26) — `health` (Health Connect) is a console-authorable
+            // permission_type that already ROUTES through this manager (resolvePermissionType → here),
+            // but the native Health Connect authorization request is DEFERRED (needs the
+            // androidx.health.connect client dep + per-app read/write record-type set + the Health
+            // Connect availability check, which is host infra). It falls to the `else` safe path so the
+            // CTA advances instead of stranding the user. The standalone `health_connect` block is the
+            // host-driven connect surface today. Parity with iOS PermissionManager.isSupported.
             else -> false
         }
 

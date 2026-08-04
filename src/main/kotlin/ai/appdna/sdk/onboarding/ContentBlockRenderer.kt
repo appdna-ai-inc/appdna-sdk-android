@@ -1302,6 +1302,11 @@ object RequiredFieldGate {
                 is String -> v.isEmpty()
                 is Map<*, *> -> v.isEmpty()
                 is List<*> -> v.isEmpty()
+                // Mrozu QA (2026-08-04, Flo s1) — a required `agreement`/consent checkbox is satisfied
+                // ONLY when checked; unchecked reports non-null `false` that would otherwise slip past.
+                // Scoped to `agreement` so pre-existing required `input_toggle`/`toggle` keep their
+                // behavior. Parity with iOS `block.type == .agreement`.
+                is Boolean -> block.type == "agreement" && !v
                 else -> false
             }
             if (empty) return false to (block.field_label ?: block.label ?: fieldId)
@@ -1402,13 +1407,13 @@ fun ContentBlockRendererView(
                 block.entrance_animation?.let { anim ->
                     EntranceAnimationWrapper(animation = anim) {
                         Box(modifier = sizingModifier) {
-                            RenderBlock(block = block, onAction = onAction, toggleValues = toggleValues, inputValues = inputValues, loc = loc, currentStepIndex = currentStepIndex, totalSteps = totalSteps, onInteract = onInteract)
+                            RenderBlock(block = block, onAction = onAction, toggleValues = toggleValues, inputValues = inputValues, loc = loc, currentStepIndex = currentStepIndex, totalSteps = totalSteps, onInteract = onInteract, stepBlocks = blocks)
                         }
                     }
                 }
             } else {
                 Box(modifier = sizingModifier) {
-                    RenderBlock(block = block, onAction = onAction, toggleValues = toggleValues, inputValues = inputValues, loc = loc, currentStepIndex = currentStepIndex, totalSteps = totalSteps, onInteract = onInteract)
+                    RenderBlock(block = block, onAction = onAction, toggleValues = toggleValues, inputValues = inputValues, loc = loc, currentStepIndex = currentStepIndex, totalSteps = totalSteps, onInteract = onInteract, stepBlocks = blocks)
                 }
             }
         }
@@ -1427,6 +1432,9 @@ internal fun RenderBlock(
     // SPEC-419 STEP-2 — interactive-element fire closure; default no-op so container recursions
     // (carousel/section/stack/row) that don't thread it still compile.
     onInteract: (String, String, String?) -> Unit = { _, _, _ -> },
+    // Mrozu QA (2026-08-04) — the step's sibling blocks, so a consent-reactive CTA button can run the
+    // step-level RequiredFieldGate. Default empty (nested container recursions pass none → gate satisfied).
+    stepBlocks: List<ContentBlock> = emptyList(),
 ) {
     // SPEC-089d: Wrap every block with block_style + 2D positioning modifiers
     val blockAlignment = if (block.horizontal_align != null || block.vertical_align != null) {
@@ -1462,12 +1470,12 @@ internal fun RenderBlock(
             contentAlignment = blockAlignment,
         ) {
             Box(modifier = contentModifier) {
-                RenderBlockContent(block, onAction, toggleValues, inputValues, loc, currentStepIndex, totalSteps, onInteract)
+                RenderBlockContent(block, onAction, toggleValues, inputValues, loc, currentStepIndex, totalSteps, onInteract, stepBlocks)
             }
         }
     } else {
         Box(modifier = contentModifier) {
-            RenderBlockContent(block, onAction, toggleValues, inputValues, loc, currentStepIndex, totalSteps, onInteract)
+            RenderBlockContent(block, onAction, toggleValues, inputValues, loc, currentStepIndex, totalSteps, onInteract, stepBlocks)
         }
     }
 }
@@ -1483,6 +1491,8 @@ private fun RenderBlockContent(
     totalSteps: Int = 1,
     // SPEC-419 STEP-2 — interactive-element fire closure threaded to the 7 interactive elements.
     onInteract: (String, String, String?) -> Unit = { _, _, _ -> },
+    // Mrozu QA (2026-08-04) — step sibling blocks for the consent-reactive CTA gate (see RenderBlock).
+    stepBlocks: List<ContentBlock> = emptyList(),
 ) {
     when (block.type) {
         "heading" -> HeadingBlock(block, loc)
@@ -1502,7 +1512,7 @@ private fun RenderBlockContent(
         "settings_footer" -> SettingsFooterBlock(block, onAction, onInteract)
         "memory_match" -> MemoryMatchBlock(block, onInteract)
         "calendar_month" -> CalendarMonthBlock(block, inputValues, onInteract)
-        "button" -> ButtonBlock(block, onAction, loc)
+        "button" -> ButtonBlock(block, onAction, loc, stepBlocks, inputValues)
         "spacer" -> Spacer(modifier = Modifier.height((block.spacer_height ?: 24.0).dp)) // SPEC-419 pass-14 #11 — unset default 24 to match editor+preview (was 16)
         "list" -> ListBlock(block, loc)
         "divider" -> DividerBlock(block)
@@ -1548,6 +1558,8 @@ private fun RenderBlockContent(
         "input_select" -> FormInputSelectBlock(block, inputValues)
         "input_slider" -> FormInputSliderBlock(block, inputValues)
         "input_toggle" -> FormInputToggleBlock(block, inputValues)
+        // Mrozu QA (2026-08-04, Flo s1) — standalone consent/agreement (checkbox + rich links → Bool).
+        "agreement" -> AgreementBlock(block, inputValues)
         "input_stepper" -> FormInputStepperBlock(block, inputValues)
         "input_segmented" -> FormInputSegmentedBlock(block, inputValues)
         "input_rating" -> FormInputRatingBlock(block, inputValues)
@@ -1623,16 +1635,59 @@ private fun TextBlock(block: ContentBlock, loc: ((String, String) -> String)? = 
     val styleWithAlign = horizontalTextAlign(block.horizontal_align)
         ?.let { effectiveStyle.copy(textAlign = it) } ?: effectiveStyle
     val resolved = loc?.invoke("block.${block.id}.text", text) ?: text
-    Text(
-        // SPEC-401-A R10 — apply `style.text_transform` (uppercase/lowercase).
-        text = block.style.applyTransform(resolved),
-        style = styleWithAlign,
-        // SPEC — honor max_lines on text (iOS added .lineLimit here too); nil → no
-        // limit (unchanged). Ellipsis is a no-op when unbounded.
-        maxLines = block.max_lines ?: Int.MAX_VALUE,
-        overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
-        modifier = Modifier.fillMaxWidth(),
-    )
+    val content = block.style.applyTransform(resolved)
+    val maxLines = block.max_lines ?: Int.MAX_VALUE
+    val showTrailingDots = (block.field_config?.get("show_trailing_dots") as? Boolean) ?: false
+    if (showTrailingDots) {
+        // Mrozu QA — trailing animated ellipsis ("", ".", "..", "...") for loading-style text.
+        // Parity w/ iOS AnimatedTrailingDots + console preview's pulsing-dots span.
+        val boxAlign = when (block.horizontal_align) {
+            "center" -> Alignment.Center
+            "right", "trailing" -> Alignment.CenterEnd
+            else -> Alignment.CenterStart
+        }
+        Box(modifier = Modifier.fillMaxWidth(), contentAlignment = boxAlign) {
+            Row(verticalAlignment = Alignment.Bottom) {
+                Text(
+                    text = content,
+                    style = styleWithAlign,
+                    maxLines = maxLines,
+                    overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
+                )
+                AnimatedTrailingDots(style = styleWithAlign)
+            }
+        }
+    } else {
+        Text(
+            // SPEC-401-A R10 — apply `style.text_transform` (uppercase/lowercase).
+            text = content,
+            style = styleWithAlign,
+            // SPEC — honor max_lines on text (iOS added .lineLimit here too); nil → no
+            // limit (unchanged). Ellipsis is a no-op when unbounded.
+            maxLines = maxLines,
+            overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
+            modifier = Modifier.fillMaxWidth(),
+        )
+    }
+}
+
+/** Mrozu QA — a trailing animated ellipsis that cycles "" → "." → ".." → "..." every 400ms,
+ * reserving the full "..." width so the preceding text does not shift. Used by [TextBlock] when
+ * `field_config.show_trailing_dots` is true. Parity w/ iOS `AnimatedTrailingDots`. */
+@Composable
+private fun AnimatedTrailingDots(style: TextStyle) {
+    var count by remember { mutableStateOf(0) }
+    LaunchedEffect(Unit) {
+        while (true) {
+            delay(400)
+            count = (count + 1) % 4
+        }
+    }
+    Box(contentAlignment = Alignment.BottomStart) {
+        // Invisible full-width placeholder keeps the layout stable.
+        Text("...", style = style, color = Color.Transparent)
+        Text(".".repeat(count), style = style)
+    }
 }
 
 @Composable
@@ -1772,12 +1827,19 @@ private fun MediaGalleryBlock(block: ContentBlock) {
         return
     }
 
+    // Mrozu QA (2026-08-04) — alarmy selectable gallery: gallery_preview_on_select opens a full-screen
+    // enlarged overlay of the tapped image. Default off → the existing static row (non-breaking). Image
+    // preview only — video/gif/sound preview playback is net-new host media infra (deferred). Parity w/ iOS.
+    val previewOnSelect = (block.field_config?.get("gallery_preview_on_select") as? Boolean) ?: false
+    var previewUrl by remember { mutableStateOf<String?>(null) }
+    val onTile: ((String) -> Unit)? = if (previewOnSelect) ({ url -> previewUrl = url }) else null
+
     val itemW = (block.gallery_item_width ?: 140.0).dp
     if (fill) {
         androidx.compose.foundation.layout.BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
             val tileW = maxWidth
             LazyRow(modifier = Modifier.fillMaxWidth()) {
-                items(images.size) { i -> GalleryTile(images[i], tileW, itemH, 0.dp) }
+                items(images.size) { i -> GalleryTile(images[i], tileW, itemH, 0.dp, onTile) }
             }
         }
     } else {
@@ -1791,25 +1853,61 @@ private fun MediaGalleryBlock(block: ContentBlock) {
             horizontalArrangement = Arrangement.spacedBy(spacing, align),
             contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 2.dp),
         ) {
-            items(images.size) { i -> GalleryTile(images[i], itemW, itemH, cr) }
+            items(images.size) { i -> GalleryTile(images[i], itemW, itemH, cr, onTile) }
+        }
+    }
+
+    val shownPreview = previewUrl
+    if (shownPreview != null) {
+        androidx.compose.ui.window.Dialog(
+            onDismissRequest = { previewUrl = null },
+            properties = androidx.compose.ui.window.DialogProperties(usePlatformDefaultWidth = false),
+        ) {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(androidx.compose.ui.graphics.Color(0xE6000000))
+                    .clickable { previewUrl = null },
+                contentAlignment = Alignment.Center,
+            ) {
+                ai.appdna.sdk.core.NetworkImage(
+                    url = shownPreview,
+                    modifier = Modifier.fillMaxWidth().padding(20.dp),
+                    contentScale = androidx.compose.ui.layout.ContentScale.Fit,
+                )
+                Box(
+                    modifier = Modifier.fillMaxSize().padding(20.dp),
+                    contentAlignment = Alignment.TopEnd,
+                ) {
+                    Text(
+                        "✕",
+                        fontSize = 28.sp,
+                        color = Color.White.copy(alpha = 0.9f),
+                        modifier = Modifier.clickable { previewUrl = null },
+                    )
+                }
+            }
         }
     }
 }
 
 // Media-gallery v2 — shared tile (placeholder bg + cover image, rounded/clipped).
+// Mrozu QA (2026-08-04) — optional onClick opens the selectable-gallery preview overlay (default null = inert).
 @Composable
 private fun GalleryTile(
     url: String,
     width: androidx.compose.ui.unit.Dp,
     height: androidx.compose.ui.unit.Dp,
     corner: androidx.compose.ui.unit.Dp,
+    onClick: ((String) -> Unit)? = null,
 ) {
     Box(
         modifier = Modifier
             .width(width)
             .height(height)
             .clip(RoundedCornerShape(corner))
-            .background(androidx.compose.ui.graphics.Color(0xFF2A2A2E)),
+            .background(androidx.compose.ui.graphics.Color(0xFF2A2A2E))
+            .then(if (onClick != null) Modifier.clickable { onClick(url) } else Modifier),
     ) {
         ai.appdna.sdk.core.NetworkImage(
             url = url,
@@ -2005,7 +2103,14 @@ private fun ImageBlock(block: ContentBlock) {
 }
 
 @Composable
-private fun ButtonBlock(block: ContentBlock, onAction: (String) -> Unit, loc: ((String, String) -> String)? = null) {
+private fun ButtonBlock(
+    block: ContentBlock,
+    onAction: (String) -> Unit,
+    loc: ((String, String) -> String)? = null,
+    // Mrozu QA (2026-08-04) — Flo consent CTA: step siblings + live inputs drive the consent-reactive bg.
+    stepBlocks: List<ContentBlock> = emptyList(),
+    inputValues: Map<String, Any> = emptyMap(),
+) {
     val text = block.text ?: "Continue"
     // SPEC-401-A R54 (Lens A R54 #4, P2) — 16→17sp matching iOS
     // .body.weight(.semibold) at ContentBlockRendererView.swift:395-396.
@@ -2013,7 +2118,23 @@ private fun ButtonBlock(block: ContentBlock, onAction: (String) -> Unit, loc: ((
     val effectiveStyle = if (block.style != null) StyleEngine.applyTextStyle(baseStyle, block.style) else baseStyle
     val context = LocalContext.current
     val btnVariant = block.variant ?: "primary"
-    val bgColor = StyleEngine.parseColor(block.bg_color ?: (ai.appdna.sdk.AppDNA.brandAccentHex ?: "#6366F1"))
+    // Mrozu QA (2026-08-04) — Flo consent CTA: `cta_enabled_bg_color` / `cta_disabled_bg_color` drive the
+    // button background off whether the step's required fields (incl. a consent checkbox) are satisfied.
+    // Reuses the SAME RequiredFieldGate the advance gate uses, so the CTA recolors reactively as the user
+    // toggles consent. Both nil → plain `bg_color` (non-breaking). Parity with iOS.
+    val ctaEnabledHex = block.field_config?.get("cta_enabled_bg_color") as? String
+    val ctaDisabledHex = block.field_config?.get("cta_disabled_bg_color") as? String
+    val bgColor = run {
+        val fallback = block.bg_color ?: (ai.appdna.sdk.AppDNA.brandAccentHex ?: "#6366F1")
+        if (ctaEnabledHex == null && ctaDisabledHex == null) {
+            StyleEngine.parseColor(fallback)
+        } else {
+            val satisfied = RequiredFieldGate.evaluate(stepBlocks, inputValues).first
+            StyleEngine.parseColor(
+                if (satisfied) (ctaEnabledHex ?: fallback) else (ctaDisabledHex ?: ctaEnabledHex ?: fallback),
+            )
+        }
+    }
     val txtColor = StyleEngine.parseColor(block.text_color ?: "#FFFFFF")
     val cornerRadius = (block.button_corner_radius ?: 12.0).dp
     val displayText = loc?.invoke("block.${block.id}.text", text) ?: text
@@ -2367,6 +2488,11 @@ private fun SpeechBubbleBlock(block: ContentBlock, loc: ((String, String) -> Str
     val bubbleColor = StyleEngine.parseColor(block.bg_color ?: "#FFFFFF")
     val textColor = StyleEngine.parseColor(block.text_color ?: "#111827")
     val tailPos = (block.field_config?.get("bubble_tail") as? String) ?: "left"
+    // Mrozu QA — bubble interior font family (bubble_font_family; null → system) + tail geometry
+    // (tail_width/tail_length; default 18×9). Parity w/ iOS speechBubbleBlock + console preview.
+    val bubbleFontFamily = ai.appdna.sdk.core.FontResolver.resolve(block.field_config?.get("bubble_font_family") as? String)
+    val tailWidth = ((block.field_config?.get("tail_width") as? Number)?.toFloat() ?: 18f)
+    val tailLength = ((block.field_config?.get("tail_length") as? Number)?.toFloat() ?: 9f)
     val text = loc?.invoke("block.${block.id}.text", block.text ?: "") ?: (block.text ?: "")
     Column(modifier = Modifier.fillMaxWidth()) {
         Box(
@@ -2376,7 +2502,7 @@ private fun SpeechBubbleBlock(block: ContentBlock, loc: ((String, String) -> Str
                 .background(bubbleColor)
                 .padding(horizontal = 16.dp, vertical = 12.dp),
         ) {
-            Text(text, fontSize = 15.sp, fontWeight = FontWeight.Medium, color = textColor, lineHeight = 20.sp)
+            Text(text, fontSize = 15.sp, fontWeight = FontWeight.Medium, color = textColor, fontFamily = bubbleFontFamily, lineHeight = 20.sp)
         }
         Box(modifier = Modifier.fillMaxWidth()) {
             Canvas(
@@ -2389,7 +2515,7 @@ private fun SpeechBubbleBlock(block: ContentBlock, loc: ((String, String) -> Str
                         },
                     )
                     .padding(start = if (tailPos == "left") 24.dp else 0.dp, end = if (tailPos == "right") 24.dp else 0.dp)
-                    .size(width = 18.dp, height = 9.dp),
+                    .size(width = tailWidth.dp, height = tailLength.dp),
             ) {
                 val p = androidx.compose.ui.graphics.Path().apply {
                     moveTo(0f, 0f); lineTo(size.width, 0f); lineTo(size.width / 2f, size.height); close()
@@ -2412,13 +2538,20 @@ private fun FeedbackPanelBlock(block: ContentBlock, loc: ((String, String) -> St
         else -> Triple("#10B981", "✓", "Great job!")
     }
     val accent = StyleEngine.parseColor(block.active_color ?: accentHex)
+    // Mrozu QA (2026-08-04) — duolingo above-CTA feedback: `feedback_bg_color` overrides the tinted panel
+    // background; `feedback_graphic_url` swaps the built-in ✓/✗ glyph for a custom image. Both default nil →
+    // identical to the existing accent-tinted glyph panel (non-breaking). The runtime correct/wrong EVENT that
+    // flips `feedback_state` is host-driven behavioral (deferred); this is the static/config render + styling.
+    val panelBg = (block.field_config?.get("feedback_bg_color") as? String)?.let { StyleEngine.parseColor(it) }
+        ?: accent.copy(alpha = 0.15f)
+    val graphicUrl = (block.field_config?.get("feedback_graphic_url") as? String)
     val headline = loc?.invoke("block.${block.id}.text", block.text ?: defHead) ?: (block.text ?: defHead)
     val detail = (block.field_config?.get("feedback_detail") as? String)
     Row(
         modifier = Modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(16.dp))
-            .background(accent.copy(alpha = 0.15f))
+            .background(panelBg)
             .padding(16.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(14.dp),
@@ -2427,7 +2560,15 @@ private fun FeedbackPanelBlock(block: ContentBlock, loc: ((String, String) -> St
             modifier = Modifier.size(40.dp).clip(CircleShape).background(accent),
             contentAlignment = Alignment.Center,
         ) {
-            Text(icon, fontSize = 20.sp, fontWeight = FontWeight.Bold, color = Color.White)
+            if (!graphicUrl.isNullOrEmpty()) {
+                ai.appdna.sdk.core.NetworkImage(
+                    url = graphicUrl,
+                    modifier = Modifier.fillMaxSize(),
+                    contentScale = androidx.compose.ui.layout.ContentScale.Crop,
+                )
+            } else {
+                Text(icon, fontSize = 20.sp, fontWeight = FontWeight.Bold, color = Color.White)
+            }
         }
         Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
             Text(headline, fontSize = 17.sp, fontWeight = FontWeight.Bold, color = accent)
@@ -2502,7 +2643,15 @@ private fun PressHoldConfirmBlock(
     onInteract: (String, String, String?) -> Unit = { _, _, _ -> },
 ) {
     val accent = StyleEngine.parseColor(block.active_color ?: (ai.appdna.sdk.AppDNA.brandAccentHex ?: "#6366F1"))
+    // Mrozu QA — track background (bg_color; default #1F2937), filled-state label (confirm_text; default
+    // "✓"), optional above/below labels (label_above/label_below) in text_color (default #111827).
+    // Parity w/ iOS PressHoldConfirmBlockView + console preview.
+    val track = StyleEngine.parseColor(block.bg_color ?: "#1F2937")
     val text = loc?.invoke("block.${block.id}.text", block.text ?: "Hold to confirm") ?: (block.text ?: "Hold to confirm")
+    val confirmText = (block.field_config?.get("confirm_text") as? String) ?: "✓"
+    val labelAbove = block.field_config?.get("label_above") as? String
+    val labelBelow = block.field_config?.get("label_below") as? String
+    val labelColor = StyleEngine.parseColor(block.text_color ?: "#111827")
     val fieldId = block.field_id ?: block.id
     val holdMs = 1200
 
@@ -2532,31 +2681,43 @@ private fun PressHoldConfirmBlock(
         }
     }
 
-    Box(
-        modifier = Modifier
-            .fillMaxWidth()
-            .height(56.dp)
-            .clip(RoundedCornerShape(28.dp))
-            .background(Color(0xFF1F2937))
-            .pointerInput(confirmed) {
-                if (confirmed) return@pointerInput
-                detectTapGestures(onPress = {
-                    everHeld = true
-                    holding = true
-                    tryAwaitRelease()
-                    holding = false
-                })
-            },
-        contentAlignment = Alignment.Center,
+    Column(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
+        if (!labelAbove.isNullOrEmpty()) {
+            Text(labelAbove, fontSize = 14.sp, color = labelColor)
+        }
         Box(
             modifier = Modifier
-                .align(Alignment.CenterStart)
-                .fillMaxHeight()
-                .fillMaxWidth(progress.value)
-                .background(accent),
-        )
-        Text(if (confirmed) "✓" else text, fontSize = 16.sp, fontWeight = FontWeight.SemiBold, color = Color.White)
+                .fillMaxWidth()
+                .height(56.dp)
+                .clip(RoundedCornerShape(28.dp))
+                .background(track)
+                .pointerInput(confirmed) {
+                    if (confirmed) return@pointerInput
+                    detectTapGestures(onPress = {
+                        everHeld = true
+                        holding = true
+                        tryAwaitRelease()
+                        holding = false
+                    })
+                },
+            contentAlignment = Alignment.Center,
+        ) {
+            Box(
+                modifier = Modifier
+                    .align(Alignment.CenterStart)
+                    .fillMaxHeight()
+                    .fillMaxWidth(progress.value)
+                    .background(accent),
+            )
+            Text(if (confirmed) confirmText else text, fontSize = 16.sp, fontWeight = FontWeight.SemiBold, color = Color.White)
+        }
+        if (!labelBelow.isNullOrEmpty()) {
+            Text(labelBelow, fontSize = 14.sp, color = labelColor)
+        }
     }
 }
 
@@ -8664,6 +8825,91 @@ private fun FormInputToggleBlock(
                 checkedThumbColor = thumbColor,
                 uncheckedThumbColor = thumbColor,
             ),
+        )
+    }
+
+    LaunchedEffect(Unit) {
+        inputValues[fieldId] = checked
+    }
+}
+
+/**
+ * Mrozu QA (2026-08-04, Flo s1) — standalone consent / agreement element: a tappable checkbox + a
+ * rich label whose `[terms](url)` / `[privacy](url)` markdown links open a browser via [URLSafety].
+ * Persists a Boolean to `inputValues[field_id]`; when `field_required` is set, [RequiredFieldGate]
+ * gates the CTA until checked. All authoring config travels through `field_config` (byte-identical
+ * keys with the iOS `AgreementBlock` and the console editor). Mirrors [FormInputToggleBlock] +
+ * [RichTextBlock] link handling.
+ */
+@Composable
+private fun AgreementBlock(
+    block: ContentBlock,
+    inputValues: MutableMap<String, Any>,
+) {
+    val fieldId = block.field_id ?: block.id
+    val checkboxColor = StyleEngine.parseColor((block.field_config?.get("checkbox_color") as? String) ?: (ai.appdna.sdk.AppDNA.brandAccentHex ?: "#6366F1"))
+    val borderColor = StyleEngine.parseColor((block.field_config?.get("checkbox_border_color") as? String) ?: "#C7C7CC")
+    val checkmarkColor = StyleEngine.parseColor((block.field_config?.get("checkmark_color") as? String) ?: "#FFFFFF")
+    val textColor = StyleEngine.parseColor((block.field_config?.get("text_color") as? String) ?: "#8E8E93")
+    val linkColor = StyleEngine.parseColor((block.field_config?.get("link_color") as? String) ?: (ai.appdna.sdk.AppDNA.brandAccentHex ?: "#6366F1"))
+    val agreementText = (block.field_config?.get("agreement_text") as? String)
+        ?: block.text
+        ?: "I agree to the [Terms of Service](https://example.com/terms) and [Privacy Policy](https://example.com/privacy)."
+    val context = LocalContext.current
+
+    var checked by remember {
+        mutableStateOf((inputValues[fieldId] as? Boolean) ?: ((block.field_config?.get("default_checked") as? Boolean) ?: false))
+    }
+
+    val baseTextStyle = TextStyle(fontSize = 13.sp, color = textColor)
+    val annotatedString = parseMarkdownToAnnotatedString(agreementText, baseTextStyle, linkColor)
+
+    androidx.compose.foundation.layout.Row(
+        modifier = Modifier.fillMaxWidth(),
+        verticalAlignment = Alignment.Top,
+    ) {
+        androidx.compose.foundation.layout.Box(
+            modifier = Modifier
+                .padding(top = 1.dp, end = 10.dp)
+                .size(22.dp)
+                .clip(RoundedCornerShape(6.dp))
+                .background(if (checked) checkboxColor else Color.Transparent)
+                .border(1.5.dp, if (checked) checkboxColor else borderColor, RoundedCornerShape(6.dp))
+                .toggleable(
+                    value = checked,
+                    role = androidx.compose.ui.semantics.Role.Checkbox,
+                    onValueChange = {
+                        checked = it
+                        inputValues[fieldId] = it
+                    },
+                ),
+            contentAlignment = Alignment.Center,
+        ) {
+            if (checked) {
+                androidx.compose.material3.Icon(
+                    imageVector = Icons.Filled.Check,
+                    contentDescription = null,
+                    tint = checkmarkColor,
+                    modifier = Modifier.size(15.dp),
+                )
+            }
+        }
+        ClickableText(
+            text = annotatedString,
+            style = baseTextStyle,
+            modifier = Modifier.weight(1f),
+            onClick = { offset ->
+                annotatedString.getStringAnnotations(tag = "URL", start = offset, end = offset)
+                    .firstOrNull()?.let { annotation ->
+                        ai.appdna.sdk.core.URLSafety.sanitized(annotation.item, context)?.let { uri ->
+                            try {
+                                context.startActivity(Intent(Intent.ACTION_VIEW, uri))
+                            } catch (_: Exception) {
+                                // No browser — silently ignore
+                            }
+                        }
+                    }
+            },
         )
     }
 
