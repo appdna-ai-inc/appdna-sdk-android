@@ -1668,7 +1668,10 @@ private fun PaywallSectionView(
                                         text = original,
                                         fontSize = 12.sp,
                                         textDecoration = androidx.compose.ui.text.style.TextDecoration.LineThrough,
-                                        color = section.data?.strikethrough_color?.let { parseHexColor(it) } ?: Color.Gray,
+                                        // Unset strikethrough_color defaults to #9CA3AF to match
+                                        // iOS PlanCard.swift + PaywallPreview.tsx (was Compose Color.Gray
+                                        // #888888 → visibly different struck-price gray across platforms).
+                                        color = section.data?.strikethrough_color?.let { parseHexColor(it) } ?: parseHexColor("#9CA3AF"),
                                     )
                                 }
                                 Text(
@@ -2628,7 +2631,12 @@ private fun PaywallSectionView(
                                 "cta.text",
                                 // Round-MZ — selected plan's per-plan cta_text overrides the
                                 // section/top-level CTA label (mirrors iOS selectedPlanCtaText).
-                                (section.data?.plans ?: config.plans)
+                                // Resolve the plan list like effectivePlans()/iOS selectedPlan do —
+                                // the "plans"-type section first, then top-level config.plans — NOT
+                                // this CTA section's own (normally absent) plans, which made the
+                                // pinned CTA fall through to "Subscribe" when plans lived only in a
+                                // plans section.
+                                (config.sections.firstOrNull { it.type == "plans" }?.data?.plans ?: config.plans)
                                     ?.firstOrNull { it.id == selectedPlanId }?.cta_text?.takeIf { it.isNotBlank() }
                                     ?: config.cta?.text?.takeIf { it.isNotBlank() }
                                     ?: section.data?.cta?.text?.takeIf { it.isNotBlank() }

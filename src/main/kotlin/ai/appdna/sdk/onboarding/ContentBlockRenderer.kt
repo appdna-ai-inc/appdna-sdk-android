@@ -1508,8 +1508,8 @@ private fun RenderBlockContent(
         "text" -> TextBlock(block, loc)
         "image" -> ImageBlock(block)
         "media_gallery" -> MediaGalleryBlock(block)
-        "section_background" -> SectionBackgroundBlock(block, onAction, toggleValues, inputValues, loc)
-        "carousel" -> CarouselBlock(block, onAction, toggleValues, inputValues, loc)
+        "section_background" -> SectionBackgroundBlock(block, onAction, toggleValues, inputValues, loc, stepBlocks)
+        "carousel" -> CarouselBlock(block, onAction, toggleValues, inputValues, loc, stepBlocks)
         "otp_input" -> OtpInputBlock(block, inputValues, onInteract)
         "warning_banner" -> WarningBannerBlock(block, loc)
         "password_strength" -> PasswordStrengthBlock(block)
@@ -1548,11 +1548,11 @@ private fun RenderBlockContent(
         "pulsing_avatar" -> PulsingAvatarBlock(block)
         "star_background" -> StarBackgroundBlock(block)
         // SPEC-089d Phase F: Container & advanced block types
-        "stack" -> StackBlock(block, onAction, toggleValues, inputValues, loc)
+        "stack" -> StackBlock(block, onAction, toggleValues, inputValues, loc, stepBlocks)
         "custom_view" -> CustomViewBlock(block)
         "date_wheel_picker" -> DateWheelPickerBlock(block, inputValues)
         "circular_gauge" -> CircularGaugeBlock(block)
-        "row" -> RowBlock(block, onAction, toggleValues, inputValues, loc)
+        "row" -> RowBlock(block, onAction, toggleValues, inputValues, loc, stepBlocks)
         // SPEC-089d: Pricing card
         "pricing_card" -> PricingCardBlock(block, onAction, inputValues)
         // SPEC-089d Phase 3: Form input block renderers (22 types)
@@ -1708,6 +1708,10 @@ private fun CarouselBlock(
     toggleValues: MutableMap<String, Boolean>,
     inputValues: MutableMap<String, Any>,
     loc: ((String, String) -> String)?,
+    // Mrozu QA (2026-08-04) — thread the step's blocks so a nested consent-reactive CTA
+    // evaluates the full step's RequiredFieldGate (parity with iOS, which recurses on the
+    // same ContentBlockRendererView instance holding `self.blocks`).
+    stepBlocks: List<ContentBlock> = emptyList(),
 ) {
     // EPIC-8 — swipeable carousel: each child block is a page; render a HorizontalPager
     // + a dot indicator. Page indicator colors come through field_config.
@@ -1724,7 +1728,7 @@ private fun CarouselBlock(
             modifier = Modifier.fillMaxWidth().height((block.height ?: 240.0).dp),
         ) { page ->
             Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.TopStart) {
-                RenderBlock(pages[page], onAction, toggleValues, inputValues, loc)
+                RenderBlock(pages[page], onAction, toggleValues, inputValues, loc, stepBlocks = stepBlocks)
             }
         }
         Row(
@@ -1751,6 +1755,8 @@ private fun SectionBackgroundBlock(
     toggleValues: MutableMap<String, Boolean>,
     inputValues: MutableMap<String, Any>,
     loc: ((String, String) -> String)?,
+    // Mrozu QA (2026-08-04) — thread step blocks so a nested consent-CTA gates on the full step (iOS parity).
+    stepBlocks: List<ContentBlock> = emptyList(),
 ) {
     // EPIC-4b — paint vertical proportional color zones, overlay the children content on top.
     // Zones + arrangement come through field_config (ContentBlock is at the JVM constructor-arg limit).
@@ -1777,13 +1783,18 @@ private fun SectionBackgroundBlock(
     }
     // EPIC-4b v2 — background_extent (% of screen height, 1–100) lets the section fill the screen
     // or reach a configured % from the top. When absent, fall back to the fixed height (480.dp default),
-    // matching iOS (ContentBlockRendererView) + the console preview. Screen-relative height uses
-    // screenHeightDp (LocalConfiguration already imported for screenWidthDp elsewhere in this file).
+    // matching iOS (ContentBlockRendererView) + the console preview.
+    // Use the FULL physical display height (heightPixels / density) as the basis so
+    // extent=100 fills the same physical extent as iOS's UIScreen.main.bounds.height.
+    // screenHeightDp excludes the status/nav bars (~24–70dp), which left a visible
+    // gap on Android for the documented "fills the screen" contract (extent=100).
+    val displayMetrics = LocalContext.current.resources.displayMetrics
+    val fullScreenHeightDp = displayMetrics.heightPixels / displayMetrics.density
     val extentPct = (block.field_config?.get("background_extent") as? Number)?.toDouble()
     val fixedHeight = block.height ?: 480.0
     val boxMod = if (extentPct != null) {
         Modifier.fillMaxWidth()
-            .height((LocalConfiguration.current.screenHeightDp * (extentPct.coerceIn(1.0, 100.0) / 100.0)).dp)
+            .height((fullScreenHeightDp * (extentPct.coerceIn(1.0, 100.0) / 100.0)).dp)
     } else {
         Modifier.fillMaxWidth().height(fixedHeight.dp)
     }
@@ -1813,6 +1824,7 @@ private fun SectionBackgroundBlock(
                     toggleValues = toggleValues,
                     inputValues = inputValues,
                     loc = loc,
+                    stepBlocks = stepBlocks,
                 )
             }
         }
@@ -3722,7 +3734,12 @@ private fun SocialLoginBlock(
             // built-in provider glyph; leading alignment left-justifies icon+label.
             val buttonContent: @androidx.compose.runtime.Composable androidx.compose.foundation.layout.RowScope.() -> Unit = {
                 Row(
-                    modifier = Modifier.fillMaxWidth(),
+                    // Explicit 16dp leading inset for leading alignment so the icon
+                    // starts 16dp from the edge, matching iOS `.padding(.horizontal, 16)`
+                    // / preview `px-4` (Material's filled-button content padding is ~24dp).
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .then(if (textAlign == "leading") Modifier.padding(start = 16.dp) else Modifier),
                     horizontalArrangement = if (textAlign == "leading") Arrangement.Start else Arrangement.Center,
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
@@ -3730,7 +3747,12 @@ private fun SocialLoginBlock(
                     if (!customIcon.isNullOrBlank()) {
                         ai.appdna.sdk.core.NetworkImage(
                             url = customIcon,
-                            modifier = Modifier.size(20.dp).padding(end = 8.dp),
+                            // padding OUTSIDE the fixed size so the image is a true 20dp
+                            // square with an 8dp trailing gap (28dp footprint), matching
+                            // iOS `.frame(width:20,height:20)` + preview `<img 20x20>`.
+                            // The previous `size(20).padding(end=8)` order left only 12dp
+                            // for the image → compressed/aspect-distorted logo.
+                            modifier = Modifier.padding(end = 8.dp).size(20.dp),
                         )
                     } else if (providerIcon.isNotBlank()) {
                         Text(providerIcon, fontSize = providerIconFontSize, fontWeight = providerIconFontWeight, modifier = Modifier.padding(end = 8.dp), color = providerIconColor)
@@ -6186,6 +6208,8 @@ private fun StackBlock(
     toggleValues: MutableMap<String, Boolean>,
     inputValues: MutableMap<String, Any>,
     loc: ((String, String) -> String)?,
+    // Mrozu QA (2026-08-04) — thread step blocks so a nested consent-CTA gates on the full step (iOS parity).
+    stepBlocks: List<ContentBlock> = emptyList(),
 ) {
     // SPEC-401-A R61 (Lens A N1, P1) — accept iOS canonical `stack_children`
     // alongside `children`; console editor writes `stack_children` for
@@ -6219,6 +6243,7 @@ private fun StackBlock(
                     toggleValues = toggleValues,
                     inputValues = inputValues,
                     loc = loc,
+                    stepBlocks = stepBlocks,
                 )
             }
         }
@@ -6234,6 +6259,8 @@ private fun RowBlock(
     toggleValues: MutableMap<String, Boolean>,
     inputValues: MutableMap<String, Any>,
     loc: ((String, String) -> String)?,
+    // Mrozu QA (2026-08-04) — thread step blocks so a nested consent-CTA gates on the full step (iOS parity).
+    stepBlocks: List<ContentBlock> = emptyList(),
 ) {
     // SPEC-401-A R61 (Lens A N1, P1) — accept iOS canonical `stack_children`
     // alongside `children` for Row blocks; console editor writes
@@ -6346,6 +6373,7 @@ private fun RowBlock(
                             toggleValues = toggleValues,
                             inputValues = inputValues,
                             loc = loc,
+                            stepBlocks = stepBlocks,
                         )
                     }
                 }
@@ -6386,7 +6414,7 @@ private fun RowBlock(
                         val cwFractional = cw != null && cw.endsWith("%")
                         val childSizeMod = Modifier.applyRelativeSizing(if (cwFractional) cw else null, if (child.type.startsWith("input_")) null else child.element_height)
                         Box(modifier = childSizeMod) {
-                            RenderBlock(child, onAction, toggleValues, inputValues, loc)
+                            RenderBlock(child, onAction, toggleValues, inputValues, loc, stepBlocks = stepBlocks)
                         }
                     }
                 }
@@ -6416,6 +6444,7 @@ private fun RowBlock(
                                 toggleValues = toggleValues,
                                 inputValues = inputValues,
                                 loc = loc,
+                                stepBlocks = stepBlocks,
                             )
                         }
                     }
@@ -6448,6 +6477,7 @@ private fun RowBlock(
                                 toggleValues = toggleValues,
                                 inputValues = inputValues,
                                 loc = loc,
+                                stepBlocks = stepBlocks,
                             )
                         }
                     }
