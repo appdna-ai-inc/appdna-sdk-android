@@ -2431,9 +2431,24 @@ private fun PaywallSectionView(
                                                 Text(text = loc("plan.$planIdx.description", plan.description), fontSize = 12.sp, color = subtitleColor)
                                                 Spacer(Modifier.height(2.dp))
                                             }
-                                            Text(text = loc("plan.$planIdx.price", plan.displayPrice), style = priceStyle, color = planTextColor)
-                                            plan.period?.let {
-                                                Text(text = loc("plan.$planIdx.period", it), style = periodStyle, color = planTextColor)
+                                            // Round-MZ — render struck original_price_display beside the
+                                            // price (mirrors iOS PlanCard.swift Row-2 + Android fun PlanCard).
+                                            // The standalone plan.period line was dropped to match iOS
+                                            // PlanCard (never renders plan.period) and fun PlanCard —
+                                            // period is folded into price_display, not authored via console.
+                                            Row(
+                                                verticalAlignment = Alignment.CenterVertically,
+                                                horizontalArrangement = Arrangement.spacedBy(4.dp),
+                                            ) {
+                                                plan.original_price_display?.takeIf { it.isNotBlank() }?.let { original ->
+                                                    Text(
+                                                        text = original,
+                                                        fontSize = 12.sp,
+                                                        textDecoration = androidx.compose.ui.text.style.TextDecoration.LineThrough,
+                                                        color = section.data?.strikethrough_color?.let { parseHexColor(it) } ?: parseHexColor("#9CA3AF"),
+                                                    )
+                                                }
+                                                Text(text = loc("plan.$planIdx.price", plan.displayPrice), style = priceStyle, color = planTextColor)
                                             }
                                             // Round-30 — PARITY FIX: the default vertical_stack path
                                             // silently dropped trial/subtitle/savings/features that iOS
@@ -2447,6 +2462,15 @@ private fun PaywallSectionView(
                                             if (showPlanSubtitles && subtitlePosition != "above_price" && !plan.description.isNullOrBlank()) {
                                                 Spacer(Modifier.height(4.dp))
                                                 Text(text = loc("plan.$planIdx.description", plan.description), fontSize = 12.sp, color = subtitleColor)
+                                            }
+                                            // Round-MZ — per-plan divider between price/subtitle and
+                                            // savings (mirrors iOS PlanCard.swift order + Android fun
+                                            // PlanCard, default #E5E7EB). Was silently dropped on the
+                                            // default vertical_stack layout.
+                                            if (section.data?.show_divider == true) {
+                                                Spacer(Modifier.height(2.dp))
+                                                Divider(color = section.data?.divider_color?.let { parseHexColor(it) } ?: parseHexColor("#E5E7EB"))
+                                                Spacer(Modifier.height(2.dp))
                                             }
                                             if (showSavings && !plan.savings_text.isNullOrBlank()) {
                                                 Spacer(Modifier.height(4.dp))

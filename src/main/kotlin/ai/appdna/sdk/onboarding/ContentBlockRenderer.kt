@@ -3859,7 +3859,12 @@ private fun SocialLoginBlock(
                 "minimal" -> {
                     TextButton(
                         onClick = socialClick,
-                        modifier = Modifier.fillMaxWidth().height(buttonHeight),
+                        // Round-MZ — apply the per-provider border_width/border_color
+                        // stroke to minimal too (iOS + preview draw the stroke on ALL
+                        // styles, not just outlined). Default minimal border_width is 0,
+                        // so a plain minimal button stays borderless.
+                        modifier = Modifier.fillMaxWidth().height(buttonHeight)
+                            .then(if (providerBorderWidth > 0.dp) Modifier.border(providerBorderWidth, borderColor, RoundedCornerShape(providerCorner)) else Modifier),
                         shape = RoundedCornerShape(providerCorner),
                         colors = ButtonDefaults.textButtonColors(
                             // Audit pass-8 — same authored-bg_color honor as outlined
@@ -3878,7 +3883,12 @@ private fun SocialLoginBlock(
                 else -> { // filled
                     Button(
                         onClick = socialClick,
-                        modifier = Modifier.fillMaxWidth().height(buttonHeight),
+                        // Round-MZ — apply the per-provider border_width/border_color
+                        // stroke to filled too (iOS + preview draw the stroke on ALL
+                        // styles, not just outlined). Default filled border_width is 0,
+                        // so a plain filled button stays borderless.
+                        modifier = Modifier.fillMaxWidth().height(buttonHeight)
+                            .then(if (providerBorderWidth > 0.dp) Modifier.border(providerBorderWidth, borderColor, RoundedCornerShape(providerCorner)) else Modifier),
                         // SPEC-070-A finalization OB-2 audit-1 CRIT-1 — was
                         // `RoundedCornerShape(cornerRadius)`, dropping the
                         // per-provider `corner_radius` override. Filled is
