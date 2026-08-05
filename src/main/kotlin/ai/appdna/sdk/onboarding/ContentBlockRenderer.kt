@@ -9647,7 +9647,7 @@ private fun FormInputRatingBlock(
     // half-stars when block.allow_half is true.
     var selectedRating by remember {
         mutableStateOf(
-            (inputValues[fieldId] as? Number)?.toDouble() ?: (block.default_value ?: 0.0)
+            (inputValues[fieldId] as? Number)?.toDouble() ?: (block.default_rating ?: block.default_value ?: 0.0)
         )
     }
 
