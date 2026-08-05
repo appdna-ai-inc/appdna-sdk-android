@@ -5912,6 +5912,19 @@ private fun DateWheelPickerBlock(
         ?.let { StyleEngine.parseColor(it) }
     val outerLabel = block.text
     val validationMsg = block.date_validation_message
+    // SPEC-401-A — authored selection-line color/stroke. The console writes these
+    // top-level (wheel_line_color / wheel_line_stroke_width); OnboardingConfig folds
+    // them into field_config (top-level ContentBlock is at the JVM 255-arg limit),
+    // with legacy field_config picker_border_* as the secondary fallback. Mirrors
+    // iOS ContentBlockStandaloneViews.swift:1335-1339 + the console preview, which
+    // draw the selection strip top/bottom rules + outer picker border in this color/
+    // stroke instead of only the alpha-0.1 highlight fill.
+    val lineColorHex = (block.field_config?.get("wheel_line_color") as? String)
+        ?: (block.field_config?.get("picker_border_color") as? String)
+    val lineColor = lineColorHex?.let { StyleEngine.parseColor(it) }
+    val lineStroke = ((block.field_config?.get("wheel_line_stroke_width") as? Number)?.toDouble()
+        ?: (block.field_config?.get("picker_border_width") as? Number)?.toDouble()
+        ?: if (lineColor != null) 1.0 else 0.0).dp
     // Column inner padding centers the selected row under the highlight strip (40dp): (h-40)/2.
     val colPad = (((wheelHeightDp.value - 40f) / 2f).coerceAtLeast(0f)).dp
     // SPEC — honor authored inter-column spacing (was hardcoded 4dp).
@@ -6089,7 +6102,13 @@ private fun DateWheelPickerBlock(
         modifier = Modifier
             .fillMaxWidth()
             .height(wheelHeightDp)
-            .then(if (wheelBg != null) Modifier.background(wheelBg, RoundedCornerShape(8.dp)) else Modifier),
+            .then(if (wheelBg != null) Modifier.background(wheelBg, RoundedCornerShape(8.dp)) else Modifier)
+            // Authored outer picker border (parity with preview + iOS overlay).
+            .then(
+                if (lineColor != null && lineStroke > 0.dp) {
+                    Modifier.border(androidx.compose.foundation.BorderStroke(lineStroke, lineColor), RoundedCornerShape(8.dp))
+                } else Modifier
+            ),
     ) {
         // SPEC-401-A R62 (Lens C P1) — visible center-strip overlay so
         // users can see WHERE the selection actually lives. Sits behind
@@ -6100,7 +6119,18 @@ private fun DateWheelPickerBlock(
                 .fillMaxWidth()
                 .height(40.dp)
                 .align(Alignment.Center)
-                .background(highlightColor.copy(alpha = 0.1f), RoundedCornerShape(8.dp)),
+                .background(highlightColor.copy(alpha = 0.1f), RoundedCornerShape(8.dp))
+                // Authored selection-line top/bottom rules (parity with preview's
+                // borderTop/borderBottom + iOS). Only when a line color is set.
+                .then(
+                    if (lineColor != null && lineStroke > 0.dp) {
+                        Modifier.drawBehind {
+                            val sw = lineStroke.toPx()
+                            drawLine(lineColor, Offset(0f, 0f), Offset(size.width, 0f), sw)
+                            drawLine(lineColor, Offset(0f, size.height), Offset(size.width, size.height), sw)
+                        }
+                    } else Modifier
+                ),
         )
     Row(
         modifier = Modifier
@@ -9116,11 +9146,14 @@ private fun FormInputSelectBlock(
                 horizontalArrangement = Arrangement.spacedBy(4.dp),
                 modifier = Modifier.padding(top = 4.dp),
             ) {
-                if (!tooltipIconRef.isNullOrBlank()) {
-                    val iconRef = ai.appdna.sdk.core.resolveIcon(tooltipIconRef)
-                    if (iconRef != null) {
-                        ai.appdna.sdk.core.IconView(ref = iconRef, defaultSize = 12f)
-                    }
+                // Match iOS, which defaults the tooltip icon to "info.circle" and
+                // always renders it when tooltip_text is present
+                // (FormInputBlockViews.swift). Resolve the authored icon or fall
+                // back to the "info" glyph so the ℹ shown in the console preview
+                // renders on-device even without an explicit tooltip_icon.
+                val iconRef = ai.appdna.sdk.core.resolveIcon(tooltipIconRef ?: "info")
+                if (iconRef != null) {
+                    ai.appdna.sdk.core.IconView(ref = iconRef, defaultSize = 12f)
                 }
                 Text(
                     text = tooltipText,

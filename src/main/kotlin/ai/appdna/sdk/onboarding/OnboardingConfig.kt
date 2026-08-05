@@ -1557,9 +1557,18 @@ internal object OnboardingConfigParser {
                 // reads them as top-level Codable fields.
                 val labelPlacement = bm["label_placement"] as? String
                 val loadingTextAlign = bm["loading_text_align"] as? String
+                // SPEC-401-A — date_wheel_picker selection-line color/stroke authored
+                // top-level by the console editor + preview (block.wheel_line_color /
+                // wheel_line_stroke_width) and read as top-level Codable fields by iOS
+                // (ContentBlockStandaloneViews.swift:1335-1339). Android's top-level
+                // ContentBlock is budget-locked at the JVM 255-arg limit, so fold both
+                // into field_config for the DateWheelPickerBlock renderer to read.
+                val wheelLineColor = bm["wheel_line_color"] as? String
+                val wheelLineStrokeWidth = (bm["wheel_line_stroke_width"] as? Number)?.toDouble()
                 if (labelFormat == null && customLabel == null && videoControls == null &&
                     particleColor == null && particleOpacity == null && particleSpeed == null &&
-                    timerVariant == null && labelPlacement == null && loadingTextAlign == null) {
+                    timerVariant == null && labelPlacement == null && loadingTextAlign == null &&
+                    wheelLineColor == null && wheelLineStrokeWidth == null) {
                     base
                 } else {
                     val merged = base ?: mutableMapOf()
@@ -1572,6 +1581,8 @@ internal object OnboardingConfigParser {
                     if (timerVariant != null) merged.putIfAbsent("timer_variant", timerVariant)
                     if (labelPlacement != null) merged.putIfAbsent("label_placement", labelPlacement)
                     if (loadingTextAlign != null) merged.putIfAbsent("loading_text_align", loadingTextAlign)
+                    if (wheelLineColor != null) merged.putIfAbsent("wheel_line_color", wheelLineColor)
+                    if (wheelLineStrokeWidth != null) merged.putIfAbsent("wheel_line_stroke_width", wheelLineStrokeWidth)
                     merged
                 }
             },
