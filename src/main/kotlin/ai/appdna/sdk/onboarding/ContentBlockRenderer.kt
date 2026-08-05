@@ -1779,10 +1779,17 @@ private fun SectionBackgroundBlock(
     // No early-return on empty zones — render the foreground children on a bare background, matching
     // iOS (ContentBlockRendererView) + the console preview (was: rendered nothing when zones absent).
     val children = block.children ?: block.stack_children ?: emptyList()
+    // Mrozu parity — iOS overlays children in a `VStack(spacing: 12)` (a fixed 12pt
+    // inter-child gap) and positions them with Spacers per content_arrangement
+    // (ContentBlockRendererView.swift:438-445). Android previously used a bare
+    // positional Arrangement with NO gap between children, diverging from the iOS
+    // pixel reference. Add the 12dp gap to the top/center/bottom cases; keep
+    // SpaceBetween for the default (iOS default is "space_between", where the
+    // flexible spacers dominate the 12pt spacing).
     val arrangement = when (block.field_config?.get("content_arrangement") as? String) {
-        "top" -> Arrangement.Top
-        "center" -> Arrangement.Center
-        "bottom" -> Arrangement.Bottom
+        "top" -> Arrangement.spacedBy(12.dp, Alignment.Top)
+        "center" -> Arrangement.spacedBy(12.dp, Alignment.CenterVertically)
+        "bottom" -> Arrangement.spacedBy(12.dp, Alignment.Bottom)
         else -> Arrangement.SpaceBetween
     }
     // EPIC-4b v2 — background_extent (% of screen height, 1–100) lets the section fill the screen
@@ -3709,7 +3716,11 @@ private fun SocialLoginBlock(
                 // label off-center. "Continue with Email" is a plain CTA, no brand logo.
                 "email" -> ""
                 "facebook" -> "f"
-                "github" -> "\u2B24"
+                // Drain2 parity \u2014 github previously rendered a filled circle glyph
+                // (\u2B24), which diverged from iOS's '</>' code-bracket. No universally
+                // correct github mark is bundled, so render NO glyph (mirrors the
+                // email treatment) rather than a wrong one. All three surfaces align.
+                "github" -> ""
                 else -> ""
             }
             // SPEC-070-A finalization OB-2 audit-1 CRIT-2 \u2014 icon_style was a
@@ -4581,13 +4592,14 @@ private fun ProgressBarBlock(block: ContentBlock, loc: ((String, String) -> Stri
                 "${((activeSegments.toFloat() / maxOf(segmentCount, 1)) * 100).toInt()}%"
             else "$pvPercent%"
         }
-        val labelStyle = if (block.label_style != null) {
-            // SPEC-401-A R44 — theme-adaptive secondary base (was Color.Gray).
-            StyleEngine.applyTextStyle(TextStyle(fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)), block.label_style)
-        } else {
-            // SPEC-401-A R44 — theme-adaptive secondary fallback (was Color.Gray).
-            TextStyle(fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f))
-        }
+        // Mrozu parity — iOS renders the progress label PLAIN (`.font(.caption)
+        // .foregroundColor(.secondary)`, ContentBlockRendererView.swift:1801-1805)
+        // and does NOT apply `label_style`. Android previously ran the authored
+        // label_style through StyleEngine.applyTextStyle, diverging from the iOS
+        // pixel reference. Always render the plain caption/secondary style so both
+        // platforms match. (label text itself is unchanged.)
+        // SPEC-401-A R44 — theme-adaptive secondary (was Color.Gray).
+        val labelStyle = TextStyle(fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f))
         Text(
             text = loc?.invoke("block.${block.id}.label", labelText) ?: labelText,
             style = labelStyle,
@@ -5835,7 +5847,14 @@ private fun parseDateWheelSeed(saved: String?, default: String?): java.util.Cale
  * For simplicity, renders three side-by-side LazyColumns for day/month/year.
  */
 @Composable
-private fun DateWheelPickerBlock(block: ContentBlock, inputValues: MutableMap<String, Any>) {
+private fun DateWheelPickerBlock(
+    block: ContentBlock,
+    inputValues: MutableMap<String, Any>,
+    // Drain2 — lets FormInputDateBlock (input_date/input_datetime, picker_variant="wheel")
+    // reuse these column wheels while forcing its own effective mode (date/datetime),
+    // since that block carries mode via its function param, not block.picker_mode.
+    modeOverride: String? = null,
+) {
     val fieldId = block.field_id ?: block.id
     val highlightColor = StyleEngine.parseColor(block.highlight_color ?: (ai.appdna.sdk.AppDNA.brandAccentHex ?: "#6366F1"))
     // SPEC-401-A R77 (Lens C P1) — `wheel_text_color` / `text_color` /
@@ -5864,7 +5883,9 @@ private fun DateWheelPickerBlock(block: ContentBlock, inputValues: MutableMap<St
     }
 
     // SPEC-419 — honor picker_mode (date/datetime/time): add hour/minute columns for time modes.
-    val mode = (block.picker_mode ?: "date").lowercase()
+    // Drain2 — modeOverride wins when FormInputDateBlock reuses this wheel (its mode
+    // rides a function param, not block.picker_mode).
+    val mode = (modeOverride ?: block.picker_mode ?: "date").lowercase()
     val showTime = mode == "datetime" || mode == "date_time" || mode == "time"
     val showDate = mode != "time"
     // SPEC-419 — honor wheel_height (was hardcoded 150dp), wheel_bg_color, date_validation_message,
@@ -7348,6 +7369,12 @@ fun EntranceAnimationWrapper(
     )
     val isSpring = animation.easing == "spring"
 
+    // Drain2 parity — slide entrances travel a FIXED 50dp, matching iOS's
+    // fixed ±50pt offset (ContentBlockTypes.swift:654-668). The prior lambdas
+    // returned the element's OWN size ({ it } / { -it }), so a tall/wide block
+    // slid in from fully off-screen on Android while iOS only nudged 50pt.
+    val slideOffsetPx = with(androidx.compose.ui.platform.LocalDensity.current) { 50.dp.roundToPx() }
+
     // Audit pass-8 — a real "flip" is a 3D X-axis rotation to match iOS
     // (ContentBlockTypes.swift:613-616 rotates 90°→0 around x). AnimatedVisibility's
     // EnterTransition cannot express rotationX, and the previous impl used
@@ -7382,10 +7409,10 @@ fun EntranceAnimationWrapper(
 
     val enterTransition: androidx.compose.animation.EnterTransition = when (animation.type) {
         "fade_in" -> androidx.compose.animation.fadeIn(if (isSpring) springFloatSpec else tweenSpec)
-        "slide_up" -> androidx.compose.animation.slideInVertically(if (isSpring) springIntOffsetSpec else tweenIntOffset) { it }
-        "slide_down" -> androidx.compose.animation.slideInVertically(if (isSpring) springIntOffsetSpec else tweenIntOffset) { -it }
-        "slide_left" -> androidx.compose.animation.slideInHorizontally(if (isSpring) springIntOffsetSpec else tweenIntOffset) { -it }
-        "slide_right" -> androidx.compose.animation.slideInHorizontally(if (isSpring) springIntOffsetSpec else tweenIntOffset) { it }
+        "slide_up" -> androidx.compose.animation.slideInVertically(if (isSpring) springIntOffsetSpec else tweenIntOffset) { slideOffsetPx }
+        "slide_down" -> androidx.compose.animation.slideInVertically(if (isSpring) springIntOffsetSpec else tweenIntOffset) { -slideOffsetPx }
+        "slide_left" -> androidx.compose.animation.slideInHorizontally(if (isSpring) springIntOffsetSpec else tweenIntOffset) { -slideOffsetPx }
+        "slide_right" -> androidx.compose.animation.slideInHorizontally(if (isSpring) springIntOffsetSpec else tweenIntOffset) { slideOffsetPx }
         "scale_up" -> androidx.compose.animation.scaleIn(if (isSpring) springFloatSpec else tweenSpec, initialScale = 0.5f)
         "scale_down" -> androidx.compose.animation.scaleIn(if (isSpring) springFloatSpec else tweenSpec, initialScale = 1.5f)
         // SPEC-401-A R13 — bounce previously always used spring,
@@ -7859,9 +7886,9 @@ private fun FormInputDateBlock(
     }
 
     // SPEC-401-A R35 \u2014 picker_variant per iOS FormInputBlockViews.swift:208-410.
-    // "graphical" \u2192 inline DatePicker; "compact"/null/unknown \u2192 tap-to-open
-    // button. "wheel" falls back to compact today (Material3 lacks a wheel
-    // date picker out of the box; tracked for follow-up).
+    // "graphical" \u2192 inline DatePicker; "wheel" \u2192 inline column wheels (Drain2,
+    // reuses DateWheelPickerBlock, matches iOS DatePicker(.wheel) + preview);
+    // "compact"/null/unknown \u2192 tap-to-open button.
     // SPEC-401-A R49 (Lens A #4, P1) \u2014 picker_presentation="field" forces
     // tap-to-open compact; otherwise legacy field_config.picker_variant
     // controls inline graphical vs compact. picker_mode similarly may
@@ -7873,6 +7900,12 @@ private fun FormInputDateBlock(
         else -> (block.field_config?.get("picker_variant") as? String)?.lowercase() ?: "compact"
     }
     val inlineGraphical = pickerVariant == "graphical" && (effectiveMode == "date" || effectiveMode == "datetime")
+    // Drain2 parity — picker_variant="wheel" (presentation unset) renders an inline
+    // spinning wheel like iOS (FormInputBlockViews.swift:374) + preview, reusing the
+    // standalone date_wheel column wheels, instead of falling back to the compact
+    // tap-to-open button. Note: the wheel emits "yyyy-MM-dd"[+" HH:mm"] (its native
+    // format) rather than the ISO8601 the compact/graphical branches write.
+    val inlineWheel = pickerVariant == "wheel" && (effectiveMode == "date" || effectiveMode == "datetime")
 
     // SPEC-419 pass-15 #16/#17/#34 — honor field_style.text_color (compact button text),
     // calendar_bg_color/wheel_bg_color (picker + button background), and highlight_color
@@ -7922,7 +7955,11 @@ private fun FormInputDateBlock(
     ) {
         FormFieldLabel(block)
 
-        if (inlineGraphical) {
+        if (inlineWheel) {
+            // Drain2 — inline wheel columns (reuses the standalone date_wheel_picker),
+            // forcing this field's effective mode so input_datetime shows time columns.
+            DateWheelPickerBlock(block, inputValues, modeOverride = effectiveMode)
+        } else if (inlineGraphical) {
             val initialMillis = remember(savedRaw) {
                 if (savedRaw.isEmpty()) null else try { isoFormatter.parse(savedRaw)?.time } catch (_: Exception) { null }
             }
@@ -8616,6 +8653,10 @@ private fun FormInputSelectBlock(
                                     ),
                                 ) {
                                     Box(modifier = Modifier.fillMaxWidth()) {
+                                        // Hoisted so both the inline option icon (below) and the
+                                        // toggle badge overlay can share the block-level defaults.
+                                        val defSelIcon = cfg?.get("selected_icon") as? String
+                                        val defUnselIcon = cfg?.get("unselected_icon") as? String
                                         Column(
                                             modifier = Modifier.fillMaxWidth().padding(12.dp),
                                             horizontalAlignment = cellHAlign,
@@ -8634,6 +8675,20 @@ private fun FormInputSelectBlock(
                                                             Box(Modifier.matchParentSize().background(StyleEngine.parseColor(ov).copy(alpha = ovA)))
                                                         }
                                                 }
+                                                Spacer(Modifier.height(4.dp))
+                                            }
+                                            // Drain2 parity — grid select now renders option.icon
+                                            // (emoji/glyph) with a selected/unselected swap, mirroring
+                                            // iOS gridSelectView (FormInputBlockViews.swift:1295-1306)
+                                            // and the console preview.
+                                            option.icon?.takeIf { it.isNotEmpty() }?.let { icon ->
+                                                val resolvedIcon = if (isSelected) (option.selected_icon ?: defSelIcon ?: icon)
+                                                                   else (option.unselected_icon ?: defUnselIcon ?: icon)
+                                                Text(
+                                                    text = resolvedIcon,
+                                                    fontSize = 22.sp,
+                                                    color = if (isSelected) optSelText else textCol,
+                                                )
                                                 Spacer(Modifier.height(4.dp))
                                             }
                                             Text(
@@ -8656,8 +8711,12 @@ private fun FormInputSelectBlock(
                                                 Text(
                                                     text = subtitle,
                                                     fontSize = (option.subtitle_font_size?.toFloat() ?: defaultSubtitleSize).sp,
+                                                    // Drain2 parity — derive the default subtitle color from the
+                                                    // authored step text color (textCol), not M3 onSurface which
+                                                    // adapts to the host theme and goes near-black on a dark step
+                                                    // bg. Mirrors iOS grid (textCol.opacity(0.65)) + preview (a6).
                                                     color = option.subtitle_color?.let { StyleEngine.parseColor(it) }
-                                                        ?: MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
+                                                        ?: (if (textCol == Color.Unspecified) Color.White else textCol).copy(alpha = 0.65f),
                                                     textAlign = cellTextAlign,
                                                 )
                                             }
@@ -8667,8 +8726,7 @@ private fun FormInputSelectBlock(
                                         // and selected/unselected bg+fg colors (was hardcoded TopEnd,
                                         // 12sp, no bg). Mirrors iOS gridSelectView
                                         // (FormInputBlockViews.swift:1003-1149).
-                                        val defSelIcon = cfg?.get("selected_icon") as? String
-                                        val defUnselIcon = cfg?.get("unselected_icon") as? String
+                                        // defSelIcon/defUnselIcon hoisted above the Column.
                                         val showToggleIcon = (cfg?.get("show_toggle_icon") as? Boolean) ?: (defSelIcon != null)
                                         if (showToggleIcon) {
                                             val toggleAlign = when (cfg?.get("toggle_icon_position") as? String) {
@@ -9533,6 +9591,9 @@ private fun FormInputRangeSliderBlock(
     // SPEC-401-A R55 (Lens C R55 #3, P3) — inactive track color from
     // field_style.track_color (or block.track_color) per iOS.
     val trackCol = StyleEngine.parseColor(block.field_style?.track_color ?: block.track_color ?: "#E5E7EB")
+    // Drain2 parity — range slider thumbs honor field_style.thumb_color
+    // (the editor exposes it; the single FormInputSliderBlock already honors it).
+    val rangeThumbColor = block.field_style?.thumb_color?.let { StyleEngine.parseColor(it) } ?: StyleEngine.parseColor("#FFFFFF")
     // OB-6 audit follow-up — restore saved range on back nav.
     // Saved range is stored as Map<"min","max"> under fieldId per the
     // write sites below (Slider onValueChange + LaunchedEffect).
@@ -9600,7 +9661,7 @@ private fun FormInputRangeSliderBlock(
                 },
                 valueRange = minVal..maxVal,
                 steps = stepCount,
-                colors = SliderDefaults.colors(thumbColor = fillCol, activeTrackColor = fillCol, inactiveTrackColor = trackCol),
+                colors = SliderDefaults.colors(thumbColor = rangeThumbColor, activeTrackColor = fillCol, inactiveTrackColor = trackCol),
                 modifier = Modifier.weight(1f),
             )
         }
@@ -9624,7 +9685,7 @@ private fun FormInputRangeSliderBlock(
                 },
                 valueRange = minVal..maxVal,
                 steps = stepCount,
-                colors = SliderDefaults.colors(thumbColor = fillCol, activeTrackColor = fillCol, inactiveTrackColor = trackCol),
+                colors = SliderDefaults.colors(thumbColor = rangeThumbColor, activeTrackColor = fillCol, inactiveTrackColor = trackCol),
                 modifier = Modifier.weight(1f),
             )
         }
