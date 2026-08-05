@@ -3990,18 +3990,26 @@ private fun CountdownTimerBlock(block: ContentBlock, onAction: (String) -> Unit)
     // by OnboardingConfig.fromMap since Android is budget-locked); read it first, fall
     // back to legacy `variant`.
     val variant = (block.field_config?.get("timer_variant") as? String) ?: block.variant ?: "digital"
-    val initialSeconds = when (block.target_type) {
-        "fixed_datetime" -> {
-            // Parse ISO datetime and compute remaining seconds
-            try {
-                val targetMs = java.text.SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss", java.util.Locale.US)
-                    .apply { timeZone = java.util.TimeZone.getTimeZone("UTC") }
-                    .parse(block.target_datetime ?: "")?.time ?: 0L
-                val remaining = ((targetMs - System.currentTimeMillis()) / 1000).toInt()
-                if (remaining > 0) remaining else 0
-            } catch (_: Exception) { block.duration_seconds ?: 300 }
+    // SPEC-419 — capture the starting total ONCE (mirrors iOS's .onAppear @State
+    // capture from pass 13). For fixed_datetime the raw expression recomputes each
+    // recomposition from System.currentTimeMillis(), so it would tick down in lockstep
+    // with remainingSeconds and leave the progress-bar fraction pinned near 1.0.
+    // For the plain duration path initialSeconds == duration_seconds (stable), so
+    // remember is a no-op there.
+    val initialSeconds = remember {
+        when (block.target_type) {
+            "fixed_datetime" -> {
+                // Parse ISO datetime and compute remaining seconds
+                try {
+                    val targetMs = java.text.SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss", java.util.Locale.US)
+                        .apply { timeZone = java.util.TimeZone.getTimeZone("UTC") }
+                        .parse(block.target_datetime ?: "")?.time ?: 0L
+                    val remaining = ((targetMs - System.currentTimeMillis()) / 1000).toInt()
+                    if (remaining > 0) remaining else 0
+                } catch (_: Exception) { block.duration_seconds ?: 300 }
+            }
+            else -> block.duration_seconds ?: 300
         }
-        else -> block.duration_seconds ?: 300
     }
 
     var remainingSeconds by remember { mutableIntStateOf(initialSeconds) }
@@ -8442,6 +8450,10 @@ private fun FormInputSelectBlock(
         selectedValues = if (selectedValues.contains(value)) {
             selectedValues - value
         } else {
+            // Enforce the console-configured cap on the ADD path only;
+            // removing a selection must always work.
+            val maxSel = (cfg?.get("max_selections") as? Number)?.toInt()
+            if (maxSel != null && selectedValues.size >= maxSel) return
             selectedValues + value
         }
         inputValues[fieldId] = selectedValues.toList()
