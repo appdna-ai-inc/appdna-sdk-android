@@ -1494,7 +1494,14 @@ private fun PaywallSectionView(
             // Card styling from config
             val cardRadius = (section.data?.card_corner_radius ?: 12f).dp
             val cardPad = (section.data?.card_padding ?: 16f).dp
-            val cardGap = (section.data?.card_gap ?: 8f).dp
+            // Audit pass-8 — default the unauthored card_gap to 12 to match iOS'
+            // primary vertical-stack default (PaywallRenderer.swift:1698
+            // `cardStyle.cardGap ?? 12`) and the console/preview default
+            // (SectionContentEditor.tsx:385, PaywallPreview.tsx:458). Was 8f, so
+            // default vertical-stack cards sat tighter on Android than iOS/preview.
+            // (iOS grid/side-by-side use 8; the flat 12 default is the accepted
+            // parity tradeoff for the LOW-frequency multi-column layouts.)
+            val cardGap = (section.data?.card_gap ?: 12f).dp
             val cardShape = RoundedCornerShape(cardRadius)
             // Mirror iOS PlanCard.swift:206-210 — accept Bool OR String enum
             // ("sm"/"md"/"lg"/"none") and derive elevation. String values
@@ -1533,6 +1540,15 @@ private fun PaywallSectionView(
             val badgeBg = section.data?.badge_bg_color?.let { parseHexColor(it) } ?: ai.appdna.sdk.AppDNA.brandAccentColor()
             val badgeTxt = section.data?.badge_text_color?.let { parseHexColor(it) } ?: Color.White
             val badgeFontSize = (section.data?.badge_font_size ?: 11f).sp
+            // Audit pass-8 — resolve the badge text style from the Style-tab element
+            // `section.style.elements["badge"].text_style` FIRST (iOS PlanCard.badgeView
+            // PlanCard.swift:30-32,:312 is badgeTextStyle-first for font/size/color/weight),
+            // falling back to the flat badge_font_size + badge_text_color when the element
+            // style is absent. Android previously read only the flat fields.
+            val badgeTextStyle = StyleEngine.applyTextStyle(
+                TextStyle(fontWeight = FontWeight.SemiBold, color = badgeTxt, fontSize = badgeFontSize),
+                section.style?.elements?.get("badge")?.text_style,
+            )
             // Mrozu QA — badge border + leading icon were decoded (PaywallConfig.kt:312-314) but
             // dropped by BadgeView; iOS PlanCard.badgeView (:298-311/:332-335) renders both.
             val badgeBorderColor = section.data?.badge_border_color?.let { parseHexColor(it) }
@@ -1602,9 +1618,7 @@ private fun PaywallSectionView(
                     }
                     Text(
                         text = badgeText,
-                        color = badgeTxt,
-                        fontSize = badgeFontSize,
-                        fontWeight = FontWeight.SemiBold,
+                        style = badgeTextStyle,
                     )
                 }
             }
@@ -1748,13 +1762,13 @@ private fun PaywallSectionView(
                                     color = resolvedTextColor,
                                 )
                             }
-                            plan.period?.let {
-                                Text(
-                                    text = loc("plan.$planIdx.period", it),
-                                    style = periodStyle,
-                                    color = resolvedTextColor,
-                                )
-                            }
+                            // Audit pass-8 — drop the standalone `plan.period` line to match
+                            // iOS PlanCard, which never renders plan.period (PlanCard.swift:27-29
+                            // defines only an unused periodTextStyle) and the console preview,
+                            // which omits it. `period` isn't authored via the console (not in
+                            // PlanSchema; billing_period is folded into price_display), so a
+                            // non-console publisher setting `period` previously got a divergent
+                            // extra line here. periodStyle is still used by other layouts.
 
                             // PW-9: subtitle below price (default position).
                             if (showPlanSubtitles && subtitlePosition != "above_price" && !plan.description.isNullOrBlank()) {
@@ -2654,7 +2668,20 @@ private fun PaywallSectionView(
                         .background(
                             brush = if (explicitCtaBg == null && ctaBrush != null) ctaBrush
                                 else androidx.compose.ui.graphics.SolidColor(buttonBgColor),
-                            shape = RoundedCornerShape((section.data?.cta?.corner_radius?.toFloat() ?: 12f).dp),
+                            // Audit pass-8 — the CTA-section `data.cta.corner_radius` is
+                            // near-always null; the console authors the main CTA radius via
+                            // `cta.style.corner_radius`, parsed into `config.cta.corner_radius`
+                            // (PaywallConfig.kt:885) + surfaced through ctaStyleMap. Resolve the
+                            // shape from the same source used for bg/text (iOS CTAButton.swift:47
+                            // resolvedCornerRadius, PaywallPreview.tsx:1363), else a non-default
+                            // slider value rendered on iOS/preview but always 12 on Android.
+                            shape = RoundedCornerShape((
+                                section.data?.cta?.corner_radius?.toFloat()
+                                    ?: (ctaStyleMap?.get("corner_radius") as? Number)?.toFloat()
+                                    ?: (sectionCtaStyleMap?.get("corner_radius") as? Number)?.toFloat()
+                                    ?: config.cta?.corner_radius?.toFloat()
+                                    ?: 12f
+                            ).dp),
                         )
                         .alpha(if (ctaEnabled) 1f else 0.5f)
                         .clickable(

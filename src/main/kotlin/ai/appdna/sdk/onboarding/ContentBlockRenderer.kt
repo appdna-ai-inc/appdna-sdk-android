@@ -1034,7 +1034,11 @@ data class EntranceAnimationConfig(
     val type: String = "none",    // none, fade_in, slide_up, slide_down, slide_left, slide_right, scale_up, scale_down, bounce, flip
     val duration_ms: Int = 300,
     val delay_ms: Int = 0,
-    val easing: String = "ease_out",
+    // Audit pass-8 — canonical missing-easing default is "linear" to match iOS's
+    // swiftUIAnimation fall-through (ContentBlockTypes.swift:692 → .linear). Was
+    // "ease_out", which resolved a hand-authored/imported easing-less payload to a
+    // different curve than iOS. (Preview '|| ease' → '|| linear' is a sibling change.)
+    val easing: String = "linear",
     val spring_damping: Double? = null,
     // Sequenced animation (Mrozu Duolingo s14 / Asana): per-block stagger + ordering.
     // animation_delay_ms is ADDED to delay_ms to sequence blocks; animation_order is
@@ -3506,7 +3510,11 @@ private val StarDotShape = GenericShape { size, _ ->
 
 @Composable
 private fun PageIndicatorBlock(block: ContentBlock, currentStepIndex: Int = 0, totalSteps: Int = 1) {
-    val dotCount = block.dot_count ?: totalSteps
+    // Audit pass-8 — clamp to [0,50] to match iOS (ContentBlockRendererView.swift:1236),
+    // which caps dot_count precisely because ForEach(0..<count) is unsafe. A
+    // binding/API-driven dot_count above 50 would render an unbounded dot row on
+    // Android while iOS caps at 50.
+    val dotCount = (block.dot_count ?: totalSteps).coerceIn(0, 50)
     // SPEC-401-A — explicit `active_index = 0` is a valid first-dot
     // selection. Previously Android auto-rebound to currentStepIndex
     // when the value was 0 (couldn't tell unset from 0); iOS uses
@@ -3801,6 +3809,13 @@ private fun SocialLoginBlock(
                         shape = RoundedCornerShape(providerCorner),
                         border = androidx.compose.foundation.BorderStroke(providerBorderWidth, borderColor),
                         colors = ButtonDefaults.outlinedButtonColors(
+                            // Audit pass-8 — honor an authored provider.bg_color on
+                            // outlined buttons (iOS ContentBlockRendererView.swift:1362-1365
+                            // applies bgColor unconditionally; preview OnboardingStepPreview.tsx:1542
+                            // does the same). Must default TRANSPARENT (not the brand `bgColor`)
+                            // so a plain outlined/Google button stays .clear like iOS, and only
+                            // tints when the author explicitly sets bg_color.
+                            containerColor = provider.bg_color?.let { StyleEngine.parseColor(it) } ?: Color.Transparent,
                             contentColor = textColor,
                         ),
                         // Zero Material3 default contentPadding so the inner buttonContent
@@ -3815,7 +3830,13 @@ private fun SocialLoginBlock(
                         onClick = socialClick,
                         modifier = Modifier.fillMaxWidth().height(buttonHeight),
                         shape = RoundedCornerShape(providerCorner),
-                        colors = ButtonDefaults.textButtonColors(contentColor = textColor),
+                        colors = ButtonDefaults.textButtonColors(
+                            // Audit pass-8 — same authored-bg_color honor as outlined
+                            // (iOS applies bgColor to minimal too); TRANSPARENT default
+                            // preserves the borderless minimal look until bg_color is set.
+                            containerColor = provider.bg_color?.let { StyleEngine.parseColor(it) } ?: Color.Transparent,
+                            contentColor = textColor,
+                        ),
                         // Zero Material3 default contentPadding so the inner buttonContent
                         // Row's own start=16.dp is the sole horizontal authority (matches iOS 16pt
                         // + preview px-4). Height stays fixed via `.height(buttonHeight)`.
@@ -7323,6 +7344,38 @@ fun EntranceAnimationWrapper(
     )
     val isSpring = animation.easing == "spring"
 
+    // Audit pass-8 — a real "flip" is a 3D X-axis rotation to match iOS
+    // (ContentBlockTypes.swift:613-616 rotates 90°→0 around x). AnimatedVisibility's
+    // EnterTransition cannot express rotationX, and the previous impl used
+    // fadeIn + scaleIn(0.0) (scale-from-zero, NO rotation) so a "flip" block
+    // visibly did not flip. Drive rotationX via graphicsLayer instead. (Preview
+    // rotateY→rotateX axis alignment is a sibling change.)
+    if (animation.type == "flip") {
+        // Named `flipRotation` (not `rotationX`) so it doesn't shadow the
+        // GraphicsLayerScope.rotationX property inside the graphicsLayer lambda.
+        val flipRotation by androidx.compose.animation.core.animateFloatAsState(
+            targetValue = if (isVisible) 0f else 90f,
+            animationSpec = if (isSpring) springFloatSpec else tweenSpec,
+            label = "flipRotationX",
+        )
+        val flipAlpha by androidx.compose.animation.core.animateFloatAsState(
+            targetValue = if (isVisible) 1f else 0f,
+            animationSpec = if (isSpring) springFloatSpec else tweenSpec,
+            label = "flipAlpha",
+        )
+        androidx.compose.foundation.layout.Box(
+            modifier = Modifier.graphicsLayer {
+                rotationX = flipRotation
+                alpha = flipAlpha
+                // Perspective so the X-axis rotation reads as depth, not a flat squash.
+                cameraDistance = 12f * density
+            }
+        ) {
+            content()
+        }
+        return
+    }
+
     val enterTransition: androidx.compose.animation.EnterTransition = when (animation.type) {
         "fade_in" -> androidx.compose.animation.fadeIn(if (isSpring) springFloatSpec else tweenSpec)
         "slide_up" -> androidx.compose.animation.slideInVertically(if (isSpring) springIntOffsetSpec else tweenIntOffset) { it }
@@ -7339,8 +7392,7 @@ fun EntranceAnimationWrapper(
             if (isSpring) springFloatSpec else tweenSpec,
             initialScale = 0.3f,
         )
-        "flip" -> androidx.compose.animation.fadeIn(if (isSpring) springFloatSpec else tweenSpec) +
-            androidx.compose.animation.scaleIn(if (isSpring) springFloatSpec else tweenSpec, initialScale = 0.0f)
+        // "flip" is handled above via graphicsLayer rotationX (3D X-axis flip).
         else -> androidx.compose.animation.EnterTransition.None
     }
 
@@ -7458,46 +7510,57 @@ private fun FormInputTextBlock(
         val focusedBorderWidth = (block.field_style?.border_width ?: 2.0).dp
         val interactionSource = remember { androidx.compose.foundation.interaction.MutableInteractionSource() }
         val isFocused by interactionSource.collectIsFocusedAsState()
-        // SPEC-419 — single border source: the OutlinedTextField draws its OWN rounded
-        // border. The previous outer .border() Box wrapping it stacked two outlines into
-        // a visible double border on the login email/text fields. Width is M3 default
-        // (1dp unfocused / 2dp focused); authored border_width is no longer honored here
-        // but a clean single border matters more than custom thickness.
-        androidx.compose.material3.OutlinedTextField(
-            value = text,
-            onValueChange = {
-                text = it
-                inputValues[fieldId] = it
-            },
-            placeholder = {
-                Text(
-                    text = block.field_placeholder ?: "",
-                    color = StyleEngine.parseColor(block.field_style?.placeholder_color ?: "#9CA3AF"),
-                )
-            },
-            keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(
-                keyboardType = kbType,
-                imeAction = androidx.compose.ui.text.input.ImeAction.Done,
-            ),
-            shape = RoundedCornerShape(cornerRadius),
-            textStyle = TextStyle(fontSize = inputFontSize),
-            modifier = if (fieldHeightDp != null) Modifier.fillMaxWidth().heightIn(min = fieldHeightDp.dp) else Modifier.fillMaxWidth(),
-            singleLine = true,
-            interactionSource = interactionSource,
-            colors = androidx.compose.material3.OutlinedTextFieldDefaults.colors(
-                focusedTextColor = textColor,
-                unfocusedTextColor = textColor,
-                focusedContainerColor = focusedBgColor,
-                unfocusedContainerColor = bgColor,
-                // SPEC-419 — if the block itself already draws a container border
-                // (applyBlockStyle, block_style.border_width > 0 — e.g. the login input
-                // blocks author a capsule outline), the field must stay border-LESS or
-                // the two outlines stack into the visible double border. Draw the field's
-                // own border only when the block has none.
-                focusedBorderColor = if ((block.block_style?.border_width ?: 0.0) > 0.0) Color.Transparent else focusedBorderColor,
-                unfocusedBorderColor = if ((block.block_style?.border_width ?: 0.0) > 0.0) Color.Transparent else borderColor,
-            ),
-        )
+        // Audit pass-8 — honor authored field_style.border_width by drawing the
+        // border on an OUTER Box and zeroing the field's built-in border (fixed at
+        // M3 1dp/2dp), mirroring FormInputTextAreaBlock (:7600-7636) and iOS
+        // FormInputBlockViews.swift:103-106. borderWidth/focusedBorderWidth/isFocused
+        // were computed above but unused (dead code) — this wires them up. The
+        // SPEC-419 double-border guard is preserved: when the block itself draws a
+        // container outline (block_style.border_width > 0 — e.g. login capsule
+        // inputs), skip the outer border so the two outlines don't stack.
+        val hasBlockBorder = (block.block_style?.border_width ?: 0.0) > 0.0
+        Box(
+            modifier = if (hasBlockBorder) Modifier.fillMaxWidth()
+                else Modifier.fillMaxWidth().border(
+                    width = if (isFocused) focusedBorderWidth else borderWidth,
+                    color = if (isFocused) focusedBorderColor else borderColor,
+                    shape = RoundedCornerShape(cornerRadius),
+                ),
+        ) {
+            androidx.compose.material3.OutlinedTextField(
+                value = text,
+                onValueChange = {
+                    text = it
+                    inputValues[fieldId] = it
+                },
+                placeholder = {
+                    Text(
+                        text = block.field_placeholder ?: "",
+                        color = StyleEngine.parseColor(block.field_style?.placeholder_color ?: "#9CA3AF"),
+                    )
+                },
+                keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(
+                    keyboardType = kbType,
+                    imeAction = androidx.compose.ui.text.input.ImeAction.Done,
+                ),
+                shape = RoundedCornerShape(cornerRadius),
+                textStyle = TextStyle(fontSize = inputFontSize),
+                modifier = if (fieldHeightDp != null) Modifier.fillMaxWidth().heightIn(min = fieldHeightDp.dp) else Modifier.fillMaxWidth(),
+                singleLine = true,
+                interactionSource = interactionSource,
+                colors = androidx.compose.material3.OutlinedTextFieldDefaults.colors(
+                    focusedTextColor = textColor,
+                    unfocusedTextColor = textColor,
+                    focusedContainerColor = focusedBgColor,
+                    unfocusedContainerColor = bgColor,
+                    // Built-in border always zeroed: the authored width is drawn by the
+                    // outer Box, or (when the block draws its own outline) the block_style
+                    // capsule owns it — either way the field itself stays border-less.
+                    focusedBorderColor = Color.Transparent,
+                    unfocusedBorderColor = Color.Transparent,
+                ),
+            )
+        }
     }
 }
 
@@ -7753,6 +7816,21 @@ private fun FormInputDateBlock(
     // these constraints and surfaces an inline error string under the picker.
     // Android was silently writing invalid dates.
     var dateError by remember { mutableStateOf<String?>(null) }
+    // Audit pass-8 — resolve min_date/max_date to day-bounded epoch millis so
+    // validateDate can enforce them. These were parsed on the block and honored
+    // by DateWheelPicker (:5899-5920) + FormStep, but the calendar/DatePicker
+    // path silently dropped them (only allow_future/allow_past were checked),
+    // matching the iOS gap. Reuse parseDateWheelSeed (the same helper the wheel
+    // uses for its min/max clamp) and normalize min→start-of-day, max→end-of-day
+    // so a pick landing exactly on the boundary day isn't rejected by time-of-day.
+    val minDateMillis = parseDateWheelSeed(block.min_date, null)?.apply {
+        set(java.util.Calendar.HOUR_OF_DAY, 0); set(java.util.Calendar.MINUTE, 0)
+        set(java.util.Calendar.SECOND, 0); set(java.util.Calendar.MILLISECOND, 0)
+    }?.timeInMillis
+    val maxDateMillis = parseDateWheelSeed(block.max_date, null)?.apply {
+        set(java.util.Calendar.HOUR_OF_DAY, 23); set(java.util.Calendar.MINUTE, 59)
+        set(java.util.Calendar.SECOND, 59); set(java.util.Calendar.MILLISECOND, 999)
+    }?.timeInMillis
     fun validateDate(millis: Long): Boolean {
         val now = System.currentTimeMillis()
         val msg = block.date_validation_message
@@ -7762,6 +7840,14 @@ private fun FormInputDateBlock(
         }
         if (block.allow_past == false && millis < now) {
             dateError = msg ?: "Past dates are not allowed"
+            return false
+        }
+        if (minDateMillis != null && millis < minDateMillis) {
+            dateError = msg ?: "Date is before the earliest allowed date"
+            return false
+        }
+        if (maxDateMillis != null && millis > maxDateMillis) {
+            dateError = msg ?: "Date is after the latest allowed date"
             return false
         }
         dateError = null
@@ -8871,9 +8957,16 @@ private fun FormInputSelectBlock(
         // stacked / dropdown matching iOS FormInputBlockViews.swift:769-770
         // + 926-937. Reads field_config.tooltip_text + tooltip_icon.
         // Renders 12sp caption with optional 12dp leading icon at 50% alpha.
+        // Audit pass-8 — scope the tooltip caption to displayStyle=="grid" to
+        // match iOS, which renders it only inside gridSelectView
+        // (FormInputBlockViews.swift:1180/1349), and the editor, which exposes
+        // tooltip_text only in the grid section (StepContentEditor.tsx:6941).
+        // Previously this rendered for every display style (dropdown/stacked/
+        // list/bubble/image_tiles), so a tooltip on a non-grid select showed on
+        // Android but not iOS.
         val tooltipText = block.field_config?.get("tooltip_text") as? String
         val tooltipIconRef = block.field_config?.get("tooltip_icon") as? String
-        if (!tooltipText.isNullOrBlank()) {
+        if (!tooltipText.isNullOrBlank() && displayStyle == "grid") {
             val captionColor = StyleEngine.parseColor(block.field_style?.text_color ?: "#1A1A1A").copy(alpha = 0.5f)
             Row(
                 verticalAlignment = Alignment.CenterVertically,
@@ -9030,8 +9123,17 @@ private fun FormInputToggleBlock(
     val thumbColor = StyleEngine.parseColor(block.field_style?.thumb_color ?: "#FFFFFF")
     val label = block.field_label ?: block.toggle_label ?: ""
     // OB-6 audit follow-up — restore saved value on back nav.
+    // Audit pass-8 — the input_toggle editor writes 'Default On' to
+    // field_config.default_value (StepContentEditor.tsx:6950) and the preview
+    // reads cfg.default_value (OnboardingStepPreview.tsx:3721), but this init read
+    // only block.toggle_default (never field_config.default_value), so the
+    // default-on setting was silently dropped. Fall back to field_config.default_value.
     var checked by remember {
-        mutableStateOf((inputValues[fieldId] as? Boolean) ?: (block.toggle_default ?: false))
+        mutableStateOf(
+            (inputValues[fieldId] as? Boolean)
+                ?: (block.field_config?.get("default_value") as? Boolean)
+                ?: (block.toggle_default ?: false)
+        )
     }
 
     // SPEC-401-A R60 (Lens C P2 #1) — wrap label+Switch in `toggleable` so
@@ -9329,21 +9431,27 @@ private fun FormInputRatingBlock(
     inputValues: MutableMap<String, Any>,
 ) {
     val fieldId = block.field_id ?: block.id
-    val maxStars = block.max_stars ?: 5
-    val starSize = (block.star_size ?: 32.0).sp
-    // SPEC-401-A B2 P1 — DTO field-name + priority parity with iOS.
-    // iOS reads `filled_color ?? field_style.fill_color`, Android was
-    // reversed (field_style.fill_color first). Console can author either
-    // — sample author writes `filled_color` so iOS picked it up but
-    // Android ignored it whenever both were set.
-    // SPEC-401-A R56 (Lens A R56 #1, P1) — restore iOS canonical priority
-    // chain `filled_color ?? field_style.fill_color`, `empty_color ?? "#D1D5DB"`
-    // (FormInputBlockViews.swift:1095-1096). Sibling content-block RatingBlock
-    // already uses this; only the form-input variant was broken — author-set
-    // `filled_color` / `empty_color` were silently ignored.
-    val filledCol = StyleEngine.parseColor(block.filled_color ?: block.active_rating_color ?: block.field_style?.fill_color ?: "#FBBF24")
-    val emptyCol = StyleEngine.parseColor(block.empty_color ?: block.inactive_rating_color ?: "#D1D5DB")
-    val allowHalf = block.allow_half == true
+    // Audit pass-8 — the input_rating editor (StepContentEditor.tsx:6963-6977)
+    // writes max_stars/star_size/filled_color/empty_color/allow_half to
+    // field_config, and the preview (OnboardingStepPreview.tsx:3765-3767) + iOS
+    // (FormInputBlockViews.swift:1699-1706) read field_config FIRST. Android was
+    // reading only the top-level keys (never populated for input_rating), so all
+    // 5 authored rating settings were silently dropped. Read field_config first,
+    // then the existing top-level fallbacks.
+    val fc = block.field_config
+    val maxStars = ((fc?.get("max_stars") as? Number)?.toInt() ?: block.max_stars ?: 5).coerceAtLeast(1)
+    val starSize = ((fc?.get("star_size") as? Number)?.toDouble() ?: block.star_size ?: 32.0).sp
+    // SPEC-401-A B2 P1 / R56 — DTO field-name + priority parity with iOS
+    // (`filled_color ?? field_style.fill_color`, `empty_color ?? "#D1D5DB"`,
+    // FormInputBlockViews.swift:1095-1096), now with field_config taking highest
+    // precedence to match the editor/preview/iOS.
+    val filledCol = StyleEngine.parseColor(
+        (fc?.get("filled_color") as? String) ?: block.filled_color ?: block.active_rating_color ?: block.field_style?.fill_color ?: "#FBBF24"
+    )
+    val emptyCol = StyleEngine.parseColor(
+        (fc?.get("empty_color") as? String) ?: block.empty_color ?: block.inactive_rating_color ?: "#D1D5DB"
+    )
+    val allowHalf = (fc?.get("allow_half") as? Boolean) ?: (block.allow_half == true)
     // SPEC-401-A — promote selectedRating to Double for half-star round-trip.
     // Mirrors iOS FormInputBlockViews.swift:1106 which already supports
     // half-stars when block.allow_half is true.
