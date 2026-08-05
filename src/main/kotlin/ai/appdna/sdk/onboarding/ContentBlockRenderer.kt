@@ -7878,8 +7878,9 @@ private fun FormInputDateBlock(
     val calendarBg = ((block.field_config?.get("calendar_bg_color") as? String)?.let { StyleEngine.parseColor(it) }
         ?: block.calendar_bg_color?.let { StyleEngine.parseColor(it) })
         ?.let { c -> (block.field_config?.get("calendar_opacity") as? Number)?.toFloat()?.let { c.copy(alpha = it.coerceIn(0f, 1f)) } ?: c }  // SPEC-419 pass-26 — fold calendar_opacity into the fill alpha (iOS applies .opacity)
-    val wheelBg = (block.field_config?.get("wheel_bg_color") as? String)?.let { StyleEngine.parseColor(it) }
-        ?: block.wheel_bg_color?.let { StyleEngine.parseColor(it) }
+    val wheelBg = ((block.field_config?.get("wheel_bg_color") as? String)?.let { StyleEngine.parseColor(it) }
+        ?: block.wheel_bg_color?.let { StyleEngine.parseColor(it) })
+        ?.let { c -> (block.field_config?.get("wheel_opacity") as? Number)?.toFloat()?.let { c.copy(alpha = it.coerceIn(0f, 1f)) } ?: c }  // fold wheel_opacity into fill alpha (iOS applies .opacity), mirroring calendarBg
     // SPEC-419 pass-16 #12 — honor wheel_text_color on the inline graphical picker
     // (day/weekday/year content), mirroring iOS colorMultiply + preview wheelText.
     val wheelTextColor = (block.field_config?.get("wheel_text_color") as? String)?.let { StyleEngine.parseColor(it) }
@@ -8796,7 +8797,7 @@ private fun FormInputSelectBlock(
                                             fontWeight = FontWeight.SemiBold,
                                         )
                                         option.subtitle?.takeIf { it.isNotBlank() }?.let { sub ->
-                                            Text(text = sub, color = Color.White.copy(alpha = 0.85f), fontSize = 12.sp)
+                                            Text(text = sub, color = Color.White.copy(alpha = 0.85f), fontSize = (option.subtitle_font_size ?: 12.0).sp)
                                         }
                                     }
                                 }
