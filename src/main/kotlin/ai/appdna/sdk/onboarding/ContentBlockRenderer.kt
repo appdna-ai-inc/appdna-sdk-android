@@ -3707,7 +3707,7 @@ private fun SocialLoginBlock(
                 ?: if (buttonStyle == "outlined") {
                     if (provider.type == "google") Color(0xFFDADCE0)
                     else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.4f)
-                } else defaultBorder
+                } else Color.Transparent  // iOS socialLoginBorderColor returns .clear for non-outlined (filled/minimal); stroke still drawn when border_width>0 so an authored border_color renders
             // OB-2 — per-provider corner_radius + border_width overrides.
             val providerCorner = (provider.corner_radius ?: block.button_corner_radius?.toFloat() ?: 12f).dp
             // SPEC-401-A R27 — match iOS ContentBlockRendererView.swift:738-741

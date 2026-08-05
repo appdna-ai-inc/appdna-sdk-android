@@ -270,6 +270,7 @@ data class PaywallSectionData(
     val card_corner_radius: Float? = null,
     val card_padding: Float? = null,
     val card_gap: Float? = null,
+    val card_height: Float? = null,  // Minimum plan-card height in dp (console card_height); applied as heightIn(min:)
     // Console emits either Boolean ("show shadow yes/no") OR a String enum
     // ("sm"/"md"/"lg"/"none"). iOS PlanCard.swift:206-210 derives radius and
     // y-offset from the string; Android previously discarded String values.
@@ -1148,6 +1149,7 @@ internal object PaywallConfigParser {
                 card_corner_radius = (d["card_corner_radius"] as? Number)?.toFloat(),
                 card_padding = (d["card_padding"] as? Number)?.toFloat(),
                 card_gap = (d["card_gap"] as? Number)?.toFloat(),
+                card_height = (d["card_height"] as? Number)?.toFloat(),
                 // Pass raw — renderer decodes Bool|String|null into elevation.
                 card_shadow = d["card_shadow"],
                 badge_position = d["badge_position"] as? String,

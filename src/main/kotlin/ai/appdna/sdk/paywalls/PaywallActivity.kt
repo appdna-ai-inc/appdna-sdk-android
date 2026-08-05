@@ -1502,6 +1502,9 @@ private fun PaywallSectionView(
             // (iOS grid/side-by-side use 8; the flat 12 default is the accepted
             // parity tradeoff for the LOW-frequency multi-column layouts.)
             val cardGap = (section.data?.card_gap ?: 12f).dp
+            // console card_height → minimum plan-card height. Null when unauthored so it
+            // never forces a floor. Mirrors iOS PlanCard `.frame(minHeight:)` + PaywallPreview minHeight.
+            val cardHeight = section.data?.card_height?.let { it.dp }
             val cardShape = RoundedCornerShape(cardRadius)
             // Mirror iOS PlanCard.swift:206-210 — accept Bool OR String enum
             // ("sm"/"md"/"lg"/"none") and derive elevation. String values
@@ -1678,6 +1681,7 @@ private fun PaywallSectionView(
                             role = Role.RadioButton
                             selected = isSelected
                         }
+                        .then(if (cardHeight != null) Modifier.heightIn(min = cardHeight) else Modifier)
                         .clickable { onPlanSelect(plan.id) },
                     shape = cardShape,
                     elevation = CardDefaults.cardElevation(defaultElevation = elevation),
@@ -2091,6 +2095,7 @@ private fun PaywallSectionView(
                                     .then(
                                         if (isSelected) Modifier.border(2.dp, ai.appdna.sdk.AppDNA.brandAccentColor(), cardShape) else Modifier
                                     )
+                                    .then(if (cardHeight != null) Modifier.heightIn(min = cardHeight) else Modifier)
                                     .clickable { onPlanSelect(plan.id) },
                                 shape = cardShape,
                                 colors = CardDefaults.cardColors(
@@ -2386,6 +2391,7 @@ private fun PaywallSectionView(
                                             role = Role.RadioButton
                                             selected = isSelected
                                         }
+                                        .then(if (cardHeight != null) Modifier.heightIn(min = cardHeight) else Modifier)
                                         .clickable { onPlanSelect(plan.id) },
                                     shape = cardShape,
                                     elevation = CardDefaults.cardElevation(defaultElevation = if (cardShadowEnabled) 4.dp else 0.dp),
