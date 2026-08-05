@@ -8221,19 +8221,15 @@ private fun FormInputSelectBlock(
     // 24dp stacked / 32dp grid → flags/icons squished, and ignored the console slider that iOS
     // already reads). Defaults match iOS: 32 stacked (FormInputBlockViews.swift:539), 40 grid (:871).
     val optImgSizeRaw = (cfg?.get("option_image_size") as? Number)?.toFloat()
-    // QA-R4 — match iOS FormInputBlockViews.swift:478-530 default
-    // (`Color.white.opacity(0.15)`) so unstyled options render as a thin
-    // frosted-glass card over the step gradient, NOT opaque black.
-    //
-    // ⚠ DO NOT change to `Color.Transparent` — it is a hidden footgun.
-    // Color.Transparent is `Color(0x00000000)` (alpha=0, RGB=0). Combining
-    // with the `.copy(alpha = bgOpacity)` multiplier below where bgOpacity
-    // defaults to `1.0f` produces `Color(0xFF000000)` = OPAQUE BLACK. The
-    // alpha-multiplication math at line ~5362 also now preserves the
-    // base color's alpha instead of overwriting it.
+    // Unstyled options fall back to fully transparent to match iOS
+    // (`Color.clear`) and the console preview ('transparent') — so an
+    // unstyled stacked/grid select shows the step gradient through the
+    // option, NOT a frosted-glass card. The `c.alpha * bgOpacity` multiply
+    // at the use sites preserves the base color's alpha, so a transparent
+    // base (alpha=0) stays transparent regardless of bgOpacity.
     val unselectedBg = cfgOptBg
         ?: block.field_style?.background_color?.let { StyleEngine.parseColor(it) }
-        ?: Color.White.copy(alpha = 0.15f)
+        ?: Color.Transparent
     val selectedBg = cfgSelectedBg ?: fillCol.copy(alpha = 0.15f)
     val unselectedBorder = cfgOptBorder
         ?: block.field_style?.border_color?.let { StyleEngine.parseColor(it) }

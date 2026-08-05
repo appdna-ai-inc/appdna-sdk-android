@@ -1770,6 +1770,22 @@ private fun PaywallSectionView(
                             // non-console publisher setting `period` previously got a divergent
                             // extra line here. periodStyle is still used by other layouts.
 
+                            // Round-MZ — post-price block order mirrors iOS PlanCard.swift:
+                            // trial → subtitle(below) → divider → savings → features.
+                            // Was subtitle → features → savings → trial (divergent).
+
+                            // PW-12 — `plan.trialLabel` shows trial copy if present
+                            // (computed from `trial?.label ?? trial_duration`).
+                            plan.trialLabel?.takeIf { it.isNotBlank() }?.let { trialText ->
+                                Spacer(Modifier.height(4.dp))
+                                Text(
+                                    text = loc("plan.$planIdx.trial", trialText),
+                                    fontSize = 12.sp,
+                                    fontWeight = FontWeight.Medium,
+                                    color = resolvedTextColor.takeIf { it != Color.Unspecified } ?: ai.appdna.sdk.AppDNA.brandAccentColor(),
+                                )
+                            }
+
                             // PW-9: subtitle below price (default position).
                             if (showPlanSubtitles && subtitlePosition != "above_price" && !plan.description.isNullOrBlank()) {
                                 Spacer(Modifier.height(4.dp))
@@ -1777,6 +1793,36 @@ private fun PaywallSectionView(
                                     text = loc("plan.$planIdx.description", plan.description),
                                     fontSize = 12.sp,
                                     color = resolvedTextColor.takeIf { it != Color.Unspecified } ?: Color.Gray,
+                                )
+                            }
+
+                            // Round-MZ — per-plan divider between price/subtitle and
+                            // savings/features (mirrors iOS PlanCard.swift:150-155,
+                            // default #E5E7EB). Decoded + editable + previewed; was
+                            // silently dropped here.
+                            if (section.data?.show_divider == true) {
+                                Spacer(Modifier.height(2.dp))
+                                Divider(color = section.data?.divider_color?.let { parseHexColor(it) } ?: parseHexColor("#E5E7EB"))
+                                Spacer(Modifier.height(2.dp))
+                            }
+
+                            // PW-9: per-plan savings text (typically "Save 20%").
+                            // Mirror iOS PlanCard.swift:152 — base green is
+                            // #22C55E (Tailwind green-500), flipping to
+                            // selectedTextColor when the plan is selected so
+                            // it stays readable against custom selected_bg.
+                            if (showSavings && !plan.savings_text.isNullOrBlank()) {
+                                Spacer(Modifier.height(4.dp))
+                                val savingsColor = if (isSelected && selectedTextColor != null) {
+                                    selectedTextColor
+                                } else {
+                                    Color(0xFF22C55E)
+                                }
+                                Text(
+                                    text = loc("plan.$planIdx.savings", plan.savings_text),
+                                    fontSize = 12.sp,
+                                    fontWeight = FontWeight.SemiBold,
+                                    color = savingsColor,
                                 )
                             }
 
@@ -1807,38 +1853,6 @@ private fun PaywallSectionView(
                                     }
                                     Spacer(Modifier.height(2.dp))
                                 }
-                            }
-
-                            // PW-9: per-plan savings text (typically "Save 20%").
-                            // Mirror iOS PlanCard.swift:152 — base green is
-                            // #22C55E (Tailwind green-500), flipping to
-                            // selectedTextColor when the plan is selected so
-                            // it stays readable against custom selected_bg.
-                            if (showSavings && !plan.savings_text.isNullOrBlank()) {
-                                Spacer(Modifier.height(4.dp))
-                                val savingsColor = if (isSelected && selectedTextColor != null) {
-                                    selectedTextColor
-                                } else {
-                                    Color(0xFF22C55E)
-                                }
-                                Text(
-                                    text = loc("plan.$planIdx.savings", plan.savings_text),
-                                    fontSize = 12.sp,
-                                    fontWeight = FontWeight.SemiBold,
-                                    color = savingsColor,
-                                )
-                            }
-
-                            // PW-12 — `plan.trialLabel` shows trial copy if present
-                            // (computed from `trial?.label ?? trial_duration`).
-                            plan.trialLabel?.takeIf { it.isNotBlank() }?.let { trialText ->
-                                Spacer(Modifier.height(4.dp))
-                                Text(
-                                    text = loc("plan.$planIdx.trial", trialText),
-                                    fontSize = 12.sp,
-                                    fontWeight = FontWeight.Medium,
-                                    color = resolvedTextColor.takeIf { it != Color.Unspecified } ?: ai.appdna.sdk.AppDNA.brandAccentColor(),
-                                )
                             }
 
                             plan.badge?.let {
