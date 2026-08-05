@@ -4061,11 +4061,13 @@ private fun CountdownTimerBlock(block: ContentBlock, onAction: (String) -> Unit)
 
     // SPEC-419 pass-15 #10 — h/m/s segments + labels for circular/flip/bar variants (matches preview).
     val segs = buildList {
+        if (showDays && days > 0) add(days.toString().padStart(2, '0'))
         if (showHours) add(hours.toString().padStart(2, '0'))
         if (showMinutes) add(minutes.toString().padStart(2, '0'))
         if (showSeconds) add(seconds.toString().padStart(2, '0'))
     }
     val segLabels = buildList {
+        if (showDays && days > 0) add(daysLabel)
         if (showHours) add(hoursLabel)
         if (showMinutes) add(minutesLabel)
         if (showSeconds) add(secondsLabel)
