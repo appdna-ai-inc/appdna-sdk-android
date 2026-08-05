@@ -1621,7 +1621,12 @@ private fun HeadingBlock(block: ContentBlock, loc: ((String, String) -> String)?
         color = Color.Unspecified,
     )
     val effectiveStyle = if (block.style != null) StyleEngine.applyTextStyle(baseStyle, block.style) else baseStyle
-    val styleWithAlign = horizontalTextAlign(block.horizontal_align)
+    // EPIC-9 parity — iOS prioritizes `style.alignment ?? horizontal_align`
+    // (ContentBlockRendererView.swift:290), so `horizontal_align` only acts as
+    // the fallback when `style.alignment` is unset. `effectiveStyle` already
+    // carries the style-derived textAlign, so we re-derive from alignSource.
+    val alignSource = block.style?.alignment ?: block.horizontal_align
+    val styleWithAlign = horizontalTextAlign(alignSource)
         ?.let { effectiveStyle.copy(textAlign = it) } ?: effectiveStyle
     val resolved = loc?.invoke("block.${block.id}.text", text) ?: text
     Text(
@@ -1647,7 +1652,11 @@ private fun TextBlock(block: ContentBlock, loc: ((String, String) -> String)? = 
     val text = block.text ?: ""
     val baseStyle = TextStyle(fontSize = 16.sp, color = Color.Unspecified)
     val effectiveStyle = if (block.style != null) StyleEngine.applyTextStyle(baseStyle, block.style) else baseStyle
-    val styleWithAlign = horizontalTextAlign(block.horizontal_align)
+    // EPIC-9 parity — iOS prioritizes `style.alignment ?? horizontal_align`
+    // (ContentBlockRendererView.swift:358), so `horizontal_align` only acts as
+    // the fallback when `style.alignment` is unset.
+    val alignSource = block.style?.alignment ?: block.horizontal_align
+    val styleWithAlign = horizontalTextAlign(alignSource)
         ?.let { effectiveStyle.copy(textAlign = it) } ?: effectiveStyle
     val resolved = loc?.invoke("block.${block.id}.text", text) ?: text
     val content = block.style.applyTransform(resolved)
@@ -1656,7 +1665,7 @@ private fun TextBlock(block: ContentBlock, loc: ((String, String) -> String)? = 
     if (showTrailingDots) {
         // Mrozu QA — trailing animated ellipsis ("", ".", "..", "...") for loading-style text.
         // Parity w/ iOS AnimatedTrailingDots + console preview's pulsing-dots span.
-        val boxAlign = when (block.horizontal_align) {
+        val boxAlign = when (alignSource) {
             "center" -> Alignment.Center
             "right", "trailing" -> Alignment.CenterEnd
             else -> Alignment.CenterStart
@@ -3983,7 +3992,6 @@ private fun CountdownTimerBlock(block: ContentBlock, onAction: (String) -> Unit)
 
     val textColor = StyleEngine.parseColor(block.text_color ?: "#000000")
     val accentColor = StyleEngine.parseColor(block.accent_color ?: (ai.appdna.sdk.AppDNA.brandAccentHex ?: "#6366F1"))
-    val bgColor = block.bg_color?.let { StyleEngine.parseColor(it) }
     // SPEC-401-A R32 — match iOS ContentBlockStandaloneViews.swift:112
     // default font_size 28 (was 24).
     val fontSize = (block.font_size ?: 28.0).sp
@@ -4052,12 +4060,6 @@ private fun CountdownTimerBlock(block: ContentBlock, onAction: (String) -> Unit)
     val hours = (remainingSeconds % 86400) / 3600
     val minutes = (remainingSeconds % 3600) / 60
     val seconds = remainingSeconds % 60
-
-    val hAlign = when (block.alignment) {
-        "left" -> Arrangement.Start
-        "right" -> Arrangement.End
-        else -> Arrangement.Center
-    }
 
     // SPEC-419 pass-15 #10 — h/m/s segments + labels for circular/flip/bar variants (matches preview).
     val segs = buildList {
@@ -4163,7 +4165,7 @@ private fun CountdownTimerBlock(block: ContentBlock, onAction: (String) -> Unit)
                         .fillMaxWidth()
                         .height(8.dp)
                         .clip(RoundedCornerShape(4.dp))
-                        .background(bgColor ?: StyleEngine.parseColor("#E5E7EB")),
+                        .background(StyleEngine.parseColor("#E5E7EB")),
                 ) {
                     Box(
                         modifier = Modifier
@@ -4186,7 +4188,7 @@ private fun CountdownTimerBlock(block: ContentBlock, onAction: (String) -> Unit)
 
             Row(
                 modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = hAlign,
+                horizontalArrangement = Arrangement.Center,
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 timeUnits.forEach { (value, unitLabel, _) ->
