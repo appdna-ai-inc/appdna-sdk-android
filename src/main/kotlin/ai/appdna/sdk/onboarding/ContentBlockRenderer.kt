@@ -26,6 +26,7 @@ import androidx.compose.ui.draw.scale
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.compositeOver
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.style.TextAlign
@@ -8372,6 +8373,17 @@ private fun FormInputSelectBlock(
     val selectedBorderW = ((cfg?.get("selected_border_width") as? Number)?.toDouble() ?: 2.0).dp
     val unselectedBorderW = ((cfg?.get("unselected_border_width") as? Number)?.toDouble() ?: 1.0).dp
     val bgOpacity = ((cfg?.get("background_opacity") as? Number)?.toDouble() ?: 1.0).toFloat().coerceIn(0f, 1f)
+    // blur_background: iOS stacked + grid selects apply `.ultraThinMaterial`
+    // (FormInputBlockViews.swift:~828 stacked & :~1205 grid). Android has no true
+    // backdrop blur, so mirror the ESTABLISHED approximation used by
+    // StyleEngine.applyBlockContainerStyle (StyleEngine.kt:354-358): a translucent
+    // white frosted veneer. At the option-card sites below we composite the option's
+    // base container color OVER this veneer (same layer order as StyleEngine — veneer
+    // behind, authored bg on top), so an unstyled/transparent option shows the frosted
+    // surface while an authored bg tints it. Without this, enabling "Blur BG" was
+    // silently dropped on Android (solid card only).
+    val useBlur = (cfg?.get("blur_background") as? Boolean) == true
+    val frostVeneer = Color.White.copy(alpha = 0.3f)
     val optionSpacingDp = ((cfg?.get("option_spacing") as? Number)?.toDouble() ?: 8.0).dp
     // SPEC-419 pass-15 #36 — block-level title/subtitle font defaults from field_config (iOS
     // FormInputBlockViews.swift:678-679, defaults 15/12); per-option size overrides these.
@@ -8508,7 +8520,9 @@ private fun FormInputSelectBlock(
                                 // fully opaque card. Multiplying preserves the
                                 // authored translucency: base 0.15 × 1.0 = 0.15.
                                 containerColor = (if (isSelected) optSelBg else optUnselBg).let { c ->
-                                    c.copy(alpha = c.alpha * bgOpacity)
+                                    val withOpacity = c.copy(alpha = c.alpha * bgOpacity)
+                                    // blur_background → frosted-glass approximation (iOS .ultraThinMaterial).
+                                    if (useBlur) withOpacity.compositeOver(frostVeneer) else withOpacity
                                 },
                             ),
                             border = androidx.compose.foundation.BorderStroke(
@@ -8717,7 +8731,9 @@ private fun FormInputSelectBlock(
                                     colors = CardDefaults.cardColors(
                                         // QA-R4 — multiply alpha, same fix as stacked branch.
                                         containerColor = (if (isSelected) optSelBg else optUnselBg).let { c ->
-                                            c.copy(alpha = c.alpha * bgOpacity)
+                                            val withOpacity = c.copy(alpha = c.alpha * bgOpacity)
+                                            // blur_background → frosted-glass approximation (iOS .ultraThinMaterial), same as stacked.
+                                            if (useBlur) withOpacity.compositeOver(frostVeneer) else withOpacity
                                         },
                                     ),
                                     border = androidx.compose.foundation.BorderStroke(
