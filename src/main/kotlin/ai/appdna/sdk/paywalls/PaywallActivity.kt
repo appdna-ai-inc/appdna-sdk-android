@@ -1532,6 +1532,13 @@ private fun PaywallSectionView(
                 TextStyle(fontSize = 13.sp, color = Color.White.copy(alpha = 0.7f)),
                 section.style?.elements?.get("period")?.text_style
             )
+            // Console Style tab exposes `trial_label`; apply its authored text style
+            // (mirrors priceStyle above). Color still resolved per selected/brand-accent
+            // logic at the Text call site.
+            val trialStyle = StyleEngine.applyTextStyle(
+                TextStyle(fontSize = 12.sp, fontWeight = FontWeight.Medium),
+                section.style?.elements?.get("trial_label")?.text_style
+            )
 
             // Badge styling
             // Mrozu QA — default badge bg is the brand accent (matches iOS + the console editor
@@ -1780,8 +1787,7 @@ private fun PaywallSectionView(
                                 Spacer(Modifier.height(4.dp))
                                 Text(
                                     text = loc("plan.$planIdx.trial", trialText),
-                                    fontSize = 12.sp,
-                                    fontWeight = FontWeight.Medium,
+                                    style = trialStyle,
                                     // Parity with iOS PlanCard: brand accent ONLY when NOT selected.
                                     // When selected the trial matches name/price (resolvedTextColor →
                                     // authored selected_text_color, else Color.Unspecified default primary).

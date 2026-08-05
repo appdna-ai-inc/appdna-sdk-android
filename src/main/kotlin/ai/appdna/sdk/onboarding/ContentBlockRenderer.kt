@@ -9818,7 +9818,9 @@ private fun FormInputChipsBlock(
     val fieldId = block.field_id ?: block.id
     val options = block.field_options ?: emptyList()
     val fillCol = StyleEngine.parseColor(block.field_style?.fill_color ?: block.active_color ?: (ai.appdna.sdk.AppDNA.brandAccentHex ?: "#6366F1"))
-    val maxSelections = (block.field_config?.get("max_selections") as? Number)?.toInt()
+    // Console writes the cap as `max_chips` (Max Chips slider); `max_selections`
+    // kept as a fallback for older/imported configs.
+    val maxSelections = (block.field_config?.get("max_chips") as? Number)?.toInt() ?: (block.field_config?.get("max_selections") as? Number)?.toInt()
     // OB-6 audit follow-up — restore saved chips selection on back nav.
     var selectedValues by remember {
         mutableStateOf(
