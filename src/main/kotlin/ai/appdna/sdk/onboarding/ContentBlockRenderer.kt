@@ -5126,7 +5126,12 @@ private fun AnimatedLoadingBlock(block: ContentBlock, onAction: (String) -> Unit
                     Text(
                         text = "${(overallProgress * 100).toInt()}%",
                         fontSize = 14.sp,
-                        color = textColor,
+                        // SPEC-401-A R47 — when block.text_color unset, fall back to
+                        // theme-adaptive onSurface (was raw default #000000, invisible
+                        // on a dark step bg) + .semibold, mirroring iOS `.primary`/.semibold
+                        // and the checklist labels + circular caption.
+                        color = if (block.text_color == null) MaterialTheme.colorScheme.onSurface else textColor,
+                        fontWeight = FontWeight.SemiBold,
                     )
                 }
             }
@@ -8262,6 +8267,7 @@ private fun FormInputSelectBlock(
     val cfgSelectedBg = (cfg?.get("selected_bg_color") as? String)?.let { StyleEngine.parseColor(it) }
     val cfgSelectedText = (cfg?.get("selected_text_color") as? String)?.let { StyleEngine.parseColor(it) }
     val cfgOptText = (cfg?.get("text_color") as? String)?.let { StyleEngine.parseColor(it) }
+    val cfgSubtitleColor = (cfg?.get("subtitle_color") as? String)?.let { StyleEngine.parseColor(it) }
     // EPIC-1 Win 1 — honor authored `option_image_size` for per-option images (was hardcoded
     // 24dp stacked / 32dp grid → flags/icons squished, and ignored the console slider that iOS
     // already reads). Defaults match iOS: 32 stacked (FormInputBlockViews.swift:539), 40 grid (:871).
@@ -8384,9 +8390,10 @@ private fun FormInputSelectBlock(
                             if (isSelected) {
                                 option.selected_text_color?.let { StyleEngine.parseColor(it) }
                                     ?: option.subtitle_color?.let { StyleEngine.parseColor(it) }
+                                    ?: cfgSubtitleColor
                                     ?: base.copy(alpha = 0.65f)
                             } else {
-                                option.subtitle_color?.let { StyleEngine.parseColor(it) } ?: base.copy(alpha = 0.65f)
+                                option.subtitle_color?.let { StyleEngine.parseColor(it) } ?: cfgSubtitleColor ?: base.copy(alpha = 0.65f)
                             }
                         }
                         // SPEC-401-A R64 — single click target so TalkBack treats
@@ -8720,6 +8727,7 @@ private fun FormInputSelectBlock(
                                                     // adapts to the host theme and goes near-black on a dark step
                                                     // bg. Mirrors iOS grid (textCol.opacity(0.65)) + preview (a6).
                                                     color = option.subtitle_color?.let { StyleEngine.parseColor(it) }
+                                                        ?: cfgSubtitleColor
                                                         ?: (if (textCol == Color.Unspecified) Color.White else textCol).copy(alpha = 0.65f),
                                                     textAlign = cellTextAlign,
                                                 )

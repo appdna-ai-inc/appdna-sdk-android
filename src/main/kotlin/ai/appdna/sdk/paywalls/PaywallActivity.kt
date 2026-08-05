@@ -1782,7 +1782,10 @@ private fun PaywallSectionView(
                                     text = loc("plan.$planIdx.trial", trialText),
                                     fontSize = 12.sp,
                                     fontWeight = FontWeight.Medium,
-                                    color = resolvedTextColor.takeIf { it != Color.Unspecified } ?: ai.appdna.sdk.AppDNA.brandAccentColor(),
+                                    // Parity with iOS PlanCard: brand accent ONLY when NOT selected.
+                                    // When selected the trial matches name/price (resolvedTextColor →
+                                    // authored selected_text_color, else Color.Unspecified default primary).
+                                    color = if (isSelected) (selectedTextColor ?: Color.Unspecified) else ai.appdna.sdk.AppDNA.brandAccentColor(),
                                 )
                             }
 
