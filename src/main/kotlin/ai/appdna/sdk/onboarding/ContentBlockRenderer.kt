@@ -9079,12 +9079,16 @@ private fun FormInputSelectBlock(
                         modifier = Modifier.fillMaxWidth(),
                         shape = RoundedCornerShape((block.field_style?.corner_radius ?: 8.0).dp),
                         border = androidx.compose.foundation.BorderStroke(
-                            1.dp,
+                            // honor field_style.border_width (0 = no outline), matching iOS fieldBorderWidth
+                            (if ((block.block_style?.border_width ?: 0.0) > 0) 0.0 else (block.field_style?.border_width ?: 1.0)).dp,
                             StyleEngine.parseColor(block.field_style?.border_color ?: "#D1D5DB"),
                         ),
                         // SPEC-401-A R44 — theme-adaptive content color (was Color.DarkGray
-                // — invisible on dark surface in dark mode).
-                colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.onSurface),
+                // — invisible on dark surface in dark mode). Container honors field_style.background_color (iOS parity).
+                colors = ButtonDefaults.outlinedButtonColors(
+                    containerColor = block.field_style?.background_color?.let { StyleEngine.parseColor(it) } ?: Color.Transparent,
+                    contentColor = MaterialTheme.colorScheme.onSurface,
+                ),
                     ) {
                         Row(
                             modifier = Modifier.fillMaxWidth(),
