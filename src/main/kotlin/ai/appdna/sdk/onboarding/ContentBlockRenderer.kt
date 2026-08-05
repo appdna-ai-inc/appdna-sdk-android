@@ -7786,6 +7786,49 @@ private fun FormInputPasswordBlock(
     }
 }
 
+/**
+ * Wrap date/time-picker content in a forced light/dark MaterialTheme when the block
+ * requests an explicit color_scheme (or its text_color implies one); null leaves the
+ * ambient onboarding theme untouched. Mirrors iOS FormInputDateBlock's
+ * `.environment(\.colorScheme, resolvedScheme)` (FormInputBlockViews.swift).
+ */
+@Composable
+private fun ForcedPickerScheme(forceDark: Boolean?, content: @Composable () -> Unit) {
+    if (forceDark == null) {
+        content()
+        return
+    }
+    MaterialTheme(
+        colorScheme = if (forceDark) androidx.compose.material3.darkColorScheme() else androidx.compose.material3.lightColorScheme(),
+        content = content,
+    )
+}
+
+/**
+ * Build DatePickerColors, layering the author's absolute overrides (calendar bg,
+ * highlight, wheel text) over the ambient MaterialTheme defaults. Must be called inside
+ * the target theme scope so the non-overridden base colors follow the forced scheme.
+ */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun buildFormDatePickerColors(
+    highlightColor: Color?,
+    calendarBg: Color?,
+    wheelTextColor: Color?,
+): androidx.compose.material3.DatePickerColors =
+    androidx.compose.material3.DatePickerDefaults.colors().let { base ->
+        if (highlightColor == null && calendarBg == null && wheelTextColor == null) base
+        else androidx.compose.material3.DatePickerDefaults.colors(
+            containerColor = calendarBg ?: base.containerColor,
+            selectedDayContainerColor = highlightColor ?: base.selectedDayContainerColor,
+            todayDateBorderColor = highlightColor ?: base.todayDateBorderColor,
+            selectedYearContainerColor = highlightColor ?: base.selectedYearContainerColor,
+            dayContentColor = wheelTextColor ?: base.dayContentColor,
+            weekdayContentColor = wheelTextColor ?: base.weekdayContentColor,
+            yearContentColor = wheelTextColor ?: base.yearContentColor,
+        )
+    }
+
 /** Date / Time / DateTime picker input. */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -7930,17 +7973,23 @@ private fun FormInputDateBlock(
     // SPEC-419 pass-16 #12 — honor wheel_text_color on the inline graphical picker
     // (day/weekday/year content), mirroring iOS colorMultiply + preview wheelText.
     val wheelTextColor = (block.field_config?.get("wheel_text_color") as? String)?.let { StyleEngine.parseColor(it) }
-    val datePickerColors: androidx.compose.material3.DatePickerColors = androidx.compose.material3.DatePickerDefaults.colors().let { base ->
-        if (highlightColor == null && calendarBg == null && wheelTextColor == null) base
-        else androidx.compose.material3.DatePickerDefaults.colors(
-            containerColor = calendarBg ?: base.containerColor,
-            selectedDayContainerColor = highlightColor ?: base.selectedDayContainerColor,
-            todayDateBorderColor = highlightColor ?: base.todayDateBorderColor,
-            selectedYearContainerColor = highlightColor ?: base.selectedYearContainerColor,
-            dayContentColor = wheelTextColor ?: base.dayContentColor,
-            weekdayContentColor = wheelTextColor ?: base.weekdayContentColor,
-            yearContentColor = wheelTextColor ?: base.yearContentColor,
-        )
+    // Mrozu QA — parity with iOS FormInputDateBlock (FormInputBlockViews.swift:276-285):
+    // honor field_config.color_scheme (light/dark) as an explicit picker-theme override,
+    // else auto-detect dark when field_style.text_color is a light hex (dark-background
+    // flows set white text, so the native date/time popover must render dark or it's
+    // white-on-white and unreadable). iOS uses Color.isLightHex (luminance >= 0.6,
+    // PaywallHelperViews.swift:120). When neither signal is present we leave the ambient
+    // onboarding theme (already luminance-adapted by OnboardingActivity) rather than
+    // iOS's `?? .light`, to avoid regressing existing dark flows. Because Android passes
+    // explicit `colors=` to the pickers, forcing only takes effect when the DatePickerColors
+    // are rebuilt inside the forced MaterialTheme — see ForcedPickerScheme wrappers below.
+    val forcePickerDark: Boolean? = when ((block.field_config?.get("color_scheme") as? String)?.lowercase()) {
+        "dark" -> true
+        "light" -> false
+        else -> block.field_style?.text_color?.let { hex ->
+            val c = StyleEngine.parseColor(hex)
+            if (0.2126f * c.red + 0.7152f * c.green + 0.0722f * c.blue >= 0.6f) true else null
+        }
     }
     // SPEC-419 pass-16 #11 — opt-in picker border + padding around the whole picker
     // (any variant). Mirrors editor field_config.picker_border_*/picker_padding +
@@ -7973,7 +8022,9 @@ private fun FormInputDateBlock(
                 if (savedRaw.isEmpty()) null else try { isoFormatter.parse(savedRaw)?.time } catch (_: Exception) { null }
             }
             val datePickerState = rememberDatePickerState(initialSelectedDateMillis = initialMillis)
-            DatePicker(state = datePickerState, modifier = Modifier.fillMaxWidth().then(pickerChromeMod), colors = datePickerColors)
+            ForcedPickerScheme(forcePickerDark) {
+                DatePicker(state = datePickerState, modifier = Modifier.fillMaxWidth().then(pickerChromeMod), colors = buildFormDatePickerColors(highlightColor, calendarBg, wheelTextColor))
+            }
             LaunchedEffect(datePickerState.selectedDateMillis) {
                 val millis = datePickerState.selectedDateMillis
                 if (millis != null && validateDate(millis)) {
@@ -8056,6 +8107,8 @@ private fun FormInputDateBlock(
     // Material3 DatePickerDialog
     if (showDatePicker) {
         val datePickerState = rememberDatePickerState()
+        ForcedPickerScheme(forcePickerDark) {
+        val datePickerColors = buildFormDatePickerColors(highlightColor, calendarBg, wheelTextColor)
         DatePickerDialog(
             onDismissRequest = { showDatePicker = false },
             confirmButton = {
@@ -8084,6 +8137,7 @@ private fun FormInputDateBlock(
         ) {
             DatePicker(state = datePickerState, colors = datePickerColors)
         }
+        }
     }
 
     // Material3 TimePickerDialog (using AlertDialog wrapper)
@@ -8094,6 +8148,7 @@ private fun FormInputDateBlock(
         val is24 = block.time_format?.lowercase()?.let { it == "24h" }
             ?: android.text.format.DateFormat.is24HourFormat(LocalContext.current)
         val timePickerState = rememberTimePickerState(is24Hour = is24)
+        ForcedPickerScheme(forcePickerDark) {
         androidx.compose.material3.AlertDialog(
             onDismissRequest = { showTimePicker = false },
             confirmButton = {
@@ -8153,6 +8208,7 @@ private fun FormInputDateBlock(
                 }
             },
         )
+        }
     }
 }
 
