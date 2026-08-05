@@ -3682,7 +3682,13 @@ private fun SocialLoginBlock(
                     Color.White,
                     StyleEngine.parseColor(block.accent_color ?: block.bg_color ?: (ai.appdna.sdk.AppDNA.brandAccentHex ?: "#6366F1")),
                 )
-                else -> Triple(ai.appdna.sdk.AppDNA.brandAccentColor(), Color.White, ai.appdna.sdk.AppDNA.brandAccentColor())
+                // Custom/unknown provider: honor block-level accent_color/bg_color like
+                // iOS socialLoginBgColor default + preview (was global brand only).
+                else -> Triple(
+                    StyleEngine.parseColor(block.accent_color ?: block.bg_color ?: (ai.appdna.sdk.AppDNA.brandAccentHex ?: "#6366F1")),
+                    Color.White,
+                    StyleEngine.parseColor(block.accent_color ?: block.bg_color ?: (ai.appdna.sdk.AppDNA.brandAccentHex ?: "#6366F1")),
+                )
             }
             val bgColor = provider.bg_color?.let { StyleEngine.parseColor(it) } ?: defaultBg
             // SPEC-419 pass-13 — outlined/minimal buttons have a CLEAR background, so the
