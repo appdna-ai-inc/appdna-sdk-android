@@ -6683,7 +6683,7 @@ private fun StarBackgroundBlock(block: ContentBlock) {
     val secondaryColor = block.secondary_color?.let { StyleEngine.parseColor(it) } ?: particleColor
     // Mrozu QA (2026-08-03): particle_type was decoded but the Canvas always drew a
     // circle, so stars/sparkles/snow all looked identical. Render the actual shape (parity with iOS).
-    val particleType = block.particle_type ?: "dots"
+    val particleType = block.particle_type ?: "stars"  // match console/preview default (element is star_background)
     // Mrozu QA (2026-08-04): confetti = falling multicolor rounded rects. `particle_multicolor` cycles
     // a fixed palette per-particle (defaults ON for confetti). Parity with iOS confettiPalette.
     val useMulticolor = block.particle_multicolor ?: (particleType == "confetti")
