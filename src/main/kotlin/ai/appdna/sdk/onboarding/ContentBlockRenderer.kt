@@ -3740,7 +3740,11 @@ private fun SocialLoginBlock(
             }
             val providerIconColor: Color = when {
                 monoIconColor != null -> monoIconColor
-                provider.type == "facebook" -> Color(0xFF1877F2)
+                // Facebook brand-blue "f" is only legible on transparent-background
+                // buttons (outlined/minimal). On a FILLED facebook button the
+                // background is already #1877F2, so a blue glyph would be invisible —
+                // use the button textColor (white) there. Matches iOS + preview.
+                provider.type == "facebook" && buttonStyle != "filled" -> Color(0xFF1877F2)
                 else -> textColor
             }
 
@@ -6250,7 +6254,7 @@ private fun DateWheelPickerBlock(block: ContentBlock, inputValues: MutableMap<St
         Text(
             text = validationMsg,
             fontSize = 12.sp,
-            color = MaterialTheme.colorScheme.error,
+            color = block.field_style?.error_text_color?.let { StyleEngine.parseColor(it) } ?: MaterialTheme.colorScheme.error,
             modifier = Modifier.padding(top = 4.dp),
         )
     }
@@ -7988,7 +7992,7 @@ private fun FormInputDateBlock(
             Text(
                 text = msg,
                 fontSize = 12.sp,
-                color = MaterialTheme.colorScheme.error,
+                color = block.field_style?.error_text_color?.let { StyleEngine.parseColor(it) } ?: MaterialTheme.colorScheme.error,
                 modifier = Modifier.padding(top = 4.dp),
             )
         }
@@ -8246,6 +8250,10 @@ private fun FormInputSelectBlock(
     // EPIC-1 — selection animation glow ("glow"/"pulse"/"sparkle" → accent halo on the selected option).
     val selectionAnimation = (cfg?.get("selection_animation") as? String) ?: "none"
     val showRadio = selectionIndicator == "radio" || selectionIndicator == "both"
+    // Only thicken the selected border when the indicator mode actually draws a border
+    // highlight ("border"/"both"). In "radio"/"none" modes the selected option keeps the
+    // unselected border width — matches iOS + console preview.
+    val showBorderHighlight = selectionIndicator == "border" || selectionIndicator == "both"
     val radioPosition = (cfg?.get("radio_position") as? String) ?: "right"
     val radioOnLeft = radioPosition == "left" || radioPosition == "leading"
     // SPEC-419 pass-25 — radio_fill: "circle" (default), "checkmark", or an emoji glyph.
@@ -8394,7 +8402,7 @@ private fun FormInputSelectBlock(
                                 },
                             ),
                             border = androidx.compose.foundation.BorderStroke(
-                                if (isSelected) selectedBorderW else unselectedBorderW,
+                                if (isSelected && showBorderHighlight) selectedBorderW else unselectedBorderW,
                                 if (isSelected) optSelBorder else optUnselBorder,
                             ),
                         ) {
