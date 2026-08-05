@@ -8769,18 +8769,8 @@ private fun FormInputSelectBlock(
                             repeat(gridCols - row.size) { Spacer(Modifier.weight(1f)) }
                         }
                     }
-                    // EPIC-1 / SPEC-419 pass-13 — tooltip below the grid (was ignored on
-                    // Android). Mirrors iOS gridSelectView (FormInputBlockViews.swift:1178-1188).
-                    (cfg?.get("tooltip_text") as? String)?.takeIf { it.isNotBlank() }?.let { tip ->
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(6.dp),
-                            modifier = Modifier.padding(top = 4.dp),
-                        ) {
-                            Text("ⓘ", fontSize = 12.sp, color = textCol.copy(alpha = 0.5f))
-                            Text(tip, fontSize = 12.sp, color = textCol.copy(alpha = 0.5f))
-                        }
-                    }
+                    // Tooltip is rendered once by the outer grid-scoped block (resolveIcon-aware);
+                    // the duplicate inner render was removed (pass-16) to match iOS's single tooltip.
                 }
             }
             "image_tiles" -> {
