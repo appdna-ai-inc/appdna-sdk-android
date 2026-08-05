@@ -3973,9 +3973,9 @@ private fun CountdownTimerBlock(block: ContentBlock, onAction: (String) -> Unit)
                     .parse(block.target_datetime ?: "")?.time ?: 0L
                 val remaining = ((targetMs - System.currentTimeMillis()) / 1000).toInt()
                 if (remaining > 0) remaining else 0
-            } catch (_: Exception) { block.duration_seconds ?: 60 }
+            } catch (_: Exception) { block.duration_seconds ?: 300 }
         }
-        else -> block.duration_seconds ?: 60
+        else -> block.duration_seconds ?: 300
     }
 
     var remainingSeconds by remember { mutableIntStateOf(initialSeconds) }
