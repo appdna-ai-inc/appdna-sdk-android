@@ -1535,7 +1535,11 @@ private fun PaywallSectionView(
             // Text styles
             val planNameStyle = StyleEngine.applyTextStyle(
                 TextStyle(fontWeight = FontWeight.SemiBold, color = Color.White, fontSize = 16.sp),
+                // Mirror iOS PlanCard.swift:22 (elements["plan_name"] ?? elements["label"]) — the
+                // console Style tab exposes plan-name under the 'label' element key (SECTION_ELEMENTS.plans),
+                // so without the 'label' fallback an authored plan-name style is silently dropped on Android.
                 section.style?.elements?.get("plan_name")?.text_style
+                    ?: section.style?.elements?.get("label")?.text_style
             )
             val priceStyle = StyleEngine.applyTextStyle(
                 TextStyle(fontWeight = FontWeight.Bold, color = Color.White, fontSize = 18.sp),
