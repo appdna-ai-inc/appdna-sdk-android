@@ -1548,8 +1548,11 @@ private fun PaywallSectionView(
             // Console Style tab exposes `trial_label`; apply its authored text style
             // (mirrors priceStyle above). Color still resolved per selected/brand-accent
             // logic at the Text call site.
+            // Base color = brand accent so an authored trial_label color wins when present
+            // (applyTextStyle overrides base color only when the element style sets one),
+            // matching iOS PlanCard + the console preview (getElementStyle spread after accent).
             val trialStyle = StyleEngine.applyTextStyle(
-                TextStyle(fontSize = 12.sp, fontWeight = FontWeight.Medium),
+                TextStyle(fontSize = 12.sp, fontWeight = FontWeight.Medium, color = ai.appdna.sdk.AppDNA.brandAccentColor()),
                 section.style?.elements?.get("trial_label")?.text_style
             )
 
@@ -1802,10 +1805,11 @@ private fun PaywallSectionView(
                                 Text(
                                     text = loc("plan.$planIdx.trial", trialText),
                                     style = trialStyle,
-                                    // Parity with iOS PlanCard: brand accent ONLY when NOT selected.
-                                    // When selected the trial matches name/price (resolvedTextColor →
-                                    // authored selected_text_color, else Color.Unspecified default primary).
-                                    color = if (isSelected) (selectedTextColor ?: Color.Unspecified) else ai.appdna.sdk.AppDNA.brandAccentColor(),
+                                    // When selected the trial matches name/price (authored selected_text_color,
+                                    // else default primary). When unselected, defer to trialStyle.color —
+                                    // which is the authored trial_label color, or the brand-accent base —
+                                    // so an authored color wins (iOS + preview parity).
+                                    color = if (isSelected) (selectedTextColor ?: Color.Unspecified) else Color.Unspecified,
                                 )
                             }
 
