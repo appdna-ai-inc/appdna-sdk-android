@@ -7505,8 +7505,13 @@ fun EntranceAnimationWrapper(
         "slide_down" -> androidx.compose.animation.slideInVertically(if (isSpring) springIntOffsetSpec else tweenIntOffset) { -slideOffsetPx }
         "slide_left" -> androidx.compose.animation.slideInHorizontally(if (isSpring) springIntOffsetSpec else tweenIntOffset) { -slideOffsetPx }
         "slide_right" -> androidx.compose.animation.slideInHorizontally(if (isSpring) springIntOffsetSpec else tweenIntOffset) { slideOffsetPx }
-        "scale_up" -> androidx.compose.animation.scaleIn(if (isSpring) springFloatSpec else tweenSpec, initialScale = 0.5f)
-        "scale_down" -> androidx.compose.animation.scaleIn(if (isSpring) springFloatSpec else tweenSpec, initialScale = 1.5f)
+        // pass-55 — scale entrances also fade opacity 0→1 to match iOS EntranceAnimationWrapper
+        // usesOpacity:true (ContentBlockTypes.swift:631-636) + preview keyframes; previously popped
+        // in fully opaque on Android while iOS/preview faded.
+        "scale_up" -> androidx.compose.animation.scaleIn(if (isSpring) springFloatSpec else tweenSpec, initialScale = 0.5f) +
+            androidx.compose.animation.fadeIn(if (isSpring) springFloatSpec else tweenSpec)
+        "scale_down" -> androidx.compose.animation.scaleIn(if (isSpring) springFloatSpec else tweenSpec, initialScale = 1.5f) +
+            androidx.compose.animation.fadeIn(if (isSpring) springFloatSpec else tweenSpec)
         // SPEC-401-A R13 — bounce previously always used spring,
         // ignoring `duration_ms`. iOS resolves bounce via swiftUIAnimation
         // which honors `duration_ms` for any non-spring easing — so when
@@ -7514,7 +7519,7 @@ fun EntranceAnimationWrapper(
         "bounce" -> androidx.compose.animation.scaleIn(
             if (isSpring) springFloatSpec else tweenSpec,
             initialScale = 0.3f,
-        )
+        ) + androidx.compose.animation.fadeIn(if (isSpring) springFloatSpec else tweenSpec)
         // "flip" is handled above via graphicsLayer rotationX (3D X-axis flip).
         else -> androidx.compose.animation.EnterTransition.None
     }
