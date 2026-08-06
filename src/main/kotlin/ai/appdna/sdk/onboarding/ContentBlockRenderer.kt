@@ -3827,6 +3827,28 @@ private fun SocialLoginBlock(
                     Text(displayLabel, fontSize = 17.sp, fontWeight = FontWeight.SemiBold, color = textColor)
                 }
             }
+            // SPEC-089d §6.5 parity — pressed style (scale/opacity) for social
+            // buttons, mirroring ButtonBlock. Each provider button gets its own
+            // MutableInteractionSource so isPressed tracks that button's real
+            // presses; the animated graphicsLayer reproduces iOS's easeInOut(100ms)
+            // pressed transition (see ButtonBlock above). Without this the console
+            // "Press State" control was a dead field on Android social_login.
+            val pressedInteractionSource = remember { MutableInteractionSource() }
+            val isPressed by pressedInteractionSource.collectIsPressedAsState()
+            val pressedScale by animateFloatAsState(
+                targetValue = if (isPressed) (block.pressed_style?.scale ?: 0.97).toFloat() else 1f,
+                animationSpec = tween(durationMillis = 100),
+                label = "socialPressedScale",
+            )
+            val pressedAlpha by animateFloatAsState(
+                targetValue = if (isPressed) (block.pressed_style?.opacity ?: 0.9).toFloat() else 1f,
+                animationSpec = tween(durationMillis = 100),
+                label = "socialPressedAlpha",
+            )
+            val pressedModifier = if (block.pressed_style != null) {
+                Modifier.graphicsLayer(scaleX = pressedScale, scaleY = pressedScale, alpha = pressedAlpha)
+            } else Modifier
+
             // SPEC-070-A finalization OB-2 audit follow-up — apply per-provider
             // colors + provider-level corner/border-width across ALL three
             // button styles (filled, outlined, minimal). Audit round 1 caught
@@ -3836,7 +3858,8 @@ private fun SocialLoginBlock(
                 "outlined" -> {
                     OutlinedButton(
                         onClick = socialClick,
-                        modifier = Modifier.fillMaxWidth().height(buttonHeight),
+                        modifier = Modifier.fillMaxWidth().height(buttonHeight).then(pressedModifier),
+                        interactionSource = pressedInteractionSource,
                         shape = RoundedCornerShape(providerCorner),
                         border = androidx.compose.foundation.BorderStroke(providerBorderWidth, borderColor),
                         colors = ButtonDefaults.outlinedButtonColors(
@@ -3864,7 +3887,9 @@ private fun SocialLoginBlock(
                         // styles, not just outlined). Default minimal border_width is 0,
                         // so a plain minimal button stays borderless.
                         modifier = Modifier.fillMaxWidth().height(buttonHeight)
-                            .then(if (providerBorderWidth > 0.dp) Modifier.border(providerBorderWidth, borderColor, RoundedCornerShape(providerCorner)) else Modifier),
+                            .then(if (providerBorderWidth > 0.dp) Modifier.border(providerBorderWidth, borderColor, RoundedCornerShape(providerCorner)) else Modifier)
+                            .then(pressedModifier),
+                        interactionSource = pressedInteractionSource,
                         shape = RoundedCornerShape(providerCorner),
                         colors = ButtonDefaults.textButtonColors(
                             // Audit pass-8 — same authored-bg_color honor as outlined
@@ -3888,7 +3913,9 @@ private fun SocialLoginBlock(
                         // styles, not just outlined). Default filled border_width is 0,
                         // so a plain filled button stays borderless.
                         modifier = Modifier.fillMaxWidth().height(buttonHeight)
-                            .then(if (providerBorderWidth > 0.dp) Modifier.border(providerBorderWidth, borderColor, RoundedCornerShape(providerCorner)) else Modifier),
+                            .then(if (providerBorderWidth > 0.dp) Modifier.border(providerBorderWidth, borderColor, RoundedCornerShape(providerCorner)) else Modifier)
+                            .then(pressedModifier),
+                        interactionSource = pressedInteractionSource,
                         // SPEC-070-A finalization OB-2 audit-1 CRIT-1 — was
                         // `RoundedCornerShape(cornerRadius)`, dropping the
                         // per-provider `corner_radius` override. Filled is
