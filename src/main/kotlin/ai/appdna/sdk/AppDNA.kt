@@ -37,7 +37,7 @@ import androidx.compose.runtime.Composable
 object AppDNA {
 
     /** SDK version string. */
-    const val sdkVersion = "1.0.42"
+    const val sdkVersion = "1.0.43"
 
     /**
      * SPEC-419 brand-threading — the app's brand accent hex (from `/settings/brand`,
