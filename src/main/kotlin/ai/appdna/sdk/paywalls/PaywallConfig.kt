@@ -331,6 +331,10 @@ data class PaywallSectionData(
     val cta_gradient: PaywallGradient? = null,
     val cta_height: Float? = null,
     val cta_font_size: Float? = null,
+    // Parity: CTA text font weight (console "Font Weight" = cta_font_weight):
+    // normal | medium | semibold | bold. iOS honors it via resolveCTAFontWeight;
+    // Android dropped it (hardcoded SemiBold) before this.
+    val cta_font_weight: String? = null,
 )
 
 // SPEC-089d: Sub-types for new paywall sections
@@ -1206,6 +1210,7 @@ internal object PaywallConfigParser {
                 },
                 cta_height = (d["cta_height"] as? Number)?.toFloat(),
                 cta_font_size = (d["cta_font_size"] as? Number)?.toFloat(),
+                cta_font_weight = d["cta_font_weight"] as? String,
             )
         }
 

@@ -523,6 +523,16 @@ internal data class PostPurchaseOverlayState(
     val allowDismiss: Boolean = true,
 )
 
+// Parity: maps a console cta_font_weight string (normal | medium | semibold | bold)
+// to a Compose FontWeight. Mirrors iOS resolveCTAFontWeight semantics; default SemiBold.
+fun resolveCtaWeight(w: String?): FontWeight = when (w?.lowercase()) {
+    "normal", "regular" -> FontWeight.Normal
+    "medium" -> FontWeight.Medium
+    "bold" -> FontWeight.Bold
+    "semibold" -> FontWeight.SemiBold
+    else -> FontWeight.SemiBold
+}
+
 @Composable
 fun PaywallScreen(
     config: PaywallConfig,
@@ -2615,7 +2625,7 @@ private fun PaywallSectionView(
             val ctaFontSize = (section.data?.cta_font_size ?: section.data?.cta?.font_size?.toFloat() ?: 17f).sp
             val ctaHeight = (section.data?.cta_height ?: section.data?.cta?.height?.toFloat() ?: 56f).dp
             val buttonTextStyle = StyleEngine.applyTextStyle(
-                TextStyle(fontWeight = FontWeight.SemiBold, fontSize = ctaFontSize),
+                TextStyle(fontWeight = resolveCtaWeight(section.data?.cta_font_weight), fontSize = ctaFontSize),
                 section.style?.elements?.get("button")?.text_style,
             )
             // PW-10 / iOS PaywallRenderer.swift:1052+ — CTA gradient brush
@@ -4217,7 +4227,7 @@ private fun PaywallStickyFooter(
                 } else {
                     Text(
                         text = loc("sticky_footer.cta", ctaText),
-                        fontWeight = FontWeight.SemiBold,
+                        fontWeight = resolveCtaWeight(section.data?.cta_font_weight),
                         fontSize = (section.data?.cta_font_size ?: 17f).sp,
                         color = section.data?.cta_text_color?.let { parseHexColor(it) } ?: Color.White,
                     )
