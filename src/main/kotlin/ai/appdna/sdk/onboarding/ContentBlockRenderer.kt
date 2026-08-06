@@ -442,7 +442,6 @@ data class ContentBlock(
     // Mrozu (Duolingo s20/s22) — sound_button: remote audio clip (mp3/wav/aac)
     // played on tap; `autoplay` (declared below with the video fields) plays it
     // when the block appears. Reuses all button styling fields.
-    val audio_url: String? = null,
     val spacer_height: Double? = null,
     // SPEC-070-A J.22 — ImmutableList for Compose stability (list block items).
     val items: kotlinx.collections.immutable.ImmutableList<String>? = null,
@@ -533,7 +532,6 @@ data class ContentBlock(
     val dot_spacing: Double? = null,
     val active_dot_width: Double? = null,
     // SPEC — page_indicator dot shape: "circle" (default) | "triangle" | "rectangle" | "star"
-    val dot_shape: String? = null,
     // SPEC-089d: social_login fields
     // SPEC-070-A J.22 — ImmutableList for Compose stability.
     val providers: kotlinx.collections.immutable.ImmutableList<SocialProvider>? = null,
@@ -546,8 +544,6 @@ data class ContentBlock(
     // "bottom") and in-button text alignment ("leading" | "center", default
     // "center"). divider_color (declared with the divider block above) tints the
     // separator rules.
-    val divider_position: String? = null,
-    val button_text_align: String? = null,
     // SPEC-401-A R13 — match iOS ContentBlockTypes.swift:964-965.
     // `with_providers` (default) renders providers in author order;
     // `below_inputs` extracts the email provider, renders it FIRST,
@@ -654,9 +650,6 @@ data class ContentBlock(
     val gallery_align: String? = null,  // "start" | "center" | "end" (default "center")
     // Media-gallery v2 (Mrozu QA): gallery_fill = full-width edge-to-edge cover tiles; gallery_autoscroll =
     // continuous loop; gallery_autoscroll_speed = seconds per full cycle (default 20). All default off.
-    val gallery_fill: Boolean? = null,
-    val gallery_autoscroll: Boolean? = null,
-    val gallery_autoscroll_speed: Double? = null,
     // EPIC-4b — section_background reads background_zones + content_arrangement from field_config
     // (ContentBlock has hit the JVM 255-constructor-arg limit; new fields go through field_config).
     // SPEC-089d Phase F: circular_gauge fields
@@ -727,7 +720,6 @@ data class ContentBlock(
     val secondary_color: String? = null,
     // Mrozu QA (2026-08-04): confetti multicolor — cycle a fixed palette instead of primary/secondary.
     // Defaults on when particle_type == "confetti", explicit override otherwise.
-    val particle_multicolor: Boolean? = null,
     // SPEC-070-A J.22 — ImmutableList for Compose stability.
     val size_range: kotlinx.collections.immutable.ImmutableList<Double>? = null,
     val fullscreen: Boolean? = null,
@@ -772,8 +764,6 @@ data class ContentBlock(
     val picker_presentation: String? = null,
     val picker_mode: String? = null,
     // SPEC — input_time clock presentation: "12h" (default) | "24h"; time_text_size = displayed-time font size (sp)
-    val time_format: String? = null,
-    val time_text_size: Double? = null,
     val picker_spacing: Double? = null,
     val wheel_bg_color: String? = null,
     val wheel_height: Double? = null,
@@ -1863,11 +1853,11 @@ private fun MediaGalleryBlock(block: ContentBlock) {
     val itemH = (block.gallery_item_height ?: 180.0).dp
     val cr = (block.gallery_corner_radius ?: 12.0).dp
     val spacing = (block.gallery_spacing ?: 10.0).dp
-    val fill = block.gallery_fill ?: false
-    val autoscroll = block.gallery_autoscroll ?: false
+    val fill = (block.field_config?.get("gallery_fill") as? Boolean) ?: false
+    val autoscroll = (block.field_config?.get("gallery_autoscroll") as? Boolean) ?: false
 
     if (autoscroll) {
-        MediaGalleryAutoScrollRow(images, block.gallery_item_width, itemH, cr, spacing, fill, block.gallery_autoscroll_speed ?: 20.0)
+        MediaGalleryAutoScrollRow(images, block.gallery_item_width, itemH, cr, spacing, fill, (block.field_config?.get("gallery_autoscroll_speed") as? Number)?.toDouble() ?: 20.0)
         return
     }
 
@@ -2397,7 +2387,7 @@ private fun ButtonBlock(
 /**
  * Mrozu (Duolingo s20/s22) — sound_button: a CTA-style button (reuses ALL of
  * ButtonBlock's styling) that plays a remote audio clip (mp3/wav/aac) from
- * `block.audio_url` on tap. When `block.autoplay == true` the clip plays as the
+ * `(block.field_config?.get("audio_url") as? String)` on tap. When `block.autoplay == true` the clip plays as the
  * block first appears. Playback is routed through the shared AudioPlayer helper.
  */
 @Composable
@@ -2411,7 +2401,7 @@ private fun SoundButtonBlock(
     val context = LocalContext.current
     LaunchedEffect(block.id) {
         if (block.autoplay == true) {
-            ai.appdna.sdk.core.AudioPlayer.play(context, block.audio_url)
+            ai.appdna.sdk.core.AudioPlayer.play(context, (block.field_config?.get("audio_url") as? String))
         }
     }
     // Stop autoplayed audio when the block leaves composition (step change /
@@ -2422,7 +2412,7 @@ private fun SoundButtonBlock(
     }
     ButtonBlock(
         block, onAction, loc, stepBlocks, inputValues,
-        onClickOverride = { ai.appdna.sdk.core.AudioPlayer.play(context, block.audio_url) },
+        onClickOverride = { ai.appdna.sdk.core.AudioPlayer.play(context, (block.field_config?.get("audio_url") as? String)) },
     )
 }
 
@@ -3543,7 +3533,7 @@ private fun PageIndicatorBlock(block: ContentBlock, currentStepIndex: Int = 0, t
     val dotSpacing = (block.dot_spacing ?: 8.0).dp
     val activeDotWidth = block.active_dot_width?.dp
     // SPEC — per-dot shape (default "circle" preserves the legacy pill/circle look).
-    val dotShape = (block.dot_shape ?: "circle").lowercase()
+    val dotShape = ((block.field_config?.get("dot_shape") as? String) ?: "circle").lowercase()
 
     // SPEC-401-A R45 (Lens A #6) — match iOS PageIndicator alignment
     // resolution: only `block.alignment` is read (no icon_alignment
@@ -3621,8 +3611,8 @@ private fun SocialLoginBlock(
     val dividerText = block.divider_text ?: "or"
     // Social-Login styling v2 — divider color/placement + in-button text align.
     val dividerColor = block.divider_color?.let { StyleEngine.parseColor(it) } ?: Color.Gray.copy(alpha = 0.3f)
-    val dividerPosition = block.divider_position ?: "bottom"
-    val textAlign = block.button_text_align ?: "center"
+    val dividerPosition = (block.field_config?.get("divider_position") as? String) ?: "bottom"
+    val textAlign = (block.field_config?.get("button_text_align") as? String) ?: "center"
 
     // SPEC-401-A R13 — match iOS ContentBlockRendererView.swift:684-715
     // `email_login_placement: "below_inputs"`: pull the email provider
@@ -6732,7 +6722,7 @@ private fun StarBackgroundBlock(block: ContentBlock) {
     val particleType = block.particle_type ?: "stars"  // match console/preview default (element is star_background)
     // Mrozu QA (2026-08-04): confetti = falling multicolor rounded rects. `particle_multicolor` cycles
     // a fixed palette per-particle (defaults ON for confetti). Parity with iOS confettiPalette.
-    val useMulticolor = block.particle_multicolor ?: (particleType == "confetti")
+    val useMulticolor = (block.field_config?.get("particle_multicolor") as? Boolean) ?: (particleType == "confetti")
     val confettiPalette = remember {
         listOf("#EF4444", "#F59E0B", "#FCD34D", "#10B981", "#3B82F6", "#8B5CF6", "#EC4899")
             .map { StyleEngine.parseColor(it) }
@@ -7957,7 +7947,7 @@ private fun FormInputDateBlock(
     // SPEC — honor time_format ("12h"/"24h") on the displayed time. When set,
     // build an explicit SimpleDateFormat (HH:mm 24h / h:mm a 12h) instead of the
     // locale-default SHORT time; unset keeps the device-locale behaviour.
-    val timeFmt = block.time_format?.lowercase()
+    val timeFmt = (block.field_config?.get("time_format") as? String)?.lowercase()
     val displayFormatter = remember(mode, timeFmt) {
         val timePattern = if (timeFmt == "24h") "HH:mm" else "h:mm a"
         when (mode) {
@@ -8157,7 +8147,7 @@ private fun FormInputDateBlock(
                     // SPEC — honor time_text_size on the displayed time (time/datetime modes).
                     Text(
                         text = displayText,
-                        fontSize = (if (effectiveMode == "time" || effectiveMode == "datetime") block.time_text_size else null)?.sp ?: 14.sp,
+                        fontSize = (if (effectiveMode == "time" || effectiveMode == "datetime") (block.field_config?.get("time_text_size") as? Number)?.toDouble() else null)?.sp ?: 14.sp,
                         color = buttonTextColor,
                     )
                     // SPEC-401-A R49 (Lens A #4) \u2014 use effectiveMode for icon.
@@ -8233,7 +8223,7 @@ private fun FormInputDateBlock(
         // SPEC — honor time_format: "24h" → 24-hour columns; "12h" → 12-hour + AM/PM;
         // unset → follow device locale (matches iOS, which follows locale for both the
         // wheel and the display text).
-        val is24 = block.time_format?.lowercase()?.let { it == "24h" }
+        val is24 = (block.field_config?.get("time_format") as? String)?.lowercase()?.let { it == "24h" }
             ?: android.text.format.DateFormat.is24HourFormat(LocalContext.current)
         val timePickerState = rememberTimePickerState(is24Hour = is24)
         ForcedPickerScheme(forcePickerDark) {

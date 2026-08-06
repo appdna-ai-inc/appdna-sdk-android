@@ -1258,7 +1258,6 @@ internal object OnboardingConfigParser {
             text_color = bm["text_color"] as? String,
             button_corner_radius = (bm["button_corner_radius"] as? Number)?.toDouble(),
             // Mrozu (Duolingo s20/s22) — sound_button remote audio clip.
-            audio_url = bm["audio_url"] as? String,
             spacer_height = (bm["spacer_height"] as? Number)?.toDouble(),
             items = (bm["items"] as? List<*>)?.filterIsInstance<String>()?.toImmutableList(),
             list_style = bm["list_style"] as? String,
@@ -1311,7 +1310,6 @@ internal object OnboardingConfigParser {
             dot_size = (bm["dot_size"] as? Number)?.toDouble(),
             dot_spacing = (bm["dot_spacing"] as? Number)?.toDouble(),
             active_dot_width = (bm["active_dot_width"] as? Number)?.toDouble(),
-            dot_shape = bm["dot_shape"] as? String,
             // SPEC-089d: social_login fields
             providers = (bm["providers"] as? List<*>)?.mapNotNull { p ->
                 if (p is Map<*, *>) {
@@ -1338,8 +1336,6 @@ internal object OnboardingConfigParser {
             show_divider = bm["show_divider"] as? Boolean,
             divider_text = bm["divider_text"] as? String,
             // Social-Login styling v2
-            divider_position = bm["divider_position"] as? String,
-            button_text_align = bm["button_text_align"] as? String,
             // SPEC-089d: countdown_timer fields
             target_type = bm["target_type"] as? String,
             duration_seconds = (bm["duration_seconds"] as? Number)?.toInt(),
@@ -1455,8 +1451,6 @@ internal object OnboardingConfigParser {
             date_validation_message = bm["date_validation_message"] as? String,
             picker_presentation = bm["picker_presentation"] as? String,
             picker_mode = bm["picker_mode"] as? String,
-            time_format = bm["time_format"] as? String,
-            time_text_size = (bm["time_text_size"] as? Number)?.toDouble(),
             picker_spacing = (bm["picker_spacing"] as? Number)?.toDouble(),
             wheel_bg_color = bm["wheel_bg_color"] as? String,
             wheel_height = (bm["wheel_height"] as? Number)?.toDouble(),
@@ -1565,10 +1559,27 @@ internal object OnboardingConfigParser {
                 // into field_config for the DateWheelPickerBlock renderer to read.
                 val wheelLineColor = bm["wheel_line_color"] as? String
                 val wheelLineStrokeWidth = (bm["wheel_line_stroke_width"] as? Number)?.toDouble()
+                // ContentBlock 255-arg budget — these 10 were removed from the Android ContentBlock
+                // ctor (was 255→245) and are now read from field_config by the renderer. Console
+                // authors them top-level + iOS reads them top-level; fold into field_config here.
+                val audioUrl = bm["audio_url"] as? String
+                val buttonTextAlign = bm["button_text_align"] as? String
+                val dividerPosition = bm["divider_position"] as? String
+                val dotShape = bm["dot_shape"] as? String
+                val galleryAutoscroll = bm["gallery_autoscroll"] as? Boolean
+                val galleryAutoscrollSpeed = (bm["gallery_autoscroll_speed"] as? Number)?.toDouble()
+                val galleryFill = bm["gallery_fill"] as? Boolean
+                val particleMulticolor = bm["particle_multicolor"] as? Boolean
+                val timeFormat = bm["time_format"] as? String
+                val timeTextSize = (bm["time_text_size"] as? Number)?.toDouble()
                 if (labelFormat == null && customLabel == null && videoControls == null &&
                     particleColor == null && particleOpacity == null && particleSpeed == null &&
                     timerVariant == null && labelPlacement == null && loadingTextAlign == null &&
-                    wheelLineColor == null && wheelLineStrokeWidth == null) {
+                    wheelLineColor == null && wheelLineStrokeWidth == null &&
+                    audioUrl == null && buttonTextAlign == null && dividerPosition == null &&
+                    dotShape == null && galleryAutoscroll == null && galleryAutoscrollSpeed == null &&
+                    galleryFill == null && particleMulticolor == null && timeFormat == null &&
+                    timeTextSize == null) {
                     base
                 } else {
                     val merged = base ?: mutableMapOf()
@@ -1583,6 +1594,16 @@ internal object OnboardingConfigParser {
                     if (loadingTextAlign != null) merged.putIfAbsent("loading_text_align", loadingTextAlign)
                     if (wheelLineColor != null) merged.putIfAbsent("wheel_line_color", wheelLineColor)
                     if (wheelLineStrokeWidth != null) merged.putIfAbsent("wheel_line_stroke_width", wheelLineStrokeWidth)
+                    if (audioUrl != null) merged.putIfAbsent("audio_url", audioUrl)
+                    if (buttonTextAlign != null) merged.putIfAbsent("button_text_align", buttonTextAlign)
+                    if (dividerPosition != null) merged.putIfAbsent("divider_position", dividerPosition)
+                    if (dotShape != null) merged.putIfAbsent("dot_shape", dotShape)
+                    if (galleryAutoscroll != null) merged.putIfAbsent("gallery_autoscroll", galleryAutoscroll)
+                    if (galleryAutoscrollSpeed != null) merged.putIfAbsent("gallery_autoscroll_speed", galleryAutoscrollSpeed)
+                    if (galleryFill != null) merged.putIfAbsent("gallery_fill", galleryFill)
+                    if (particleMulticolor != null) merged.putIfAbsent("particle_multicolor", particleMulticolor)
+                    if (timeFormat != null) merged.putIfAbsent("time_format", timeFormat)
+                    if (timeTextSize != null) merged.putIfAbsent("time_text_size", timeTextSize)
                     merged
                 }
             },
@@ -1802,9 +1823,6 @@ internal object OnboardingConfigParser {
             gallery_corner_radius = (bm["gallery_corner_radius"] as? Number)?.toDouble(),
             gallery_spacing = (bm["gallery_spacing"] as? Number)?.toDouble(),
             gallery_align = bm["gallery_align"] as? String,
-            gallery_fill = bm["gallery_fill"] as? Boolean,
-            gallery_autoscroll = bm["gallery_autoscroll"] as? Boolean,
-            gallery_autoscroll_speed = (bm["gallery_autoscroll_speed"] as? Number)?.toDouble(),
 
             // Container/positioning (multiple R-rounds) — column_ratios
             // is a colon-encoded ratio string ("1:2") on both platforms
