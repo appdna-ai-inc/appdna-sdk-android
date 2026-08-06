@@ -4605,7 +4605,8 @@ private fun ProgressBarBlock(block: ContentBlock, loc: ((String, String) -> Stri
     // SAME normalization as the fill (`pvFraction`). Previously rendered the RAW
     // `progress_value` → `progress_value=0.75` filled 75% but the label read
     // "0%". Mirrors iOS pvPercent.
-    val pvPercent = ((pvFraction ?: 0f) * 100).roundToInt()
+    val effFraction = pvFraction ?: if (variant == "segmented") 0f else if (segmentCount > 0) (activeSegments.toFloat() / segmentCount).coerceIn(0f, 1f) else 0f
+    val pvPercent = (effFraction * 100).roundToInt()
 
     // Progress/Loading v2 — label placement relative to the bar. Authored top-level
     // by the console editor; folded into field_config on Android (top-level budget-locked).
