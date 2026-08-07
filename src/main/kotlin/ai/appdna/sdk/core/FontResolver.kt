@@ -10,6 +10,12 @@ import androidx.compose.ui.text.font.FontWeight
 object FontResolver {
 
     fun resolve(fontFamily: String?): FontFamily {
+        // A `font_family` value may be a hosted custom-font URL (.ttf/.otf). If so,
+        // FontLoader downloads + registers it and returns its Compose FontFamily (or we
+        // fall back to the default family until the download completes).
+        if (FontLoader.isCustomFontURL(fontFamily)) {
+            return FontLoader.resolve(fontFamily!!) ?: FontFamily.Default
+        }
         return when (fontFamily) {
             // System
             "system", "-apple-system", "BlinkMacSystemFont", "sans-serif", "Roboto" -> FontFamily.Default

@@ -2888,6 +2888,30 @@ private fun BlockBasedStepView(
     ) { granted -> permissionManager.completePending(granted) }
     // Wire the launcher bridge (the launcher is stable across recompositions).
     permissionManager.requestLauncher = { perm -> permLauncher.launch(perm) }
+    // Mrozu (alarmy s4.1) — SCHEDULE_EXACT_ALARM has no runtime-permission dialog; it's a Settings
+    // screen opened via ACTION_REQUEST_SCHEDULE_EXACT_ALARM. StartActivityForResult fires its callback
+    // when the user returns, at which point completePendingExactAlarm() re-reads canScheduleExactAlarms().
+    val exactAlarmLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.StartActivityForResult(),
+    ) { permissionManager.completePendingExactAlarm() }
+    permissionManager.exactAlarmSettingsLauncher = {
+        val intent = permissionManager.exactAlarmSettingsIntent()
+        // Guard the launch: if the SDK's host app never declared USE_EXACT_ALARM /
+        // SCHEDULE_EXACT_ALARM (nor the queries entry), the settings deep-link may
+        // fail to resolve and throw ActivityNotFoundException, crashing the host or
+        // hanging requestExactAlarm()'s deferred so the step never advances. Mirror
+        // the sibling link-open try/catch in ButtonBlock: resolve-check, and on any
+        // failure still complete the pending request so the pipeline advances.
+        if (intent != null && intent.resolveActivity(activityCtx.packageManager) != null) {
+            try {
+                exactAlarmLauncher.launch(intent)
+            } catch (e: Exception) {
+                permissionManager.completePendingExactAlarm()
+            }
+        } else {
+            permissionManager.completePendingExactAlarm()
+        }
+    }
     // Opt-in "Open Settings" affordance for a permanently-denied permission.
     var permSettingsFallback by remember(stepId) { mutableStateOf<PermissionSettingsFallback?>(null) }
 

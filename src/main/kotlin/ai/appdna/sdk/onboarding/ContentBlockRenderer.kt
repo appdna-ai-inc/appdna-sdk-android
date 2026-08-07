@@ -12,6 +12,7 @@ import androidx.compose.material3.HorizontalDivider
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.GenericShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.ui.graphics.RectangleShape
 import androidx.compose.material3.*
@@ -25,6 +26,7 @@ import androidx.compose.ui.draw.scale
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.compositeOver
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.style.TextAlign
@@ -437,6 +439,9 @@ data class ContentBlock(
     val bg_color: String? = null,
     val text_color: String? = null,
     val button_corner_radius: Double? = null,
+    // Mrozu (Duolingo s20/s22) — sound_button: remote audio clip (mp3/wav/aac)
+    // played on tap; `autoplay` (declared below with the video fields) plays it
+    // when the block appears. Reuses all button styling fields.
     val spacer_height: Double? = null,
     // SPEC-070-A J.22 — ImmutableList for Compose stability (list block items).
     val items: kotlinx.collections.immutable.ImmutableList<String>? = null,
@@ -526,6 +531,7 @@ data class ContentBlock(
     val dot_size: Double? = null,
     val dot_spacing: Double? = null,
     val active_dot_width: Double? = null,
+    // SPEC — page_indicator dot shape: "circle" (default) | "triangle" | "rectangle" | "star"
     // SPEC-089d: social_login fields
     // SPEC-070-A J.22 — ImmutableList for Compose stability.
     val providers: kotlinx.collections.immutable.ImmutableList<SocialProvider>? = null,
@@ -534,6 +540,10 @@ data class ContentBlock(
     val spacing: Double? = null,
     val show_divider: Boolean? = null,
     val divider_text: String? = null,
+    // Social-Login styling v2 — divider placement ("top" | "bottom", default
+    // "bottom") and in-button text alignment ("leading" | "center", default
+    // "center"). divider_color (declared with the divider block above) tints the
+    // separator rules.
     // SPEC-401-A R13 — match iOS ContentBlockTypes.swift:964-965.
     // `with_providers` (default) renders providers in author order;
     // `below_inputs` extracts the email provider, renders it FIRST,
@@ -638,6 +648,8 @@ data class ContentBlock(
     val gallery_corner_radius: Double? = null,
     val gallery_spacing: Double? = null,
     val gallery_align: String? = null,  // "start" | "center" | "end" (default "center")
+    // Media-gallery v2 (Mrozu QA): gallery_fill = full-width edge-to-edge cover tiles; gallery_autoscroll =
+    // continuous loop; gallery_autoscroll_speed = seconds per full cycle (default 20). All default off.
     // EPIC-4b — section_background reads background_zones + content_arrangement from field_config
     // (ContentBlock has hit the JVM 255-constructor-arg limit; new fields go through field_config).
     // SPEC-089d Phase F: circular_gauge fields
@@ -706,6 +718,8 @@ data class ContentBlock(
     val density: String? = null,
     val speed: String? = null,
     val secondary_color: String? = null,
+    // Mrozu QA (2026-08-04): confetti multicolor — cycle a fixed palette instead of primary/secondary.
+    // Defaults on when particle_type == "confetti", explicit override otherwise.
     // SPEC-070-A J.22 — ImmutableList for Compose stability.
     val size_range: kotlinx.collections.immutable.ImmutableList<Double>? = null,
     val fullscreen: Boolean? = null,
@@ -749,6 +763,7 @@ data class ContentBlock(
     val date_validation_message: String? = null,
     val picker_presentation: String? = null,
     val picker_mode: String? = null,
+    // SPEC — input_time clock presentation: "12h" (default) | "24h"; time_text_size = displayed-time font size (sp)
     val picker_spacing: Double? = null,
     val wheel_bg_color: String? = null,
     val wheel_height: Double? = null,
@@ -796,6 +811,9 @@ data class SocialProvider(
     val border_width: Float? = null,
     val corner_radius: Float? = null,
     val icon_style: String? = null, // "logo" | "monochrome" | "filled"
+    // Social-Login styling v2 — per-provider custom icon override. When set to a
+    // non-empty URL the SDK loads the remote image instead of the built-in glyph.
+    val icon_url: String? = null,
 )
 
 /** Countdown labels config (SPEC-089d §3.7). */
@@ -903,6 +921,12 @@ data class FormFieldBlockStyle(
     val height: String? = null,
     val font_weight: String? = null,
     val focused_background_color: String? = null,
+    // Select v2 (Mrozu QA) — per-option styling extras applied by the select renderers.
+    val option_font_family: String? = null,     // font family for option title/subtitle/labels
+    val option_corner_radius: Double? = null,    // option card corner radius (falls back to corner_radius ?? 10)
+    val option_text_wrap: Boolean? = null,       // true → option text wraps fully; false → single-line truncate
+    val option_image_scale: String? = null,      // "contain" (default) | "cover" | "fit" for per-option images
+    val checkmark_color: String? = null,         // radio/checkmark indicator color, decoupled from fill/accent
 )
 
 /**
@@ -1001,8 +1025,17 @@ data class EntranceAnimationConfig(
     val type: String = "none",    // none, fade_in, slide_up, slide_down, slide_left, slide_right, scale_up, scale_down, bounce, flip
     val duration_ms: Int = 300,
     val delay_ms: Int = 0,
-    val easing: String = "ease_out",
+    // Audit pass-8 — canonical missing-easing default is "linear" to match iOS's
+    // swiftUIAnimation fall-through (ContentBlockTypes.swift:692 → .linear). Was
+    // "ease_out", which resolved a hand-authored/imported easing-less payload to a
+    // different curve than iOS. (Preview '|| ease' → '|| linear' is a sibling change.)
+    val easing: String = "linear",
     val spring_damping: Double? = null,
+    // Sequenced animation (Mrozu Duolingo s14 / Asana): per-block stagger + ordering.
+    // animation_delay_ms is ADDED to delay_ms to sequence blocks; animation_order is
+    // authored ordering metadata (lower plays first, full timeline engine deferred).
+    val animation_delay_ms: Int = 0,
+    val animation_order: Int? = null,
 )
 
 /** Pressed/tap style config (SPEC-089d §6.5). */
@@ -1126,6 +1159,10 @@ private fun resolveBlockBindings(
         || (block.badge_text?.contains("{{") == true)
         || (block.toggle_label?.contains("{{") == true)
         || (block.label?.contains("{{") == true)
+        // RichText v2 — rich_text's primary content field is markdown_content; it
+        // must run the SAME {{var}} interpolation as text so a rich_text block
+        // referencing a prior-screen answer resolves on device (mirrors iOS).
+        || (block.markdown_content?.contains("{{") == true)
     if (!hasBindings && !hasTemplates) return block
 
     var resolved = block
@@ -1149,6 +1186,7 @@ private fun resolveBlockBindings(
             badge_text = resolved.badge_text?.let { if (it.contains("{{")) resolveTemplateString(it, hookData, responses) else it },
             toggle_label = resolved.toggle_label?.let { if (it.contains("{{")) resolveTemplateString(it, hookData, responses) else it },
             label = resolved.label?.let { if (it.contains("{{")) resolveTemplateString(it, hookData, responses) else it },
+            markdown_content = resolved.markdown_content?.let { if (it.contains("{{")) resolveTemplateString(it, hookData, responses) else it },
         )
     }
 
@@ -1160,6 +1198,7 @@ private fun applyBindingProperty(block: ContentBlock, property: String, value: A
     val strValue = value.toString()
     return when (property) {
         "text" -> block.copy(text = strValue)
+        "markdown_content" -> block.copy(markdown_content = strValue)
         "field_label" -> block.copy(field_label = strValue)
         "field_placeholder" -> block.copy(field_placeholder = strValue)
         "badge_text" -> block.copy(badge_text = strValue)
@@ -1267,6 +1306,11 @@ object RequiredFieldGate {
                 is String -> v.isEmpty()
                 is Map<*, *> -> v.isEmpty()
                 is List<*> -> v.isEmpty()
+                // Mrozu QA (2026-08-04, Flo s1) — a required `agreement`/consent checkbox is satisfied
+                // ONLY when checked; unchecked reports non-null `false` that would otherwise slip past.
+                // Scoped to `agreement` so pre-existing required `input_toggle`/`toggle` keep their
+                // behavior. Parity with iOS `block.type == .agreement`.
+                is Boolean -> block.type == "agreement" && !v
                 else -> false
             }
             if (empty) return false to (block.field_label ?: block.label ?: fieldId)
@@ -1367,13 +1411,13 @@ fun ContentBlockRendererView(
                 block.entrance_animation?.let { anim ->
                     EntranceAnimationWrapper(animation = anim) {
                         Box(modifier = sizingModifier) {
-                            RenderBlock(block = block, onAction = onAction, toggleValues = toggleValues, inputValues = inputValues, loc = loc, currentStepIndex = currentStepIndex, totalSteps = totalSteps, onInteract = onInteract)
+                            RenderBlock(block = block, onAction = onAction, toggleValues = toggleValues, inputValues = inputValues, loc = loc, currentStepIndex = currentStepIndex, totalSteps = totalSteps, onInteract = onInteract, stepBlocks = blocks)
                         }
                     }
                 }
             } else {
                 Box(modifier = sizingModifier) {
-                    RenderBlock(block = block, onAction = onAction, toggleValues = toggleValues, inputValues = inputValues, loc = loc, currentStepIndex = currentStepIndex, totalSteps = totalSteps, onInteract = onInteract)
+                    RenderBlock(block = block, onAction = onAction, toggleValues = toggleValues, inputValues = inputValues, loc = loc, currentStepIndex = currentStepIndex, totalSteps = totalSteps, onInteract = onInteract, stepBlocks = blocks)
                 }
             }
         }
@@ -1392,6 +1436,9 @@ internal fun RenderBlock(
     // SPEC-419 STEP-2 — interactive-element fire closure; default no-op so container recursions
     // (carousel/section/stack/row) that don't thread it still compile.
     onInteract: (String, String, String?) -> Unit = { _, _, _ -> },
+    // Mrozu QA (2026-08-04) — the step's sibling blocks, so a consent-reactive CTA button can run the
+    // step-level RequiredFieldGate. Default empty (nested container recursions pass none → gate satisfied).
+    stepBlocks: List<ContentBlock> = emptyList(),
 ) {
     // SPEC-089d: Wrap every block with block_style + 2D positioning modifiers
     val blockAlignment = if (block.horizontal_align != null || block.vertical_align != null) {
@@ -1427,12 +1474,12 @@ internal fun RenderBlock(
             contentAlignment = blockAlignment,
         ) {
             Box(modifier = contentModifier) {
-                RenderBlockContent(block, onAction, toggleValues, inputValues, loc, currentStepIndex, totalSteps, onInteract)
+                RenderBlockContent(block, onAction, toggleValues, inputValues, loc, currentStepIndex, totalSteps, onInteract, stepBlocks)
             }
         }
     } else {
         Box(modifier = contentModifier) {
-            RenderBlockContent(block, onAction, toggleValues, inputValues, loc, currentStepIndex, totalSteps, onInteract)
+            RenderBlockContent(block, onAction, toggleValues, inputValues, loc, currentStepIndex, totalSteps, onInteract, stepBlocks)
         }
     }
 }
@@ -1448,14 +1495,16 @@ private fun RenderBlockContent(
     totalSteps: Int = 1,
     // SPEC-419 STEP-2 — interactive-element fire closure threaded to the 7 interactive elements.
     onInteract: (String, String, String?) -> Unit = { _, _, _ -> },
+    // Mrozu QA (2026-08-04) — step sibling blocks for the consent-reactive CTA gate (see RenderBlock).
+    stepBlocks: List<ContentBlock> = emptyList(),
 ) {
     when (block.type) {
         "heading" -> HeadingBlock(block, loc)
         "text" -> TextBlock(block, loc)
         "image" -> ImageBlock(block)
         "media_gallery" -> MediaGalleryBlock(block)
-        "section_background" -> SectionBackgroundBlock(block, onAction, toggleValues, inputValues, loc)
-        "carousel" -> CarouselBlock(block, onAction, toggleValues, inputValues, loc)
+        "section_background" -> SectionBackgroundBlock(block, onAction, toggleValues, inputValues, loc, stepBlocks)
+        "carousel" -> CarouselBlock(block, onAction, toggleValues, inputValues, loc, stepBlocks)
         "otp_input" -> OtpInputBlock(block, inputValues, onInteract)
         "warning_banner" -> WarningBannerBlock(block, loc)
         "password_strength" -> PasswordStrengthBlock(block)
@@ -1467,7 +1516,9 @@ private fun RenderBlockContent(
         "settings_footer" -> SettingsFooterBlock(block, onAction, onInteract)
         "memory_match" -> MemoryMatchBlock(block, onInteract)
         "calendar_month" -> CalendarMonthBlock(block, inputValues, onInteract)
-        "button" -> ButtonBlock(block, onAction, loc)
+        "button" -> ButtonBlock(block, onAction, loc, stepBlocks, inputValues)
+        // Mrozu (Duolingo s20/s22) — CTA-style button that plays `audio_url` on tap.
+        "sound_button" -> SoundButtonBlock(block, onAction, loc, stepBlocks, inputValues)
         "spacer" -> Spacer(modifier = Modifier.height((block.spacer_height ?: 24.0).dp)) // SPEC-419 pass-14 #11 — unset default 24 to match editor+preview (was 16)
         "list" -> ListBlock(block, loc)
         "divider" -> DividerBlock(block)
@@ -1492,11 +1543,11 @@ private fun RenderBlockContent(
         "pulsing_avatar" -> PulsingAvatarBlock(block)
         "star_background" -> StarBackgroundBlock(block)
         // SPEC-089d Phase F: Container & advanced block types
-        "stack" -> StackBlock(block, onAction, toggleValues, inputValues, loc)
+        "stack" -> StackBlock(block, onAction, toggleValues, inputValues, loc, stepBlocks)
         "custom_view" -> CustomViewBlock(block)
         "date_wheel_picker" -> DateWheelPickerBlock(block, inputValues)
         "circular_gauge" -> CircularGaugeBlock(block)
-        "row" -> RowBlock(block, onAction, toggleValues, inputValues, loc)
+        "row" -> RowBlock(block, onAction, toggleValues, inputValues, loc, stepBlocks)
         // SPEC-089d: Pricing card
         "pricing_card" -> PricingCardBlock(block, onAction, inputValues)
         // SPEC-089d Phase 3: Form input block renderers (22 types)
@@ -1513,6 +1564,8 @@ private fun RenderBlockContent(
         "input_select" -> FormInputSelectBlock(block, inputValues)
         "input_slider" -> FormInputSliderBlock(block, inputValues)
         "input_toggle" -> FormInputToggleBlock(block, inputValues)
+        // Mrozu QA (2026-08-04, Flo s1) — standalone consent/agreement (checkbox + rich links → Bool).
+        "agreement" -> AgreementBlock(block, inputValues)
         "input_stepper" -> FormInputStepperBlock(block, inputValues)
         "input_segmented" -> FormInputSegmentedBlock(block, inputValues)
         "input_rating" -> FormInputRatingBlock(block, inputValues)
@@ -1559,7 +1612,12 @@ private fun HeadingBlock(block: ContentBlock, loc: ((String, String) -> String)?
         color = Color.Unspecified,
     )
     val effectiveStyle = if (block.style != null) StyleEngine.applyTextStyle(baseStyle, block.style) else baseStyle
-    val styleWithAlign = horizontalTextAlign(block.horizontal_align)
+    // EPIC-9 parity — iOS prioritizes `style.alignment ?? horizontal_align`
+    // (ContentBlockRendererView.swift:290), so `horizontal_align` only acts as
+    // the fallback when `style.alignment` is unset. `effectiveStyle` already
+    // carries the style-derived textAlign, so we re-derive from alignSource.
+    val alignSource = block.style?.alignment ?: block.horizontal_align
+    val styleWithAlign = horizontalTextAlign(alignSource)
         ?.let { effectiveStyle.copy(textAlign = it) } ?: effectiveStyle
     val resolved = loc?.invoke("block.${block.id}.text", text) ?: text
     Text(
@@ -1568,6 +1626,10 @@ private fun HeadingBlock(block: ContentBlock, loc: ((String, String) -> String)?
         // has no equivalent TextStyle modifier so we transform the string.
         text = block.style.applyTransform(resolved),
         style = styleWithAlign,
+        // SPEC — honor max_lines on headings (iOS added .lineLimit here too); nil
+        // → no limit (unchanged). Ellipsis is a no-op when unbounded.
+        maxLines = block.max_lines ?: Int.MAX_VALUE,
+        overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
         // SPEC-070-A J.11 — heading content blocks announce as a heading
         // to screen readers, matching iOS `accessibilityAddTraits(.isHeader)`.
         modifier = Modifier
@@ -1581,15 +1643,66 @@ private fun TextBlock(block: ContentBlock, loc: ((String, String) -> String)? = 
     val text = block.text ?: ""
     val baseStyle = TextStyle(fontSize = 16.sp, color = Color.Unspecified)
     val effectiveStyle = if (block.style != null) StyleEngine.applyTextStyle(baseStyle, block.style) else baseStyle
-    val styleWithAlign = horizontalTextAlign(block.horizontal_align)
+    // EPIC-9 parity — iOS prioritizes `style.alignment ?? horizontal_align`
+    // (ContentBlockRendererView.swift:358), so `horizontal_align` only acts as
+    // the fallback when `style.alignment` is unset.
+    val alignSource = block.style?.alignment ?: block.horizontal_align
+    val styleWithAlign = horizontalTextAlign(alignSource)
         ?.let { effectiveStyle.copy(textAlign = it) } ?: effectiveStyle
     val resolved = loc?.invoke("block.${block.id}.text", text) ?: text
-    Text(
-        // SPEC-401-A R10 — apply `style.text_transform` (uppercase/lowercase).
-        text = block.style.applyTransform(resolved),
-        style = styleWithAlign,
-        modifier = Modifier.fillMaxWidth(),
-    )
+    val content = block.style.applyTransform(resolved)
+    val maxLines = block.max_lines ?: Int.MAX_VALUE
+    val showTrailingDots = (block.field_config?.get("show_trailing_dots") as? Boolean) ?: false
+    if (showTrailingDots) {
+        // Mrozu QA — trailing animated ellipsis ("", ".", "..", "...") for loading-style text.
+        // Parity w/ iOS AnimatedTrailingDots + console preview's pulsing-dots span.
+        val boxAlign = when (alignSource) {
+            "center" -> Alignment.Center
+            "right", "trailing" -> Alignment.CenterEnd
+            else -> Alignment.CenterStart
+        }
+        Box(modifier = Modifier.fillMaxWidth(), contentAlignment = boxAlign) {
+            Row(verticalAlignment = Alignment.Bottom) {
+                Text(
+                    text = content,
+                    style = styleWithAlign,
+                    maxLines = maxLines,
+                    overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
+                )
+                AnimatedTrailingDots(style = styleWithAlign)
+            }
+        }
+    } else {
+        Text(
+            // SPEC-401-A R10 — apply `style.text_transform` (uppercase/lowercase).
+            text = content,
+            style = styleWithAlign,
+            // SPEC — honor max_lines on text (iOS added .lineLimit here too); nil → no
+            // limit (unchanged). Ellipsis is a no-op when unbounded.
+            maxLines = maxLines,
+            overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
+            modifier = Modifier.fillMaxWidth(),
+        )
+    }
+}
+
+/** Mrozu QA — a trailing animated ellipsis that cycles "" → "." → ".." → "..." every 400ms,
+ * reserving the full "..." width so the preceding text does not shift. Used by [TextBlock] when
+ * `field_config.show_trailing_dots` is true. Parity w/ iOS `AnimatedTrailingDots`. */
+@Composable
+private fun AnimatedTrailingDots(style: TextStyle) {
+    var count by remember { mutableStateOf(0) }
+    LaunchedEffect(Unit) {
+        while (true) {
+            delay(400)
+            count = (count + 1) % 4
+        }
+    }
+    Box(contentAlignment = Alignment.BottomStart) {
+        // Invisible full-width placeholder keeps the layout stable.
+        Text("...", style = style, color = Color.Transparent)
+        Text(".".repeat(count), style = style)
+    }
 }
 
 @Composable
@@ -1599,6 +1712,10 @@ private fun CarouselBlock(
     toggleValues: MutableMap<String, Boolean>,
     inputValues: MutableMap<String, Any>,
     loc: ((String, String) -> String)?,
+    // Mrozu QA (2026-08-04) — thread the step's blocks so a nested consent-reactive CTA
+    // evaluates the full step's RequiredFieldGate (parity with iOS, which recurses on the
+    // same ContentBlockRendererView instance holding `self.blocks`).
+    stepBlocks: List<ContentBlock> = emptyList(),
 ) {
     // EPIC-8 — swipeable carousel: each child block is a page; render a HorizontalPager
     // + a dot indicator. Page indicator colors come through field_config.
@@ -1615,7 +1732,7 @@ private fun CarouselBlock(
             modifier = Modifier.fillMaxWidth().height((block.height ?: 240.0).dp),
         ) { page ->
             Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.TopStart) {
-                RenderBlock(pages[page], onAction, toggleValues, inputValues, loc)
+                RenderBlock(pages[page], onAction, toggleValues, inputValues, loc, stepBlocks = stepBlocks)
             }
         }
         Row(
@@ -1642,6 +1759,8 @@ private fun SectionBackgroundBlock(
     toggleValues: MutableMap<String, Boolean>,
     inputValues: MutableMap<String, Any>,
     loc: ((String, String) -> String)?,
+    // Mrozu QA (2026-08-04) — thread step blocks so a nested consent-CTA gates on the full step (iOS parity).
+    stepBlocks: List<ContentBlock> = emptyList(),
 ) {
     // EPIC-4b — paint vertical proportional color zones, overlay the children content on top.
     // Zones + arrangement come through field_config (ContentBlock is at the JVM constructor-arg limit).
@@ -1660,15 +1779,36 @@ private fun SectionBackgroundBlock(
     // No early-return on empty zones — render the foreground children on a bare background, matching
     // iOS (ContentBlockRendererView) + the console preview (was: rendered nothing when zones absent).
     val children = block.children ?: block.stack_children ?: emptyList()
+    // Mrozu parity — iOS overlays children in a `VStack(spacing: 12)` (a fixed 12pt
+    // inter-child gap) and positions them with Spacers per content_arrangement
+    // (ContentBlockRendererView.swift:438-445). Android previously used a bare
+    // positional Arrangement with NO gap between children, diverging from the iOS
+    // pixel reference. Add the 12dp gap to the top/center/bottom cases; keep
+    // SpaceBetween for the default (iOS default is "space_between", where the
+    // flexible spacers dominate the 12pt spacing).
     val arrangement = when (block.field_config?.get("content_arrangement") as? String) {
-        "top" -> Arrangement.Top
-        "center" -> Arrangement.Center
-        "bottom" -> Arrangement.Bottom
+        "top" -> Arrangement.spacedBy(12.dp, Alignment.Top)
+        "center" -> Arrangement.spacedBy(12.dp, Alignment.CenterVertically)
+        "bottom" -> Arrangement.spacedBy(12.dp, Alignment.Bottom)
         else -> Arrangement.SpaceBetween
     }
-    // Unset height defaults to 480.dp to match iOS (ContentBlockRendererView) + the console preview
-    // (was fillMaxSize → a native↔native height divergence when the author left height unset).
-    val boxMod = block.height?.let { Modifier.fillMaxWidth().height(it.dp) } ?: Modifier.fillMaxWidth().height(480.dp)
+    // EPIC-4b v2 — background_extent (% of screen height, 1–100) lets the section fill the screen
+    // or reach a configured % from the top. When absent, fall back to the fixed height (480.dp default),
+    // matching iOS (ContentBlockRendererView) + the console preview.
+    // Use the FULL physical display height (heightPixels / density) as the basis so
+    // extent=100 fills the same physical extent as iOS's UIScreen.main.bounds.height.
+    // screenHeightDp excludes the status/nav bars (~24–70dp), which left a visible
+    // gap on Android for the documented "fills the screen" contract (extent=100).
+    val displayMetrics = LocalContext.current.resources.displayMetrics
+    val fullScreenHeightDp = displayMetrics.heightPixels / displayMetrics.density
+    val extentPct = (block.field_config?.get("background_extent") as? Number)?.toDouble()
+    val fixedHeight = block.height ?: 480.0
+    val boxMod = if (extentPct != null) {
+        Modifier.fillMaxWidth()
+            .height((fullScreenHeightDp * (extentPct.coerceIn(1.0, 100.0) / 100.0)).dp)
+    } else {
+        Modifier.fillMaxWidth().height(fixedHeight.dp)
+    }
     Box(modifier = boxMod) {
         // Background: vertical weighted color zones.
         Column(modifier = Modifier.fillMaxSize()) {
@@ -1695,6 +1835,7 @@ private fun SectionBackgroundBlock(
                     toggleValues = toggleValues,
                     inputValues = inputValues,
                     loc = loc,
+                    stepBlocks = stepBlocks,
                 )
             }
         }
@@ -1704,35 +1845,153 @@ private fun SectionBackgroundBlock(
 @Composable
 private fun MediaGalleryBlock(block: ContentBlock) {
     // EPIC-3 — horizontal scrollable gallery of image tiles (rounded, fixed size, placeholder bg).
+    // Media-gallery v2 (Mrozu QA): gallery_fill = full-width edge-to-edge cover tiles; gallery_autoscroll =
+    // seamless marquee loop (gallery_autoscroll_speed = seconds per full cycle, default 20). Both default off
+    // → existing static LazyRow (no infinite animation started when off — non-breaking, zero battery cost).
     val images = block.gallery_images ?: return
     if (images.isEmpty()) return
-    val itemW = (block.gallery_item_width ?: 140.0).dp
     val itemH = (block.gallery_item_height ?: 180.0).dp
     val cr = (block.gallery_corner_radius ?: 12.0).dp
     val spacing = (block.gallery_spacing ?: 10.0).dp
-    val align = when (block.gallery_align) {
-        "start" -> androidx.compose.ui.Alignment.Start
-        "end" -> androidx.compose.ui.Alignment.End
-        else -> androidx.compose.ui.Alignment.CenterHorizontally
+    val fill = (block.field_config?.get("gallery_fill") as? Boolean) ?: false
+    val autoscroll = (block.field_config?.get("gallery_autoscroll") as? Boolean) ?: false
+
+    if (autoscroll) {
+        MediaGalleryAutoScrollRow(images, block.gallery_item_width, itemH, cr, spacing, fill, (block.field_config?.get("gallery_autoscroll_speed") as? Number)?.toDouble() ?: 20.0)
+        return
     }
-    LazyRow(
-        modifier = Modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.spacedBy(spacing, align),
-        contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 2.dp),
-    ) {
-        items(images.size) { i ->
+
+    // Mrozu QA (2026-08-04) — alarmy selectable gallery: gallery_preview_on_select opens a full-screen
+    // enlarged overlay of the tapped image. Default off → the existing static row (non-breaking). Image
+    // preview only — video/gif/sound preview playback is net-new host media infra (deferred). Parity w/ iOS.
+    val previewOnSelect = (block.field_config?.get("gallery_preview_on_select") as? Boolean) ?: false
+    var previewUrl by remember { mutableStateOf<String?>(null) }
+    val onTile: ((String) -> Unit)? = if (previewOnSelect) ({ url -> previewUrl = url }) else null
+
+    val itemW = (block.gallery_item_width ?: 140.0).dp
+    if (fill) {
+        androidx.compose.foundation.layout.BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
+            val tileW = maxWidth
+            LazyRow(modifier = Modifier.fillMaxWidth()) {
+                items(images.size) { i -> GalleryTile(images[i], tileW, itemH, 0.dp, onTile) }
+            }
+        }
+    } else {
+        val align = when (block.gallery_align) {
+            "start" -> androidx.compose.ui.Alignment.Start
+            "end" -> androidx.compose.ui.Alignment.End
+            else -> androidx.compose.ui.Alignment.CenterHorizontally
+        }
+        LazyRow(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(spacing, align),
+            contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 2.dp),
+        ) {
+            items(images.size) { i -> GalleryTile(images[i], itemW, itemH, cr, onTile) }
+        }
+    }
+
+    val shownPreview = previewUrl
+    if (shownPreview != null) {
+        androidx.compose.ui.window.Dialog(
+            onDismissRequest = { previewUrl = null },
+            properties = androidx.compose.ui.window.DialogProperties(usePlatformDefaultWidth = false),
+        ) {
             Box(
                 modifier = Modifier
-                    .width(itemW)
-                    .height(itemH)
-                    .clip(RoundedCornerShape(cr))
-                    .background(androidx.compose.ui.graphics.Color(0xFF2A2A2E)),
+                    .fillMaxSize()
+                    .background(androidx.compose.ui.graphics.Color(0xE6000000))
+                    .clickable { previewUrl = null },
+                contentAlignment = Alignment.Center,
             ) {
                 ai.appdna.sdk.core.NetworkImage(
-                    url = images[i],
-                    modifier = Modifier.fillMaxSize(),
-                    contentScale = androidx.compose.ui.layout.ContentScale.Crop,
+                    url = shownPreview,
+                    modifier = Modifier.fillMaxWidth().padding(20.dp),
+                    contentScale = androidx.compose.ui.layout.ContentScale.Fit,
                 )
+                Box(
+                    modifier = Modifier.fillMaxSize().padding(20.dp),
+                    contentAlignment = Alignment.TopEnd,
+                ) {
+                    Text(
+                        "✕",
+                        fontSize = 28.sp,
+                        color = Color.White.copy(alpha = 0.9f),
+                        modifier = Modifier.clickable { previewUrl = null },
+                    )
+                }
+            }
+        }
+    }
+}
+
+// Media-gallery v2 — shared tile (placeholder bg + cover image, rounded/clipped).
+// Mrozu QA (2026-08-04) — optional onClick opens the selectable-gallery preview overlay (default null = inert).
+@Composable
+private fun GalleryTile(
+    url: String,
+    width: androidx.compose.ui.unit.Dp,
+    height: androidx.compose.ui.unit.Dp,
+    corner: androidx.compose.ui.unit.Dp,
+    onClick: ((String) -> Unit)? = null,
+) {
+    Box(
+        modifier = Modifier
+            .width(width)
+            .height(height)
+            .clip(RoundedCornerShape(corner))
+            .background(androidx.compose.ui.graphics.Color(0xFF2A2A2E))
+            .then(if (onClick != null) Modifier.clickable { onClick(url) } else Modifier),
+    ) {
+        ai.appdna.sdk.core.NetworkImage(
+            url = url,
+            modifier = Modifier.fillMaxSize(),
+            contentScale = androidx.compose.ui.layout.ContentScale.Crop,
+        )
+    }
+}
+
+// Media-gallery v2 — continuous auto-scroll marquee. The track is duplicated and translated by exactly one
+// copy-width per cycle, so the loop wraps seamlessly (no jump). Only composed when gallery_autoscroll == true.
+@Composable
+private fun MediaGalleryAutoScrollRow(
+    images: List<String>,
+    itemWidthDp: Double?,
+    itemH: androidx.compose.ui.unit.Dp,
+    cr: androidx.compose.ui.unit.Dp,
+    spacing: androidx.compose.ui.unit.Dp,
+    fill: Boolean,
+    cycleSeconds: Double,
+) {
+    androidx.compose.foundation.layout.BoxWithConstraints(
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(itemH)
+            .clip(RectangleShape),
+    ) {
+        val gap = if (fill) 0.dp else spacing
+        val tileW = if (fill) maxWidth else (itemWidthDp ?: 140.0).dp
+        val cornerDp = if (fill) 0.dp else cr
+        // One copy = n tiles + n gaps; shifting by this aligns the 2nd copy onto the 1st → seamless.
+        val copyWidthPx = with(androidx.compose.ui.platform.LocalDensity.current) {
+            ((tileW + gap) * images.size).toPx()
+        }
+        val transition = rememberInfiniteTransition(label = "gallery_marquee")
+        val offsetX by transition.animateFloat(
+            initialValue = 0f,
+            targetValue = -copyWidthPx,
+            animationSpec = infiniteRepeatable(
+                animation = tween(durationMillis = (maxOf(cycleSeconds, 1.0) * 1000).toInt(), easing = LinearEasing),
+                repeatMode = RepeatMode.Restart,
+            ),
+            label = "gallery_offset",
+        )
+        androidx.compose.foundation.layout.Row(
+            modifier = Modifier.graphicsLayer { translationX = offsetX },
+            horizontalArrangement = Arrangement.spacedBy(gap),
+        ) {
+            repeat(images.size * 2) { i ->
+                GalleryTile(images[i % images.size], tileW, itemH, cornerDp)
             }
         }
     }
@@ -1878,7 +2137,17 @@ private fun ImageBlock(block: ContentBlock) {
 }
 
 @Composable
-private fun ButtonBlock(block: ContentBlock, onAction: (String) -> Unit, loc: ((String, String) -> String)? = null) {
+private fun ButtonBlock(
+    block: ContentBlock,
+    onAction: (String) -> Unit,
+    loc: ((String, String) -> String)? = null,
+    // Mrozu QA (2026-08-04) — Flo consent CTA: step siblings + live inputs drive the consent-reactive bg.
+    stepBlocks: List<ContentBlock> = emptyList(),
+    inputValues: Map<String, Any> = emptyMap(),
+    // Mrozu (Duolingo s20/s22) — when set (sound_button), tap runs this instead of
+    // the flow-action routing below (e.g. play an audio clip).
+    onClickOverride: (() -> Unit)? = null,
+) {
     val text = block.text ?: "Continue"
     // SPEC-401-A R54 (Lens A R54 #4, P2) — 16→17sp matching iOS
     // .body.weight(.semibold) at ContentBlockRendererView.swift:395-396.
@@ -1886,12 +2155,28 @@ private fun ButtonBlock(block: ContentBlock, onAction: (String) -> Unit, loc: ((
     val effectiveStyle = if (block.style != null) StyleEngine.applyTextStyle(baseStyle, block.style) else baseStyle
     val context = LocalContext.current
     val btnVariant = block.variant ?: "primary"
-    val bgColor = StyleEngine.parseColor(block.bg_color ?: (ai.appdna.sdk.AppDNA.brandAccentHex ?: "#6366F1"))
+    // Mrozu QA (2026-08-04) — Flo consent CTA: `cta_enabled_bg_color` / `cta_disabled_bg_color` drive the
+    // button background off whether the step's required fields (incl. a consent checkbox) are satisfied.
+    // Reuses the SAME RequiredFieldGate the advance gate uses, so the CTA recolors reactively as the user
+    // toggles consent. Both nil → plain `bg_color` (non-breaking). Parity with iOS.
+    val ctaEnabledHex = block.field_config?.get("cta_enabled_bg_color") as? String
+    val ctaDisabledHex = block.field_config?.get("cta_disabled_bg_color") as? String
+    val bgColor = run {
+        val fallback = block.bg_color ?: (ai.appdna.sdk.AppDNA.brandAccentHex ?: "#6366F1")
+        if (ctaEnabledHex == null && ctaDisabledHex == null) {
+            StyleEngine.parseColor(fallback)
+        } else {
+            val satisfied = RequiredFieldGate.evaluate(stepBlocks, inputValues).first
+            StyleEngine.parseColor(
+                if (satisfied) (ctaEnabledHex ?: fallback) else (ctaDisabledHex ?: ctaEnabledHex ?: fallback),
+            )
+        }
+    }
     val txtColor = StyleEngine.parseColor(block.text_color ?: "#FFFFFF")
     val cornerRadius = (block.button_corner_radius ?: 12.0).dp
     val displayText = loc?.invoke("block.${block.id}.text", text) ?: text
 
-    val onClick: () -> Unit = {
+    val onClick: () -> Unit = onClickOverride ?: {
         val action = block.action ?: "next"
         when (action) {
             "link" -> {
@@ -1922,7 +2207,16 @@ private fun ButtonBlock(block: ContentBlock, onAction: (String) -> Unit, loc: ((
             // only path the console emits today) never reached it
             // because of this rewrite. Forwarding the original action
             // keeps the iOS-canonical behavior as the single source.
-            "permission" -> onAction("permission")
+            //
+            // Mrozu (alarmy s4.1) — forward the button's OWN `action_value` (the per-CTA permission
+            // type, e.g. "alarm") colon-encoded so handleAction's pair-parser routes it to
+            // emitPermissionAction's `actionValue`. iOS already forwards block.action_value directly
+            // (ContentBlockRendererView.swift `onAction(block.action ?? "next", block.action_value)`);
+            // Android dropped it here, so a per-CTA permission type resolved to null and only the
+            // step-level permission_type worked. Blank/absent → bare "permission" (unchanged).
+            "permission" -> onAction(
+                block.action_value?.takeIf { it.isNotBlank() }?.let { "permission:$it" } ?: "permission",
+            )
             else -> onAction(action)
         }
     }
@@ -2090,6 +2384,38 @@ private fun ButtonBlock(block: ContentBlock, onAction: (String) -> Unit, loc: ((
     }
 }
 
+/**
+ * Mrozu (Duolingo s20/s22) — sound_button: a CTA-style button (reuses ALL of
+ * ButtonBlock's styling) that plays a remote audio clip (mp3/wav/aac) from
+ * `(block.field_config?.get("audio_url") as? String)` on tap. When `block.autoplay == true` the clip plays as the
+ * block first appears. Playback is routed through the shared AudioPlayer helper.
+ */
+@Composable
+private fun SoundButtonBlock(
+    block: ContentBlock,
+    onAction: (String) -> Unit,
+    loc: ((String, String) -> String)? = null,
+    stepBlocks: List<ContentBlock> = emptyList(),
+    inputValues: Map<String, Any> = emptyMap(),
+) {
+    val context = LocalContext.current
+    LaunchedEffect(block.id) {
+        if (block.autoplay == true) {
+            ai.appdna.sdk.core.AudioPlayer.play(context, (block.field_config?.get("audio_url") as? String))
+        }
+    }
+    // Stop autoplayed audio when the block leaves composition (step change /
+    // dismiss); AudioPlayer.stop() is idempotent and safe when idle. Mirrors
+    // iOS soundButtonBlock's .onDisappear.
+    DisposableEffect(block.id) {
+        onDispose { ai.appdna.sdk.core.AudioPlayer.stop() }
+    }
+    ButtonBlock(
+        block, onAction, loc, stepBlocks, inputValues,
+        onClickOverride = { ai.appdna.sdk.core.AudioPlayer.play(context, (block.field_config?.get("audio_url") as? String)) },
+    )
+}
+
 /** EPIC-11 — OTP / code-input: a row of N single-character boxes (verification codes). The entered value
  * lives in inputValues[field_id]; `field_config.otp_value` seeds a display value (used by snapshots/preview).
  * Filled boxes show the digit + accent border; the next empty box is the active box (accent border). */
@@ -2103,6 +2429,10 @@ private fun OtpInputBlock(
     val fieldId = block.field_id ?: block.id
     val accent = StyleEngine.parseColor(block.active_color ?: (ai.appdna.sdk.AppDNA.brandAccentHex ?: "#6366F1"))
     val boxBg = StyleEngine.parseColor(block.bg_color ?: "#1F2937")
+    // Mrozu QA (2026-08-04): box border/text were hardcoded (accent/gray + white). When set, border_color
+    // overrides the resting border (active box keeps the accent focus ring); text_color overrides the digit.
+    val borderOverride = block.border_color?.let { StyleEngine.parseColor(it) }
+    val digitColor = StyleEngine.parseColor(block.text_color ?: "#FFFFFF")
 
     // SPEC-419 STEP-2 — local editable state seeded from prior input / `otp_value` preview so re-entry +
     // snapshots keep the code. A hidden BasicTextField captures the number keyboard; tapping the boxes
@@ -2148,13 +2478,15 @@ private fun OtpInputBlock(
                         .background(boxBg)
                         .border(
                             width = if (isActive || ch != null) 2.dp else 1.dp,
-                            color = if (isActive) accent else if (ch != null) accent.copy(alpha = 0.5f) else Color.Gray.copy(alpha = 0.35f),
+                            color = if (isActive) accent
+                                else if (ch != null) (borderOverride ?: accent.copy(alpha = 0.5f))
+                                else (borderOverride?.copy(alpha = 0.35f) ?: Color.Gray.copy(alpha = 0.35f)),
                             shape = RoundedCornerShape(10.dp),
                         ),
                     contentAlignment = Alignment.Center,
                 ) {
                     if (ch != null) {
-                        Text(ch.toString(), fontSize = 22.sp, fontWeight = FontWeight.SemiBold, color = Color.White)
+                        Text(ch.toString(), fontSize = 22.sp, fontWeight = FontWeight.SemiBold, color = digitColor)
                     }
                 }
             }
@@ -2176,18 +2508,22 @@ private fun WarningBannerBlock(block: ContentBlock, loc: ((String, String) -> St
     val accent = StyleEngine.parseColor(block.active_color ?: accentHex)
     val icon = (block.field_config?.get("banner_icon") as? String) ?: defaultIcon
     val text = loc?.invoke("block.${block.id}.text", block.text ?: "") ?: (block.text ?: "")
+    // Mrozu QA (2026-08-04): bg_color/text_color were uneditable. When set they override the
+    // accent-tinted background / white message text; unset keeps the variant defaults (parity w/ iOS).
+    val bgOverride = block.bg_color?.let { StyleEngine.parseColor(it) }
+    val textColor = StyleEngine.parseColor(block.text_color ?: "#FFFFFF")
     Row(
         modifier = Modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(12.dp))
-            .background(accent.copy(alpha = 0.14f))
+            .background(bgOverride ?: accent.copy(alpha = 0.14f))
             .border(1.dp, accent.copy(alpha = 0.45f), RoundedCornerShape(12.dp))
             .padding(horizontal = 14.dp, vertical = 12.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(10.dp),
     ) {
         Text(icon, fontSize = 18.sp)
-        Text(text, fontSize = 14.sp, fontWeight = FontWeight.Medium, color = Color.White)
+        Text(text, fontSize = 14.sp, fontWeight = FontWeight.Medium, color = textColor)
     }
 }
 
@@ -2230,6 +2566,11 @@ private fun SpeechBubbleBlock(block: ContentBlock, loc: ((String, String) -> Str
     val bubbleColor = StyleEngine.parseColor(block.bg_color ?: "#FFFFFF")
     val textColor = StyleEngine.parseColor(block.text_color ?: "#111827")
     val tailPos = (block.field_config?.get("bubble_tail") as? String) ?: "left"
+    // Mrozu QA — bubble interior font family (bubble_font_family; null → system) + tail geometry
+    // (tail_width/tail_length; default 18×9). Parity w/ iOS speechBubbleBlock + console preview.
+    val bubbleFontFamily = ai.appdna.sdk.core.FontResolver.resolve(block.field_config?.get("bubble_font_family") as? String)
+    val tailWidth = ((block.field_config?.get("tail_width") as? Number)?.toFloat() ?: 18f)
+    val tailLength = ((block.field_config?.get("tail_length") as? Number)?.toFloat() ?: 9f)
     val text = loc?.invoke("block.${block.id}.text", block.text ?: "") ?: (block.text ?: "")
     Column(modifier = Modifier.fillMaxWidth()) {
         Box(
@@ -2239,7 +2580,7 @@ private fun SpeechBubbleBlock(block: ContentBlock, loc: ((String, String) -> Str
                 .background(bubbleColor)
                 .padding(horizontal = 16.dp, vertical = 12.dp),
         ) {
-            Text(text, fontSize = 15.sp, fontWeight = FontWeight.Medium, color = textColor, lineHeight = 20.sp)
+            Text(text, fontSize = 15.sp, fontWeight = FontWeight.Medium, color = textColor, fontFamily = bubbleFontFamily, lineHeight = 20.sp)
         }
         Box(modifier = Modifier.fillMaxWidth()) {
             Canvas(
@@ -2252,7 +2593,7 @@ private fun SpeechBubbleBlock(block: ContentBlock, loc: ((String, String) -> Str
                         },
                     )
                     .padding(start = if (tailPos == "left") 24.dp else 0.dp, end = if (tailPos == "right") 24.dp else 0.dp)
-                    .size(width = 18.dp, height = 9.dp),
+                    .size(width = tailWidth.dp, height = tailLength.dp),
             ) {
                 val p = androidx.compose.ui.graphics.Path().apply {
                     moveTo(0f, 0f); lineTo(size.width, 0f); lineTo(size.width / 2f, size.height); close()
@@ -2275,13 +2616,20 @@ private fun FeedbackPanelBlock(block: ContentBlock, loc: ((String, String) -> St
         else -> Triple("#10B981", "✓", "Great job!")
     }
     val accent = StyleEngine.parseColor(block.active_color ?: accentHex)
+    // Mrozu QA (2026-08-04) — duolingo above-CTA feedback: `feedback_bg_color` overrides the tinted panel
+    // background; `feedback_graphic_url` swaps the built-in ✓/✗ glyph for a custom image. Both default nil →
+    // identical to the existing accent-tinted glyph panel (non-breaking). The runtime correct/wrong EVENT that
+    // flips `feedback_state` is host-driven behavioral (deferred); this is the static/config render + styling.
+    val panelBg = (block.field_config?.get("feedback_bg_color") as? String)?.let { StyleEngine.parseColor(it) }
+        ?: accent.copy(alpha = 0.15f)
+    val graphicUrl = (block.field_config?.get("feedback_graphic_url") as? String)
     val headline = loc?.invoke("block.${block.id}.text", block.text ?: defHead) ?: (block.text ?: defHead)
     val detail = (block.field_config?.get("feedback_detail") as? String)
     Row(
         modifier = Modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(16.dp))
-            .background(accent.copy(alpha = 0.15f))
+            .background(panelBg)
             .padding(16.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(14.dp),
@@ -2290,7 +2638,15 @@ private fun FeedbackPanelBlock(block: ContentBlock, loc: ((String, String) -> St
             modifier = Modifier.size(40.dp).clip(CircleShape).background(accent),
             contentAlignment = Alignment.Center,
         ) {
-            Text(icon, fontSize = 20.sp, fontWeight = FontWeight.Bold, color = Color.White)
+            if (!graphicUrl.isNullOrEmpty()) {
+                ai.appdna.sdk.core.NetworkImage(
+                    url = graphicUrl,
+                    modifier = Modifier.fillMaxSize(),
+                    contentScale = androidx.compose.ui.layout.ContentScale.Crop,
+                )
+            } else {
+                Text(icon, fontSize = 20.sp, fontWeight = FontWeight.Bold, color = Color.White)
+            }
         }
         Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
             Text(headline, fontSize = 17.sp, fontWeight = FontWeight.Bold, color = accent)
@@ -2310,18 +2666,27 @@ private fun SummaryScreenBlock(block: ContentBlock, loc: ((String, String) -> St
     val stats = statsRaw.mapNotNull { it as? Map<*, *> }
     val headline = loc?.invoke("block.${block.id}.text", block.text ?: "") ?: (block.text ?: "")
     val defaultAccent = ai.appdna.sdk.AppDNA.brandAccentHex ?: "#6366F1"
+    // Mrozu QA (2026-08-04): cards/headline were hardcoded (#1F2937 bg, white text, center, 2-col).
+    // bg_color = card bg, text_color = headline + label, summary_align = headline align,
+    // stats_layout = horizontal (2-col, default) | vertical (single full-width column). Parity w/ iOS.
+    val cardBg = block.bg_color?.let { StyleEngine.parseColor(it) } ?: Color(0xFF1F2937)
+    val textColor = StyleEngine.parseColor(block.text_color ?: "#FFFFFF")
+    val headlineAlign = when ((block.field_config?.get("summary_align") as? String)) {
+        "left" -> TextAlign.Start; "right" -> TextAlign.End; else -> TextAlign.Center
+    }
+    val perRow = if ((block.field_config?.get("stats_layout") as? String) == "vertical") 1 else 2
     Column(modifier = Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(12.dp)) {
         if (headline.isNotEmpty()) {
             Text(
                 headline,
                 fontSize = 22.sp,
                 fontWeight = FontWeight.Bold,
-                color = Color.White,
-                textAlign = TextAlign.Center,
+                color = textColor,
+                textAlign = headlineAlign,
                 modifier = Modifier.fillMaxWidth(),
             )
         }
-        stats.chunked(2).forEach { rowStats ->
+        stats.chunked(perRow).forEach { rowStats ->
             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                 rowStats.forEach { m ->
                     // Coerce — a numeric stat value (Int/Double) cast `as? String` would blank the card.
@@ -2332,15 +2697,15 @@ private fun SummaryScreenBlock(block: ContentBlock, loc: ((String, String) -> St
                         modifier = Modifier
                             .weight(1f)
                             .clip(RoundedCornerShape(14.dp))
-                            .background(Color(0xFF1F2937))
+                            .background(cardBg)
                             .padding(16.dp),
                         verticalArrangement = Arrangement.spacedBy(4.dp),
                     ) {
                         Text(value, fontSize = 24.sp, fontWeight = FontWeight.Bold, color = color)
-                        Text(label, fontSize = 13.sp, color = Color.White.copy(alpha = 0.7f))
+                        Text(label, fontSize = 13.sp, color = textColor.copy(alpha = 0.7f))
                     }
                 }
-                if (rowStats.size == 1) Spacer(modifier = Modifier.weight(1f))
+                if (perRow == 2 && rowStats.size == 1) Spacer(modifier = Modifier.weight(1f))
             }
         }
     }
@@ -2356,7 +2721,15 @@ private fun PressHoldConfirmBlock(
     onInteract: (String, String, String?) -> Unit = { _, _, _ -> },
 ) {
     val accent = StyleEngine.parseColor(block.active_color ?: (ai.appdna.sdk.AppDNA.brandAccentHex ?: "#6366F1"))
+    // Mrozu QA — track background (bg_color; default #1F2937), filled-state label (confirm_text; default
+    // "✓"), optional above/below labels (label_above/label_below) in text_color (default #111827).
+    // Parity w/ iOS PressHoldConfirmBlockView + console preview.
+    val track = StyleEngine.parseColor(block.bg_color ?: "#1F2937")
     val text = loc?.invoke("block.${block.id}.text", block.text ?: "Hold to confirm") ?: (block.text ?: "Hold to confirm")
+    val confirmText = (block.field_config?.get("confirm_text") as? String) ?: "✓"
+    val labelAbove = block.field_config?.get("label_above") as? String
+    val labelBelow = block.field_config?.get("label_below") as? String
+    val labelColor = StyleEngine.parseColor(block.text_color ?: "#111827")
     val fieldId = block.field_id ?: block.id
     val holdMs = 1200
 
@@ -2386,31 +2759,43 @@ private fun PressHoldConfirmBlock(
         }
     }
 
-    Box(
-        modifier = Modifier
-            .fillMaxWidth()
-            .height(56.dp)
-            .clip(RoundedCornerShape(28.dp))
-            .background(Color(0xFF1F2937))
-            .pointerInput(confirmed) {
-                if (confirmed) return@pointerInput
-                detectTapGestures(onPress = {
-                    everHeld = true
-                    holding = true
-                    tryAwaitRelease()
-                    holding = false
-                })
-            },
-        contentAlignment = Alignment.Center,
+    Column(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
+        if (!labelAbove.isNullOrEmpty()) {
+            Text(labelAbove, fontSize = 14.sp, color = labelColor)
+        }
         Box(
             modifier = Modifier
-                .align(Alignment.CenterStart)
-                .fillMaxHeight()
-                .fillMaxWidth(progress.value)
-                .background(accent),
-        )
-        Text(if (confirmed) "✓" else text, fontSize = 16.sp, fontWeight = FontWeight.SemiBold, color = Color.White)
+                .fillMaxWidth()
+                .height(56.dp)
+                .clip(RoundedCornerShape(28.dp))
+                .background(track)
+                .pointerInput(confirmed) {
+                    if (confirmed) return@pointerInput
+                    detectTapGestures(onPress = {
+                        everHeld = true
+                        holding = true
+                        tryAwaitRelease()
+                        holding = false
+                    })
+                },
+            contentAlignment = Alignment.Center,
+        ) {
+            Box(
+                modifier = Modifier
+                    .align(Alignment.CenterStart)
+                    .fillMaxHeight()
+                    .fillMaxWidth(progress.value)
+                    .background(accent),
+            )
+            Text(if (confirmed) confirmText else text, fontSize = 16.sp, fontWeight = FontWeight.SemiBold, color = Color.White)
+        }
+        if (!labelBelow.isNullOrEmpty()) {
+            Text(labelBelow, fontSize = 14.sp, color = labelColor)
+        }
     }
 }
 
@@ -2607,9 +2992,60 @@ private fun MemoryMatchBlock(
     }
 }
 
-/** EPIC-11 — month calendar (Flo): header + weekday row + day grid. `field_config`: month_label, days_in_month,
- * start_offset (weekday of the 1st, 0=Sun), selected_days[], today. Selected = accent-filled circle; today =
- * accent ring. (Multi-month scroll is host-driven; this renders one month.) */
+/** Per-month descriptor for the (possibly multi-month) calendar grid. */
+private data class CalMonthDesc(
+    val index: Int,
+    val label: String,
+    val daysInMonth: Int,
+    val startOffset: Int,
+    val year: Int,
+    val month: Int, // 1..12
+    val today: Int, // today's day for this month, -1 if none
+)
+
+private val CAL_MONTH_NAMES = listOf(
+    "January", "February", "March", "April", "May", "June",
+    "July", "August", "September", "October", "November", "December",
+)
+
+private fun calDaysIn(year: Int, month: Int): Int {
+    val table = intArrayOf(31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31)
+    val m = month.coerceIn(1, 12)
+    if (m == 2 && ((year % 4 == 0 && year % 100 != 0) || year % 400 == 0)) return 29
+    return table[m - 1]
+}
+
+private fun calAddMonths(year: Int, month: Int, delta: Int): Pair<Int, Int> {
+    val total = (month - 1) + delta
+    return Pair(year + total / 12, total % 12 + 1)
+}
+
+/** Parse "June 2026" → (2026, 6). Falls back to (2026, 6) so all surfaces agree. */
+private fun calParseBaseMonth(label: String): Pair<Int, Int> {
+    var month = 6
+    var year = 2026
+    label.lowercase().split(" ").forEach { p ->
+        if (p.isBlank()) return@forEach
+        val idx = CAL_MONTH_NAMES.indexOfFirst { it.lowercase().startsWith(p) || p.startsWith(it.lowercase()) }
+        if (idx >= 0) {
+            month = idx + 1
+        } else {
+            p.toIntOrNull()?.let { if (it in 1901..2999) year = it }
+        }
+    }
+    return Pair(year, month)
+}
+
+private fun calIso(y: Int, m: Int, d: Int): String = "%04d-%02d-%02d".format(y, m, d)
+
+/** Month calendar (Flo). Renders `months_shown` (default 1) consecutive month grids stacked vertically.
+ * SINGLE mode (`range_selectable` false): tapping an in-month day highlights it. For a single displayed month this
+ * preserves the legacy contract — inputValues[fid]=day (Int) and ("day_selected", String(day)) — and
+ * `selected_days`/`today` seed the first month. For multi-month single-select it writes the ISO date.
+ * RANGE mode (`range_selectable` true): tapping two dates selects an inclusive range and persists
+ * inputValues[fid] = {"start":"yyyy-MM-dd","end":"yyyy-MM-dd"}, firing ("range_selected", "start..end").
+ * NOTE (deferred, needs device verification): continuous vertical scroll paging + drag-to-select the range are not
+ * implemented — this renders all N months stacked and uses tap-two-dates selection. */
 @Composable
 private fun CalendarMonthBlock(
     block: ContentBlock,
@@ -2623,57 +3059,123 @@ private fun CalendarMonthBlock(
     val startOffset = ((cfg?.get("start_offset") as? Number)?.toInt() ?: 0).coerceIn(0, 6)
     val selectedDays = (cfg?.get("selected_days") as? List<*>)?.mapNotNull { (it as? Number)?.toInt() } ?: emptyList()
     val today = (cfg?.get("today") as? Number)?.toInt() ?: -1
+    val monthsShown = ((cfg?.get("months_shown") as? Number)?.toInt() ?: 1).coerceIn(1, 12)
+    val rangeSelectable = (cfg?.get("range_selectable") as? Boolean) ?: false
     val accent = StyleEngine.parseColor(block.active_color ?: (ai.appdna.sdk.AppDNA.brandAccentHex ?: "#6366F1"))
     val weekdays = listOf("S", "M", "T", "W", "T", "F", "S")
-    val rows = (startOffset + daysInMonth + 6) / 7
 
-    // SPEC-419 STEP-2 — tapping an in-month day highlights it, writes inputValues[fid]=day, and fires
-    // ("day_selected", String(day)). Config carries no month/year — the host derives the full date.
-    // `selected_days` still seed highlights (preview parity).
-    var selectedDay by remember(fieldId) { mutableStateOf<Int?>(null) }
-
-    Column(modifier = Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        Text(monthLabel, fontSize = 20.sp, fontWeight = FontWeight.Bold, color = Color.White, textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth())
-        Row(modifier = Modifier.fillMaxWidth()) {
-            weekdays.forEach { wd ->
-                Text(wd, modifier = Modifier.weight(1f), fontSize = 12.sp, fontWeight = FontWeight.Medium, color = Color.White.copy(alpha = 0.5f), textAlign = TextAlign.Center)
+    // Build the month descriptors. Month 0 honors authored days/offset/today; later months continue the weekday
+    // flow ((prevOffset + prevDays) % 7) and use real day counts for the parsed base month.
+    val (baseYear, baseMonth) = calParseBaseMonth(monthLabel)
+    val months = remember(monthLabel, daysInMonth, startOffset, today, monthsShown) {
+        val list = mutableListOf<CalMonthDesc>()
+        var prevOffset = startOffset
+        var prevDays = daysInMonth
+        for (i in 0 until monthsShown) {
+            if (i == 0) {
+                list.add(CalMonthDesc(0, monthLabel, daysInMonth, startOffset, baseYear, baseMonth, today))
+            } else {
+                val (yi, mi) = calAddMonths(baseYear, baseMonth, i)
+                val di = calDaysIn(yi, mi)
+                val off = (prevOffset + prevDays) % 7
+                list.add(CalMonthDesc(i, "${CAL_MONTH_NAMES[mi - 1]} $yi", di, off, yi, mi, -1))
+                prevOffset = off
+                prevDays = di
             }
         }
-        for (r in 0 until rows) {
-            Row(modifier = Modifier.fillMaxWidth()) {
-                for (c in 0 until 7) {
-                    val day = r * 7 + c - startOffset + 1
-                    val inMonth = day in 1..daysInMonth
-                    Box(
-                        modifier = Modifier
-                            .weight(1f)
-                            .height(42.dp)
-                            .then(
-                                if (inMonth) Modifier.clickable {
-                                    selectedDay = day
-                                    inputValues[fieldId] = day
-                                    onInteract(block.id, "day_selected", day.toString())
-                                } else Modifier,
-                            ),
-                        contentAlignment = Alignment.Center,
-                    ) {
-                        if (inMonth) {
-                            val isSelected = day in selectedDays || day == selectedDay
-                            val isToday = day == today
+        list
+    }
+
+    // SPEC-419 STEP-2 / Mrozu Flo s16 — selection state.
+    var selectedDay by remember(fieldId) { mutableStateOf<Int?>(null) }   // legacy single-month day number
+    var selectedIso by remember(fieldId) { mutableStateOf<String?>(null) } // multi-month single-select ISO
+    var rangeStart by remember(fieldId) { mutableStateOf<String?>(null) }
+    var rangeEnd by remember(fieldId) { mutableStateOf<String?>(null) }
+
+    Column(modifier = Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(20.dp)) {
+        months.forEach { m ->
+            val rows = (m.startOffset + m.daysInMonth + 6) / 7
+            Column(modifier = Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text(m.label, fontSize = 20.sp, fontWeight = FontWeight.Bold, color = Color.White, textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth())
+                Row(modifier = Modifier.fillMaxWidth()) {
+                    weekdays.forEach { wd ->
+                        Text(wd, modifier = Modifier.weight(1f), fontSize = 12.sp, fontWeight = FontWeight.Medium, color = Color.White.copy(alpha = 0.5f), textAlign = TextAlign.Center)
+                    }
+                }
+                for (r in 0 until rows) {
+                    Row(modifier = Modifier.fillMaxWidth()) {
+                        for (c in 0 until 7) {
+                            val day = r * 7 + c - m.startOffset + 1
+                            val inMonth = day in 1..m.daysInMonth
+                            val isoStr = if (inMonth) calIso(m.year, m.month, day) else ""
+                            val isRangeStart = rangeSelectable && rangeStart != null && isoStr == rangeStart
+                            val isRangeEnd = rangeSelectable && rangeEnd != null && isoStr == rangeEnd
+                            val inRange = rangeSelectable && rangeStart != null && rangeEnd != null && isoStr > rangeStart!! && isoStr < rangeEnd!!
+                            val singleSel = when {
+                                rangeSelectable || !inMonth -> false
+                                monthsShown <= 1 -> (m.index == 0 && day in selectedDays) || day == selectedDay
+                                else -> selectedIso == isoStr
+                            }
+                            val isSelected = isRangeStart || isRangeEnd || singleSel
+                            val isToday = inMonth && day == m.today
                             Box(
                                 modifier = Modifier
-                                    .size(34.dp)
-                                    .clip(CircleShape)
-                                    .background(if (isSelected) accent else Color.Transparent)
-                                    .then(if (isToday && !isSelected) Modifier.border(1.5.dp, accent, CircleShape) else Modifier),
+                                    .weight(1f)
+                                    .height(42.dp)
+                                    .then(
+                                        if (inMonth) Modifier.clickable {
+                                            if (rangeSelectable) {
+                                                if (rangeStart == null || rangeEnd != null) {
+                                                    rangeStart = isoStr
+                                                    rangeEnd = null
+                                                    onInteract(block.id, "day_selected", isoStr)
+                                                } else {
+                                                    var s = rangeStart!!
+                                                    var e = isoStr
+                                                    if (e < s) { val t = s; s = e; e = t }
+                                                    rangeStart = s
+                                                    rangeEnd = e
+                                                    inputValues[fieldId] = mapOf("start" to s, "end" to e)
+                                                    onInteract(block.id, "range_selected", "$s..$e")
+                                                }
+                                            } else if (monthsShown <= 1) {
+                                                selectedDay = day
+                                                inputValues[fieldId] = day
+                                                onInteract(block.id, "day_selected", day.toString())
+                                            } else {
+                                                selectedIso = isoStr
+                                                inputValues[fieldId] = isoStr
+                                                onInteract(block.id, "day_selected", isoStr)
+                                            }
+                                        } else Modifier,
+                                    ),
                                 contentAlignment = Alignment.Center,
                             ) {
-                                Text(
-                                    "$day",
-                                    fontSize = 15.sp,
-                                    fontWeight = if (isToday || isSelected) FontWeight.Bold else FontWeight.Normal,
-                                    color = if (isSelected) Color.White else Color.White.copy(alpha = 0.9f),
-                                )
+                                if (inMonth) {
+                                    if (inRange) {
+                                        Box(
+                                            modifier = Modifier
+                                                .fillMaxWidth()
+                                                .height(34.dp)
+                                                .background(accent.copy(alpha = 0.22f)),
+                                        )
+                                    }
+                                    Box(
+                                        modifier = Modifier
+                                            .size(34.dp)
+                                            .clip(CircleShape)
+                                            .background(if (isSelected) accent else Color.Transparent)
+                                            .then(if (isToday && !isSelected) Modifier.border(1.5.dp, accent, CircleShape) else Modifier),
+                                        contentAlignment = Alignment.Center,
+                                    ) {
+                                        Text(
+                                            "$day",
+                                            fontSize = 15.sp,
+                                            fontWeight = if (isToday || isSelected) FontWeight.Bold else FontWeight.Normal,
+                                            color = if (isSelected) Color.White else Color.White.copy(alpha = 0.9f),
+                                        )
+                                    }
+                                }
                             }
                         }
                     }
@@ -2988,9 +3490,38 @@ private fun RiveContentBlock(block: ContentBlock) {
  * Renders a row of indicator dots. Active dot can be wider (pill) if active_dot_width is set.
  * SDK auto-binds active_index to current step index when inside an onboarding flow.
  */
+/** Upward-pointing triangle for page_indicator `dot_shape = "triangle"`. */
+private val TriangleDotShape = GenericShape { size, _ ->
+    moveTo(size.width / 2f, 0f)
+    lineTo(size.width, size.height)
+    lineTo(0f, size.height)
+    close()
+}
+
+/** Five-point star for page_indicator `dot_shape = "star"`. */
+private val StarDotShape = GenericShape { size, _ ->
+    val cx = size.width / 2f
+    val cy = size.height / 2f
+    val outer = minOf(cx, cy)
+    val inner = outer * 0.5f
+    // 10 alternating outer/inner vertices, starting at the top point (-90°).
+    for (i in 0 until 10) {
+        val r = if (i % 2 == 0) outer else inner
+        val angle = Math.toRadians((-90 + i * 36).toDouble())
+        val x = cx + (r * Math.cos(angle)).toFloat()
+        val y = cy + (r * Math.sin(angle)).toFloat()
+        if (i == 0) moveTo(x, y) else lineTo(x, y)
+    }
+    close()
+}
+
 @Composable
 private fun PageIndicatorBlock(block: ContentBlock, currentStepIndex: Int = 0, totalSteps: Int = 1) {
-    val dotCount = block.dot_count ?: totalSteps
+    // Audit pass-8 — clamp to [0,50] to match iOS (ContentBlockRendererView.swift:1236),
+    // which caps dot_count precisely because ForEach(0..<count) is unsafe. A
+    // binding/API-driven dot_count above 50 would render an unbounded dot row on
+    // Android while iOS caps at 50.
+    val dotCount = (block.dot_count ?: totalSteps).coerceIn(0, 50)
     // SPEC-401-A — explicit `active_index = 0` is a valid first-dot
     // selection. Previously Android auto-rebound to currentStepIndex
     // when the value was 0 (couldn't tell unset from 0); iOS uses
@@ -3001,6 +3532,8 @@ private fun PageIndicatorBlock(block: ContentBlock, currentStepIndex: Int = 0, t
     val dotSize = (block.dot_size ?: 8.0).dp
     val dotSpacing = (block.dot_spacing ?: 8.0).dp
     val activeDotWidth = block.active_dot_width?.dp
+    // SPEC — per-dot shape (default "circle" preserves the legacy pill/circle look).
+    val dotShape = ((block.field_config?.get("dot_shape") as? String) ?: "circle").lowercase()
 
     // SPEC-401-A R45 (Lens A #6) — match iOS PageIndicator alignment
     // resolution: only `block.alignment` is read (no icon_alignment
@@ -3027,21 +3560,20 @@ private fun PageIndicatorBlock(block: ContentBlock, currentStepIndex: Int = 0, t
         for (i in 0 until dotCount) {
             if (i > 0) Spacer(modifier = Modifier.width(dotSpacing))
             val isActive = i == activeIndex
-            if (isActive && activeDotWidth != null) {
-                // Pill shape for active dot
-                Box(
-                    modifier = Modifier
-                        .size(width = activeDotWidth, height = dotSize)
-                        .clip(RoundedCornerShape(50))
-                        .background(activeColor),
-                )
-            } else {
-                Box(
-                    modifier = Modifier
-                        .size(dotSize)
-                        .clip(CircleShape)
-                        .background(if (isActive) activeColor else inactiveColor),
-                )
+            val color = if (isActive) activeColor else inactiveColor
+            val w = if (isActive && activeDotWidth != null) activeDotWidth else dotSize
+            when (dotShape) {
+                "rectangle" -> Box(modifier = Modifier.size(width = w, height = dotSize).clip(RectangleShape).background(color))
+                "triangle" -> Box(modifier = Modifier.size(width = w, height = dotSize).clip(TriangleDotShape).background(color))
+                "star" -> Box(modifier = Modifier.size(width = w, height = dotSize).clip(StarDotShape).background(color))
+                else -> {
+                    // "circle" — legacy behaviour: active pill when active_dot_width set, else circle.
+                    if (isActive && activeDotWidth != null) {
+                        Box(modifier = Modifier.size(width = activeDotWidth, height = dotSize).clip(RoundedCornerShape(50)).background(color))
+                    } else {
+                        Box(modifier = Modifier.size(dotSize).clip(CircleShape).background(color))
+                    }
+                }
             }
         }
     }
@@ -3061,10 +3593,14 @@ private fun SocialLoginBlock(
     loc: ((String, String) -> String)? = null,
 ) {
     // SPEC-419 — Apple Sign-In is iOS-only; Android has no native Apple auth and the AppDNA SDK
-    // can't perform it, so never render "Continue with Apple" on Android (iOS keeps it). This also
+    // can't perform it, so never RENDER "Continue with Apple" on Android (iOS keeps it). This also
     // frees a button's worth of vertical space so the "Already have an account?" links below the
     // social buttons stay on-screen.
-    val providers = block.providers?.filter { it.enabled && it.type.lowercase() != "apple" } ?: return
+    // IMPORTANT: apple is kept in this list so the per-provider loc index (`block.<id>.provider.<n>`)
+    // matches iOS, which indexes over the FULL enabled list (ContentBlockRendererView.swift:1295,
+    // `filter { $0.enabled != false }`). The apple button itself is skipped inside renderProvider —
+    // filtering it out here would shift every subsequent index and mis-localize the wrong provider.
+    val providers = block.providers?.filter { it.enabled } ?: return
     val buttonStyle = block.button_style ?: "filled"
     val cornerRadius = (block.button_corner_radius ?: 12.0).dp
     // SPEC-401-A R45 (Lens A #5) — match iOS social_login default
@@ -3073,6 +3609,10 @@ private fun SocialLoginBlock(
     val spacing = (block.spacing ?: 12.0).dp
     val showDivider = block.show_divider ?: false
     val dividerText = block.divider_text ?: "or"
+    // Social-Login styling v2 — divider color/placement + in-button text align.
+    val dividerColor = block.divider_color?.let { StyleEngine.parseColor(it) } ?: Color.Gray.copy(alpha = 0.3f)
+    val dividerPosition = (block.field_config?.get("divider_position") as? String) ?: "bottom"
+    val textAlign = (block.field_config?.get("button_text_align") as? String) ?: "center"
 
     // SPEC-401-A R13 — match iOS ContentBlockRendererView.swift:684-715
     // `email_login_placement: "below_inputs"`: pull the email provider
@@ -3099,6 +3639,9 @@ private fun SocialLoginBlock(
         // Local helper closes over block/loc/buttonStyle/etc to keep
         // the per-provider rendering identical in both groups.
         val renderProvider: @androidx.compose.runtime.Composable (Int, SocialProvider) -> Unit = renderer@ { index, provider ->
+            // Apple Sign-In has no native Android path — skip its render but keep its index slot
+            // (assigned by the caller) so subsequent providers keep the same loc index as iOS.
+            if (provider.type.lowercase() == "apple") return@renderer
             val label = provider.label ?: when (provider.type) {
                 "apple" -> "Continue with Apple"
                 "google" -> "Continue with Google"
@@ -3130,7 +3673,13 @@ private fun SocialLoginBlock(
                     Color.White,
                     StyleEngine.parseColor(block.accent_color ?: block.bg_color ?: (ai.appdna.sdk.AppDNA.brandAccentHex ?: "#6366F1")),
                 )
-                else -> Triple(ai.appdna.sdk.AppDNA.brandAccentColor(), Color.White, ai.appdna.sdk.AppDNA.brandAccentColor())
+                // Custom/unknown provider: honor block-level accent_color/bg_color like
+                // iOS socialLoginBgColor default + preview (was global brand only).
+                else -> Triple(
+                    StyleEngine.parseColor(block.accent_color ?: block.bg_color ?: (ai.appdna.sdk.AppDNA.brandAccentHex ?: "#6366F1")),
+                    Color.White,
+                    StyleEngine.parseColor(block.accent_color ?: block.bg_color ?: (ai.appdna.sdk.AppDNA.brandAccentHex ?: "#6366F1")),
+                )
             }
             val bgColor = provider.bg_color?.let { StyleEngine.parseColor(it) } ?: defaultBg
             // SPEC-419 pass-13 — outlined/minimal buttons have a CLEAR background, so the
@@ -3139,7 +3688,16 @@ private fun SocialLoginBlock(
             // (ContentBlockRendererView.swift:1389-1392); mirror with onSurface.
             val textColor = provider.text_color?.let { StyleEngine.parseColor(it) }
                 ?: if (buttonStyle == "outlined" || buttonStyle == "minimal") MaterialTheme.colorScheme.onSurface else defaultText
-            val borderColor = provider.border_color?.let { StyleEngine.parseColor(it) } ?: defaultBorder
+            // SPEC-419 — outlined buttons use a NEUTRAL outline, not the provider brand color.
+            // iOS socialLoginBorderColor (ContentBlockRendererView.swift:1495-1501): google=#DADCE0,
+            // else theme secondary. defaultBorder is the brand color (e.g. Google blue), which would
+            // draw a colored ring around outlined buttons — mismatching iOS. Only applies when the
+            // author hasn't set an explicit provider.border_color override.
+            val borderColor = provider.border_color?.let { StyleEngine.parseColor(it) }
+                ?: if (buttonStyle == "outlined") {
+                    if (provider.type == "google") Color(0xFFDADCE0)
+                    else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.4f)
+                } else Color.Transparent  // iOS socialLoginBorderColor returns .clear for non-outlined (filled/minimal); stroke still drawn when border_width>0 so an authored border_color renders
             // OB-2 — per-provider corner_radius + border_width overrides.
             val providerCorner = (provider.corner_radius ?: block.button_corner_radius?.toFloat() ?: 12f).dp
             // SPEC-401-A R27 — match iOS ContentBlockRendererView.swift:738-741
@@ -3164,7 +3722,11 @@ private fun SocialLoginBlock(
                 // label off-center. "Continue with Email" is a plain CTA, no brand logo.
                 "email" -> ""
                 "facebook" -> "f"
-                "github" -> "\u2B24"
+                // Drain2 parity \u2014 github previously rendered a filled circle glyph
+                // (\u2B24), which diverged from iOS's '</>' code-bracket. No universally
+                // correct github mark is bundled, so render NO glyph (mirrors the
+                // email treatment) rather than a wrong one. All three surfaces align.
+                "github" -> ""
                 else -> ""
             }
             // SPEC-070-A finalization OB-2 audit-1 CRIT-2 \u2014 icon_style was a
@@ -3195,7 +3757,11 @@ private fun SocialLoginBlock(
             }
             val providerIconColor: Color = when {
                 monoIconColor != null -> monoIconColor
-                provider.type == "facebook" -> Color(0xFF1877F2)
+                // Facebook brand-blue "f" is only legible on transparent-background
+                // buttons (outlined/minimal). On a FILLED facebook button the
+                // background is already #1877F2, so a blue glyph would be invisible —
+                // use the button textColor (white) there. Matches iOS + preview.
+                provider.type == "facebook" && buttonStyle != "filled" -> Color(0xFF1877F2)
                 else -> textColor
             }
 
@@ -3213,6 +3779,66 @@ private fun SocialLoginBlock(
             val socialClick: () -> Unit = {
                 socialProviderActions(provider.type).forEach(onAction)
             }
+            // Social-Login styling v2 — shared button content so icon_url override
+            // and button_text_align (leading|center) apply identically across the
+            // filled / outlined / minimal branches. A custom icon_url replaces the
+            // built-in provider glyph; leading alignment left-justifies icon+label.
+            val buttonContent: @androidx.compose.runtime.Composable androidx.compose.foundation.layout.RowScope.() -> Unit = {
+                Row(
+                    // Explicit 16dp leading inset for leading alignment so the icon
+                    // starts 16dp from the edge, matching iOS `.padding(.horizontal, 16)`
+                    // / preview `px-4` (Material's filled-button content padding is ~24dp).
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .then(if (textAlign == "leading") Modifier.padding(start = 16.dp) else Modifier),
+                    horizontalArrangement = if (textAlign == "leading") Arrangement.Start else Arrangement.Center,
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    val customIcon = provider.icon_url
+                    if (!customIcon.isNullOrBlank()) {
+                        ai.appdna.sdk.core.NetworkImage(
+                            url = customIcon,
+                            // padding OUTSIDE the fixed size so the image is a true 20dp
+                            // square with an 8dp trailing gap (28dp footprint), matching
+                            // iOS `.frame(width:20,height:20)` + preview `<img 20x20>`.
+                            // The previous `size(20).padding(end=8)` order left only 12dp
+                            // for the image → compressed/aspect-distorted logo.
+                            // ContentScale.Fit (not default Crop) matches iOS .fit +
+                            // preview object-contain so non-square provider logos aren't distorted.
+                            contentScale = androidx.compose.ui.layout.ContentScale.Fit,
+                            modifier = Modifier.padding(end = 8.dp).size(20.dp),
+                        )
+                    } else if (providerIcon.isNotBlank()) {
+                        Text(providerIcon, fontSize = providerIconFontSize, fontWeight = providerIconFontWeight, modifier = Modifier.padding(end = 8.dp), color = providerIconColor)
+                    }
+                    // SPEC-401-A R56 (Lens A R56 #2, P1) — explicit 17sp matches
+                    // iOS .body.weight(.semibold) (ContentBlockRendererView.swift:759).
+                    // Material Button content defaults to labelLarge=14sp.
+                    Text(displayLabel, fontSize = 17.sp, fontWeight = FontWeight.SemiBold, color = textColor)
+                }
+            }
+            // SPEC-089d §6.5 parity — pressed style (scale/opacity) for social
+            // buttons, mirroring ButtonBlock. Each provider button gets its own
+            // MutableInteractionSource so isPressed tracks that button's real
+            // presses; the animated graphicsLayer reproduces iOS's easeInOut(100ms)
+            // pressed transition (see ButtonBlock above). Without this the console
+            // "Press State" control was a dead field on Android social_login.
+            val pressedInteractionSource = remember { MutableInteractionSource() }
+            val isPressed by pressedInteractionSource.collectIsPressedAsState()
+            val pressedScale by animateFloatAsState(
+                targetValue = if (isPressed) (block.pressed_style?.scale ?: 0.97).toFloat() else 1f,
+                animationSpec = tween(durationMillis = 100),
+                label = "socialPressedScale",
+            )
+            val pressedAlpha by animateFloatAsState(
+                targetValue = if (isPressed) (block.pressed_style?.opacity ?: 0.9).toFloat() else 1f,
+                animationSpec = tween(durationMillis = 100),
+                label = "socialPressedAlpha",
+            )
+            val pressedModifier = if (block.pressed_style != null) {
+                Modifier.graphicsLayer(scaleX = pressedScale, scaleY = pressedScale, alpha = pressedAlpha)
+            } else Modifier
+
             // SPEC-070-A finalization OB-2 audit follow-up — apply per-provider
             // colors + provider-level corner/border-width across ALL three
             // button styles (filled, outlined, minimal). Audit round 1 caught
@@ -3222,38 +3848,64 @@ private fun SocialLoginBlock(
                 "outlined" -> {
                     OutlinedButton(
                         onClick = socialClick,
-                        modifier = Modifier.fillMaxWidth().height(buttonHeight),
+                        modifier = Modifier.fillMaxWidth().height(buttonHeight).then(pressedModifier),
+                        interactionSource = pressedInteractionSource,
                         shape = RoundedCornerShape(providerCorner),
                         border = androidx.compose.foundation.BorderStroke(providerBorderWidth, borderColor),
                         colors = ButtonDefaults.outlinedButtonColors(
+                            // Audit pass-8 — honor an authored provider.bg_color on
+                            // outlined buttons (iOS ContentBlockRendererView.swift:1362-1365
+                            // applies bgColor unconditionally; preview OnboardingStepPreview.tsx:1542
+                            // does the same). Must default TRANSPARENT (not the brand `bgColor`)
+                            // so a plain outlined/Google button stays .clear like iOS, and only
+                            // tints when the author explicitly sets bg_color.
+                            containerColor = provider.bg_color?.let { StyleEngine.parseColor(it) } ?: Color.Transparent,
                             contentColor = textColor,
                         ),
-                    ) {
-                        if (providerIcon.isNotBlank()) Text(providerIcon, fontSize = providerIconFontSize, fontWeight = providerIconFontWeight, modifier = Modifier.padding(end = 8.dp), color = providerIconColor)
-                        // SPEC-401-A R56 (Lens A R56 #2, P1) — explicit 17sp matches
-                        // iOS .body.weight(.semibold) (ContentBlockRendererView.swift:759).
-                        // Material Button content defaults to labelLarge=14sp.
-                        Text(displayLabel, fontSize = 17.sp, fontWeight = FontWeight.SemiBold, color = textColor)
-                    }
+                        // Zero Material3 default contentPadding so the inner buttonContent
+                        // Row's own start=16.dp is the sole horizontal authority (matches iOS 16pt
+                        // + preview px-4). Height stays fixed via `.height(buttonHeight)`.
+                        contentPadding = androidx.compose.foundation.layout.PaddingValues(0.dp),
+                        content = buttonContent,
+                    )
                 }
                 "minimal" -> {
                     TextButton(
                         onClick = socialClick,
-                        modifier = Modifier.fillMaxWidth().height(buttonHeight),
+                        // Round-MZ — apply the per-provider border_width/border_color
+                        // stroke to minimal too (iOS + preview draw the stroke on ALL
+                        // styles, not just outlined). Default minimal border_width is 0,
+                        // so a plain minimal button stays borderless.
+                        modifier = Modifier.fillMaxWidth().height(buttonHeight)
+                            .then(if (providerBorderWidth > 0.dp) Modifier.border(providerBorderWidth, borderColor, RoundedCornerShape(providerCorner)) else Modifier)
+                            .then(pressedModifier),
+                        interactionSource = pressedInteractionSource,
                         shape = RoundedCornerShape(providerCorner),
-                        colors = ButtonDefaults.textButtonColors(contentColor = textColor),
-                    ) {
-                        if (providerIcon.isNotBlank()) Text(providerIcon, fontSize = providerIconFontSize, fontWeight = providerIconFontWeight, modifier = Modifier.padding(end = 8.dp), color = providerIconColor)
-                        // SPEC-401-A R56 (Lens A R56 #2, P1) — explicit 17sp matches
-                        // iOS .body.weight(.semibold) (ContentBlockRendererView.swift:759).
-                        // Material Button content defaults to labelLarge=14sp.
-                        Text(displayLabel, fontSize = 17.sp, fontWeight = FontWeight.SemiBold, color = textColor)
-                    }
+                        colors = ButtonDefaults.textButtonColors(
+                            // Audit pass-8 — same authored-bg_color honor as outlined
+                            // (iOS applies bgColor to minimal too); TRANSPARENT default
+                            // preserves the borderless minimal look until bg_color is set.
+                            containerColor = provider.bg_color?.let { StyleEngine.parseColor(it) } ?: Color.Transparent,
+                            contentColor = textColor,
+                        ),
+                        // Zero Material3 default contentPadding so the inner buttonContent
+                        // Row's own start=16.dp is the sole horizontal authority (matches iOS 16pt
+                        // + preview px-4). Height stays fixed via `.height(buttonHeight)`.
+                        contentPadding = androidx.compose.foundation.layout.PaddingValues(0.dp),
+                        content = buttonContent,
+                    )
                 }
                 else -> { // filled
                     Button(
                         onClick = socialClick,
-                        modifier = Modifier.fillMaxWidth().height(buttonHeight),
+                        // Round-MZ — apply the per-provider border_width/border_color
+                        // stroke to filled too (iOS + preview draw the stroke on ALL
+                        // styles, not just outlined). Default filled border_width is 0,
+                        // so a plain filled button stays borderless.
+                        modifier = Modifier.fillMaxWidth().height(buttonHeight)
+                            .then(if (providerBorderWidth > 0.dp) Modifier.border(providerBorderWidth, borderColor, RoundedCornerShape(providerCorner)) else Modifier)
+                            .then(pressedModifier),
+                        interactionSource = pressedInteractionSource,
                         // SPEC-070-A finalization OB-2 audit-1 CRIT-1 — was
                         // `RoundedCornerShape(cornerRadius)`, dropping the
                         // per-provider `corner_radius` override. Filled is
@@ -3272,13 +3924,12 @@ private fun SocialLoginBlock(
                             focusedElevation = 0.dp,
                             hoveredElevation = 0.dp,
                         ),
-                    ) {
-                        if (providerIcon.isNotBlank()) Text(providerIcon, fontSize = providerIconFontSize, fontWeight = providerIconFontWeight, modifier = Modifier.padding(end = 8.dp), color = providerIconColor)
-                        // SPEC-401-A R56 (Lens A R56 #2, P1) — explicit 17sp matches
-                        // iOS .body.weight(.semibold) (ContentBlockRendererView.swift:759).
-                        // Material Button content defaults to labelLarge=14sp.
-                        Text(displayLabel, fontSize = 17.sp, fontWeight = FontWeight.SemiBold, color = textColor)
-                    }
+                        // Zero Material3 default contentPadding so the inner buttonContent
+                        // Row's own start=16.dp is the sole horizontal authority (matches iOS 16pt
+                        // + preview px-4). Height stays fixed via `.height(buttonHeight)`.
+                        contentPadding = androidx.compose.foundation.layout.PaddingValues(0.dp),
+                        content = buttonContent,
+                    )
                 }
             }
 
@@ -3288,6 +3939,40 @@ private fun SocialLoginBlock(
             // The old per-provider divider gave a column of repeating
             // "or" rows which doesn't exist on iOS at all.
         }
+
+        // Social-Login styling v2 — divider composable honoring divider_color;
+        // placed at the top or bottom per divider_position.
+        val dividerRow: @androidx.compose.runtime.Composable () -> Unit = {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Box(
+                    modifier = Modifier
+                        .weight(1f)
+                        .height(1.dp)
+                        .background(dividerColor),
+                )
+                Text(
+                    text = loc?.invoke("block.${block.id}.divider", dividerText) ?: dividerText,
+                    // SPEC-401-A R55 (Lens A R55 #1, P3) — 14→15sp matching iOS
+                    // ContentBlockRendererView.swift:713 .subheadline (~15pt).
+                    fontSize = 15.sp,
+                    // SPEC-401-A R44 — theme-adaptive secondary (was Color.Gray).
+                    // iOS .secondary (ContentBlockRendererView.swift:714).
+                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
+                    modifier = Modifier.padding(horizontal = 12.dp),
+                )
+                Box(
+                    modifier = Modifier
+                        .weight(1f)
+                        .height(1.dp)
+                        .background(dividerColor),
+                )
+            }
+        }
+
+        if (showDivider && dividerPosition == "top") dividerRow()
 
         // SPEC-401-A R13 — render top group (email-first when
         // `below_inputs` placement, full author-order list otherwise),
@@ -3304,37 +3989,8 @@ private fun SocialLoginBlock(
             renderProvider(topGroup.size + idx, provider)
         }
 
-        // SPEC-401-A — single bottom divider gated on show_divider,
-        // matching iOS placement.
-        if (showDivider) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Box(
-                    modifier = Modifier
-                        .weight(1f)
-                        .height(1.dp)
-                        .background(Color.Gray.copy(alpha = 0.3f)),
-                )
-                Text(
-                    text = loc?.invoke("block.${block.id}.divider", dividerText) ?: dividerText,
-                    // SPEC-401-A R55 (Lens A R55 #1, P3) — 14→15sp matching iOS
-                    // ContentBlockRendererView.swift:713 .subheadline (~15pt).
-                    fontSize = 15.sp,
-                    // SPEC-401-A R44 — theme-adaptive secondary (was Color.Gray).
-                    // iOS .secondary (ContentBlockRendererView.swift:714).
-                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
-                    modifier = Modifier.padding(horizontal = 12.dp),
-                )
-                Box(
-                    modifier = Modifier
-                        .weight(1f)
-                        .height(1.dp)
-                        .background(Color.Gray.copy(alpha = 0.3f)),
-                )
-            }
-        }
+        // SPEC-401-A — single divider gated on show_divider, bottom by default.
+        if (showDivider && dividerPosition != "top") dividerRow()
     }
 }
 
@@ -3351,18 +4007,26 @@ private fun CountdownTimerBlock(block: ContentBlock, onAction: (String) -> Unit)
     // by OnboardingConfig.fromMap since Android is budget-locked); read it first, fall
     // back to legacy `variant`.
     val variant = (block.field_config?.get("timer_variant") as? String) ?: block.variant ?: "digital"
-    val initialSeconds = when (block.target_type) {
-        "fixed_datetime" -> {
-            // Parse ISO datetime and compute remaining seconds
-            try {
-                val targetMs = java.text.SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss", java.util.Locale.US)
-                    .apply { timeZone = java.util.TimeZone.getTimeZone("UTC") }
-                    .parse(block.target_datetime ?: "")?.time ?: 0L
-                val remaining = ((targetMs - System.currentTimeMillis()) / 1000).toInt()
-                if (remaining > 0) remaining else 0
-            } catch (_: Exception) { block.duration_seconds ?: 60 }
+    // SPEC-419 — capture the starting total ONCE (mirrors iOS's .onAppear @State
+    // capture from pass 13). For fixed_datetime the raw expression recomputes each
+    // recomposition from System.currentTimeMillis(), so it would tick down in lockstep
+    // with remainingSeconds and leave the progress-bar fraction pinned near 1.0.
+    // For the plain duration path initialSeconds == duration_seconds (stable), so
+    // remember is a no-op there.
+    val initialSeconds = remember {
+        when (block.target_type) {
+            "fixed_datetime" -> {
+                // Parse ISO datetime and compute remaining seconds
+                try {
+                    val targetMs = java.text.SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss", java.util.Locale.US)
+                        .apply { timeZone = java.util.TimeZone.getTimeZone("UTC") }
+                        .parse(block.target_datetime ?: "")?.time ?: 0L
+                    val remaining = ((targetMs - System.currentTimeMillis()) / 1000).toInt()
+                    if (remaining > 0) remaining else 0
+                } catch (_: Exception) { block.duration_seconds ?: 300 }
+            }
+            else -> block.duration_seconds ?: 300
         }
-        else -> block.duration_seconds ?: 60
     }
 
     var remainingSeconds by remember { mutableIntStateOf(initialSeconds) }
@@ -3370,7 +4034,6 @@ private fun CountdownTimerBlock(block: ContentBlock, onAction: (String) -> Unit)
 
     val textColor = StyleEngine.parseColor(block.text_color ?: "#000000")
     val accentColor = StyleEngine.parseColor(block.accent_color ?: (ai.appdna.sdk.AppDNA.brandAccentHex ?: "#6366F1"))
-    val bgColor = block.bg_color?.let { StyleEngine.parseColor(it) }
     // SPEC-401-A R32 — match iOS ContentBlockStandaloneViews.swift:112
     // default font_size 28 (was 24).
     val fontSize = (block.font_size ?: 28.0).sp
@@ -3440,19 +4103,15 @@ private fun CountdownTimerBlock(block: ContentBlock, onAction: (String) -> Unit)
     val minutes = (remainingSeconds % 3600) / 60
     val seconds = remainingSeconds % 60
 
-    val hAlign = when (block.alignment) {
-        "left" -> Arrangement.Start
-        "right" -> Arrangement.End
-        else -> Arrangement.Center
-    }
-
     // SPEC-419 pass-15 #10 — h/m/s segments + labels for circular/flip/bar variants (matches preview).
     val segs = buildList {
+        if (showDays && days > 0) add(days.toString().padStart(2, '0'))
         if (showHours) add(hours.toString().padStart(2, '0'))
         if (showMinutes) add(minutes.toString().padStart(2, '0'))
         if (showSeconds) add(seconds.toString().padStart(2, '0'))
     }
     val segLabels = buildList {
+        if (showDays && days > 0) add(daysLabel)
         if (showHours) add(hoursLabel)
         if (showMinutes) add(minutesLabel)
         if (showSeconds) add(secondsLabel)
@@ -3548,7 +4207,7 @@ private fun CountdownTimerBlock(block: ContentBlock, onAction: (String) -> Unit)
                         .fillMaxWidth()
                         .height(8.dp)
                         .clip(RoundedCornerShape(4.dp))
-                        .background(bgColor ?: StyleEngine.parseColor("#E5E7EB")),
+                        .background(StyleEngine.parseColor("#E5E7EB")),
                 ) {
                     Box(
                         modifier = Modifier
@@ -3571,7 +4230,7 @@ private fun CountdownTimerBlock(block: ContentBlock, onAction: (String) -> Unit)
 
             Row(
                 modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = hAlign,
+                horizontalArrangement = Arrangement.Center,
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 timeUnits.forEach { (value, unitLabel, _) ->
@@ -3941,7 +4600,9 @@ private fun ProgressBarBlock(block: ContentBlock, loc: ((String, String) -> Stri
     // EPIC-2 — multiple progress colors at once (horizontal gradient across the fill).
     val gradColors = block.bar_gradient_colors?.takeIf { it.size >= 2 }?.map { StyleEngine.parseColor(it) }
     val trackColor = StyleEngine.parseColor(block.track_color ?: "#E5E7EB")
-    val barHeight = (block.bar_height ?: block.height ?: 8.0).dp // SPEC-419 pass-14 #14 — unset default 8 to match editor+preview (was 6)
+    // Progress/Loading v2 — clamp to the console slider max (24) so an out-of-range
+    // published value can't render a giant bar the editor can't reproduce (duolingo s7).
+    val barHeight = minOf(block.bar_height ?: block.height ?: 8.0, 24.0).dp // SPEC-419 pass-14 #14 — unset default 8 to match editor+preview (was 6)
     val cornerRadius = (block.corner_radius ?: 3.0).dp
     val segmentGap = (block.segment_gap ?: 4.0).dp
     val showLabel = block.show_label ?: true // SPEC-419 pass-14 #13 — unset default true to match editor+preview (was false)
@@ -3961,35 +4622,38 @@ private fun ProgressBarBlock(block: ContentBlock, loc: ((String, String) -> Stri
     // SAME normalization as the fill (`pvFraction`). Previously rendered the RAW
     // `progress_value` → `progress_value=0.75` filled 75% but the label read
     // "0%". Mirrors iOS pvPercent.
-    val pvPercent = ((pvFraction ?: 0f) * 100).roundToInt()
+    val effFraction = pvFraction ?: if (variant == "segmented") 0f else if (segmentCount > 0) (activeSegments.toFloat() / segmentCount).coerceIn(0f, 1f) else 0f
+    val pvPercent = (effFraction * 100).roundToInt()
 
-    Column(modifier = Modifier.fillMaxWidth()) {
-        // Optional label
-        if (showLabel && segmentCount > 0) {
-            val labelText = when (labelFormat) {
-                null -> "Step $activeSegments of $segmentCount"
-                "fraction" -> if (variant == "segmented") "$activeSegments/$segmentCount" else "$pvPercent/100"
-                "custom" -> customLabel ?: ""
-                else -> if (variant == "segmented")
-                    "${((activeSegments.toFloat() / maxOf(segmentCount, 1)) * 100).toInt()}%"
-                else "$pvPercent%"
-            }
-            val labelStyle = if (block.label_style != null) {
-                // SPEC-401-A R44 — theme-adaptive secondary base (was Color.Gray).
-                StyleEngine.applyTextStyle(TextStyle(fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)), block.label_style)
-            } else {
-                // SPEC-401-A R44 — theme-adaptive secondary fallback (was Color.Gray).
-                TextStyle(fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f))
-            }
-            Text(
-                text = loc?.invoke("block.${block.id}.label", labelText) ?: labelText,
-                style = labelStyle,
-                // SPEC-401-A R47 (Lens C #7) — iOS VStack(spacing: 8)
-                // (ContentBlockRendererView.swift:1063). Was 4dp.
-                modifier = Modifier.padding(bottom = 8.dp),
-            )
+    // Progress/Loading v2 — label placement relative to the bar. Authored top-level
+    // by the console editor; folded into field_config on Android (top-level budget-locked).
+    val placement = block.field_config?.get("label_placement") as? String ?: "above"
+    val showLabelFinal = showLabel && segmentCount > 0
+
+    val labelContent: @Composable () -> Unit = {
+        val labelText = when (labelFormat) {
+            null -> "Step $activeSegments of $segmentCount"
+            "fraction" -> if (variant == "segmented") "$activeSegments/$segmentCount" else "$pvPercent/100"
+            "custom" -> customLabel ?: ""
+            else -> if (variant == "segmented")
+                "${((activeSegments.toFloat() / maxOf(segmentCount, 1)) * 100).toInt()}%"
+            else "$pvPercent%"
         }
+        // Mrozu parity — iOS renders the progress label PLAIN (`.font(.caption)
+        // .foregroundColor(.secondary)`, ContentBlockRendererView.swift:1801-1805)
+        // and does NOT apply `label_style`. Android previously ran the authored
+        // label_style through StyleEngine.applyTextStyle, diverging from the iOS
+        // pixel reference. Always render the plain caption/secondary style so both
+        // platforms match. (label text itself is unchanged.)
+        // SPEC-401-A R44 — theme-adaptive secondary (was Color.Gray).
+        val labelStyle = TextStyle(fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f))
+        Text(
+            text = loc?.invoke("block.${block.id}.label", labelText) ?: labelText,
+            style = labelStyle,
+        )
+    }
 
+    val barContent: @Composable () -> Unit = {
         when (variant) {
             "segmented" -> {
                 Row(
@@ -4036,6 +4700,26 @@ private fun ProgressBarBlock(block: ContentBlock, loc: ((String, String) -> Stri
                     )
                 }
             }
+        }
+    }
+
+    // SPEC-401-A R47 (Lens C #7) — 8dp gap matches iOS VStack(spacing: 8).
+    when (placement) {
+        "left" -> Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+            if (showLabelFinal) { labelContent(); Spacer(modifier = Modifier.width(8.dp)) }
+            Box(modifier = Modifier.weight(1f)) { barContent() }
+        }
+        "right" -> Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+            Box(modifier = Modifier.weight(1f)) { barContent() }
+            if (showLabelFinal) { Spacer(modifier = Modifier.width(8.dp)); labelContent() }
+        }
+        "below" -> Column(modifier = Modifier.fillMaxWidth()) {
+            barContent()
+            if (showLabelFinal) { Spacer(modifier = Modifier.height(8.dp)); labelContent() }
+        }
+        else -> Column(modifier = Modifier.fillMaxWidth()) {
+            if (showLabelFinal) { labelContent(); Spacer(modifier = Modifier.height(8.dp)) }
+            barContent()
         }
     }
 }
@@ -4211,6 +4895,13 @@ private fun AnimatedLoadingBlock(block: ContentBlock, onAction: (String) -> Unit
     val loadingMessageColor = block.loading_text_color?.let { StyleEngine.parseColor(it) }
         ?: block.text_color?.let { StyleEngine.parseColor(it) }
         ?: StyleEngine.parseColor("#9CA3AF")
+    // Progress/Loading v2 — loading message horizontal alignment (default center).
+    // Authored top-level by the console editor; folded into field_config on Android.
+    val loadingTextAlign = when (block.field_config?.get("loading_text_align") as? String) {
+        "left" -> TextAlign.Left
+        "right" -> TextAlign.Right
+        else -> TextAlign.Center
+    }
 
     // Track which items have completed
     var completedCount by remember { mutableIntStateOf(0) }
@@ -4286,7 +4977,8 @@ private fun AnimatedLoadingBlock(block: ContentBlock, onAction: (String) -> Unit
                 text = loadingMessage,
                 fontSize = loadingTextSize,
                 color = loadingMessageColor,
-                textAlign = TextAlign.Center,
+                textAlign = loadingTextAlign,
+                modifier = Modifier.fillMaxWidth(),
             )
         }
         when (variant) {
@@ -4477,7 +5169,12 @@ private fun AnimatedLoadingBlock(block: ContentBlock, onAction: (String) -> Unit
                     Text(
                         text = "${(overallProgress * 100).toInt()}%",
                         fontSize = 14.sp,
-                        color = textColor,
+                        // SPEC-401-A R47 — when block.text_color unset, fall back to
+                        // theme-adaptive onSurface (was raw default #000000, invisible
+                        // on a dark step bg) + .semibold, mirroring iOS `.primary`/.semibold
+                        // and the checklist labels + circular caption.
+                        color = if (block.text_color == null) MaterialTheme.colorScheme.onSurface else textColor,
+                        fontWeight = FontWeight.SemiBold,
                     )
                 }
             }
@@ -4583,7 +5280,8 @@ private fun AnimatedLoadingBlock(block: ContentBlock, onAction: (String) -> Unit
                 text = loadingMessage,
                 fontSize = loadingTextSize,
                 color = loadingMessageColor,
-                textAlign = TextAlign.Center,
+                textAlign = loadingTextAlign,
+                modifier = Modifier.fillMaxWidth(),
             )
         }
     }
@@ -5145,11 +5843,70 @@ private fun CircularGaugeBlock(block: ContentBlock) {
 // MARK: - Date Wheel Picker Block (SPEC-089d AC-023)
 
 /**
+ * Parse a seed date for the date wheel. Prefers a prior saved answer
+ * ("yyyy-MM-dd" or "yyyy-MM-dd HH:mm") so re-entry restores the user's pick,
+ * else the authored `default_date_value` — "today"/"now", a relative offset
+ * ("-18y", "+1y", "-30d", "-6m"), or an ISO "yyyy-MM-dd". Returns null when
+ * neither is usable so a required field with no default still forces the user
+ * to spin the wheel. Mirrors iOS restoreDate() + parseDate()
+ * (ContentBlockStandaloneViews.swift).
+ */
+private fun parseDateWheelSeed(saved: String?, default: String?): java.util.Calendar? {
+    fun fromIso(s: String?): java.util.Calendar? {
+        val t = s?.trim()?.takeIf { it.isNotEmpty() } ?: return null
+        val datePart = t.substringBefore(' ')
+        val m = Regex("""^(\d{4})-(\d{2})-(\d{2})$""").find(datePart) ?: return null
+        val (y, mo, d) = m.destructured
+        // Reject out-of-range month/day BEFORE Calendar.set — Calendar is lenient
+        // and would roll "2000-13-45" over to a real-but-wrong date, whereas iOS's
+        // non-lenient DateFormatter returns nil. Match iOS: garbage → no seed.
+        if (mo.toInt() !in 1..12 || d.toInt() !in 1..31) return null
+        val cal = java.util.Calendar.getInstance()
+        cal.isLenient = false
+        cal.set(y.toInt(), mo.toInt() - 1, d.toInt())
+        try { cal.time } catch (e: Exception) { return null }  // e.g. Feb 30 → reject like iOS
+        cal.isLenient = true  // date validated; allow normal handling for the optional time below
+        Regex("""(\d{2}):(\d{2})""").find(t.substringAfter(' ', ""))?.let { tm ->
+            val (h, mi) = tm.destructured
+            cal.set(java.util.Calendar.HOUR_OF_DAY, h.toInt())
+            cal.set(java.util.Calendar.MINUTE, mi.toInt())
+        }
+        return cal
+    }
+    fun fromDefault(s: String?): java.util.Calendar? {
+        val t = s?.trim()?.lowercase()?.takeIf { it.isNotEmpty() } ?: return null
+        if (t == "today" || t == "now") return java.util.Calendar.getInstance()
+        val last = t.last()
+        if (last in "dmy") {
+            val amt = t.dropLast(1).toIntOrNull()
+            if (amt != null) {
+                val c = java.util.Calendar.getInstance()
+                when (last) {
+                    'd' -> c.add(java.util.Calendar.DAY_OF_YEAR, amt)
+                    'm' -> c.add(java.util.Calendar.MONTH, amt)
+                    'y' -> c.add(java.util.Calendar.YEAR, amt)
+                }
+                return c
+            }
+        }
+        return fromIso(s)
+    }
+    return fromIso(saved) ?: fromDefault(default)
+}
+
+/**
  * Date picker using Material3 DatePickerDialog or simplified column picker.
  * For simplicity, renders three side-by-side LazyColumns for day/month/year.
  */
 @Composable
-private fun DateWheelPickerBlock(block: ContentBlock, inputValues: MutableMap<String, Any>) {
+private fun DateWheelPickerBlock(
+    block: ContentBlock,
+    inputValues: MutableMap<String, Any>,
+    // Drain2 — lets FormInputDateBlock (input_date/input_datetime, picker_variant="wheel")
+    // reuse these column wheels while forcing its own effective mode (date/datetime),
+    // since that block carries mode via its function param, not block.picker_mode.
+    modeOverride: String? = null,
+) {
     val fieldId = block.field_id ?: block.id
     val highlightColor = StyleEngine.parseColor(block.highlight_color ?: (ai.appdna.sdk.AppDNA.brandAccentHex ?: "#6366F1"))
     // SPEC-401-A R77 (Lens C P1) — `wheel_text_color` / `text_color` /
@@ -5168,9 +5925,19 @@ private fun DateWheelPickerBlock(block: ContentBlock, inputValues: MutableMap<St
     // selectionChanged() on every wheel snap (system behavior on iOS 13+).
     // Sibling WheelPickerBlock (line ~3953) already fires SELECTION haptic.
     val view = androidx.compose.ui.platform.LocalView.current
+    // SPEC — `haptic_on_scroll == false` suppresses the wheel selection tick
+    // (author opt-out); nil/true keep the native UIPickerView-style feedback.
+    // Mirrors iOS WheelPickerBlockView gate.
+    val fireHaptic: () -> Unit = {
+        if (block.haptic_on_scroll != false) {
+            ai.appdna.sdk.core.HapticEngine.trigger(view, ai.appdna.sdk.core.HapticType.SELECTION)
+        }
+    }
 
     // SPEC-419 — honor picker_mode (date/datetime/time): add hour/minute columns for time modes.
-    val mode = (block.picker_mode ?: "date").lowercase()
+    // Drain2 — modeOverride wins when FormInputDateBlock reuses this wheel (its mode
+    // rides a function param, not block.picker_mode).
+    val mode = (modeOverride ?: block.picker_mode ?: "date").lowercase()
     val showTime = mode == "datetime" || mode == "date_time" || mode == "time"
     val showDate = mode != "time"
     // SPEC-419 — honor wheel_height (was hardcoded 150dp), wheel_bg_color, date_validation_message,
@@ -5181,8 +5948,23 @@ private fun DateWheelPickerBlock(block: ContentBlock, inputValues: MutableMap<St
         ?.let { StyleEngine.parseColor(it) }
     val outerLabel = block.text
     val validationMsg = block.date_validation_message
+    // SPEC-401-A — authored selection-line color/stroke. The console writes these
+    // top-level (wheel_line_color / wheel_line_stroke_width); OnboardingConfig folds
+    // them into field_config (top-level ContentBlock is at the JVM 255-arg limit),
+    // with legacy field_config picker_border_* as the secondary fallback. Mirrors
+    // iOS ContentBlockStandaloneViews.swift:1335-1339 + the console preview, which
+    // draw the selection strip top/bottom rules + outer picker border in this color/
+    // stroke instead of only the alpha-0.1 highlight fill.
+    val lineColorHex = (block.field_config?.get("wheel_line_color") as? String)
+        ?: (block.field_config?.get("picker_border_color") as? String)
+    val lineColor = lineColorHex?.let { StyleEngine.parseColor(it) }
+    val lineStroke = ((block.field_config?.get("wheel_line_stroke_width") as? Number)?.toDouble()
+        ?: (block.field_config?.get("picker_border_width") as? Number)?.toDouble()
+        ?: if (lineColor != null) 1.0 else 0.0).dp
     // Column inner padding centers the selected row under the highlight strip (40dp): (h-40)/2.
     val colPad = (((wheelHeightDp.value - 40f) / 2f).coerceAtLeast(0f)).dp
+    // SPEC — honor authored inter-column spacing (was hardcoded 4dp).
+    val colSpacing = (block.picker_spacing ?: 4.0).dp
 
     // SPEC-419 — year range from min_date/max_date + allow_future/allow_past (was hardcoded
     // 1950..2030, ignoring the authored constraints). Mirrors iOS dateRange (-150y..+50y default).
@@ -5221,11 +6003,38 @@ private fun DateWheelPickerBlock(block: ContentBlock, inputValues: MutableMap<St
 
     // Simple day/month/year selectors
     val months = listOf("Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec")
-    var selectedDay by remember { mutableIntStateOf(1) }
-    var selectedMonth by remember { mutableIntStateOf(1) }
-    var selectedYear by remember(minYear, maxYear) { mutableIntStateOf(2000.coerceIn(minYear, maxYear)) }
-    var selectedHour by remember { mutableIntStateOf(0) }
-    var selectedMinute by remember { mutableIntStateOf(0) }
+    // SPEC — seed initial selection from a prior saved answer or the authored
+    // default_date_value ("today"/"-18y"/ISO) instead of always opening on
+    // Jan / 01 / 2000. seedCal is null only when there is neither a saved
+    // answer nor an authored default, so required-field validation still
+    // forces a spin. Mirrors iOS restoreDate() + default_date_value handling.
+    val seedCal = remember(minYear, maxYear) {
+        val raw = parseDateWheelSeed(inputValues[fieldId] as? String, block.default_date_value)
+        // Clamp the whole seeded date into [min_date, max_date] (parity with iOS
+        // `min(max(seeded, lower), upper)`), so an authored default before min_date
+        // (or after max_date) doesn't open + emit an out-of-range value. min/max
+        // parse the same relative/ISO grammar as the default.
+        val minB = parseDateWheelSeed(null, block.min_date)
+        val maxB = parseDateWheelSeed(null, block.max_date)
+        raw?.let { s ->
+            when {
+                minB != null && s.before(minB) -> minB
+                maxB != null && s.after(maxB) -> maxB
+                else -> s
+            }
+        }
+    }
+    val seedYear = (seedCal?.get(java.util.Calendar.YEAR) ?: 2000).coerceIn(minYear, maxYear)
+    val seedMonth = seedCal?.let { it.get(java.util.Calendar.MONTH) + 1 } ?: 1
+    val seedDay = seedCal?.get(java.util.Calendar.DAY_OF_MONTH) ?: 1
+    val seedHour = seedCal?.get(java.util.Calendar.HOUR_OF_DAY) ?: 0
+    val seedMinute = seedCal?.get(java.util.Calendar.MINUTE) ?: 0
+
+    var selectedDay by remember { mutableIntStateOf(seedDay) }
+    var selectedMonth by remember { mutableIntStateOf(seedMonth) }
+    var selectedYear by remember(minYear, maxYear) { mutableIntStateOf(seedYear) }
+    var selectedHour by remember { mutableIntStateOf(seedHour) }
+    var selectedMinute by remember { mutableIntStateOf(seedMinute) }
 
     // SPEC-419 — emit the combined value honoring the active mode.
     fun emit() {
@@ -5235,11 +6044,23 @@ private fun DateWheelPickerBlock(block: ContentBlock, inputValues: MutableMap<St
         inputValues[fieldId] = parts.joinToString(" ")
     }
 
-    val dayListState = rememberLazyListState()
-    val monthListState = rememberLazyListState()
-    val yearListState = rememberLazyListState()
-    val hourListState = rememberLazyListState()
-    val minuteListState = rememberLazyListState()
+    // SPEC — persist the seed once so a restored answer or an authored default
+    // is the submitted value without requiring a spin (parity with iOS, where
+    // restoreDate() → onChange → persistDate()). Skipped when seedCal is null
+    // so a required field with no default still gates on interaction.
+    LaunchedEffect(Unit) {
+        if (seedCal != null) emit()
+    }
+
+    // Each column opens centered on the seeded value — contentPadding=colPad
+    // pushes the first visible item to the viewport midpoint. Previously all
+    // columns opened at index 0 while selectedYear=2000, so the highlighted
+    // year (min-year) disagreed with the stored value.
+    val dayListState = rememberLazyListState(initialFirstVisibleItemIndex = (seedDay - 1).coerceIn(0, 30))
+    val monthListState = rememberLazyListState(initialFirstVisibleItemIndex = (seedMonth - 1).coerceIn(0, 11))
+    val yearListState = rememberLazyListState(initialFirstVisibleItemIndex = years.indexOf(seedYear).coerceAtLeast(0))
+    val hourListState = rememberLazyListState(initialFirstVisibleItemIndex = seedHour.coerceIn(0, 23))
+    val minuteListState = rememberLazyListState(initialFirstVisibleItemIndex = seedMinute.coerceIn(0, 59))
 
     // SPEC-401-A R62 (Lens C P1) — viewport-center math instead of
     // `firstVisibleItemIndex == index`. Without this, only the literal
@@ -5261,6 +6082,47 @@ private fun DateWheelPickerBlock(block: ContentBlock, inputValues: MutableMap<St
     val hourCentered by remember { derivedStateOf { centeredIndexOf(hourListState) } }
     val minuteCentered by remember { derivedStateOf { centeredIndexOf(minuteListState) } }
 
+    // SPEC — persist the centered value on SCROLL-settle, not just on tap. iOS's
+    // native DatePicker(.wheel) and the sibling WheelPickerBlock both persist on
+    // scroll; the date wheel previously only wrote selected*/emit() from the
+    // `.clickable` tap handlers, so a user who scrolled a drum and released
+    // WITHOUT tapping the centered row advanced with the OLD value while the
+    // wheel visibly showed the new one. `hasUserInteracted` gates the sync so the
+    // initial seed layout (centeredIndex settling on the seeded row) can't clobber
+    // selected* before the user actually scrolls. Keyed on isScrollInProgress so
+    // we only commit once the drum snaps.
+    var hasUserInteracted by remember { mutableStateOf(false) }
+    LaunchedEffect(monthCentered, monthListState.isScrollInProgress) {
+        if (monthListState.isScrollInProgress) hasUserInteracted = true
+        else if (hasUserInteracted && showDate && monthCentered in 0..11 && monthCentered + 1 != selectedMonth) {
+            selectedMonth = monthCentered + 1; emit()
+        }
+    }
+    LaunchedEffect(dayCentered, dayListState.isScrollInProgress) {
+        if (dayListState.isScrollInProgress) hasUserInteracted = true
+        else if (hasUserInteracted && showDate && dayCentered in 0..30 && dayCentered + 1 != selectedDay) {
+            selectedDay = dayCentered + 1; emit()
+        }
+    }
+    LaunchedEffect(yearCentered, yearListState.isScrollInProgress) {
+        if (yearListState.isScrollInProgress) hasUserInteracted = true
+        else if (hasUserInteracted && showDate && yearCentered in years.indices && years[yearCentered] != selectedYear) {
+            selectedYear = years[yearCentered]; emit()
+        }
+    }
+    LaunchedEffect(hourCentered, hourListState.isScrollInProgress) {
+        if (hourListState.isScrollInProgress) hasUserInteracted = true
+        else if (hasUserInteracted && showTime && hourCentered in 0..23 && hourCentered != selectedHour) {
+            selectedHour = hourCentered; emit()
+        }
+    }
+    LaunchedEffect(minuteCentered, minuteListState.isScrollInProgress) {
+        if (minuteListState.isScrollInProgress) hasUserInteracted = true
+        else if (hasUserInteracted && showTime && minuteCentered in 0..59 && minuteCentered != selectedMinute) {
+            selectedMinute = minuteCentered; emit()
+        }
+    }
+
     // SPEC-419 — outer Column carries the block-level label + validation message; the wheel honors
     // the authored height + background color.
     Column(modifier = Modifier.fillMaxWidth()) {
@@ -5276,7 +6138,13 @@ private fun DateWheelPickerBlock(block: ContentBlock, inputValues: MutableMap<St
         modifier = Modifier
             .fillMaxWidth()
             .height(wheelHeightDp)
-            .then(if (wheelBg != null) Modifier.background(wheelBg, RoundedCornerShape(8.dp)) else Modifier),
+            .then(if (wheelBg != null) Modifier.background(wheelBg, RoundedCornerShape(8.dp)) else Modifier)
+            // Authored outer picker border (parity with preview + iOS overlay).
+            .then(
+                if (lineColor != null && lineStroke > 0.dp) {
+                    Modifier.border(androidx.compose.foundation.BorderStroke(lineStroke, lineColor), RoundedCornerShape(8.dp))
+                } else Modifier
+            ),
     ) {
         // SPEC-401-A R62 (Lens C P1) — visible center-strip overlay so
         // users can see WHERE the selection actually lives. Sits behind
@@ -5287,13 +6155,24 @@ private fun DateWheelPickerBlock(block: ContentBlock, inputValues: MutableMap<St
                 .fillMaxWidth()
                 .height(40.dp)
                 .align(Alignment.Center)
-                .background(highlightColor.copy(alpha = 0.1f), RoundedCornerShape(8.dp)),
+                .background(highlightColor.copy(alpha = 0.1f), RoundedCornerShape(8.dp))
+                // Authored selection-line top/bottom rules (parity with preview's
+                // borderTop/borderBottom + iOS). Only when a line color is set.
+                .then(
+                    if (lineColor != null && lineStroke > 0.dp) {
+                        Modifier.drawBehind {
+                            val sw = lineStroke.toPx()
+                            drawLine(lineColor, Offset(0f, 0f), Offset(size.width, 0f), sw)
+                            drawLine(lineColor, Offset(0f, size.height), Offset(size.width, size.height), sw)
+                        }
+                    } else Modifier
+                ),
         )
     Row(
         modifier = Modifier
             .fillMaxWidth()
             .height(wheelHeightDp),
-        horizontalArrangement = Arrangement.spacedBy(4.dp),
+        horizontalArrangement = Arrangement.spacedBy(colSpacing),
     ) {
         // Month column
         if (showDate) {
@@ -5322,9 +6201,9 @@ private fun DateWheelPickerBlock(block: ContentBlock, inputValues: MutableMap<St
                             .clickable {
                                 selectedMonth = index + 1
                                 emit()
-                                // SPEC-401-A R57 (Lens C R57 #2, P3) — SELECTION
-                                // haptic mirrors iOS UIPickerView system tick.
-                                ai.appdna.sdk.core.HapticEngine.trigger(view, ai.appdna.sdk.core.HapticType.SELECTION)
+                                // SPEC-401-A R57 — SELECTION haptic mirrors iOS
+                                // UIPickerView tick; gated by haptic_on_scroll.
+                                fireHaptic()
                             },
                         textAlign = TextAlign.Center,
                     )
@@ -5362,9 +6241,9 @@ private fun DateWheelPickerBlock(block: ContentBlock, inputValues: MutableMap<St
                             .clickable {
                                 selectedDay = day
                                 emit()
-                                // SPEC-401-A R57 (Lens C R57 #2, P3) — SELECTION
-                                // haptic mirrors iOS UIPickerView system tick.
-                                ai.appdna.sdk.core.HapticEngine.trigger(view, ai.appdna.sdk.core.HapticType.SELECTION)
+                                // SPEC-401-A R57 — SELECTION haptic mirrors iOS
+                                // UIPickerView tick; gated by haptic_on_scroll.
+                                fireHaptic()
                             },
                         textAlign = TextAlign.Center,
                     )
@@ -5399,9 +6278,9 @@ private fun DateWheelPickerBlock(block: ContentBlock, inputValues: MutableMap<St
                             .clickable {
                                 selectedYear = year
                                 emit()
-                                // SPEC-401-A R57 (Lens C R57 #2, P3) — SELECTION
-                                // haptic mirrors iOS UIPickerView system tick.
-                                ai.appdna.sdk.core.HapticEngine.trigger(view, ai.appdna.sdk.core.HapticType.SELECTION)
+                                // SPEC-401-A R57 — SELECTION haptic mirrors iOS
+                                // UIPickerView tick; gated by haptic_on_scroll.
+                                fireHaptic()
                             },
                         textAlign = TextAlign.Center,
                     )
@@ -5434,7 +6313,7 @@ private fun DateWheelPickerBlock(block: ContentBlock, inputValues: MutableMap<St
                                 .clickable {
                                     selectedHour = index
                                     emit()
-                                    ai.appdna.sdk.core.HapticEngine.trigger(view, ai.appdna.sdk.core.HapticType.SELECTION)
+                                    fireHaptic()  // gated by haptic_on_scroll
                                 },
                             textAlign = TextAlign.Center,
                         )
@@ -5463,7 +6342,7 @@ private fun DateWheelPickerBlock(block: ContentBlock, inputValues: MutableMap<St
                                 .clickable {
                                     selectedMinute = index
                                     emit()
-                                    ai.appdna.sdk.core.HapticEngine.trigger(view, ai.appdna.sdk.core.HapticType.SELECTION)
+                                    fireHaptic()  // gated by haptic_on_scroll
                                 },
                             textAlign = TextAlign.Center,
                         )
@@ -5478,7 +6357,7 @@ private fun DateWheelPickerBlock(block: ContentBlock, inputValues: MutableMap<St
         Text(
             text = validationMsg,
             fontSize = 12.sp,
-            color = MaterialTheme.colorScheme.error,
+            color = block.field_style?.error_text_color?.let { StyleEngine.parseColor(it) } ?: MaterialTheme.colorScheme.error,
             modifier = Modifier.padding(top = 4.dp),
         )
     }
@@ -5494,6 +6373,8 @@ private fun StackBlock(
     toggleValues: MutableMap<String, Boolean>,
     inputValues: MutableMap<String, Any>,
     loc: ((String, String) -> String)?,
+    // Mrozu QA (2026-08-04) — thread step blocks so a nested consent-CTA gates on the full step (iOS parity).
+    stepBlocks: List<ContentBlock> = emptyList(),
 ) {
     // SPEC-401-A R61 (Lens A N1, P1) — accept iOS canonical `stack_children`
     // alongside `children`; console editor writes `stack_children` for
@@ -5527,6 +6408,7 @@ private fun StackBlock(
                     toggleValues = toggleValues,
                     inputValues = inputValues,
                     loc = loc,
+                    stepBlocks = stepBlocks,
                 )
             }
         }
@@ -5542,6 +6424,8 @@ private fun RowBlock(
     toggleValues: MutableMap<String, Boolean>,
     inputValues: MutableMap<String, Any>,
     loc: ((String, String) -> String)?,
+    // Mrozu QA (2026-08-04) — thread step blocks so a nested consent-CTA gates on the full step (iOS parity).
+    stepBlocks: List<ContentBlock> = emptyList(),
 ) {
     // SPEC-401-A R61 (Lens A N1, P1) — accept iOS canonical `stack_children`
     // alongside `children` for Row blocks; console editor writes
@@ -5654,6 +6538,7 @@ private fun RowBlock(
                             toggleValues = toggleValues,
                             inputValues = inputValues,
                             loc = loc,
+                            stepBlocks = stepBlocks,
                         )
                     }
                 }
@@ -5677,6 +6562,28 @@ private fun RowBlock(
                 Modifier.fillMaxWidth().graphicsLayer { clip = false }
             } else {
                 Modifier.fillMaxWidth()
+            }
+            if (block.wrap == true && ratios.isEmpty()) {
+                // Mrozu QA: row.wrap flows children onto multiple lines (chips/badges)
+                // instead of a single clipped Row. Parity with iOS WrapLayout. FlowRow
+                // takes no weight(), so wrapped children are wrap-content (fractional
+                // widths still honored via applyRelativeSizing).
+                androidx.compose.foundation.layout.FlowRow(
+                    modifier = modifier.then(baseMod),
+                    horizontalArrangement = Arrangement.spacedBy(rowGap),
+                    verticalArrangement = Arrangement.spacedBy(rowGap),
+                ) {
+                    LeadingIconSlot()
+                    childBlocks.forEach { child ->
+                        val cw = child.element_width
+                        val cwFractional = cw != null && cw.endsWith("%")
+                        val childSizeMod = Modifier.applyRelativeSizing(if (cwFractional) cw else null, if (child.type.startsWith("input_")) null else child.element_height)
+                        Box(modifier = childSizeMod) {
+                            RenderBlock(child, onAction, toggleValues, inputValues, loc, stepBlocks = stepBlocks)
+                        }
+                    }
+                }
+                return
             }
             Row(
                 modifier = modifier.then(baseMod),
@@ -5702,6 +6609,7 @@ private fun RowBlock(
                                 toggleValues = toggleValues,
                                 inputValues = inputValues,
                                 loc = loc,
+                                stepBlocks = stepBlocks,
                             )
                         }
                     }
@@ -5734,6 +6642,7 @@ private fun RowBlock(
                                 toggleValues = toggleValues,
                                 inputValues = inputValues,
                                 loc = loc,
+                                stepBlocks = stepBlocks,
                             )
                         }
                     }
@@ -5808,6 +6717,16 @@ private fun StarBackgroundBlock(block: ContentBlock) {
     val particleColor = StyleEngine.parseColor(fcParticleColor ?: block.active_color ?: block.text_color ?: "#FFFFFF")
     // SPEC-419 pass-15 #27 — secondary_color tints 1/3 of particles (matches editor + preview)
     val secondaryColor = block.secondary_color?.let { StyleEngine.parseColor(it) } ?: particleColor
+    // Mrozu QA (2026-08-03): particle_type was decoded but the Canvas always drew a
+    // circle, so stars/sparkles/snow all looked identical. Render the actual shape (parity with iOS).
+    val particleType = block.particle_type ?: "stars"  // match console/preview default (element is star_background)
+    // Mrozu QA (2026-08-04): confetti = falling multicolor rounded rects. `particle_multicolor` cycles
+    // a fixed palette per-particle (defaults ON for confetti). Parity with iOS confettiPalette.
+    val useMulticolor = (block.field_config?.get("particle_multicolor") as? Boolean) ?: (particleType == "confetti")
+    val confettiPalette = remember {
+        listOf("#EF4444", "#F59E0B", "#FCD34D", "#10B981", "#3B82F6", "#8B5CF6", "#EC4899")
+            .map { StyleEngine.parseColor(it) }
+    }
     val baseOpacity = (fcParticleOpacity ?: (block.block_style?.opacity ?: 0.8).toFloat())
     val particleCount = when (block.density) {
         "sparse" -> 20; "dense" -> 100; else -> 50
@@ -5870,15 +6789,49 @@ private fun StarBackgroundBlock(block: ContentBlock) {
         // by scaleX shrank particles to invisibility on narrow widths and
         // ballooned them into giant blobs in fullscreen mode.
         particles.value.forEachIndexed { i, p ->
-            // SPEC-419 pass-15 #27 — every 3rd particle uses secondary_color
-            val pColor = if (i % 3 == 0) secondaryColor else particleColor
-            drawCircle(
-                color = pColor.copy(alpha = p.opacity * baseOpacity),
-                radius = p.size,
-                center = Offset(p.x * scaleX, p.y * scaleY),
-            )
+            // Mrozu QA (2026-08-04): multicolor confetti cycles the palette; otherwise every 3rd
+            // particle uses secondary_color (SPEC-419 pass-15 #27).
+            val baseColor = if (useMulticolor) confettiPalette[i % confettiPalette.size]
+                else if (i % 3 == 0) secondaryColor else particleColor
+            val pColor = baseColor.copy(alpha = p.opacity * baseOpacity)
+            val center = Offset(p.x * scaleX, p.y * scaleY)
+            // Mrozu QA (2026-08-04): iOS treats p.size as a BOX/diameter (particle
+            // drawn inside a size×size CGRect — StarBackgroundBlockView), so the
+            // effective radius is p.size/2. Android previously used p.size as the
+            // RADIUS, rendering every particle ~2× larger than iOS. Halve the geometry
+            // so all particle_type shapes match iOS box semantics.
+            when (particleType) {
+                "stars" -> drawPath(starParticlePath(5, 0.42f, center, p.size / 2f), pColor)
+                "sparkles" -> drawPath(starParticlePath(4, 0.30f, center, p.size / 2f), pColor)
+                "snow" -> drawPath(starParticlePath(6, 0.50f, center, p.size / 2f), pColor)
+                "confetti" -> drawRoundRect(
+                    color = pColor,
+                    topLeft = Offset(center.x - p.size / 2f, center.y - p.size / 2f),
+                    size = androidx.compose.ui.geometry.Size(p.size, p.size),
+                    cornerRadius = androidx.compose.ui.geometry.CornerRadius(p.size * 0.3f),
+                )
+                else -> drawCircle(color = pColor, radius = p.size / 2f, center = center) // dots, bokeh
+            }
         }
     }
+}
+
+// Mrozu QA (2026-08-03): build an N-point star polygon for star_background particle_type
+// (parity with iOS ContentBlockStandaloneViews.starPath). dots/bokeh keep drawCircle.
+private fun starParticlePath(points: Int, innerRatio: Float, center: Offset, radius: Float): androidx.compose.ui.graphics.Path {
+    val path = androidx.compose.ui.graphics.Path()
+    val inner = radius * innerRatio
+    val step = (Math.PI / points).toFloat()
+    var angle = (-Math.PI / 2).toFloat() // start pointing up
+    for (i in 0 until points * 2) {
+        val r = if (i % 2 == 0) radius else inner
+        val x = center.x + r * kotlin.math.cos(angle)
+        val y = center.y + r * kotlin.math.sin(angle)
+        if (i == 0) path.moveTo(x, y) else path.lineTo(x, y)
+        angle += step
+    }
+    path.close()
+    return path
 }
 
 // MARK: - Wheel Picker Block (SPEC-089d AC-013)
@@ -5972,10 +6925,22 @@ private fun WheelPickerBlock(
             hasUserInteracted = true
         }
         if (hasUserInteracted && centeredIndex != lastHapticIndex && centeredIndex in values.indices) {
-            ai.appdna.sdk.core.HapticEngine.trigger(view, ai.appdna.sdk.core.HapticType.SELECTION)
+            // SPEC — respect haptic_on_scroll == false (author opt-out); nil/true keep the tick.
+            if (block.haptic_on_scroll != false) {
+                ai.appdna.sdk.core.HapticEngine.trigger(view, ai.appdna.sdk.core.HapticType.SELECTION)
+            }
             lastHapticIndex = centeredIndex
         }
     }
+
+    // SPEC — honor visible_items / wheel_height on the vertical drum (was
+    // hardcoded 150dp height / 55dp contentPadding). ~44dp per row; the
+    // contentPadding keeps boundary values reachable at viewport center.
+    // When neither is authored the exact legacy 150dp / 55dp is preserved.
+    val drumH: Float? = block.wheel_height?.toFloat()
+        ?: block.visible_items?.let { (it.coerceIn(1, 9) * 44).toFloat() }
+    val drumHeightDp = (drumH ?: 150f).dp
+    val drumPadDp = (drumH?.let { ((it - 44f) / 2f).coerceAtLeast(0f) } ?: 55f).dp
 
     Column(
         modifier = Modifier.fillMaxWidth(),
@@ -6070,7 +7035,7 @@ private fun WheelPickerBlock(
             }
         } else {
             Box(
-                modifier = Modifier.fillMaxWidth().height(150.dp),
+                modifier = Modifier.fillMaxWidth().height(drumHeightDp),
                 contentAlignment = Alignment.Center,
             ) {
                 // Highlight strip at center
@@ -6094,7 +7059,7 @@ private fun WheelPickerBlock(
                 LazyColumn(
                     state = listState,
                     modifier = Modifier.fillMaxSize(),
-                    contentPadding = androidx.compose.foundation.layout.PaddingValues(vertical = 55.dp),
+                    contentPadding = androidx.compose.foundation.layout.PaddingValues(vertical = drumPadDp),
                     horizontalAlignment = Alignment.CenterHorizontally,
                     flingBehavior = rememberSnapFlingBehavior(lazyListState = listState),
                 ) {
@@ -6459,7 +7424,7 @@ fun EntranceAnimationWrapper(
     var isVisible by remember { mutableStateOf(false) }
 
     LaunchedEffect(Unit) {
-        kotlinx.coroutines.delay(animation.delay_ms.toLong())
+        kotlinx.coroutines.delay((animation.delay_ms + animation.animation_delay_ms).toLong())
         isVisible = true
     }
 
@@ -6486,14 +7451,57 @@ fun EntranceAnimationWrapper(
     )
     val isSpring = animation.easing == "spring"
 
+    // Drain2 parity — slide entrances travel a FIXED 50dp, matching iOS's
+    // fixed ±50pt offset (ContentBlockTypes.swift:654-668). The prior lambdas
+    // returned the element's OWN size ({ it } / { -it }), so a tall/wide block
+    // slid in from fully off-screen on Android while iOS only nudged 50pt.
+    val slideOffsetPx = with(androidx.compose.ui.platform.LocalDensity.current) { 50.dp.roundToPx() }
+
+    // Audit pass-8 — a real "flip" is a 3D X-axis rotation to match iOS
+    // (ContentBlockTypes.swift:613-616 rotates 90°→0 around x). AnimatedVisibility's
+    // EnterTransition cannot express rotationX, and the previous impl used
+    // fadeIn + scaleIn(0.0) (scale-from-zero, NO rotation) so a "flip" block
+    // visibly did not flip. Drive rotationX via graphicsLayer instead. (Preview
+    // rotateY→rotateX axis alignment is a sibling change.)
+    if (animation.type == "flip") {
+        // Named `flipRotation` (not `rotationX`) so it doesn't shadow the
+        // GraphicsLayerScope.rotationX property inside the graphicsLayer lambda.
+        val flipRotation by androidx.compose.animation.core.animateFloatAsState(
+            targetValue = if (isVisible) 0f else 90f,
+            animationSpec = if (isSpring) springFloatSpec else tweenSpec,
+            label = "flipRotationX",
+        )
+        val flipAlpha by androidx.compose.animation.core.animateFloatAsState(
+            targetValue = if (isVisible) 1f else 0f,
+            animationSpec = if (isSpring) springFloatSpec else tweenSpec,
+            label = "flipAlpha",
+        )
+        androidx.compose.foundation.layout.Box(
+            modifier = Modifier.graphicsLayer {
+                rotationX = flipRotation
+                alpha = flipAlpha
+                // Perspective so the X-axis rotation reads as depth, not a flat squash.
+                cameraDistance = 12f * density
+            }
+        ) {
+            content()
+        }
+        return
+    }
+
     val enterTransition: androidx.compose.animation.EnterTransition = when (animation.type) {
         "fade_in" -> androidx.compose.animation.fadeIn(if (isSpring) springFloatSpec else tweenSpec)
-        "slide_up" -> androidx.compose.animation.slideInVertically(if (isSpring) springIntOffsetSpec else tweenIntOffset) { it }
-        "slide_down" -> androidx.compose.animation.slideInVertically(if (isSpring) springIntOffsetSpec else tweenIntOffset) { -it }
-        "slide_left" -> androidx.compose.animation.slideInHorizontally(if (isSpring) springIntOffsetSpec else tweenIntOffset) { -it }
-        "slide_right" -> androidx.compose.animation.slideInHorizontally(if (isSpring) springIntOffsetSpec else tweenIntOffset) { it }
-        "scale_up" -> androidx.compose.animation.scaleIn(if (isSpring) springFloatSpec else tweenSpec, initialScale = 0.5f)
-        "scale_down" -> androidx.compose.animation.scaleIn(if (isSpring) springFloatSpec else tweenSpec, initialScale = 1.5f)
+        "slide_up" -> androidx.compose.animation.slideInVertically(if (isSpring) springIntOffsetSpec else tweenIntOffset) { slideOffsetPx }
+        "slide_down" -> androidx.compose.animation.slideInVertically(if (isSpring) springIntOffsetSpec else tweenIntOffset) { -slideOffsetPx }
+        "slide_left" -> androidx.compose.animation.slideInHorizontally(if (isSpring) springIntOffsetSpec else tweenIntOffset) { -slideOffsetPx }
+        "slide_right" -> androidx.compose.animation.slideInHorizontally(if (isSpring) springIntOffsetSpec else tweenIntOffset) { slideOffsetPx }
+        // pass-55 — scale entrances also fade opacity 0→1 to match iOS EntranceAnimationWrapper
+        // usesOpacity:true (ContentBlockTypes.swift:631-636) + preview keyframes; previously popped
+        // in fully opaque on Android while iOS/preview faded.
+        "scale_up" -> androidx.compose.animation.scaleIn(if (isSpring) springFloatSpec else tweenSpec, initialScale = 0.5f) +
+            androidx.compose.animation.fadeIn(if (isSpring) springFloatSpec else tweenSpec)
+        "scale_down" -> androidx.compose.animation.scaleIn(if (isSpring) springFloatSpec else tweenSpec, initialScale = 1.5f) +
+            androidx.compose.animation.fadeIn(if (isSpring) springFloatSpec else tweenSpec)
         // SPEC-401-A R13 — bounce previously always used spring,
         // ignoring `duration_ms`. iOS resolves bounce via swiftUIAnimation
         // which honors `duration_ms` for any non-spring easing — so when
@@ -6501,9 +7509,8 @@ fun EntranceAnimationWrapper(
         "bounce" -> androidx.compose.animation.scaleIn(
             if (isSpring) springFloatSpec else tweenSpec,
             initialScale = 0.3f,
-        )
-        "flip" -> androidx.compose.animation.fadeIn(if (isSpring) springFloatSpec else tweenSpec) +
-            androidx.compose.animation.scaleIn(if (isSpring) springFloatSpec else tweenSpec, initialScale = 0.0f)
+        ) + androidx.compose.animation.fadeIn(if (isSpring) springFloatSpec else tweenSpec)
+        // "flip" is handled above via graphicsLayer rotationX (3D X-axis flip).
         else -> androidx.compose.animation.EnterTransition.None
     }
 
@@ -6538,7 +7545,10 @@ private fun FormFieldLabel(block: ContentBlock) {
                 // SPEC-401-A R56 (Lens A R56 #3, P2) — default 15sp matches iOS
                 // .subheadline (FormInputBlockViews.swift:15). Was 14sp on every
                 // FormFieldLabel without explicit label_font_size.
-                fontSize = (block.field_style?.label_font_size ?: 15.0).sp,
+                // Parity with iOS FormFieldLabelView: field_style first, then the
+                // top-level label_font_size, then 15sp (was field_style-only, so a
+                // top-level label_font_size was honored on iOS but dropped here).
+                fontSize = (block.field_style?.label_font_size ?: block.label_font_size ?: 15.0).sp,
                 fontWeight = FontWeight.Medium,
                 color = StyleEngine.parseColor(block.field_style?.label_color ?: "#374151"),
             )
@@ -6618,46 +7628,57 @@ private fun FormInputTextBlock(
         val focusedBorderWidth = (block.field_style?.border_width ?: 2.0).dp
         val interactionSource = remember { androidx.compose.foundation.interaction.MutableInteractionSource() }
         val isFocused by interactionSource.collectIsFocusedAsState()
-        // SPEC-419 — single border source: the OutlinedTextField draws its OWN rounded
-        // border. The previous outer .border() Box wrapping it stacked two outlines into
-        // a visible double border on the login email/text fields. Width is M3 default
-        // (1dp unfocused / 2dp focused); authored border_width is no longer honored here
-        // but a clean single border matters more than custom thickness.
-        androidx.compose.material3.OutlinedTextField(
-            value = text,
-            onValueChange = {
-                text = it
-                inputValues[fieldId] = it
-            },
-            placeholder = {
-                Text(
-                    text = block.field_placeholder ?: "",
-                    color = StyleEngine.parseColor(block.field_style?.placeholder_color ?: "#9CA3AF"),
-                )
-            },
-            keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(
-                keyboardType = kbType,
-                imeAction = androidx.compose.ui.text.input.ImeAction.Done,
-            ),
-            shape = RoundedCornerShape(cornerRadius),
-            textStyle = TextStyle(fontSize = inputFontSize),
-            modifier = if (fieldHeightDp != null) Modifier.fillMaxWidth().heightIn(min = fieldHeightDp.dp) else Modifier.fillMaxWidth(),
-            singleLine = true,
-            interactionSource = interactionSource,
-            colors = androidx.compose.material3.OutlinedTextFieldDefaults.colors(
-                focusedTextColor = textColor,
-                unfocusedTextColor = textColor,
-                focusedContainerColor = focusedBgColor,
-                unfocusedContainerColor = bgColor,
-                // SPEC-419 — if the block itself already draws a container border
-                // (applyBlockStyle, block_style.border_width > 0 — e.g. the login input
-                // blocks author a capsule outline), the field must stay border-LESS or
-                // the two outlines stack into the visible double border. Draw the field's
-                // own border only when the block has none.
-                focusedBorderColor = if ((block.block_style?.border_width ?: 0.0) > 0.0) Color.Transparent else focusedBorderColor,
-                unfocusedBorderColor = if ((block.block_style?.border_width ?: 0.0) > 0.0) Color.Transparent else borderColor,
-            ),
-        )
+        // Audit pass-8 — honor authored field_style.border_width by drawing the
+        // border on an OUTER Box and zeroing the field's built-in border (fixed at
+        // M3 1dp/2dp), mirroring FormInputTextAreaBlock (:7600-7636) and iOS
+        // FormInputBlockViews.swift:103-106. borderWidth/focusedBorderWidth/isFocused
+        // were computed above but unused (dead code) — this wires them up. The
+        // SPEC-419 double-border guard is preserved: when the block itself draws a
+        // container outline (block_style.border_width > 0 — e.g. login capsule
+        // inputs), skip the outer border so the two outlines don't stack.
+        val hasBlockBorder = (block.block_style?.border_width ?: 0.0) > 0.0
+        Box(
+            modifier = if (hasBlockBorder) Modifier.fillMaxWidth()
+                else Modifier.fillMaxWidth().border(
+                    width = if (isFocused) focusedBorderWidth else borderWidth,
+                    color = if (isFocused) focusedBorderColor else borderColor,
+                    shape = RoundedCornerShape(cornerRadius),
+                ),
+        ) {
+            androidx.compose.material3.OutlinedTextField(
+                value = text,
+                onValueChange = {
+                    text = it
+                    inputValues[fieldId] = it
+                },
+                placeholder = {
+                    Text(
+                        text = block.field_placeholder ?: "",
+                        color = StyleEngine.parseColor(block.field_style?.placeholder_color ?: "#9CA3AF"),
+                    )
+                },
+                keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(
+                    keyboardType = kbType,
+                    imeAction = androidx.compose.ui.text.input.ImeAction.Done,
+                ),
+                shape = RoundedCornerShape(cornerRadius),
+                textStyle = TextStyle(fontSize = inputFontSize),
+                modifier = if (fieldHeightDp != null) Modifier.fillMaxWidth().heightIn(min = fieldHeightDp.dp) else Modifier.fillMaxWidth(),
+                singleLine = true,
+                interactionSource = interactionSource,
+                colors = androidx.compose.material3.OutlinedTextFieldDefaults.colors(
+                    focusedTextColor = textColor,
+                    unfocusedTextColor = textColor,
+                    focusedContainerColor = focusedBgColor,
+                    unfocusedContainerColor = bgColor,
+                    // Built-in border always zeroed: the authored width is drawn by the
+                    // outer Box, or (when the block draws its own outline) the block_style
+                    // capsule owns it — either way the field itself stays border-less.
+                    focusedBorderColor = Color.Transparent,
+                    unfocusedBorderColor = Color.Transparent,
+                ),
+            )
+        }
     }
 }
 
@@ -6843,6 +7864,49 @@ private fun FormInputPasswordBlock(
     }
 }
 
+/**
+ * Wrap date/time-picker content in a forced light/dark MaterialTheme when the block
+ * requests an explicit color_scheme (or its text_color implies one); null leaves the
+ * ambient onboarding theme untouched. Mirrors iOS FormInputDateBlock's
+ * `.environment(\.colorScheme, resolvedScheme)` (FormInputBlockViews.swift).
+ */
+@Composable
+private fun ForcedPickerScheme(forceDark: Boolean?, content: @Composable () -> Unit) {
+    if (forceDark == null) {
+        content()
+        return
+    }
+    MaterialTheme(
+        colorScheme = if (forceDark) androidx.compose.material3.darkColorScheme() else androidx.compose.material3.lightColorScheme(),
+        content = content,
+    )
+}
+
+/**
+ * Build DatePickerColors, layering the author's absolute overrides (calendar bg,
+ * highlight, wheel text) over the ambient MaterialTheme defaults. Must be called inside
+ * the target theme scope so the non-overridden base colors follow the forced scheme.
+ */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun buildFormDatePickerColors(
+    highlightColor: Color?,
+    calendarBg: Color?,
+    wheelTextColor: Color?,
+): androidx.compose.material3.DatePickerColors =
+    androidx.compose.material3.DatePickerDefaults.colors().let { base ->
+        if (highlightColor == null && calendarBg == null && wheelTextColor == null) base
+        else androidx.compose.material3.DatePickerDefaults.colors(
+            containerColor = calendarBg ?: base.containerColor,
+            selectedDayContainerColor = highlightColor ?: base.selectedDayContainerColor,
+            todayDateBorderColor = highlightColor ?: base.todayDateBorderColor,
+            selectedYearContainerColor = highlightColor ?: base.selectedYearContainerColor,
+            dayContentColor = wheelTextColor ?: base.dayContentColor,
+            weekdayContentColor = wheelTextColor ?: base.weekdayContentColor,
+            yearContentColor = wheelTextColor ?: base.yearContentColor,
+        )
+    }
+
 /** Date / Time / DateTime picker input. */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -6880,10 +7944,19 @@ private fun FormInputDateBlock(
         if (years < 0) return
         inputValues["${fieldId}_age"] = years
     }
-    val displayFormatter = remember(mode) {
+    // SPEC — honor time_format ("12h"/"24h") on the displayed time. When set,
+    // build an explicit SimpleDateFormat (HH:mm 24h / h:mm a 12h) instead of the
+    // locale-default SHORT time; unset keeps the device-locale behaviour.
+    val timeFmt = (block.field_config?.get("time_format") as? String)?.lowercase()
+    val displayFormatter = remember(mode, timeFmt) {
+        val timePattern = if (timeFmt == "24h") "HH:mm" else "h:mm a"
         when (mode) {
-            "time" -> java.text.DateFormat.getTimeInstance(java.text.DateFormat.SHORT, java.util.Locale.getDefault())
-            "datetime" -> java.text.DateFormat.getDateTimeInstance(java.text.DateFormat.MEDIUM, java.text.DateFormat.SHORT, java.util.Locale.getDefault())
+            "time" ->
+                if (timeFmt != null) java.text.SimpleDateFormat(timePattern, java.util.Locale.US)
+                else java.text.DateFormat.getTimeInstance(java.text.DateFormat.SHORT, java.util.Locale.getDefault())
+            "datetime" ->
+                if (timeFmt != null) java.text.SimpleDateFormat("MMM d, yyyy $timePattern", java.util.Locale.US)
+                else java.text.DateFormat.getDateTimeInstance(java.text.DateFormat.MEDIUM, java.text.DateFormat.SHORT, java.util.Locale.getDefault())
             else -> java.text.DateFormat.getDateInstance(java.text.DateFormat.MEDIUM, java.util.Locale.getDefault())
         }
     }
@@ -6904,6 +7977,21 @@ private fun FormInputDateBlock(
     // these constraints and surfaces an inline error string under the picker.
     // Android was silently writing invalid dates.
     var dateError by remember { mutableStateOf<String?>(null) }
+    // Audit pass-8 — resolve min_date/max_date to day-bounded epoch millis so
+    // validateDate can enforce them. These were parsed on the block and honored
+    // by DateWheelPicker (:5899-5920) + FormStep, but the calendar/DatePicker
+    // path silently dropped them (only allow_future/allow_past were checked),
+    // matching the iOS gap. Reuse parseDateWheelSeed (the same helper the wheel
+    // uses for its min/max clamp) and normalize min→start-of-day, max→end-of-day
+    // so a pick landing exactly on the boundary day isn't rejected by time-of-day.
+    val minDateMillis = parseDateWheelSeed(block.min_date, null)?.apply {
+        set(java.util.Calendar.HOUR_OF_DAY, 0); set(java.util.Calendar.MINUTE, 0)
+        set(java.util.Calendar.SECOND, 0); set(java.util.Calendar.MILLISECOND, 0)
+    }?.timeInMillis
+    val maxDateMillis = parseDateWheelSeed(block.max_date, null)?.apply {
+        set(java.util.Calendar.HOUR_OF_DAY, 23); set(java.util.Calendar.MINUTE, 59)
+        set(java.util.Calendar.SECOND, 59); set(java.util.Calendar.MILLISECOND, 999)
+    }?.timeInMillis
     fun validateDate(millis: Long): Boolean {
         val now = System.currentTimeMillis()
         val msg = block.date_validation_message
@@ -6915,14 +8003,22 @@ private fun FormInputDateBlock(
             dateError = msg ?: "Past dates are not allowed"
             return false
         }
+        if (minDateMillis != null && millis < minDateMillis) {
+            dateError = msg ?: "Date is before the earliest allowed date"
+            return false
+        }
+        if (maxDateMillis != null && millis > maxDateMillis) {
+            dateError = msg ?: "Date is after the latest allowed date"
+            return false
+        }
         dateError = null
         return true
     }
 
     // SPEC-401-A R35 \u2014 picker_variant per iOS FormInputBlockViews.swift:208-410.
-    // "graphical" \u2192 inline DatePicker; "compact"/null/unknown \u2192 tap-to-open
-    // button. "wheel" falls back to compact today (Material3 lacks a wheel
-    // date picker out of the box; tracked for follow-up).
+    // "graphical" \u2192 inline DatePicker; "wheel" \u2192 inline column wheels (Drain2,
+    // reuses DateWheelPickerBlock, matches iOS DatePicker(.wheel) + preview);
+    // "compact"/null/unknown \u2192 tap-to-open button.
     // SPEC-401-A R49 (Lens A #4, P1) \u2014 picker_presentation="field" forces
     // tap-to-open compact; otherwise legacy field_config.picker_variant
     // controls inline graphical vs compact. picker_mode similarly may
@@ -6934,6 +8030,12 @@ private fun FormInputDateBlock(
         else -> (block.field_config?.get("picker_variant") as? String)?.lowercase() ?: "compact"
     }
     val inlineGraphical = pickerVariant == "graphical" && (effectiveMode == "date" || effectiveMode == "datetime")
+    // Drain2 parity — picker_variant="wheel" (presentation unset) renders an inline
+    // spinning wheel like iOS (FormInputBlockViews.swift:374) + preview, reusing the
+    // standalone date_wheel column wheels, instead of falling back to the compact
+    // tap-to-open button. Note: the wheel emits "yyyy-MM-dd"[+" HH:mm"] (its native
+    // format) rather than the ISO8601 the compact/graphical branches write.
+    val inlineWheel = pickerVariant == "wheel" && (effectiveMode == "date" || effectiveMode == "datetime")
 
     // SPEC-419 pass-15 #16/#17/#34 — honor field_style.text_color (compact button text),
     // calendar_bg_color/wheel_bg_color (picker + button background), and highlight_color
@@ -6943,22 +8045,29 @@ private fun FormInputDateBlock(
     val calendarBg = ((block.field_config?.get("calendar_bg_color") as? String)?.let { StyleEngine.parseColor(it) }
         ?: block.calendar_bg_color?.let { StyleEngine.parseColor(it) })
         ?.let { c -> (block.field_config?.get("calendar_opacity") as? Number)?.toFloat()?.let { c.copy(alpha = it.coerceIn(0f, 1f)) } ?: c }  // SPEC-419 pass-26 — fold calendar_opacity into the fill alpha (iOS applies .opacity)
-    val wheelBg = (block.field_config?.get("wheel_bg_color") as? String)?.let { StyleEngine.parseColor(it) }
-        ?: block.wheel_bg_color?.let { StyleEngine.parseColor(it) }
+    val wheelBg = ((block.field_config?.get("wheel_bg_color") as? String)?.let { StyleEngine.parseColor(it) }
+        ?: block.wheel_bg_color?.let { StyleEngine.parseColor(it) })
+        ?.let { c -> (block.field_config?.get("wheel_opacity") as? Number)?.toFloat()?.let { c.copy(alpha = it.coerceIn(0f, 1f)) } ?: c }  // fold wheel_opacity into fill alpha (iOS applies .opacity), mirroring calendarBg
     // SPEC-419 pass-16 #12 — honor wheel_text_color on the inline graphical picker
     // (day/weekday/year content), mirroring iOS colorMultiply + preview wheelText.
     val wheelTextColor = (block.field_config?.get("wheel_text_color") as? String)?.let { StyleEngine.parseColor(it) }
-    val datePickerColors: androidx.compose.material3.DatePickerColors = androidx.compose.material3.DatePickerDefaults.colors().let { base ->
-        if (highlightColor == null && calendarBg == null && wheelTextColor == null) base
-        else androidx.compose.material3.DatePickerDefaults.colors(
-            containerColor = calendarBg ?: base.containerColor,
-            selectedDayContainerColor = highlightColor ?: base.selectedDayContainerColor,
-            todayDateBorderColor = highlightColor ?: base.todayDateBorderColor,
-            selectedYearContainerColor = highlightColor ?: base.selectedYearContainerColor,
-            dayContentColor = wheelTextColor ?: base.dayContentColor,
-            weekdayContentColor = wheelTextColor ?: base.weekdayContentColor,
-            yearContentColor = wheelTextColor ?: base.yearContentColor,
-        )
+    // Mrozu QA — parity with iOS FormInputDateBlock (FormInputBlockViews.swift:276-285):
+    // honor field_config.color_scheme (light/dark) as an explicit picker-theme override,
+    // else auto-detect dark when field_style.text_color is a light hex (dark-background
+    // flows set white text, so the native date/time popover must render dark or it's
+    // white-on-white and unreadable). iOS uses Color.isLightHex (luminance >= 0.6,
+    // PaywallHelperViews.swift:120). When neither signal is present we leave the ambient
+    // onboarding theme (already luminance-adapted by OnboardingActivity) rather than
+    // iOS's `?? .light`, to avoid regressing existing dark flows. Because Android passes
+    // explicit `colors=` to the pickers, forcing only takes effect when the DatePickerColors
+    // are rebuilt inside the forced MaterialTheme — see ForcedPickerScheme wrappers below.
+    val forcePickerDark: Boolean? = when ((block.field_config?.get("color_scheme") as? String)?.lowercase()) {
+        "dark" -> true
+        "light" -> false
+        else -> block.field_style?.text_color?.let { hex ->
+            val c = StyleEngine.parseColor(hex)
+            if (0.2126f * c.red + 0.7152f * c.green + 0.0722f * c.blue >= 0.6f) true else null
+        }
     }
     // SPEC-419 pass-16 #11 — opt-in picker border + padding around the whole picker
     // (any variant). Mirrors editor field_config.picker_border_*/picker_padding +
@@ -6982,12 +8091,18 @@ private fun FormInputDateBlock(
     ) {
         FormFieldLabel(block)
 
-        if (inlineGraphical) {
+        if (inlineWheel) {
+            // Drain2 — inline wheel columns (reuses the standalone date_wheel_picker),
+            // forcing this field's effective mode so input_datetime shows time columns.
+            DateWheelPickerBlock(block, inputValues, modeOverride = effectiveMode)
+        } else if (inlineGraphical) {
             val initialMillis = remember(savedRaw) {
                 if (savedRaw.isEmpty()) null else try { isoFormatter.parse(savedRaw)?.time } catch (_: Exception) { null }
             }
             val datePickerState = rememberDatePickerState(initialSelectedDateMillis = initialMillis)
-            DatePicker(state = datePickerState, modifier = Modifier.fillMaxWidth().then(pickerChromeMod), colors = datePickerColors)
+            ForcedPickerScheme(forcePickerDark) {
+                DatePicker(state = datePickerState, modifier = Modifier.fillMaxWidth().then(pickerChromeMod), colors = buildFormDatePickerColors(highlightColor, calendarBg, wheelTextColor))
+            }
             LaunchedEffect(datePickerState.selectedDateMillis) {
                 val millis = datePickerState.selectedDateMillis
                 if (millis != null && validateDate(millis)) {
@@ -7029,7 +8144,12 @@ private fun FormInputDateBlock(
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    Text(text = displayText, fontSize = 14.sp, color = buttonTextColor)
+                    // SPEC — honor time_text_size on the displayed time (time/datetime modes).
+                    Text(
+                        text = displayText,
+                        fontSize = (if (effectiveMode == "time" || effectiveMode == "datetime") (block.field_config?.get("time_text_size") as? Number)?.toDouble() else null)?.sp ?: 14.sp,
+                        color = buttonTextColor,
+                    )
                     // SPEC-401-A R49 (Lens A #4) \u2014 use effectiveMode for icon.
                     Text(text = when (effectiveMode) {
                         "date" -> "\uD83D\uDCC5"
@@ -7047,7 +8167,7 @@ private fun FormInputDateBlock(
             Text(
                 text = msg,
                 fontSize = 12.sp,
-                color = MaterialTheme.colorScheme.error,
+                color = block.field_style?.error_text_color?.let { StyleEngine.parseColor(it) } ?: MaterialTheme.colorScheme.error,
                 modifier = Modifier.padding(top = 4.dp),
             )
         }
@@ -7065,6 +8185,8 @@ private fun FormInputDateBlock(
     // Material3 DatePickerDialog
     if (showDatePicker) {
         val datePickerState = rememberDatePickerState()
+        ForcedPickerScheme(forcePickerDark) {
+        val datePickerColors = buildFormDatePickerColors(highlightColor, calendarBg, wheelTextColor)
         DatePickerDialog(
             onDismissRequest = { showDatePicker = false },
             confirmButton = {
@@ -7093,11 +8215,18 @@ private fun FormInputDateBlock(
         ) {
             DatePicker(state = datePickerState, colors = datePickerColors)
         }
+        }
     }
 
     // Material3 TimePickerDialog (using AlertDialog wrapper)
     if (showTimePicker) {
-        val timePickerState = rememberTimePickerState()
+        // SPEC — honor time_format: "24h" → 24-hour columns; "12h" → 12-hour + AM/PM;
+        // unset → follow device locale (matches iOS, which follows locale for both the
+        // wheel and the display text).
+        val is24 = (block.field_config?.get("time_format") as? String)?.lowercase()?.let { it == "24h" }
+            ?: android.text.format.DateFormat.is24HourFormat(LocalContext.current)
+        val timePickerState = rememberTimePickerState(is24Hour = is24)
+        ForcedPickerScheme(forcePickerDark) {
         androidx.compose.material3.AlertDialog(
             onDismissRequest = { showTimePicker = false },
             confirmButton = {
@@ -7157,6 +8286,7 @@ private fun FormInputDateBlock(
                 }
             },
         )
+        }
     }
 }
 
@@ -7251,29 +8381,40 @@ private fun FormInputSelectBlock(
         ?: block.active_color
         ?: (ai.appdna.sdk.AppDNA.brandAccentHex ?: "#6366F1")
     val fillCol = StyleEngine.parseColor(accentHex)
+    // Legacy corner radius — used by the GRID renderer (unchanged; ignores
+    // option_corner_radius so grid stays isolated, matching iOS gridSelectView + preview grid).
     val cornerR = (block.field_style?.corner_radius ?: 10.0).dp
+    // Select v2 — STACKED option card corner: option_corner_radius wins, else legacy, else 10.
+    val optionCornerR = (block.field_style?.option_corner_radius ?: block.field_style?.corner_radius ?: 10.0).dp
+    // Select v2 — per-option styling extras (Mrozu QA).
+    val optionFontFamily = block.field_style?.option_font_family?.let { ai.appdna.sdk.core.FontResolver.resolve(it) }
+    // Default TRUE = full wrap (preserves prior native behavior + the Mrozu ask that
+    // long option text stays fully visible). option_text_wrap=false opts into truncation.
+    val optionTextWrap = block.field_style?.option_text_wrap ?: true
+    val optionImageScale = block.field_style?.option_image_scale ?: "contain"
+    // "cover" crops/fills; "contain"/"fit" fit the whole image inside so an oversized image is not cropped.
+    val optionImageContentScale = if (optionImageScale == "cover") ContentScale.Crop else ContentScale.Fit
+    // checkmark_color decouples the indicator tint from the accent/fill; falls back to fillCol when unset.
+    val checkmarkCol = block.field_style?.checkmark_color?.let { StyleEngine.parseColor(it) } ?: fillCol
     val cfgOptBg = (cfg?.get("bg_color") as? String)?.let { StyleEngine.parseColor(it) }
     val cfgOptBorder = (cfg?.get("border_color") as? String)?.let { StyleEngine.parseColor(it) }
     val cfgSelectedBg = (cfg?.get("selected_bg_color") as? String)?.let { StyleEngine.parseColor(it) }
     val cfgSelectedText = (cfg?.get("selected_text_color") as? String)?.let { StyleEngine.parseColor(it) }
     val cfgOptText = (cfg?.get("text_color") as? String)?.let { StyleEngine.parseColor(it) }
+    val cfgSubtitleColor = (cfg?.get("subtitle_color") as? String)?.let { StyleEngine.parseColor(it) }
     // EPIC-1 Win 1 — honor authored `option_image_size` for per-option images (was hardcoded
     // 24dp stacked / 32dp grid → flags/icons squished, and ignored the console slider that iOS
     // already reads). Defaults match iOS: 32 stacked (FormInputBlockViews.swift:539), 40 grid (:871).
     val optImgSizeRaw = (cfg?.get("option_image_size") as? Number)?.toFloat()
-    // QA-R4 — match iOS FormInputBlockViews.swift:478-530 default
-    // (`Color.white.opacity(0.15)`) so unstyled options render as a thin
-    // frosted-glass card over the step gradient, NOT opaque black.
-    //
-    // ⚠ DO NOT change to `Color.Transparent` — it is a hidden footgun.
-    // Color.Transparent is `Color(0x00000000)` (alpha=0, RGB=0). Combining
-    // with the `.copy(alpha = bgOpacity)` multiplier below where bgOpacity
-    // defaults to `1.0f` produces `Color(0xFF000000)` = OPAQUE BLACK. The
-    // alpha-multiplication math at line ~5362 also now preserves the
-    // base color's alpha instead of overwriting it.
+    // Unstyled options fall back to fully transparent to match iOS
+    // (`Color.clear`) and the console preview ('transparent') — so an
+    // unstyled stacked/grid select shows the step gradient through the
+    // option, NOT a frosted-glass card. The `c.alpha * bgOpacity` multiply
+    // at the use sites preserves the base color's alpha, so a transparent
+    // base (alpha=0) stays transparent regardless of bgOpacity.
     val unselectedBg = cfgOptBg
         ?: block.field_style?.background_color?.let { StyleEngine.parseColor(it) }
-        ?: Color.White.copy(alpha = 0.15f)
+        ?: Color.Transparent
     val selectedBg = cfgSelectedBg ?: fillCol.copy(alpha = 0.15f)
     val unselectedBorder = cfgOptBorder
         ?: block.field_style?.border_color?.let { StyleEngine.parseColor(it) }
@@ -7290,6 +8431,10 @@ private fun FormInputSelectBlock(
     // EPIC-1 — selection animation glow ("glow"/"pulse"/"sparkle" → accent halo on the selected option).
     val selectionAnimation = (cfg?.get("selection_animation") as? String) ?: "none"
     val showRadio = selectionIndicator == "radio" || selectionIndicator == "both"
+    // Only thicken the selected border when the indicator mode actually draws a border
+    // highlight ("border"/"both"). In "radio"/"none" modes the selected option keeps the
+    // unselected border width — matches iOS + console preview.
+    val showBorderHighlight = selectionIndicator == "border" || selectionIndicator == "both"
     val radioPosition = (cfg?.get("radio_position") as? String) ?: "right"
     val radioOnLeft = radioPosition == "left" || radioPosition == "leading"
     // SPEC-419 pass-25 — radio_fill: "circle" (default), "checkmark", or an emoji glyph.
@@ -7299,6 +8444,17 @@ private fun FormInputSelectBlock(
     val selectedBorderW = ((cfg?.get("selected_border_width") as? Number)?.toDouble() ?: 2.0).dp
     val unselectedBorderW = ((cfg?.get("unselected_border_width") as? Number)?.toDouble() ?: 1.0).dp
     val bgOpacity = ((cfg?.get("background_opacity") as? Number)?.toDouble() ?: 1.0).toFloat().coerceIn(0f, 1f)
+    // blur_background: iOS stacked + grid selects apply `.ultraThinMaterial`
+    // (FormInputBlockViews.swift:~828 stacked & :~1205 grid). Android has no true
+    // backdrop blur, so mirror the ESTABLISHED approximation used by
+    // StyleEngine.applyBlockContainerStyle (StyleEngine.kt:354-358): a translucent
+    // white frosted veneer. At the option-card sites below we composite the option's
+    // base container color OVER this veneer (same layer order as StyleEngine — veneer
+    // behind, authored bg on top), so an unstyled/transparent option shows the frosted
+    // surface while an authored bg tints it. Without this, enabling "Blur BG" was
+    // silently dropped on Android (solid card only).
+    val useBlur = (cfg?.get("blur_background") as? Boolean) == true
+    val frostVeneer = Color.White.copy(alpha = 0.3f)
     val optionSpacingDp = ((cfg?.get("option_spacing") as? Number)?.toDouble() ?: 8.0).dp
     // SPEC-419 pass-15 #36 — block-level title/subtitle font defaults from field_config (iOS
     // FormInputBlockViews.swift:678-679, defaults 15/12); per-option size overrides these.
@@ -7317,6 +8473,10 @@ private fun FormInputSelectBlock(
         selectedValues = if (selectedValues.contains(value)) {
             selectedValues - value
         } else {
+            // Enforce the console-configured cap on the ADD path only;
+            // removing a selection must always work.
+            val maxSel = (cfg?.get("max_selections") as? Number)?.toInt()
+            if (maxSel != null && selectedValues.size >= maxSel) return
             selectedValues + value
         }
         inputValues[fieldId] = selectedValues.toList()
@@ -7379,9 +8539,10 @@ private fun FormInputSelectBlock(
                             if (isSelected) {
                                 option.selected_text_color?.let { StyleEngine.parseColor(it) }
                                     ?: option.subtitle_color?.let { StyleEngine.parseColor(it) }
+                                    ?: cfgSubtitleColor
                                     ?: base.copy(alpha = 0.65f)
                             } else {
-                                option.subtitle_color?.let { StyleEngine.parseColor(it) } ?: base.copy(alpha = 0.65f)
+                                option.subtitle_color?.let { StyleEngine.parseColor(it) } ?: cfgSubtitleColor ?: base.copy(alpha = 0.65f)
                             }
                         }
                         // SPEC-401-A R64 — single click target so TalkBack treats
@@ -7398,7 +8559,7 @@ private fun FormInputSelectBlock(
                                     if (isSelected && selectionAnimation != "none") {
                                         Modifier.shadow(
                                             elevation = 12.dp,
-                                            shape = RoundedCornerShape(cornerR),
+                                            shape = RoundedCornerShape(optionCornerR),
                                             clip = false,
                                             ambientColor = fillCol,
                                             spotColor = fillCol,
@@ -7425,7 +8586,7 @@ private fun FormInputSelectBlock(
                                         )
                                     }
                                 ),
-                            shape = RoundedCornerShape(cornerR),
+                            shape = RoundedCornerShape(optionCornerR),
                             colors = CardDefaults.cardColors(
                                 // QA-R4 — multiply alpha (not overwrite).
                                 // Old `.copy(alpha = bgOpacity)` turned a base
@@ -7434,11 +8595,13 @@ private fun FormInputSelectBlock(
                                 // fully opaque card. Multiplying preserves the
                                 // authored translucency: base 0.15 × 1.0 = 0.15.
                                 containerColor = (if (isSelected) optSelBg else optUnselBg).let { c ->
-                                    c.copy(alpha = c.alpha * bgOpacity)
+                                    val withOpacity = c.copy(alpha = c.alpha * bgOpacity)
+                                    // blur_background → frosted-glass approximation (iOS .ultraThinMaterial).
+                                    if (useBlur) withOpacity.compositeOver(frostVeneer) else withOpacity
                                 },
                             ),
                             border = androidx.compose.foundation.BorderStroke(
-                                if (isSelected) selectedBorderW else unselectedBorderW,
+                                if (isSelected && showBorderHighlight) selectedBorderW else unselectedBorderW,
                                 if (isSelected) optSelBorder else optUnselBorder,
                             ),
                         ) {
@@ -7447,7 +8610,7 @@ private fun FormInputSelectBlock(
                                 verticalAlignment = Alignment.CenterVertically,
                             ) {
                                 if (showRadio && radioOnLeft) {
-                                    SelectRadioIndicator(isSelected = isSelected, isMulti = isMulti, fillCol = fillCol, radioFill = radioFill)
+                                    SelectRadioIndicator(isSelected = isSelected, isMulti = isMulti, fillCol = checkmarkCol, radioFill = radioFill)
                                     Spacer(Modifier.width(8.dp))
                                 }
                                 // Per-option image (with optional selected/unselected variants).
@@ -7456,7 +8619,8 @@ private fun FormInputSelectBlock(
                                         ai.appdna.sdk.core.NetworkImage(
                                             url = url,
                                             modifier = Modifier.fillMaxSize(),
-                                            contentScale = ContentScale.Crop,
+                                            // Select v2 — option_image_scale (cover=Crop, contain/fit=Fit).
+                                            contentScale = optionImageContentScale,
                                         )
                                         // EPIC-1 — image overlay tint; selected uses selected_image_overlay_*
                                         // (falls back to base). Parity with iOS imageWithOverlay (FormInputBlockViews).
@@ -7479,6 +8643,7 @@ private fun FormInputSelectBlock(
                                         fontSize = 14.sp,
                                         color = optTitleColor,
                                         fontWeight = FontWeight.SemiBold,
+                                        fontFamily = optionFontFamily,
                                         modifier = Modifier.testTag("option.$oi.leading_text"),
                                     )
                                     Spacer(Modifier.width(8.dp))
@@ -7495,6 +8660,10 @@ private fun FormInputSelectBlock(
                                         // SPEC-419 pass-15 #36 — fall back to block-level default (not hardcoded 14).
                                         fontSize = (option.title_font_size?.toFloat() ?: defaultTitleSize).sp,
                                         color = optTitleColor,
+                                        // Select v2 — option_font_family + option_text_wrap (wrap fully vs single-line truncate).
+                                        fontFamily = optionFontFamily,
+                                        maxLines = if (optionTextWrap) Int.MAX_VALUE else 1,
+                                        overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
                                         fontWeight = option.title_font_weight?.let { wStr ->
                                             ai.appdna.sdk.core.FontResolver.fontWeight(wStr.toIntOrNull() ?: when (wStr.lowercase()) {
                                                 "thin" -> 100; "extralight", "ultralight" -> 200
@@ -7522,6 +8691,10 @@ private fun FormInputSelectBlock(
                                             // SPEC-419 pass-15 #36 — fall back to block-level default (not hardcoded 12).
                                             fontSize = (option.subtitle_font_size?.toFloat() ?: defaultSubtitleSize).sp,
                                             color = optSubtitleColor,
+                                            // Select v2 — option_font_family + option_text_wrap.
+                                            fontFamily = optionFontFamily,
+                                            maxLines = if (optionTextWrap) Int.MAX_VALUE else 1,
+                                            overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
                                         )
                                     }
                                 }
@@ -7532,12 +8705,13 @@ private fun FormInputSelectBlock(
                                         text = tt,
                                         fontSize = 12.sp,
                                         color = optSubtitleColor,
+                                        fontFamily = optionFontFamily,
                                         modifier = Modifier.testTag("option.$oi.trailing_text"),
                                     )
                                 }
                                 if (showRadio && !radioOnLeft) {
                                     Spacer(Modifier.width(8.dp))
-                                    SelectRadioIndicator(isSelected = isSelected, isMulti = isMulti, fillCol = fillCol, radioFill = radioFill)
+                                    SelectRadioIndicator(isSelected = isSelected, isMulti = isMulti, fillCol = checkmarkCol, radioFill = radioFill)
                                 }
                             }
                         }
@@ -7632,7 +8806,9 @@ private fun FormInputSelectBlock(
                                     colors = CardDefaults.cardColors(
                                         // QA-R4 — multiply alpha, same fix as stacked branch.
                                         containerColor = (if (isSelected) optSelBg else optUnselBg).let { c ->
-                                            c.copy(alpha = c.alpha * bgOpacity)
+                                            val withOpacity = c.copy(alpha = c.alpha * bgOpacity)
+                                            // blur_background → frosted-glass approximation (iOS .ultraThinMaterial), same as stacked.
+                                            if (useBlur) withOpacity.compositeOver(frostVeneer) else withOpacity
                                         },
                                     ),
                                     border = androidx.compose.foundation.BorderStroke(
@@ -7641,6 +8817,10 @@ private fun FormInputSelectBlock(
                                     ),
                                 ) {
                                     Box(modifier = Modifier.fillMaxWidth()) {
+                                        // Hoisted so both the inline option icon (below) and the
+                                        // toggle badge overlay can share the block-level defaults.
+                                        val defSelIcon = cfg?.get("selected_icon") as? String
+                                        val defUnselIcon = cfg?.get("unselected_icon") as? String
                                         Column(
                                             modifier = Modifier.fillMaxWidth().padding(12.dp),
                                             horizontalAlignment = cellHAlign,
@@ -7661,9 +8841,24 @@ private fun FormInputSelectBlock(
                                                 }
                                                 Spacer(Modifier.height(4.dp))
                                             }
+                                            // Drain2 parity — grid select now renders option.icon
+                                            // (emoji/glyph) with a selected/unselected swap, mirroring
+                                            // iOS gridSelectView (FormInputBlockViews.swift:1295-1306)
+                                            // and the console preview.
+                                            option.icon?.takeIf { it.isNotEmpty() }?.let { icon ->
+                                                val resolvedIcon = if (isSelected) (option.selected_icon ?: defSelIcon ?: icon)
+                                                                   else (option.unselected_icon ?: defUnselIcon ?: icon)
+                                                Text(
+                                                    text = resolvedIcon,
+                                                    fontSize = 22.sp,
+                                                    color = if (isSelected) optSelText else textCol,
+                                                )
+                                                Spacer(Modifier.height(4.dp))
+                                            }
                                             Text(
                                                 text = option.label,
-                                                fontSize = (option.title_font_size ?: 14.0).sp,
+                                                // Grid honors block-level title default (0.85 factor, parity with iOS gridSelectView + preview).
+                                                fontSize = (option.title_font_size?.toFloat() ?: defaultTitleSize * 0.85f).sp,
                                                 color = optTitleColor,
                                                 fontWeight = option.title_font_weight?.let { wStr ->
                                                     ai.appdna.sdk.core.FontResolver.fontWeight(wStr.toIntOrNull() ?: when (wStr.lowercase()) {
@@ -7679,9 +8874,14 @@ private fun FormInputSelectBlock(
                                             option.subtitle?.takeIf { it.isNotBlank() }?.let { subtitle ->
                                                 Text(
                                                     text = subtitle,
-                                                    fontSize = (option.subtitle_font_size ?: 12.0).sp,
+                                                    fontSize = (option.subtitle_font_size?.toFloat() ?: defaultSubtitleSize).sp,
+                                                    // Drain2 parity — derive the default subtitle color from the
+                                                    // authored step text color (textCol), not M3 onSurface which
+                                                    // adapts to the host theme and goes near-black on a dark step
+                                                    // bg. Mirrors iOS grid (textCol.opacity(0.65)) + preview (a6).
                                                     color = option.subtitle_color?.let { StyleEngine.parseColor(it) }
-                                                        ?: MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
+                                                        ?: cfgSubtitleColor
+                                                        ?: (if (textCol == Color.Unspecified) Color.White else textCol).copy(alpha = 0.65f),
                                                     textAlign = cellTextAlign,
                                                 )
                                             }
@@ -7691,8 +8891,7 @@ private fun FormInputSelectBlock(
                                         // and selected/unselected bg+fg colors (was hardcoded TopEnd,
                                         // 12sp, no bg). Mirrors iOS gridSelectView
                                         // (FormInputBlockViews.swift:1003-1149).
-                                        val defSelIcon = cfg?.get("selected_icon") as? String
-                                        val defUnselIcon = cfg?.get("unselected_icon") as? String
+                                        // defSelIcon/defUnselIcon hoisted above the Column.
                                         val showToggleIcon = (cfg?.get("show_toggle_icon") as? Boolean) ?: (defSelIcon != null)
                                         if (showToggleIcon) {
                                             val toggleAlign = when (cfg?.get("toggle_icon_position") as? String) {
@@ -7733,18 +8932,8 @@ private fun FormInputSelectBlock(
                             repeat(gridCols - row.size) { Spacer(Modifier.weight(1f)) }
                         }
                     }
-                    // EPIC-1 / SPEC-419 pass-13 — tooltip below the grid (was ignored on
-                    // Android). Mirrors iOS gridSelectView (FormInputBlockViews.swift:1178-1188).
-                    (cfg?.get("tooltip_text") as? String)?.takeIf { it.isNotBlank() }?.let { tip ->
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(6.dp),
-                            modifier = Modifier.padding(top = 4.dp),
-                        ) {
-                            Text("ⓘ", fontSize = 12.sp, color = textCol.copy(alpha = 0.5f))
-                            Text(tip, fontSize = 12.sp, color = textCol.copy(alpha = 0.5f))
-                        }
-                    }
+                    // Tooltip is rendered once by the outer grid-scoped block (resolveIcon-aware);
+                    // the duplicate inner render was removed (pass-16) to match iOS's single tooltip.
                 }
             }
             "image_tiles" -> {
@@ -7825,7 +9014,7 @@ private fun FormInputSelectBlock(
                                             fontWeight = FontWeight.SemiBold,
                                         )
                                         option.subtitle?.takeIf { it.isNotBlank() }?.let { sub ->
-                                            Text(text = sub, color = Color.White.copy(alpha = 0.85f), fontSize = 12.sp)
+                                            Text(text = sub, color = Color.White.copy(alpha = 0.85f), fontSize = (option.subtitle_font_size ?: 12.0).sp)
                                         }
                                     }
                                 }
@@ -7935,12 +9124,16 @@ private fun FormInputSelectBlock(
                         modifier = Modifier.fillMaxWidth(),
                         shape = RoundedCornerShape((block.field_style?.corner_radius ?: 8.0).dp),
                         border = androidx.compose.foundation.BorderStroke(
-                            1.dp,
+                            // honor field_style.border_width (0 = no outline), matching iOS fieldBorderWidth
+                            (if ((block.block_style?.border_width ?: 0.0) > 0) 0.0 else (block.field_style?.border_width ?: 1.0)).dp,
                             StyleEngine.parseColor(block.field_style?.border_color ?: "#D1D5DB"),
                         ),
                         // SPEC-401-A R44 — theme-adaptive content color (was Color.DarkGray
-                // — invisible on dark surface in dark mode).
-                colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.onSurface),
+                // — invisible on dark surface in dark mode). Container honors field_style.background_color (iOS parity).
+                colors = ButtonDefaults.outlinedButtonColors(
+                    containerColor = block.field_style?.background_color?.let { StyleEngine.parseColor(it) } ?: Color.Transparent,
+                    contentColor = MaterialTheme.colorScheme.onSurface,
+                ),
                     ) {
                         Row(
                             modifier = Modifier.fillMaxWidth(),
@@ -7986,20 +9179,30 @@ private fun FormInputSelectBlock(
         // stacked / dropdown matching iOS FormInputBlockViews.swift:769-770
         // + 926-937. Reads field_config.tooltip_text + tooltip_icon.
         // Renders 12sp caption with optional 12dp leading icon at 50% alpha.
+        // Audit pass-8 — scope the tooltip caption to displayStyle=="grid" to
+        // match iOS, which renders it only inside gridSelectView
+        // (FormInputBlockViews.swift:1180/1349), and the editor, which exposes
+        // tooltip_text only in the grid section (StepContentEditor.tsx:6941).
+        // Previously this rendered for every display style (dropdown/stacked/
+        // list/bubble/image_tiles), so a tooltip on a non-grid select showed on
+        // Android but not iOS.
         val tooltipText = block.field_config?.get("tooltip_text") as? String
         val tooltipIconRef = block.field_config?.get("tooltip_icon") as? String
-        if (!tooltipText.isNullOrBlank()) {
+        if (!tooltipText.isNullOrBlank() && displayStyle == "grid") {
             val captionColor = StyleEngine.parseColor(block.field_style?.text_color ?: "#1A1A1A").copy(alpha = 0.5f)
             Row(
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(4.dp),
                 modifier = Modifier.padding(top = 4.dp),
             ) {
-                if (!tooltipIconRef.isNullOrBlank()) {
-                    val iconRef = ai.appdna.sdk.core.resolveIcon(tooltipIconRef)
-                    if (iconRef != null) {
-                        ai.appdna.sdk.core.IconView(ref = iconRef, defaultSize = 12f)
-                    }
+                // Match iOS, which defaults the tooltip icon to "info.circle" and
+                // always renders it when tooltip_text is present
+                // (FormInputBlockViews.swift). Resolve the authored icon or fall
+                // back to the "info" glyph so the ℹ shown in the console preview
+                // renders on-device even without an explicit tooltip_icon.
+                val iconRef = ai.appdna.sdk.core.resolveIcon(tooltipIconRef ?: "info")
+                if (iconRef != null) {
+                    ai.appdna.sdk.core.IconView(ref = iconRef, defaultSize = 12f)
                 }
                 Text(
                     text = tooltipText,
@@ -8115,7 +9318,10 @@ private fun FormInputSliderBlock(
             valueRange = minVal..maxVal,
             steps = stepCount,
             colors = SliderDefaults.colors(
-                thumbColor = fillCol,
+                // Mrozu QA: honor authored thumb_color; else default to a WHITE thumb
+                // to match iOS FormInputSliderBlock + the console preview (previously
+                // fell back to the accent fillCol, diverging from both).
+                thumbColor = block.field_style?.thumb_color?.let { StyleEngine.parseColor(it) } ?: StyleEngine.parseColor("#FFFFFF"),
                 activeTrackColor = fillCol,
                 inactiveTrackColor = trackCol,
             ),
@@ -8136,10 +9342,23 @@ private fun FormInputToggleBlock(
 ) {
     val fieldId = block.field_id ?: block.id
     val onColor = StyleEngine.parseColor(block.field_style?.toggle_on_color ?: (ai.appdna.sdk.AppDNA.brandAccentHex ?: "#6366F1"))
+    // Mrozu QA (2026-08-03): toggle_off_color + thumb_color were decoded but only on-color applied.
+    // Honor all four Switch colors (parity with iOS custom toggle).
+    val offColor = StyleEngine.parseColor(block.field_style?.toggle_off_color ?: "#E5E5EA")
+    val thumbColor = StyleEngine.parseColor(block.field_style?.thumb_color ?: "#FFFFFF")
     val label = block.field_label ?: block.toggle_label ?: ""
     // OB-6 audit follow-up — restore saved value on back nav.
+    // Audit pass-8 — the input_toggle editor writes 'Default On' to
+    // field_config.default_value (StepContentEditor.tsx:6950) and the preview
+    // reads cfg.default_value (OnboardingStepPreview.tsx:3721), but this init read
+    // only block.toggle_default (never field_config.default_value), so the
+    // default-on setting was silently dropped. Fall back to field_config.default_value.
     var checked by remember {
-        mutableStateOf((inputValues[fieldId] as? Boolean) ?: (block.toggle_default ?: false))
+        mutableStateOf(
+            (inputValues[fieldId] as? Boolean)
+                ?: (block.field_config?.get("default_value") as? Boolean)
+                ?: (block.toggle_default ?: false)
+        )
     }
 
     // SPEC-401-A R60 (Lens C P2 #1) — wrap label+Switch in `toggleable` so
@@ -8170,7 +9389,97 @@ private fun FormInputToggleBlock(
             // toggleable owns the click + a11y semantics; Switch is a
             // presentational visual.
             onCheckedChange = null,
-            colors = SwitchDefaults.colors(checkedTrackColor = onColor),
+            colors = SwitchDefaults.colors(
+                checkedTrackColor = onColor,
+                uncheckedTrackColor = offColor,
+                checkedThumbColor = thumbColor,
+                uncheckedThumbColor = thumbColor,
+            ),
+        )
+    }
+
+    LaunchedEffect(Unit) {
+        inputValues[fieldId] = checked
+    }
+}
+
+/**
+ * Mrozu QA (2026-08-04, Flo s1) — standalone consent / agreement element: a tappable checkbox + a
+ * rich label whose `[terms](url)` / `[privacy](url)` markdown links open a browser via [URLSafety].
+ * Persists a Boolean to `inputValues[field_id]`; when `field_required` is set, [RequiredFieldGate]
+ * gates the CTA until checked. All authoring config travels through `field_config` (byte-identical
+ * keys with the iOS `AgreementBlock` and the console editor). Mirrors [FormInputToggleBlock] +
+ * [RichTextBlock] link handling.
+ */
+@Composable
+private fun AgreementBlock(
+    block: ContentBlock,
+    inputValues: MutableMap<String, Any>,
+) {
+    val fieldId = block.field_id ?: block.id
+    val checkboxColor = StyleEngine.parseColor((block.field_config?.get("checkbox_color") as? String) ?: (ai.appdna.sdk.AppDNA.brandAccentHex ?: "#6366F1"))
+    val borderColor = StyleEngine.parseColor((block.field_config?.get("checkbox_border_color") as? String) ?: "#C7C7CC")
+    val checkmarkColor = StyleEngine.parseColor((block.field_config?.get("checkmark_color") as? String) ?: "#FFFFFF")
+    val textColor = StyleEngine.parseColor((block.field_config?.get("text_color") as? String) ?: "#8E8E93")
+    val linkColor = StyleEngine.parseColor((block.field_config?.get("link_color") as? String) ?: (ai.appdna.sdk.AppDNA.brandAccentHex ?: "#6366F1"))
+    val agreementText = (block.field_config?.get("agreement_text") as? String)
+        ?: block.text
+        ?: "I agree to the [Terms of Service](https://example.com/terms) and [Privacy Policy](https://example.com/privacy)."
+    val context = LocalContext.current
+
+    var checked by remember {
+        mutableStateOf((inputValues[fieldId] as? Boolean) ?: ((block.field_config?.get("default_checked") as? Boolean) ?: false))
+    }
+
+    val baseTextStyle = TextStyle(fontSize = 13.sp, color = textColor)
+    val annotatedString = parseMarkdownToAnnotatedString(agreementText, baseTextStyle, linkColor)
+
+    androidx.compose.foundation.layout.Row(
+        modifier = Modifier.fillMaxWidth(),
+        verticalAlignment = Alignment.Top,
+    ) {
+        androidx.compose.foundation.layout.Box(
+            modifier = Modifier
+                .padding(top = 1.dp, end = 10.dp)
+                .size(22.dp)
+                .clip(RoundedCornerShape(6.dp))
+                .background(if (checked) checkboxColor else Color.Transparent)
+                .border(1.5.dp, if (checked) checkboxColor else borderColor, RoundedCornerShape(6.dp))
+                .toggleable(
+                    value = checked,
+                    role = androidx.compose.ui.semantics.Role.Checkbox,
+                    onValueChange = {
+                        checked = it
+                        inputValues[fieldId] = it
+                    },
+                ),
+            contentAlignment = Alignment.Center,
+        ) {
+            if (checked) {
+                androidx.compose.material3.Icon(
+                    imageVector = Icons.Filled.Check,
+                    contentDescription = null,
+                    tint = checkmarkColor,
+                    modifier = Modifier.size(15.dp),
+                )
+            }
+        }
+        ClickableText(
+            text = annotatedString,
+            style = baseTextStyle,
+            modifier = Modifier.weight(1f),
+            onClick = { offset ->
+                annotatedString.getStringAnnotations(tag = "URL", start = offset, end = offset)
+                    .firstOrNull()?.let { annotation ->
+                        ai.appdna.sdk.core.URLSafety.sanitized(annotation.item, context)?.let { uri ->
+                            try {
+                                context.startActivity(Intent(Intent.ACTION_VIEW, uri))
+                            } catch (_: Exception) {
+                                // No browser — silently ignore
+                            }
+                        }
+                    }
+            },
         )
     }
 
@@ -8347,27 +9656,33 @@ private fun FormInputRatingBlock(
     inputValues: MutableMap<String, Any>,
 ) {
     val fieldId = block.field_id ?: block.id
-    val maxStars = block.max_stars ?: 5
-    val starSize = (block.star_size ?: 32.0).sp
-    // SPEC-401-A B2 P1 — DTO field-name + priority parity with iOS.
-    // iOS reads `filled_color ?? field_style.fill_color`, Android was
-    // reversed (field_style.fill_color first). Console can author either
-    // — sample author writes `filled_color` so iOS picked it up but
-    // Android ignored it whenever both were set.
-    // SPEC-401-A R56 (Lens A R56 #1, P1) — restore iOS canonical priority
-    // chain `filled_color ?? field_style.fill_color`, `empty_color ?? "#D1D5DB"`
-    // (FormInputBlockViews.swift:1095-1096). Sibling content-block RatingBlock
-    // already uses this; only the form-input variant was broken — author-set
-    // `filled_color` / `empty_color` were silently ignored.
-    val filledCol = StyleEngine.parseColor(block.filled_color ?: block.active_rating_color ?: block.field_style?.fill_color ?: "#FBBF24")
-    val emptyCol = StyleEngine.parseColor(block.empty_color ?: block.inactive_rating_color ?: "#D1D5DB")
-    val allowHalf = block.allow_half == true
+    // Audit pass-8 — the input_rating editor (StepContentEditor.tsx:6963-6977)
+    // writes max_stars/star_size/filled_color/empty_color/allow_half to
+    // field_config, and the preview (OnboardingStepPreview.tsx:3765-3767) + iOS
+    // (FormInputBlockViews.swift:1699-1706) read field_config FIRST. Android was
+    // reading only the top-level keys (never populated for input_rating), so all
+    // 5 authored rating settings were silently dropped. Read field_config first,
+    // then the existing top-level fallbacks.
+    val fc = block.field_config
+    val maxStars = ((fc?.get("max_stars") as? Number)?.toInt() ?: block.max_stars ?: 5).coerceAtLeast(1)
+    val starSize = ((fc?.get("star_size") as? Number)?.toDouble() ?: block.star_size ?: 32.0).sp
+    // SPEC-401-A B2 P1 / R56 — DTO field-name + priority parity with iOS
+    // (`filled_color ?? field_style.fill_color`, `empty_color ?? "#D1D5DB"`,
+    // FormInputBlockViews.swift:1095-1096), now with field_config taking highest
+    // precedence to match the editor/preview/iOS.
+    val filledCol = StyleEngine.parseColor(
+        (fc?.get("filled_color") as? String) ?: block.filled_color ?: block.active_rating_color ?: block.field_style?.fill_color ?: "#FBBF24"
+    )
+    val emptyCol = StyleEngine.parseColor(
+        (fc?.get("empty_color") as? String) ?: block.empty_color ?: block.inactive_rating_color ?: "#D1D5DB"
+    )
+    val allowHalf = (fc?.get("allow_half") as? Boolean) ?: (block.allow_half == true)
     // SPEC-401-A — promote selectedRating to Double for half-star round-trip.
     // Mirrors iOS FormInputBlockViews.swift:1106 which already supports
     // half-stars when block.allow_half is true.
     var selectedRating by remember {
         mutableStateOf(
-            (inputValues[fieldId] as? Number)?.toDouble() ?: (block.default_value ?: 0.0)
+            (inputValues[fieldId] as? Number)?.toDouble() ?: (block.default_rating ?: block.default_value ?: 0.0)
         )
     }
 
@@ -8438,6 +9753,9 @@ private fun FormInputRangeSliderBlock(
     // SPEC-401-A R55 (Lens C R55 #3, P3) — inactive track color from
     // field_style.track_color (or block.track_color) per iOS.
     val trackCol = StyleEngine.parseColor(block.field_style?.track_color ?: block.track_color ?: "#E5E7EB")
+    // Drain2 parity — range slider thumbs honor field_style.thumb_color
+    // (the editor exposes it; the single FormInputSliderBlock already honors it).
+    val rangeThumbColor = block.field_style?.thumb_color?.let { StyleEngine.parseColor(it) } ?: StyleEngine.parseColor("#FFFFFF")
     // OB-6 audit follow-up — restore saved range on back nav.
     // Saved range is stored as Map<"min","max"> under fieldId per the
     // write sites below (Slider onValueChange + LaunchedEffect).
@@ -8505,7 +9823,7 @@ private fun FormInputRangeSliderBlock(
                 },
                 valueRange = minVal..maxVal,
                 steps = stepCount,
-                colors = SliderDefaults.colors(thumbColor = fillCol, activeTrackColor = fillCol, inactiveTrackColor = trackCol),
+                colors = SliderDefaults.colors(thumbColor = rangeThumbColor, activeTrackColor = fillCol, inactiveTrackColor = trackCol),
                 modifier = Modifier.weight(1f),
             )
         }
@@ -8529,7 +9847,7 @@ private fun FormInputRangeSliderBlock(
                 },
                 valueRange = minVal..maxVal,
                 steps = stepCount,
-                colors = SliderDefaults.colors(thumbColor = fillCol, activeTrackColor = fillCol, inactiveTrackColor = trackCol),
+                colors = SliderDefaults.colors(thumbColor = rangeThumbColor, activeTrackColor = fillCol, inactiveTrackColor = trackCol),
                 modifier = Modifier.weight(1f),
             )
         }
@@ -8549,7 +9867,9 @@ private fun FormInputChipsBlock(
     val fieldId = block.field_id ?: block.id
     val options = block.field_options ?: emptyList()
     val fillCol = StyleEngine.parseColor(block.field_style?.fill_color ?: block.active_color ?: (ai.appdna.sdk.AppDNA.brandAccentHex ?: "#6366F1"))
-    val maxSelections = (block.field_config?.get("max_selections") as? Number)?.toInt()
+    // Console writes the cap as `max_chips` (Max Chips slider); `max_selections`
+    // kept as a fallback for older/imported configs.
+    val maxSelections = (block.field_config?.get("max_chips") as? Number)?.toInt() ?: (block.field_config?.get("max_selections") as? Number)?.toInt()
     // OB-6 audit follow-up — restore saved chips selection on back nav.
     var selectedValues by remember {
         mutableStateOf(

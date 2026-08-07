@@ -1257,6 +1257,7 @@ internal object OnboardingConfigParser {
             bg_color = bm["bg_color"] as? String,
             text_color = bm["text_color"] as? String,
             button_corner_radius = (bm["button_corner_radius"] as? Number)?.toDouble(),
+            // Mrozu (Duolingo s20/s22) — sound_button remote audio clip.
             spacer_height = (bm["spacer_height"] as? Number)?.toDouble(),
             items = (bm["items"] as? List<*>)?.filterIsInstance<String>()?.toImmutableList(),
             list_style = bm["list_style"] as? String,
@@ -1325,6 +1326,7 @@ internal object OnboardingConfigParser {
                         border_width = (pm["border_width"] as? Number)?.toFloat(),
                         corner_radius = (pm["corner_radius"] as? Number)?.toFloat(),
                         icon_style = pm["icon_style"] as? String,
+                        icon_url = pm["icon_url"] as? String,
                     )
                 } else null
             }?.toImmutableList(),
@@ -1333,6 +1335,7 @@ internal object OnboardingConfigParser {
             spacing = (bm["spacing"] as? Number)?.toDouble(),
             show_divider = bm["show_divider"] as? Boolean,
             divider_text = bm["divider_text"] as? String,
+            // Social-Login styling v2
             // SPEC-089d: countdown_timer fields
             target_type = bm["target_type"] as? String,
             duration_seconds = (bm["duration_seconds"] as? Number)?.toInt(),
@@ -1542,9 +1545,41 @@ internal object OnboardingConfigParser {
                 val particleSpeed = bm["particle_speed"] as? String
                 // SPEC-419 pass-15 #10 — countdown_timer `timer_variant` authored top-level by editor; fold for the renderer.
                 val timerVariant = bm["timer_variant"] as? String
+                // Progress/Loading v2 — `label_placement` (progress_bar) + `loading_text_align`
+                // (animated_loading) authored top-level by the console editor; fold into
+                // field_config since Android's top-level ContentBlock is budget-locked. iOS
+                // reads them as top-level Codable fields.
+                val labelPlacement = bm["label_placement"] as? String
+                val loadingTextAlign = bm["loading_text_align"] as? String
+                // SPEC-401-A — date_wheel_picker selection-line color/stroke authored
+                // top-level by the console editor + preview (block.wheel_line_color /
+                // wheel_line_stroke_width) and read as top-level Codable fields by iOS
+                // (ContentBlockStandaloneViews.swift:1335-1339). Android's top-level
+                // ContentBlock is budget-locked at the JVM 255-arg limit, so fold both
+                // into field_config for the DateWheelPickerBlock renderer to read.
+                val wheelLineColor = bm["wheel_line_color"] as? String
+                val wheelLineStrokeWidth = (bm["wheel_line_stroke_width"] as? Number)?.toDouble()
+                // ContentBlock 255-arg budget — these 10 were removed from the Android ContentBlock
+                // ctor (was 255→245) and are now read from field_config by the renderer. Console
+                // authors them top-level + iOS reads them top-level; fold into field_config here.
+                val audioUrl = bm["audio_url"] as? String
+                val buttonTextAlign = bm["button_text_align"] as? String
+                val dividerPosition = bm["divider_position"] as? String
+                val dotShape = bm["dot_shape"] as? String
+                val galleryAutoscroll = bm["gallery_autoscroll"] as? Boolean
+                val galleryAutoscrollSpeed = (bm["gallery_autoscroll_speed"] as? Number)?.toDouble()
+                val galleryFill = bm["gallery_fill"] as? Boolean
+                val particleMulticolor = bm["particle_multicolor"] as? Boolean
+                val timeFormat = bm["time_format"] as? String
+                val timeTextSize = (bm["time_text_size"] as? Number)?.toDouble()
                 if (labelFormat == null && customLabel == null && videoControls == null &&
                     particleColor == null && particleOpacity == null && particleSpeed == null &&
-                    timerVariant == null) {
+                    timerVariant == null && labelPlacement == null && loadingTextAlign == null &&
+                    wheelLineColor == null && wheelLineStrokeWidth == null &&
+                    audioUrl == null && buttonTextAlign == null && dividerPosition == null &&
+                    dotShape == null && galleryAutoscroll == null && galleryAutoscrollSpeed == null &&
+                    galleryFill == null && particleMulticolor == null && timeFormat == null &&
+                    timeTextSize == null) {
                     base
                 } else {
                     val merged = base ?: mutableMapOf()
@@ -1555,6 +1590,20 @@ internal object OnboardingConfigParser {
                     if (particleOpacity != null) merged.putIfAbsent("particle_opacity", particleOpacity)
                     if (particleSpeed != null) merged.putIfAbsent("particle_speed", particleSpeed)
                     if (timerVariant != null) merged.putIfAbsent("timer_variant", timerVariant)
+                    if (labelPlacement != null) merged.putIfAbsent("label_placement", labelPlacement)
+                    if (loadingTextAlign != null) merged.putIfAbsent("loading_text_align", loadingTextAlign)
+                    if (wheelLineColor != null) merged.putIfAbsent("wheel_line_color", wheelLineColor)
+                    if (wheelLineStrokeWidth != null) merged.putIfAbsent("wheel_line_stroke_width", wheelLineStrokeWidth)
+                    if (audioUrl != null) merged.putIfAbsent("audio_url", audioUrl)
+                    if (buttonTextAlign != null) merged.putIfAbsent("button_text_align", buttonTextAlign)
+                    if (dividerPosition != null) merged.putIfAbsent("divider_position", dividerPosition)
+                    if (dotShape != null) merged.putIfAbsent("dot_shape", dotShape)
+                    if (galleryAutoscroll != null) merged.putIfAbsent("gallery_autoscroll", galleryAutoscroll)
+                    if (galleryAutoscrollSpeed != null) merged.putIfAbsent("gallery_autoscroll_speed", galleryAutoscrollSpeed)
+                    if (galleryFill != null) merged.putIfAbsent("gallery_fill", galleryFill)
+                    if (particleMulticolor != null) merged.putIfAbsent("particle_multicolor", particleMulticolor)
+                    if (timeFormat != null) merged.putIfAbsent("time_format", timeFormat)
+                    if (timeTextSize != null) merged.putIfAbsent("time_text_size", timeTextSize)
                     merged
                 }
             },
@@ -1574,6 +1623,8 @@ internal object OnboardingConfigParser {
                     delay_ms = (ea["delay_ms"] as? Number)?.toInt() ?: 0,
                     easing = ea["easing"] as? String ?: "ease_out",
                     spring_damping = (ea["spring_damping"] as? Number)?.toDouble(),
+                    animation_delay_ms = (ea["animation_delay_ms"] as? Number)?.toInt() ?: 0,
+                    animation_order = (ea["animation_order"] as? Number)?.toInt(),
                 )
             },
             pressed_style = (bm["pressed_style"] as? Map<String, Any>)?.let { ps ->
@@ -1813,6 +1864,12 @@ internal object OnboardingConfigParser {
                     height = fs["height"] as? String,
                     font_weight = fs["font_weight"] as? String,
                     focused_background_color = fs["focused_background_color"] as? String,
+                    // Select v2 (Mrozu QA) — per-option styling extras.
+                    option_font_family = fs["option_font_family"] as? String,
+                    option_corner_radius = (fs["option_corner_radius"] as? Number)?.toDouble(),
+                    option_text_wrap = fs["option_text_wrap"] as? Boolean,
+                    option_image_scale = fs["option_image_scale"] as? String,
+                    checkmark_color = fs["checkmark_color"] as? String,
                 )
             },
 

@@ -523,6 +523,16 @@ internal data class PostPurchaseOverlayState(
     val allowDismiss: Boolean = true,
 )
 
+// Parity: maps a console cta_font_weight string (normal | medium | semibold | bold)
+// to a Compose FontWeight. Mirrors iOS resolveCTAFontWeight semantics; default SemiBold.
+fun resolveCtaWeight(w: String?): FontWeight = when (w?.lowercase()) {
+    "normal", "regular" -> FontWeight.Normal
+    "medium" -> FontWeight.Medium
+    "bold" -> FontWeight.Bold
+    "semibold" -> FontWeight.SemiBold
+    else -> FontWeight.SemiBold
+}
+
 @Composable
 fun PaywallScreen(
     config: PaywallConfig,
@@ -563,6 +573,13 @@ fun PaywallScreen(
             if (pending != null && pending != postPurchaseOverlay) {
                 postPurchaseOverlay = pending
                 PaywallActivity.postPurchaseOverlay = null
+                // A drained failure overlay (retry / show_error) means the purchase
+                // did NOT complete — re-enable the CTA so the user isn't stuck behind
+                // a permanently-disabled button. iOS resets in its failure observer;
+                // success overlays use other actions and are left untouched.
+                if (pending.action == "retry" || pending.action == "show_error") {
+                    isPurchasing = false
+                }
                 // Auto-dismiss after 4s when the overlay has no Retry CTA
                 // — without this, an error overlay shown via show_error
                 // (no retry) with allowDismiss=false leaves the user
@@ -856,6 +873,12 @@ fun PaywallScreen(
                 }
             }
 
+            // Footer padding — mirror iOS `.padding(.bottom, footer_padding ?? 8)`
+            // on the pinned bottom inset (PaywallRenderer.swift:245). Wrap the pinned
+            // CTA + legal + sticky-footer group so the configured gap sits below the
+            // whole group, composing with each block's own navigationBarsPadding and
+            // without touching the weighted scroll body above.
+            Column(modifier = Modifier.fillMaxWidth().padding(bottom = (config.layout.footer_padding ?: 8f).dp)) {
             // SPEC-419 Gap 7 — CTA pinned to the bottom zone: below the scroll
             // body (weight(1f)), above the pinned legal + sticky footer. Same
             // horizontal inset as the scrolled content. Mirrors iOS
@@ -936,6 +959,8 @@ fun PaywallScreen(
                 PaywallStickyFooter(
                     section = stickyFooterSection,
                     isPurchasing = isPurchasing,
+                    // Round-MZ — selected plan's per-plan cta_text overrides the footer label.
+                    selectedPlanCtaText = effectivePlans().firstOrNull { it.id == selectedPlanId }?.cta_text?.takeIf { it.isNotBlank() },
                     onCTATap = {
                         // PW-2 — top-level plans fallback (sticky footer path).
                         val plans = effectivePlans()
@@ -963,6 +988,7 @@ fun PaywallScreen(
                     loc = ::loc,
                 )
             }
+            } // end pinned bottom group (footer_padding wrapper)
         }
 
         // SPEC-085: Confetti overlay
@@ -1064,7 +1090,9 @@ fun PaywallScreen(
                                 Button(
                                     onClick = {
                                         // Re-fire purchase for currently-selected plan.
-                                        val plan = (config.plans ?: emptyList()).firstOrNull { it.id == selectedPlanId }
+                                        // Use effectivePlans() (sections OR top-level) like every
+                                        // other selected-plan lookup, so section-scoped plans retry.
+                                        val plan = effectivePlans().firstOrNull { it.id == selectedPlanId }
                                         postPurchaseOverlay = null
                                         plan?.let { onPlanSelected(it, emptyMap()) }
                                     },
@@ -1383,13 +1411,22 @@ private fun PaywallSectionView(
                 // .frame(maxHeight: 200)`. Was missing — paywall headers
                 // authored with `image_url` showed nothing on Android.
                 section.data?.image_url?.takeIf { it.isNotBlank() }?.let { url ->
-                    ai.appdna.sdk.core.NetworkImage(
-                        url = url,
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .heightIn(max = 200.dp),
-                        contentScale = androidx.compose.ui.layout.ContentScale.Fit,
-                    )
+                    // Round-MZ — honor image_alignment (leading|center|trailing) + image_max_height,
+                    // mirroring iOS HeaderSection.swift `.frame(maxHeight:).frame(maxWidth:.infinity,
+                    // alignment:)`. Box gives the image full width to align within; heightIn caps it.
+                    val imgAlignment = when (section.data?.image_alignment) {
+                        "leading" -> Alignment.CenterStart
+                        "trailing" -> Alignment.CenterEnd
+                        else -> Alignment.Center
+                    }
+                    val imgMaxHeight = (section.data?.image_max_height ?: 200f).dp
+                    Box(modifier = Modifier.fillMaxWidth(), contentAlignment = imgAlignment) {
+                        ai.appdna.sdk.core.NetworkImage(
+                            url = url,
+                            modifier = Modifier.heightIn(max = imgMaxHeight),
+                            contentScale = androidx.compose.ui.layout.ContentScale.Fit,
+                        )
+                    }
                     Spacer(Modifier.height(8.dp))
                 }
                 section.data?.title?.let {
@@ -1398,7 +1435,9 @@ private fun PaywallSectionView(
                     // `style.elements["title"].text_style` matching iOS
                     // HeaderSection.swift:10-15 precedence.
                     val titleStyle = StyleEngine.applyTextStyle(
-                        TextStyle(color = Color.White, fontWeight = FontWeight.Bold, fontSize = 28.sp, textAlign = TextAlign.Center),
+                        // Theme-adaptive default matching iOS HeaderSection `.primary` (black on light,
+                        // white on dark) — was hardcoded white, invisible on light paywalls.
+                        TextStyle(color = MaterialTheme.colorScheme.onSurface, fontWeight = FontWeight.Bold, fontSize = 28.sp, textAlign = TextAlign.Center),
                         section.data.title_style ?: section.style?.elements?.get("title")?.text_style
                     )
                     Text(
@@ -1413,7 +1452,9 @@ private fun PaywallSectionView(
                 section.data?.subtitle?.let {
                     Spacer(Modifier.height(8.dp))
                     val subtitleStyle = StyleEngine.applyTextStyle(
-                        TextStyle(color = Color.White.copy(alpha = 0.8f), fontSize = 16.sp, textAlign = TextAlign.Center),
+                        // Shared cross-platform default: muted grey #6B7280 (iOS uses the same),
+                        // legible on both light and dark backgrounds.
+                        TextStyle(color = Color(0xFF6B7280), fontSize = 16.sp, textAlign = TextAlign.Center),
                         section.data.subtitle_style ?: section.style?.elements?.get("subtitle")?.text_style
                     )
                     Text(
@@ -1463,7 +1504,17 @@ private fun PaywallSectionView(
             // Card styling from config
             val cardRadius = (section.data?.card_corner_radius ?: 12f).dp
             val cardPad = (section.data?.card_padding ?: 16f).dp
-            val cardGap = (section.data?.card_gap ?: 8f).dp
+            // Audit pass-8 — default the unauthored card_gap to 12 to match iOS'
+            // primary vertical-stack default (PaywallRenderer.swift:1698
+            // `cardStyle.cardGap ?? 12`) and the console/preview default
+            // (SectionContentEditor.tsx:385, PaywallPreview.tsx:458). Was 8f, so
+            // default vertical-stack cards sat tighter on Android than iOS/preview.
+            // (iOS grid/side-by-side use 8; the flat 12 default is the accepted
+            // parity tradeoff for the LOW-frequency multi-column layouts.)
+            val cardGap = (section.data?.card_gap ?: 12f).dp
+            // console card_height → minimum plan-card height. Null when unauthored so it
+            // never forces a floor. Mirrors iOS PlanCard `.frame(minHeight:)` + PaywallPreview minHeight.
+            val cardHeight = section.data?.card_height?.let { it.dp }
             val cardShape = RoundedCornerShape(cardRadius)
             // Mirror iOS PlanCard.swift:206-210 — accept Bool OR String enum
             // ("sm"/"md"/"lg"/"none") and derive elevation. String values
@@ -1484,7 +1535,11 @@ private fun PaywallSectionView(
             // Text styles
             val planNameStyle = StyleEngine.applyTextStyle(
                 TextStyle(fontWeight = FontWeight.SemiBold, color = Color.White, fontSize = 16.sp),
+                // Mirror iOS PlanCard.swift:22 (elements["plan_name"] ?? elements["label"]) — the
+                // console Style tab exposes plan-name under the 'label' element key (SECTION_ELEMENTS.plans),
+                // so without the 'label' fallback an authored plan-name style is silently dropped on Android.
                 section.style?.elements?.get("plan_name")?.text_style
+                    ?: section.style?.elements?.get("label")?.text_style
             )
             val priceStyle = StyleEngine.applyTextStyle(
                 TextStyle(fontWeight = FontWeight.Bold, color = Color.White, fontSize = 18.sp),
@@ -1494,17 +1549,56 @@ private fun PaywallSectionView(
                 TextStyle(fontSize = 13.sp, color = Color.White.copy(alpha = 0.7f)),
                 section.style?.elements?.get("period")?.text_style
             )
+            // Console Style tab exposes `trial_label`; apply its authored text style
+            // (mirrors priceStyle above). Color still resolved per selected/brand-accent
+            // logic at the Text call site.
+            // Base color = brand accent so an authored trial_label color wins when present
+            // (applyTextStyle overrides base color only when the element style sets one),
+            // matching iOS PlanCard + the console preview (getElementStyle spread after accent).
+            val trialStyle = StyleEngine.applyTextStyle(
+                TextStyle(fontSize = 12.sp, fontWeight = FontWeight.Medium, color = ai.appdna.sdk.AppDNA.brandAccentColor()),
+                section.style?.elements?.get("trial_label")?.text_style
+            )
 
             // Badge styling
-            val badgeBg = section.data?.badge_bg_color?.let { parseHexColor(it) } ?: Color(0xFF22C55E)
+            // Mrozu QA — default badge bg is the brand accent (matches iOS + the console editor
+            // default), not the hardcoded green. Other accent defaults in this file use the same
+            // accessor (e.g. selected-border/bg at :1595/:1597).
+            val badgeBg = section.data?.badge_bg_color?.let { parseHexColor(it) } ?: ai.appdna.sdk.AppDNA.brandAccentColor()
             val badgeTxt = section.data?.badge_text_color?.let { parseHexColor(it) } ?: Color.White
             val badgeFontSize = (section.data?.badge_font_size ?: 11f).sp
+            // Audit pass-8 — resolve the badge text style from the Style-tab element
+            // `section.style.elements["badge"].text_style` FIRST (iOS PlanCard.badgeView
+            // PlanCard.swift:30-32,:312 is badgeTextStyle-first for font/size/color/weight),
+            // falling back to the flat badge_font_size + badge_text_color when the element
+            // style is absent. Android previously read only the flat fields.
+            val badgeTextStyle = StyleEngine.applyTextStyle(
+                TextStyle(fontWeight = FontWeight.SemiBold, color = badgeTxt, fontSize = badgeFontSize),
+                section.style?.elements?.get("badge")?.text_style,
+            )
+            // Mrozu QA — badge border + leading icon were decoded (PaywallConfig.kt:312-314) but
+            // dropped by BadgeView; iOS PlanCard.badgeView (:298-311/:332-335) renders both.
+            val badgeBorderColor = section.data?.badge_border_color?.let { parseHexColor(it) }
+            val badgeBorderWidth = section.data?.badge_border_width ?: 0f
+            val badgeIcon = section.data?.badge_icon
+            val badgeIconColorHex = section.data?.badge_text_color ?: "#FFFFFF"
             val badgeShapeStr = section.data?.badge_shape ?: "pill"
             // Mirror iOS PlanCard.swift:314-323 — console emits "rectangle"
             // as the iOS-native naming; keep "square" alias for back-compat.
             val badgeCorner = when (badgeShapeStr) {
                 "square", "rectangle" -> RoundedCornerShape(2.dp)
                 "rounded" -> RoundedCornerShape(4.dp)
+                // Notched-ribbon: rectangle with a triangular notch cut into the trailing
+                // edge, matching the console PaywallPreview clipPath polygon
+                // (0,0 → 100,0 → 92,50 → 100,100 → 0,100) and the iOS RibbonBadgeShape.
+                "ribbon" -> androidx.compose.foundation.shape.GenericShape { size, _ ->
+                    moveTo(0f, 0f)
+                    lineTo(size.width, 0f)
+                    lineTo(size.width * 0.92f, size.height / 2f)
+                    lineTo(size.width, size.height)
+                    lineTo(0f, size.height)
+                    close()
+                }
                 else -> RoundedCornerShape(999.dp) // pill
             }
             // QA-R11 — default `top_right` to mirror iOS
@@ -1519,15 +1613,41 @@ private fun PaywallSectionView(
 
             @Composable
             fun BadgeView(badgeText: String) {
-                Text(
-                    text = badgeText,
-                    color = badgeTxt,
-                    fontSize = badgeFontSize,
-                    fontWeight = FontWeight.SemiBold,
+                Row(
                     modifier = Modifier
                         .background(badgeBg, badgeCorner)
+                        .then(
+                            // Border only when both width>0 and a color is set (iOS PlanCard.swift:332-335).
+                            if (badgeBorderWidth > 0f && badgeBorderColor != null)
+                                Modifier.border(badgeBorderWidth.dp, badgeBorderColor, badgeCorner)
+                            else Modifier,
+                        )
                         .padding(horizontal = 8.dp, vertical = 2.dp),
-                )
+                    horizontalArrangement = Arrangement.spacedBy(4.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    // Leading badge icon (iOS PlanCard.swift:304-311): an SF Symbol / Material name
+                    // (contains "." or "_") renders via IconView; anything else (emoji/glyph) via Text.
+                    badgeIcon?.takeIf { it.isNotBlank() }?.let { icon ->
+                        if (icon.contains(".") || icon.contains("_")) {
+                            ai.appdna.sdk.core.IconView(
+                                ref = ai.appdna.sdk.core.IconReference(
+                                    library = "sf-symbols",
+                                    name = icon,
+                                    color = badgeIconColorHex,
+                                    size = 11f,
+                                ),
+                                defaultSize = 11f,
+                            )
+                        } else {
+                            Text(text = icon, color = badgeTxt, fontSize = badgeFontSize)
+                        }
+                    }
+                    Text(
+                        text = badgeText,
+                        style = badgeTextStyle,
+                    )
+                }
             }
 
             // SPEC-070-A finalization PW-9 — pull all 5 plan-card show-flags
@@ -1578,6 +1698,7 @@ private fun PaywallSectionView(
                             role = Role.RadioButton
                             selected = isSelected
                         }
+                        .then(if (cardHeight != null) Modifier.heightIn(min = cardHeight) else Modifier)
                         .clickable { onPlanSelect(plan.id) },
                     shape = cardShape,
                     elevation = CardDefaults.cardElevation(defaultElevation = elevation),
@@ -1646,16 +1767,53 @@ private fun PaywallSectionView(
 
                             Spacer(Modifier.height(4.dp))
                             // PW-12 — `plan.displayPrice` mirrors `price_display ?? price`.
-                            Text(
-                                text = loc("plan.$planIdx.price", plan.displayPrice),
-                                style = priceStyle,
-                                color = resolvedTextColor,
-                            )
-                            plan.period?.let {
+                            // Round-MZ — render struck original_price_display beside the price
+                            // (mirrors iOS PlanCard.swift Row-2). strikethrough_color is section-level.
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(4.dp),
+                            ) {
+                                plan.original_price_display?.takeIf { it.isNotBlank() }?.let { original ->
+                                    Text(
+                                        text = original,
+                                        fontSize = 12.sp,
+                                        textDecoration = androidx.compose.ui.text.style.TextDecoration.LineThrough,
+                                        // Unset strikethrough_color defaults to #9CA3AF to match
+                                        // iOS PlanCard.swift + PaywallPreview.tsx (was Compose Color.Gray
+                                        // #888888 → visibly different struck-price gray across platforms).
+                                        color = section.data?.strikethrough_color?.let { parseHexColor(it) } ?: parseHexColor("#9CA3AF"),
+                                    )
+                                }
                                 Text(
-                                    text = loc("plan.$planIdx.period", it),
-                                    style = periodStyle,
+                                    text = loc("plan.$planIdx.price", plan.displayPrice),
+                                    style = priceStyle,
                                     color = resolvedTextColor,
+                                )
+                            }
+                            // Audit pass-8 — drop the standalone `plan.period` line to match
+                            // iOS PlanCard, which never renders plan.period (PlanCard.swift:27-29
+                            // defines only an unused periodTextStyle) and the console preview,
+                            // which omits it. `period` isn't authored via the console (not in
+                            // PlanSchema; billing_period is folded into price_display), so a
+                            // non-console publisher setting `period` previously got a divergent
+                            // extra line here. periodStyle is still used by other layouts.
+
+                            // Round-MZ — post-price block order mirrors iOS PlanCard.swift:
+                            // trial → subtitle(below) → divider → savings → features.
+                            // Was subtitle → features → savings → trial (divergent).
+
+                            // PW-12 — `plan.trialLabel` shows trial copy if present
+                            // (computed from `trial?.label ?? trial_duration`).
+                            plan.trialLabel?.takeIf { it.isNotBlank() }?.let { trialText ->
+                                Spacer(Modifier.height(4.dp))
+                                Text(
+                                    text = loc("plan.$planIdx.trial", trialText),
+                                    style = trialStyle,
+                                    // When selected the trial matches name/price (authored selected_text_color,
+                                    // else default primary). When unselected, defer to trialStyle.color —
+                                    // which is the authored trial_label color, or the brand-accent base —
+                                    // so an authored color wins (iOS + preview parity).
+                                    color = if (isSelected) (selectedTextColor ?: Color.Unspecified) else Color.Unspecified,
                                 )
                             }
 
@@ -1666,6 +1824,36 @@ private fun PaywallSectionView(
                                     text = loc("plan.$planIdx.description", plan.description),
                                     fontSize = 12.sp,
                                     color = resolvedTextColor.takeIf { it != Color.Unspecified } ?: Color.Gray,
+                                )
+                            }
+
+                            // Round-MZ — per-plan divider between price/subtitle and
+                            // savings/features (mirrors iOS PlanCard.swift:150-155,
+                            // default #E5E7EB). Decoded + editable + previewed; was
+                            // silently dropped here.
+                            if (section.data?.show_divider == true) {
+                                Spacer(Modifier.height(2.dp))
+                                Divider(color = section.data?.divider_color?.let { parseHexColor(it) } ?: parseHexColor("#E5E7EB"))
+                                Spacer(Modifier.height(2.dp))
+                            }
+
+                            // PW-9: per-plan savings text (typically "Save 20%").
+                            // Mirror iOS PlanCard.swift:152 — base green is
+                            // #22C55E (Tailwind green-500), flipping to
+                            // selectedTextColor when the plan is selected so
+                            // it stays readable against custom selected_bg.
+                            if (showSavings && !plan.savings_text.isNullOrBlank()) {
+                                Spacer(Modifier.height(4.dp))
+                                val savingsColor = if (isSelected && selectedTextColor != null) {
+                                    selectedTextColor
+                                } else {
+                                    Color(0xFF22C55E)
+                                }
+                                Text(
+                                    text = loc("plan.$planIdx.savings", plan.savings_text),
+                                    fontSize = 12.sp,
+                                    fontWeight = FontWeight.SemiBold,
+                                    color = savingsColor,
                                 )
                             }
 
@@ -1696,38 +1884,6 @@ private fun PaywallSectionView(
                                     }
                                     Spacer(Modifier.height(2.dp))
                                 }
-                            }
-
-                            // PW-9: per-plan savings text (typically "Save 20%").
-                            // Mirror iOS PlanCard.swift:152 — base green is
-                            // #22C55E (Tailwind green-500), flipping to
-                            // selectedTextColor when the plan is selected so
-                            // it stays readable against custom selected_bg.
-                            if (showSavings && !plan.savings_text.isNullOrBlank()) {
-                                Spacer(Modifier.height(4.dp))
-                                val savingsColor = if (isSelected && selectedTextColor != null) {
-                                    selectedTextColor
-                                } else {
-                                    Color(0xFF22C55E)
-                                }
-                                Text(
-                                    text = loc("plan.$planIdx.savings", plan.savings_text),
-                                    fontSize = 12.sp,
-                                    fontWeight = FontWeight.SemiBold,
-                                    color = savingsColor,
-                                )
-                            }
-
-                            // PW-12 — `plan.trialLabel` shows trial copy if present
-                            // (computed from `trial?.label ?? trial_duration`).
-                            plan.trialLabel?.takeIf { it.isNotBlank() }?.let { trialText ->
-                                Spacer(Modifier.height(4.dp))
-                                Text(
-                                    text = loc("plan.$planIdx.trial", trialText),
-                                    fontSize = 12.sp,
-                                    fontWeight = FontWeight.Medium,
-                                    color = resolvedTextColor.takeIf { it != Color.Unspecified } ?: ai.appdna.sdk.AppDNA.brandAccentColor(),
-                                )
                             }
 
                             plan.badge?.let {
@@ -1957,6 +2113,7 @@ private fun PaywallSectionView(
                                     .then(
                                         if (isSelected) Modifier.border(2.dp, ai.appdna.sdk.AppDNA.brandAccentColor(), cardShape) else Modifier
                                     )
+                                    .then(if (cardHeight != null) Modifier.heightIn(min = cardHeight) else Modifier)
                                     .clickable { onPlanSelect(plan.id) },
                                 shape = cardShape,
                                 colors = CardDefaults.cardColors(
@@ -2252,6 +2409,7 @@ private fun PaywallSectionView(
                                             role = Role.RadioButton
                                             selected = isSelected
                                         }
+                                        .then(if (cardHeight != null) Modifier.heightIn(min = cardHeight) else Modifier)
                                         .clickable { onPlanSelect(plan.id) },
                                     shape = cardShape,
                                     elevation = CardDefaults.cardElevation(defaultElevation = if (cardShadowEnabled) 4.dp else 0.dp),
@@ -2297,9 +2455,24 @@ private fun PaywallSectionView(
                                                 Text(text = loc("plan.$planIdx.description", plan.description), fontSize = 12.sp, color = subtitleColor)
                                                 Spacer(Modifier.height(2.dp))
                                             }
-                                            Text(text = loc("plan.$planIdx.price", plan.displayPrice), style = priceStyle, color = planTextColor)
-                                            plan.period?.let {
-                                                Text(text = loc("plan.$planIdx.period", it), style = periodStyle, color = planTextColor)
+                                            // Round-MZ — render struck original_price_display beside the
+                                            // price (mirrors iOS PlanCard.swift Row-2 + Android fun PlanCard).
+                                            // The standalone plan.period line was dropped to match iOS
+                                            // PlanCard (never renders plan.period) and fun PlanCard —
+                                            // period is folded into price_display, not authored via console.
+                                            Row(
+                                                verticalAlignment = Alignment.CenterVertically,
+                                                horizontalArrangement = Arrangement.spacedBy(4.dp),
+                                            ) {
+                                                plan.original_price_display?.takeIf { it.isNotBlank() }?.let { original ->
+                                                    Text(
+                                                        text = original,
+                                                        fontSize = 12.sp,
+                                                        textDecoration = androidx.compose.ui.text.style.TextDecoration.LineThrough,
+                                                        color = section.data?.strikethrough_color?.let { parseHexColor(it) } ?: parseHexColor("#9CA3AF"),
+                                                    )
+                                                }
+                                                Text(text = loc("plan.$planIdx.price", plan.displayPrice), style = priceStyle, color = planTextColor)
                                             }
                                             // Round-30 — PARITY FIX: the default vertical_stack path
                                             // silently dropped trial/subtitle/savings/features that iOS
@@ -2313,6 +2486,15 @@ private fun PaywallSectionView(
                                             if (showPlanSubtitles && subtitlePosition != "above_price" && !plan.description.isNullOrBlank()) {
                                                 Spacer(Modifier.height(4.dp))
                                                 Text(text = loc("plan.$planIdx.description", plan.description), fontSize = 12.sp, color = subtitleColor)
+                                            }
+                                            // Round-MZ — per-plan divider between price/subtitle and
+                                            // savings (mirrors iOS PlanCard.swift order + Android fun
+                                            // PlanCard, default #E5E7EB). Was silently dropped on the
+                                            // default vertical_stack layout.
+                                            if (section.data?.show_divider == true) {
+                                                Spacer(Modifier.height(2.dp))
+                                                Divider(color = section.data?.divider_color?.let { parseHexColor(it) } ?: parseHexColor("#E5E7EB"))
+                                                Spacer(Modifier.height(2.dp))
                                             }
                                             if (showSavings && !plan.savings_text.isNullOrBlank()) {
                                                 Spacer(Modifier.height(4.dp))
@@ -2451,7 +2633,7 @@ private fun PaywallSectionView(
             val ctaFontSize = (section.data?.cta_font_size ?: section.data?.cta?.font_size?.toFloat() ?: 17f).sp
             val ctaHeight = (section.data?.cta_height ?: section.data?.cta?.height?.toFloat() ?: 56f).dp
             val buttonTextStyle = StyleEngine.applyTextStyle(
-                TextStyle(fontWeight = FontWeight.SemiBold, fontSize = ctaFontSize),
+                TextStyle(fontWeight = resolveCtaWeight(section.data?.cta_font_weight), fontSize = ctaFontSize),
                 section.style?.elements?.get("button")?.text_style,
             )
             // PW-10 / iOS PaywallRenderer.swift:1052+ — CTA gradient brush
@@ -2557,7 +2739,20 @@ private fun PaywallSectionView(
                         .background(
                             brush = if (explicitCtaBg == null && ctaBrush != null) ctaBrush
                                 else androidx.compose.ui.graphics.SolidColor(buttonBgColor),
-                            shape = RoundedCornerShape((section.data?.cta?.corner_radius?.toFloat() ?: 12f).dp),
+                            // Audit pass-8 — the CTA-section `data.cta.corner_radius` is
+                            // near-always null; the console authors the main CTA radius via
+                            // `cta.style.corner_radius`, parsed into `config.cta.corner_radius`
+                            // (PaywallConfig.kt:885) + surfaced through ctaStyleMap. Resolve the
+                            // shape from the same source used for bg/text (iOS CTAButton.swift:47
+                            // resolvedCornerRadius, PaywallPreview.tsx:1363), else a non-default
+                            // slider value rendered on iOS/preview but always 12 on Android.
+                            shape = RoundedCornerShape((
+                                section.data?.cta?.corner_radius?.toFloat()
+                                    ?: (ctaStyleMap?.get("corner_radius") as? Number)?.toFloat()
+                                    ?: (sectionCtaStyleMap?.get("corner_radius") as? Number)?.toFloat()
+                                    ?: config.cta?.corner_radius?.toFloat()
+                                    ?: 12f
+                            ).dp),
                         )
                         .alpha(if (ctaEnabled) 1f else 0.5f)
                         .clickable(
@@ -2600,7 +2795,16 @@ private fun PaywallSectionView(
                             // separate @Composable scope from PaywallScreen.
                             text = loc(
                                 "cta.text",
-                                config.cta?.text?.takeIf { it.isNotBlank() }
+                                // Round-MZ — selected plan's per-plan cta_text overrides the
+                                // section/top-level CTA label (mirrors iOS selectedPlanCtaText).
+                                // Resolve the plan list like effectivePlans()/iOS selectedPlan do —
+                                // the "plans"-type section first, then top-level config.plans — NOT
+                                // this CTA section's own (normally absent) plans, which made the
+                                // pinned CTA fall through to "Subscribe" when plans lived only in a
+                                // plans section.
+                                (config.sections.firstOrNull { it.type == "plans" }?.data?.plans ?: config.plans)
+                                    ?.firstOrNull { it.id == selectedPlanId }?.cta_text?.takeIf { it.isNotBlank() }
+                                    ?: config.cta?.text?.takeIf { it.isNotBlank() }
                                     ?: section.data?.cta?.text?.takeIf { it.isNotBlank() }
                                     ?: section.data?.cta_text?.takeIf { it.isNotBlank() }
                                     ?: section.data?.text?.takeIf { it.isNotBlank() }
@@ -3996,6 +4200,8 @@ private fun PaywallStickyFooter(
     onCTATap: () -> Unit,
     onRestore: () -> Unit,
     loc: (String, String) -> String,
+    // Round-MZ — selected plan's per-plan cta_text (overrides section cta_text when non-empty).
+    selectedPlanCtaText: String? = null,
 ) {
     // SPEC-401-A R86 (Lens A F1) — default background #FFFFFF matches iOS
     // PaywallRenderer.swift:1054. Was Color.Black 0.95 alpha → light-mode
@@ -4011,17 +4217,17 @@ private fun PaywallStickyFooter(
             .padding(horizontal = (section.data?.padding ?: 20f).dp, vertical = 16.dp)
             .run { with(StyleEngine) { applyContainerStyle(section.style?.container) } },
     ) {
-        // CTA button
-        section.data?.cta_text?.let { ctaText ->
+        // CTA button — selected plan's per-plan cta_text overrides the footer's configured label.
+        (selectedPlanCtaText ?: section.data?.cta_text)?.let { ctaText ->
             Button(
                 onClick = onCTATap,
                 enabled = !isPurchasing,
                 // SPEC-401-A R86 (Lens A F2) — honor cta_height + cta_font_size
                 // matching iOS PaywallRenderer.swift:1067,1072. Was hardcoded.
-                modifier = Modifier.fillMaxWidth().height((section.data.cta_height ?: 52f).dp),
-                shape = RoundedCornerShape((section.data.cta_corner_radius ?: 14f).dp),
+                modifier = Modifier.fillMaxWidth().height((section.data?.cta_height ?: 52f).dp),
+                shape = RoundedCornerShape((section.data?.cta_corner_radius ?: 14f).dp),
                 colors = ButtonDefaults.buttonColors(
-                    containerColor = section.data.cta_bg_color?.let { parseHexColor(it) } ?: ai.appdna.sdk.AppDNA.brandAccentColor(),
+                    containerColor = section.data?.cta_bg_color?.let { parseHexColor(it) } ?: ai.appdna.sdk.AppDNA.brandAccentColor(),
                 ),
             ) {
                 if (isPurchasing) {
@@ -4029,9 +4235,9 @@ private fun PaywallStickyFooter(
                 } else {
                     Text(
                         text = loc("sticky_footer.cta", ctaText),
-                        fontWeight = FontWeight.SemiBold,
-                        fontSize = (section.data.cta_font_size ?: 17f).sp,
-                        color = section.data.cta_text_color?.let { parseHexColor(it) } ?: Color.White,
+                        fontWeight = resolveCtaWeight(section.data?.cta_font_weight),
+                        fontSize = (section.data?.cta_font_size ?: 17f).sp,
+                        color = section.data?.cta_text_color?.let { parseHexColor(it) } ?: Color.White,
                     )
                 }
             }
