@@ -309,6 +309,13 @@ data class PaywallSectionData(
     val divider_color: String? = null,
     /** Color of the struck-through original price (plans[].original_price_display). */
     val strikethrough_color: String? = null,
+    /** SPEC-438 (#548) — size of the struck price + its gap to the current price. Both were
+     *  hardcoded, so an author could set the colour and nothing else. */
+    val strikethrough_font_size: Float? = null,
+    val strikethrough_gap: Float? = null,
+    /** SPEC-438 (#548) — "inline" (default, unchanged) or "headline_stacked": a large current
+     *  price with the struck was-price and the real charged total beneath it. */
+    val price_layout: String? = null,
     /** Badge border styling (iOS PaywallConfig.swift:266-268). */
     val badge_border_color: String? = null,
     val badge_border_width: Float? = null,
@@ -397,6 +404,20 @@ data class PaywallPlanTrial(
     val label: String? = null,
 )
 
+/**
+ * SPEC-438 (#544) — the plan subtitle rendered as a coloured pill rather than plain text.
+ * Authored on the product (Monetization -> Products) and copied onto the plan when the
+ * product is selected, so one promotion is set once and every paywall inherits it.
+ * Mirrors iOS `PaywallDescriptionBadge`.
+ */
+@Immutable
+data class PaywallDescriptionBadge(
+    val enabled: Boolean? = null,
+    val bg_color: String? = null,
+    val text_color: String? = null,
+    val corner_radius: Float? = null,
+)
+
 @Immutable
 data class PaywallPlan(
     val id: String,
@@ -421,6 +442,10 @@ data class PaywallPlan(
     val image_url: String? = null,
     /** Struck-through "old" price shown beside displayPrice (iOS original_price_display). */
     val original_price_display: String? = null,
+    /** SPEC-438 (#548) — the real charged total, shown under a per-period headline price. */
+    val price_total_display: String? = null,
+    /** SPEC-438 (#544) — render `description` as a coloured pill instead of plain text. */
+    val description_badge: PaywallDescriptionBadge? = null,
 ) {
     // SPEC-070-A finalization PW-12 — computed accessors mirroring iOS:
     // `displayName: label ?? name`, `displayPrice: price_display ?? price`,
@@ -1356,6 +1381,16 @@ internal object PaywallConfigParser {
             icon = map["icon"] as? String,
             image_url = map["image_url"] as? String,
             original_price_display = map["original_price_display"]?.let { it as? String ?: it.toString() },
+            // Same loose read as the anchor price above: a numeric total must not nil the plan.
+            price_total_display = map["price_total_display"]?.let { it as? String ?: it.toString() },
+            description_badge = (map["description_badge"] as? Map<*, *>)?.let { b ->
+                PaywallDescriptionBadge(
+                    enabled = b["enabled"] as? Boolean,
+                    bg_color = b["bg_color"] as? String,
+                    text_color = b["text_color"] as? String,
+                    corner_radius = (b["corner_radius"] as? Number)?.toFloat(),
+                )
+            },
         )
     }
 }

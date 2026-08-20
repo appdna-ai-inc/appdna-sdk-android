@@ -1758,37 +1758,94 @@ private fun PaywallSectionView(
                             // PW-9: subtitle above price if `subtitle_position == "above_price"`.
                             if (showPlanSubtitles && subtitlePosition == "above_price" && !plan.description.isNullOrBlank()) {
                                 Spacer(Modifier.height(2.dp))
-                                Text(
-                                    text = loc("plan.$planIdx.description", plan.description),
-                                    fontSize = 12.sp,
-                                    color = resolvedTextColor.takeIf { it != Color.Unspecified } ?: Color.Gray,
-                                )
+                                // SPEC-438 (#544) — a coloured pill when the product authored
+                                // one, plain text otherwise. `wrapContentWidth` is what makes it
+                                // hug its text and read as a badge rather than a full-width banner.
+                                val descBadge = plan.description_badge?.takeIf { it.enabled == true }
+                                if (descBadge != null) {
+                                    Text(
+                                        text = loc("plan.$planIdx.description", plan.description),
+                                        fontSize = 12.sp,
+                                        fontWeight = FontWeight.Medium,
+                                        color = descBadge.text_color?.let { parseHexColor(it) } ?: Color.White,
+                                        modifier = Modifier
+                                            .wrapContentWidth()
+                                            .background(
+                                                descBadge.bg_color?.let { parseHexColor(it) } ?: parseHexColor("#15803D"),
+                                                RoundedCornerShape((descBadge.corner_radius ?: 6f).dp),
+                                            )
+                                            .padding(horizontal = 6.dp, vertical = 2.dp),
+                                    )
+                                } else {
+                                    Text(
+                                        text = loc("plan.$planIdx.description", plan.description),
+                                        fontSize = 12.sp,
+                                        color = resolvedTextColor.takeIf { it != Color.Unspecified } ?: Color.Gray,
+                                    )
+                                }
                             }
 
                             Spacer(Modifier.height(4.dp))
                             // PW-12 — `plan.displayPrice` mirrors `price_display ?? price`.
                             // Round-MZ — render struck original_price_display beside the price
                             // (mirrors iOS PlanCard.swift Row-2). strikethrough_color is section-level.
-                            Row(
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.spacedBy(4.dp),
-                            ) {
-                                plan.original_price_display?.takeIf { it.isNotBlank() }?.let { original ->
+                            // SPEC-438 (#548) — authored strikethrough size/gap, and the
+                            // price_layout preset. Defaults reproduce the previous rendering
+                            // exactly, so unauthored paywalls are unchanged.
+                            val strikeColor = section.data?.strikethrough_color?.let { parseHexColor(it) }
+                                ?: parseHexColor("#9CA3AF")
+                            val strikeSize = (section.data?.strikethrough_font_size ?: 12f).sp
+                            val strikeGap = (section.data?.strikethrough_gap ?: 4f).dp
+                            val struck = plan.original_price_display?.takeIf { it.isNotBlank() }
+                            val chargedTotal = plan.price_total_display?.takeIf { it.isNotBlank() }
+
+                            if ((section.data?.price_layout ?: "inline") == "headline_stacked") {
+                                Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
                                     Text(
-                                        text = original,
-                                        fontSize = 12.sp,
-                                        textDecoration = androidx.compose.ui.text.style.TextDecoration.LineThrough,
-                                        // Unset strikethrough_color defaults to #9CA3AF to match
-                                        // iOS PlanCard.swift + PaywallPreview.tsx (was Compose Color.Gray
-                                        // #888888 → visibly different struck-price gray across platforms).
-                                        color = section.data?.strikethrough_color?.let { parseHexColor(it) } ?: parseHexColor("#9CA3AF"),
+                                        text = loc("plan.$planIdx.price", plan.displayPrice),
+                                        style = priceStyle,
+                                        color = resolvedTextColor,
+                                    )
+                                    if (struck != null || chargedTotal != null) {
+                                        Row(
+                                            verticalAlignment = Alignment.CenterVertically,
+                                            horizontalArrangement = Arrangement.spacedBy(strikeGap),
+                                        ) {
+                                            struck?.let {
+                                                Text(
+                                                    text = it,
+                                                    fontSize = strikeSize,
+                                                    textDecoration = androidx.compose.ui.text.style.TextDecoration.LineThrough,
+                                                    color = strikeColor,
+                                                )
+                                            }
+                                            chargedTotal?.let {
+                                                Text(text = it, fontSize = strikeSize, color = resolvedTextColor)
+                                            }
+                                        }
+                                    }
+                                }
+                            } else {
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(strikeGap),
+                                ) {
+                                    struck?.let {
+                                        Text(
+                                            text = it,
+                                            fontSize = strikeSize,
+                                            textDecoration = androidx.compose.ui.text.style.TextDecoration.LineThrough,
+                                            // Unset strikethrough_color defaults to #9CA3AF to match
+                                            // iOS PlanCard.swift + PaywallPreview.tsx.
+                                            color = strikeColor,
+                                        )
+                                    }
+                                    Text(
+                                        text = loc("plan.$planIdx.price", plan.displayPrice),
+                                        style = priceStyle,
+                                        color = resolvedTextColor,
                                     )
                                 }
-                                Text(
-                                    text = loc("plan.$planIdx.price", plan.displayPrice),
-                                    style = priceStyle,
-                                    color = resolvedTextColor,
-                                )
                             }
                             // Audit pass-8 — drop the standalone `plan.period` line to match
                             // iOS PlanCard, which never renders plan.period (PlanCard.swift:27-29
@@ -1820,11 +1877,31 @@ private fun PaywallSectionView(
                             // PW-9: subtitle below price (default position).
                             if (showPlanSubtitles && subtitlePosition != "above_price" && !plan.description.isNullOrBlank()) {
                                 Spacer(Modifier.height(4.dp))
-                                Text(
-                                    text = loc("plan.$planIdx.description", plan.description),
-                                    fontSize = 12.sp,
-                                    color = resolvedTextColor.takeIf { it != Color.Unspecified } ?: Color.Gray,
-                                )
+                                // SPEC-438 (#544) — a coloured pill when the product authored
+                                // one, plain text otherwise. `wrapContentWidth` is what makes it
+                                // hug its text and read as a badge rather than a full-width banner.
+                                val descBadge = plan.description_badge?.takeIf { it.enabled == true }
+                                if (descBadge != null) {
+                                    Text(
+                                        text = loc("plan.$planIdx.description", plan.description),
+                                        fontSize = 12.sp,
+                                        fontWeight = FontWeight.Medium,
+                                        color = descBadge.text_color?.let { parseHexColor(it) } ?: Color.White,
+                                        modifier = Modifier
+                                            .wrapContentWidth()
+                                            .background(
+                                                descBadge.bg_color?.let { parseHexColor(it) } ?: parseHexColor("#15803D"),
+                                                RoundedCornerShape((descBadge.corner_radius ?: 6f).dp),
+                                            )
+                                            .padding(horizontal = 6.dp, vertical = 2.dp),
+                                    )
+                                } else {
+                                    Text(
+                                        text = loc("plan.$planIdx.description", plan.description),
+                                        fontSize = 12.sp,
+                                        color = resolvedTextColor.takeIf { it != Color.Unspecified } ?: Color.Gray,
+                                    )
+                                }
                             }
 
                             // Round-MZ — per-plan divider between price/subtitle and
