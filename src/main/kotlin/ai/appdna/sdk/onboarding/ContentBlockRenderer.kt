@@ -907,6 +907,14 @@ data class FormFieldBlockStyle(
     val focused_border_color: String? = null,
     val label_color: String? = null,
     val label_font_size: Double? = null,
+    /** SPEC-439 (#546) — settable in the console and honoured by the web preview since it
+     *  shipped, but decoded by NEITHER native, so authors set a control that did nothing on
+     *  device. "hidden" is the value with a defined meaning; "inline"/"floating" are not
+     *  distinct behaviours on any surface yet. Mirrors iOS FormFieldBlockStyle. */
+    val label_position: String? = null,
+    /** SPEC-439 (#546) — the two controls the reporter found genuinely missing. */
+    val label_align: String? = null,
+    val label_font_family: String? = null,
     val error_border_color: String? = null,
     val error_text_color: String? = null,
     val track_color: String? = null,
@@ -7537,11 +7545,25 @@ private fun FormFieldLabel(block: ContentBlock) {
     // payload using only `block.label` rendered the label on Android but
     // not on iOS — Android was masking iOS bug; align to iOS.
     val label = block.field_label ?: block.rating_label ?: block.text
-    if (!label.isNullOrEmpty()) {
+    // SPEC-439 (#546) — honour label_position. "hidden" previously rendered anyway, so the
+    // editor showed one thing (the preview honours it) and the device another.
+    val labelPosition = block.field_style?.label_position ?: "above"
+    if (labelPosition != "hidden" && !label.isNullOrEmpty()) {
         val required = block.field_required ?: false
-        Row {
+        val labelArrangement = when (block.field_style?.label_align) {
+            "center" -> Arrangement.Center
+            "right" -> Arrangement.End
+            else -> Arrangement.Start
+        }
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = labelArrangement,
+        ) {
             Text(
                 text = label,
+                fontFamily = block.field_style?.label_font_family
+                    ?.takeIf { it.isNotBlank() }
+                    ?.let { ai.appdna.sdk.core.FontResolver.resolve(it) },
                 // SPEC-401-A R56 (Lens A R56 #3, P2) — default 15sp matches iOS
                 // .subheadline (FormInputBlockViews.swift:15). Was 14sp on every
                 // FormFieldLabel without explicit label_font_size.
