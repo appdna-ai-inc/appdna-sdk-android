@@ -2532,7 +2532,27 @@ internal fun PaywallSectionView(
                                             Spacer(Modifier.height(2.dp))
                                             // Round-30 — subtitle ABOVE price (iOS PlanCard.swift:105).
                                             if (showPlanSubtitles && subtitlePosition == "above_price" && !plan.description.isNullOrBlank()) {
-                                                Text(text = loc("plan.$planIdx.description", plan.description), fontSize = 12.sp, color = subtitleColor)
+                                                run {
+                                                    // SPEC-438 (#544) — pill when the product authored one.
+                                                    val b = plan.description_badge?.takeIf { it.enabled == true }
+                                                    if (b != null) {
+                                                        Text(
+                                                            text = loc("plan.$planIdx.description", plan.description),
+                                                            fontSize = 12.sp,
+                                                            fontWeight = FontWeight.Medium,
+                                                            color = b.text_color?.let { parseHexColor(it) } ?: Color.White,
+                                                            modifier = Modifier
+                                                                .wrapContentWidth()
+                                                                .background(
+                                                                    b.bg_color?.let { parseHexColor(it) } ?: parseHexColor("#15803D"),
+                                                                    RoundedCornerShape((b.corner_radius ?: 6f).dp),
+                                                                )
+                                                                .padding(horizontal = 6.dp, vertical = 2.dp),
+                                                        )
+                                                    } else {
+                                                        Text(text = loc("plan.$planIdx.description", plan.description), fontSize = 12.sp, color = subtitleColor)
+                                                    }
+                                                }
                                                 Spacer(Modifier.height(2.dp))
                                             }
                                             // Round-MZ — render struck original_price_display beside the
@@ -2540,19 +2560,52 @@ internal fun PaywallSectionView(
                                             // The standalone plan.period line was dropped to match iOS
                                             // PlanCard (never renders plan.period) and fun PlanCard —
                                             // period is folded into price_display, not authored via console.
-                                            Row(
-                                                verticalAlignment = Alignment.CenterVertically,
-                                                horizontalArrangement = Arrangement.spacedBy(4.dp),
-                                            ) {
-                                                plan.original_price_display?.takeIf { it.isNotBlank() }?.let { original ->
-                                                    Text(
-                                                        text = original,
-                                                        fontSize = 12.sp,
-                                                        textDecoration = androidx.compose.ui.text.style.TextDecoration.LineThrough,
-                                                        color = section.data?.strikethrough_color?.let { parseHexColor(it) } ?: parseHexColor("#9CA3AF"),
-                                                    )
+                                            // SPEC-438 (#548) — authored strikethrough size/gap + the
+                                            // price_layout preset. Defaults reproduce the previous
+                                            // rendering exactly, so unauthored paywalls are unchanged.
+                                            val vsStrikeColor = section.data?.strikethrough_color?.let { parseHexColor(it) }
+                                                ?: parseHexColor("#9CA3AF")
+                                            val vsStrikeSize = (section.data?.strikethrough_font_size ?: 12f).sp
+                                            val vsStrikeGap = (section.data?.strikethrough_gap ?: 4f).dp
+                                            val vsStruck = plan.original_price_display?.takeIf { it.isNotBlank() }
+                                            val vsTotal = plan.price_total_display?.takeIf { it.isNotBlank() }
+                                            if ((section.data?.price_layout ?: "inline") == "headline_stacked") {
+                                                Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                                                    Text(text = loc("plan.$planIdx.price", plan.displayPrice), style = priceStyle, color = planTextColor)
+                                                    if (vsStruck != null || vsTotal != null) {
+                                                        Row(
+                                                            verticalAlignment = Alignment.CenterVertically,
+                                                            horizontalArrangement = Arrangement.spacedBy(vsStrikeGap),
+                                                        ) {
+                                                            vsStruck?.let {
+                                                                Text(
+                                                                    text = it,
+                                                                    fontSize = vsStrikeSize,
+                                                                    textDecoration = androidx.compose.ui.text.style.TextDecoration.LineThrough,
+                                                                    color = vsStrikeColor,
+                                                                )
+                                                            }
+                                                            vsTotal?.let {
+                                                                Text(text = it, fontSize = vsStrikeSize, color = planTextColor)
+                                                            }
+                                                        }
+                                                    }
                                                 }
-                                                Text(text = loc("plan.$planIdx.price", plan.displayPrice), style = priceStyle, color = planTextColor)
+                                            } else {
+                                                Row(
+                                                    verticalAlignment = Alignment.CenterVertically,
+                                                    horizontalArrangement = Arrangement.spacedBy(vsStrikeGap),
+                                                ) {
+                                                    vsStruck?.let {
+                                                        Text(
+                                                            text = it,
+                                                            fontSize = vsStrikeSize,
+                                                            textDecoration = androidx.compose.ui.text.style.TextDecoration.LineThrough,
+                                                            color = vsStrikeColor,
+                                                        )
+                                                    }
+                                                    Text(text = loc("plan.$planIdx.price", plan.displayPrice), style = priceStyle, color = planTextColor)
+                                                }
                                             }
                                             // Round-30 — PARITY FIX: the default vertical_stack path
                                             // silently dropped trial/subtitle/savings/features that iOS
@@ -2565,7 +2618,27 @@ internal fun PaywallSectionView(
                                             }
                                             if (showPlanSubtitles && subtitlePosition != "above_price" && !plan.description.isNullOrBlank()) {
                                                 Spacer(Modifier.height(4.dp))
-                                                Text(text = loc("plan.$planIdx.description", plan.description), fontSize = 12.sp, color = subtitleColor)
+                                                run {
+                                                    // SPEC-438 (#544) — pill when the product authored one.
+                                                    val b = plan.description_badge?.takeIf { it.enabled == true }
+                                                    if (b != null) {
+                                                        Text(
+                                                            text = loc("plan.$planIdx.description", plan.description),
+                                                            fontSize = 12.sp,
+                                                            fontWeight = FontWeight.Medium,
+                                                            color = b.text_color?.let { parseHexColor(it) } ?: Color.White,
+                                                            modifier = Modifier
+                                                                .wrapContentWidth()
+                                                                .background(
+                                                                    b.bg_color?.let { parseHexColor(it) } ?: parseHexColor("#15803D"),
+                                                                    RoundedCornerShape((b.corner_radius ?: 6f).dp),
+                                                                )
+                                                                .padding(horizontal = 6.dp, vertical = 2.dp),
+                                                        )
+                                                    } else {
+                                                        Text(text = loc("plan.$planIdx.description", plan.description), fontSize = 12.sp, color = subtitleColor)
+                                                    }
+                                                }
                                             }
                                             // Round-MZ — per-plan divider between price/subtitle and
                                             // savings (mirrors iOS PlanCard.swift order + Android fun
