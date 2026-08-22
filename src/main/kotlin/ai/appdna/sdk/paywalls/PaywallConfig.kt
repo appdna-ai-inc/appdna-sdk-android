@@ -1208,6 +1208,11 @@ internal object PaywallConfigParser {
                 show_divider = d["show_divider"] as? Boolean,
                 divider_color = d["divider_color"] as? String,
                 strikethrough_color = d["strikethrough_color"] as? String,
+                // SPEC-438 (#548) — same manual-mapping trap as field_style: unmapped here
+                // these stay null and the renderer branch can never fire.
+                strikethrough_font_size = (d["strikethrough_font_size"] as? Number)?.toFloat(),
+                strikethrough_gap = (d["strikethrough_gap"] as? Number)?.toFloat(),
+                price_layout = d["price_layout"] as? String,
                 badge_border_color = d["badge_border_color"] as? String,
                 badge_border_width = (d["badge_border_width"] as? Number)?.toFloat(),
                 badge_icon = d["badge_icon"] as? String,

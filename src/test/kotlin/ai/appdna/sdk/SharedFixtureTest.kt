@@ -1025,6 +1025,9 @@ class SharedFixtureTest(
                 ) ?: unsupported("content_block fixture did not parse")
                 val block = step.config.content_blocks?.firstOrNull()
                     ?: unsupported("content_block fixture parsed to no block")
+                // iOS's content_blocks driver sets this and Android's never did, so a fixture
+                // asserting it passed on one platform and failed on the other.
+                spy.state["parse_succeeded"] = true
                 spy.state["parsed_block_id"] = block.id
                 spy.state["parsed_stack_children_count"] = block.children?.size ?: 0
                 spy.state["parsed_column_ratios"] = block.column_ratios
@@ -1033,10 +1036,15 @@ class SharedFixtureTest(
                 spy.state["parsed_rich_text_variant"] = kids.firstOrNull { it.type == "rich_text" }?.rich_text_variant
                 spy.state["parsed_rating_default"] = kids.firstOrNull { it.type == "rating" }?.default_rating
                 spy.state["parsed_picker_mode"] = kids.firstOrNull { it.type == "wheel_picker" }?.picker_mode
+                // SPEC-439 (#546) — the label keys the natives previously did not decode at all.
+                spy.state["parsed_label_position"] = block.field_style?.label_position
+                spy.state["parsed_label_align"] = block.field_style?.label_align
+                spy.state["parsed_label_font_family"] = block.field_style?.label_font_family
             }
             "paywalls" -> {
                 val parsed = PaywallConfigParser.parseSinglePaywall(map["id"] as String, map)
                     ?: unsupported("paywall fixture did not parse")
+                spy.state["parse_succeeded"] = true
                 spy.state["parsed_paywall_id"] = parsed.id
                 spy.state["parsed_plans_count"] = parsed.plans?.size ?: 0
                 spy.state["parsed_reviews_count"] =
@@ -1052,6 +1060,26 @@ class SharedFixtureTest(
                 // a "GENUINE GAP" and hardcoded null — asserting nothing, which is the whole failure mode
                 // this rewrite exists to remove.
                 spy.state["parsed_cta_corner_radius"] = parsed.cta?.corner_radius
+                // SPEC-438 (#544, #548) — product-level price presentation. Read off the DECODED
+                // objects, not the raw map, so a field the model silently drops shows up here.
+                val plansSection = parsed.sections.firstOrNull { it.type == "plans" }
+                spy.state["parsed_price_layout"] = plansSection?.data?.price_layout
+                spy.state["parsed_strikethrough_font_size"] = plansSection?.data?.strikethrough_font_size
+                spy.state["parsed_strikethrough_gap"] = plansSection?.data?.strikethrough_gap
+                val plansList = parsed.plans.orEmpty()
+                val p0 = plansList.getOrNull(0)
+                val p1 = plansList.getOrNull(1)
+                spy.state["parsed_plan0_price_display"] = p0?.displayPrice
+                spy.state["parsed_plan0_original_price_display"] = p0?.original_price_display
+                spy.state["parsed_plan0_price_total_display"] = p0?.price_total_display
+                spy.state["parsed_plan0_badge_enabled"] = p0?.description_badge?.enabled
+                spy.state["parsed_plan0_badge_bg_color"] = p0?.description_badge?.bg_color
+                spy.state["parsed_plan0_badge_text_color"] = p0?.description_badge?.text_color
+                spy.state["parsed_plan0_badge_corner_radius"] = p0?.description_badge?.corner_radius
+                // Plan 1 authors NEITHER — absent must stay absent, which is what keeps an
+                // unauthored paywall rendering exactly as it did before.
+                spy.state["parsed_plan1_price_total_display"] = p1?.price_total_display
+                spy.state["parsed_plan1_badge_enabled"] = p1?.description_badge?.enabled
             }
             "survey_themes" -> {
                 // The fixture's config IS the theme document; SurveyAppearance owns both the theme

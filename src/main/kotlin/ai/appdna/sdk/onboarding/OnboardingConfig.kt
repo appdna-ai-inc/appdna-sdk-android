@@ -1852,6 +1852,13 @@ internal object OnboardingConfigParser {
                     focused_border_color = fs["focused_border_color"] as? String,
                     label_color = fs["label_color"] as? String,
                     label_font_size = (fs["label_font_size"] as? Number)?.toDouble(),
+                    // SPEC-439 (#546) — Android builds FormFieldBlockStyle key by key, so
+                    // adding a field to the data class is not enough: unmapped here it stays
+                    // null forever and the renderer reading it can never fire. This is the
+                    // half of the label_position defect that the fixture actually caught.
+                    label_position = fs["label_position"] as? String,
+                    label_align = fs["label_align"] as? String,
+                    label_font_family = fs["label_font_family"] as? String,
                     error_border_color = fs["error_border_color"] as? String,
                     error_text_color = fs["error_text_color"] as? String,
                     track_color = fs["track_color"] as? String,
