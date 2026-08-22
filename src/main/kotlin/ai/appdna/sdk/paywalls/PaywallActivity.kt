@@ -2068,6 +2068,10 @@ internal fun PaywallSectionView(
                                         text = loc("plan.$planIdx.name", plan.displayName),
                                         fontSize = 13.sp,
                                         maxLines = 1,
+                                        // Compose defaults overflow to Clip, which cuts a long price MID-GLYPH
+                                        // with no indication anything is missing. Ellipsis at least tells the
+                                        // reader the value is truncated. Same long-string class as #545.
+                                        overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
                                     )
                                 }
                             }
@@ -2120,12 +2124,14 @@ internal fun PaywallSectionView(
                                             style = planNameStyle.copy(fontSize = 14.sp),
                                             textAlign = TextAlign.Center,
                                             maxLines = 1,
+                                            overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
                                         )
                                         Text(
                                             text = loc("plan.$planIdx.price", plan.displayPrice),
                                             style = priceStyle.copy(fontSize = 14.sp),
                                             textAlign = TextAlign.Center,
                                             maxLines = 1,
+                                            overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
                                         )
                                         plan.badge?.let {
                                             Spacer(Modifier.height(4.dp))
