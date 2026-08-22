@@ -55,6 +55,8 @@ import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.withStyle
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.rememberScrollState
 // SPEC-419 STEP-2 — interactive EPIC-11 elements (otp keyboard, press-hold, calendar/memory taps).
 // NOTE: KeyboardOptions + pointerInput are already imported below (lines ~123/128); do not re-import.
 import androidx.compose.foundation.text.BasicTextField
@@ -640,10 +642,6 @@ data class ContentBlock(
     val loading_text: String? = null,
     val loading_text_position: String? = null,  // "above" | "below" (default "below")
     val loading_text_size: Double? = null,       // sp, default 15
-    /** SPEC-440 (#547) — bar thickness + item text size. Both were hardcoded, so the element's
-     *  single size parameter scaled every sub-element together. */
-    val loading_bar_height: Double? = null,      // dp, default 8
-    val loading_item_size: Double? = null,       // sp, default 14
     val loading_text_color: String? = null,
     // EPIC-3 — media_gallery: horizontal row of image tiles.
     val gallery_images: kotlinx.collections.immutable.ImmutableList<String>? = null,
@@ -972,6 +970,9 @@ data class InputOption(
     /** Image swap on selection (falls back to `image_url`). */
     val selected_image_url: String? = null,
     val unselected_image_url: String? = null,
+    /** SPEC-441 (#541) — which category chip this option belongs to. An option with NO
+     *  category shows under EVERY chip, so adding chips never hides existing options. */
+    val category: String? = null,
     /** Per-option subtitle (smaller font under label). */
     val subtitle: String? = null,
     /** Per-option text styling — overrides field_config defaults. */
@@ -4904,8 +4905,11 @@ private fun AnimatedLoadingBlock(block: ContentBlock, onAction: (String) -> Unit
     val loadingTextSize = (block.loading_text_size ?: 15.0).sp
     // SPEC-440 (#547) — per-sub-element sizing. Both were hardcoded, so the element's single
     // size parameter scaled the bar and the item text together.
-    val loadingBarHeight = (block.loading_bar_height ?: 8.0).dp
-    val loadingItemSize = (block.loading_item_size ?: 14.0).sp
+    // Read off field_config, NOT as top-level ContentBlock params: the data class is at the
+    // JVM 255-constructor-arg ceiling (scripts/check-contentblock-arg-budget.ts), and two more
+    // top-level fields broke ContentBlock at runtime with a ClassFormatError.
+    val loadingBarHeight = ((block.field_config?.get("loading_bar_height") as? Number)?.toDouble() ?: 8.0).dp
+    val loadingItemSize = ((block.field_config?.get("loading_item_size") as? Number)?.toDouble() ?: 14.0).sp
     // SPEC-419 pass-15 #13 — loading message color falls back loading_text_color → text_color → #9CA3AF
     // (matches iOS + preview; Android previously fell back to text_color→#000).
     val loadingMessageColor = block.loading_text_color?.let { StyleEngine.parseColor(it) }
@@ -8385,7 +8389,23 @@ private fun FormInputSelectBlock(
     inputValues: MutableMap<String, Any>,
 ) {
     val fieldId = block.field_id ?: block.id
-    val options = block.field_options ?: emptyList()
+    val allOptions = block.field_options ?: emptyList()
+    // SPEC-441 (#541) — an optional row of category chips above the options; the active chip
+    // filters what the Select shows. Authored as field_config.categories = [{id,label,icon?}].
+    val categories: List<Triple<String, String, String?>> =
+        (block.field_config?.get("categories") as? List<*>)?.mapNotNull { entry ->
+            val m = entry as? Map<*, *> ?: return@mapNotNull null
+            val id = m["id"] as? String ?: return@mapNotNull null
+            val label = m["label"] as? String ?: return@mapNotNull null
+            Triple(id, label, m["icon"] as? String)
+        }.orEmpty()
+    val showCategoryHeader = (block.field_config?.get("category_header") as? Boolean) ?: true
+    var activeCategory by remember(block.id) { mutableStateOf(categories.firstOrNull()?.first ?: "") }
+    // An option with NO category shows under EVERY chip, so adding chips to an existing Select
+    // never hides options the author already had.
+    val options = if (categories.isEmpty()) allOptions else allOptions.filter {
+        it.category == null || it.category == activeCategory
+    }
     // Gap 1: Read display_style from field_config; defaults to "dropdown".
     val displayStyle = (block.field_config?.get("display_style") as? String) ?: "dropdown"
     // Gap 8: Gracefully handle dynamic options (use_variable / use_webhook) — parse but ignore
@@ -8529,6 +8549,45 @@ private fun FormInputSelectBlock(
         verticalArrangement = Arrangement.spacedBy(6.dp),
     ) {
         FormFieldLabel(block)
+
+        // SPEC-441 (#541) — the chip row, above the options it filters. Mirrors iOS
+        // FormInputSelectBlock.categoryChipRow and the console preview.
+        if (categories.isNotEmpty()) {
+            val accent = ai.appdna.sdk.AppDNA.brandAccentColor()
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .horizontalScroll(rememberScrollState()),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                categories.forEach { (catId, catLabel, catIcon) ->
+                    val isActive = catId == activeCategory
+                    Box(
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(50))
+                            .background(if (isActive) accent.copy(alpha = 0.2f) else Color.Gray.copy(alpha = 0.15f))
+                            .clickable { activeCategory = catId }
+                            .padding(horizontal = 12.dp, vertical = 7.dp),
+                    ) {
+                        Text(
+                            text = catIcon?.let { "$it $catLabel" } ?: catLabel,
+                            fontSize = 13.sp,
+                            fontWeight = FontWeight.Medium,
+                            color = if (isActive) accent else Color.Gray,
+                        )
+                    }
+                }
+            }
+            if (showCategoryHeader) {
+                categories.firstOrNull { it.first == activeCategory }?.let { (_, catLabel, catIcon) ->
+                    Text(
+                        text = catIcon?.let { "$it $catLabel" } ?: catLabel,
+                        fontSize = 13.sp,
+                        color = Color.Gray,
+                    )
+                }
+            }
+        }
 
         when (displayStyle) {
             "stacked" -> {

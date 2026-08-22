@@ -1477,6 +1477,9 @@ internal object OnboardingConfigParser {
                         // author set both id and value.
                         value = fm["value"] as? String ?: fm["id"] as? String ?: "",
                         label = fm["label"] as? String ?: "",
+                        // Android maps every key by hand — omit this and category is null
+                        // forever and the chip filter can never match anything.
+                        category = fm["category"] as? String,
                         image_url = fm["image_url"] as? String,
                         // SPEC-401-A R43 — match iOS rawValue fallback at
                         // ContentBlockTypes.swift:357-360. Was id-only; when
@@ -1816,9 +1819,6 @@ internal object OnboardingConfigParser {
             loading_text = bm["loading_text"] as? String,
             loading_text_position = bm["loading_text_position"] as? String,
             loading_text_size = (bm["loading_text_size"] as? Number)?.toDouble(),
-            // Android maps every key by hand — a field on the data class alone stays null forever.
-            loading_bar_height = (bm["loading_bar_height"] as? Number)?.toDouble(),
-            loading_item_size = (bm["loading_item_size"] as? Number)?.toDouble(),
             loading_text_color = bm["loading_text_color"] as? String,
             gallery_images = (bm["gallery_images"] as? List<*>)?.mapNotNull { it as? String }?.toImmutableList(),
             gallery_item_width = (bm["gallery_item_width"] as? Number)?.toDouble(),
