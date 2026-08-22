@@ -1816,6 +1816,9 @@ internal object OnboardingConfigParser {
             loading_text = bm["loading_text"] as? String,
             loading_text_position = bm["loading_text_position"] as? String,
             loading_text_size = (bm["loading_text_size"] as? Number)?.toDouble(),
+            // Android maps every key by hand — a field on the data class alone stays null forever.
+            loading_bar_height = (bm["loading_bar_height"] as? Number)?.toDouble(),
+            loading_item_size = (bm["loading_item_size"] as? Number)?.toDouble(),
             loading_text_color = bm["loading_text_color"] as? String,
             gallery_images = (bm["gallery_images"] as? List<*>)?.mapNotNull { it as? String }?.toImmutableList(),
             gallery_item_width = (bm["gallery_item_width"] as? Number)?.toDouble(),

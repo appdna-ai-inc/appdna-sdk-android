@@ -640,6 +640,10 @@ data class ContentBlock(
     val loading_text: String? = null,
     val loading_text_position: String? = null,  // "above" | "below" (default "below")
     val loading_text_size: Double? = null,       // sp, default 15
+    /** SPEC-440 (#547) — bar thickness + item text size. Both were hardcoded, so the element's
+     *  single size parameter scaled every sub-element together. */
+    val loading_bar_height: Double? = null,      // dp, default 8
+    val loading_item_size: Double? = null,       // sp, default 14
     val loading_text_color: String? = null,
     // EPIC-3 — media_gallery: horizontal row of image tiles.
     val gallery_images: kotlinx.collections.immutable.ImmutableList<String>? = null,
