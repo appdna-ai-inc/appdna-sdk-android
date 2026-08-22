@@ -8479,6 +8479,14 @@ private fun FormInputSelectBlock(
     // accent, unconditionally).
     val selectedBorder = (cfg?.get("selected_border_color") as? String)
         ?.let { StyleEngine.parseColor(it) } ?: fillCol
+    // SPEC-442 sweep — the remaining per-option styling fields that had no global. Same defect
+    // shape as Selected Border: consistency meant editing every option by hand. Per-option wins.
+    val gTextAlignment = cfg?.get("text_alignment") as? String
+    val gTitleWeight = cfg?.get("title_font_weight") as? String
+    val gImageShape = cfg?.get("image_shape") as? String
+    val gOverlayHex = cfg?.get("image_overlay_color") as? String
+    val gSelectedOverlayHex = cfg?.get("selected_image_overlay_color") as? String
+    val gOverlayOpacity = (cfg?.get("image_overlay_opacity") as? Number)?.toDouble()
     val textCol = cfgOptText
         ?: block.field_style?.text_color?.let { StyleEngine.parseColor(it) }
         ?: Color.Unspecified
@@ -8711,7 +8719,7 @@ private fun FormInputSelectBlock(
                                 }
                                 // Per-option image (with optional selected/unselected variants).
                                 option.resolvedImageURL(isSelected)?.takeIf { it.isNotEmpty() }?.let { url ->
-                                    Box(modifier = Modifier.size((optImgSizeRaw ?: 32f).dp).clip(when (option.image_shape) { "rounded" -> RoundedCornerShape(12.dp); "square" -> RoundedCornerShape(0.dp); else -> CircleShape })) {
+                                    Box(modifier = Modifier.size((optImgSizeRaw ?: 32f).dp).clip(when (option.image_shape ?: gImageShape) { "rounded" -> RoundedCornerShape(12.dp); "square" -> RoundedCornerShape(0.dp); else -> CircleShape })) {
                                         ai.appdna.sdk.core.NetworkImage(
                                             url = url,
                                             modifier = Modifier.fillMaxSize(),
@@ -8720,9 +8728,9 @@ private fun FormInputSelectBlock(
                                         )
                                         // EPIC-1 — image overlay tint; selected uses selected_image_overlay_*
                                         // (falls back to base). Parity with iOS imageWithOverlay (FormInputBlockViews).
-                                        (if (isSelected) (option.selected_image_overlay_color ?: option.image_overlay_color) else option.image_overlay_color)
+                                        (if (isSelected) (option.selected_image_overlay_color ?: gSelectedOverlayHex ?: option.image_overlay_color ?: gOverlayHex) else (option.image_overlay_color ?: gOverlayHex))
                                             ?.takeIf { it.isNotBlank() }?.let { ov ->
-                                                val ovA = ((if (isSelected) (option.selected_image_overlay_opacity ?: option.image_overlay_opacity) else option.image_overlay_opacity) ?: 0.3).toFloat()
+                                                val ovA = ((if (isSelected) (option.selected_image_overlay_opacity ?: option.image_overlay_opacity ?: gOverlayOpacity) else (option.image_overlay_opacity ?: gOverlayOpacity)) ?: 0.3).toFloat()
                                                 Box(Modifier.matchParentSize().background(StyleEngine.parseColor(ov).copy(alpha = ovA)))
                                             }
                                     }
@@ -8748,7 +8756,7 @@ private fun FormInputSelectBlock(
                                     modifier = Modifier.weight(1f),
                                     // EPIC-1 — per-option center alignment (was always start-aligned).
                                     // Mirrors iOS FormInputBlockViews.swift:601 (VStack .center/.leading).
-                                    horizontalAlignment = if (option.text_alignment == "center") Alignment.CenterHorizontally else Alignment.Start,
+                                    horizontalAlignment = if ((option.text_alignment ?: gTextAlignment) == "center") Alignment.CenterHorizontally else Alignment.Start,
                                 ) {
                                     Text(
                                         text = option.label,
@@ -8760,7 +8768,7 @@ private fun FormInputSelectBlock(
                                         fontFamily = optionFontFamily,
                                         maxLines = if (optionTextWrap) Int.MAX_VALUE else 1,
                                         overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
-                                        fontWeight = option.title_font_weight?.let { wStr ->
+                                        fontWeight = (option.title_font_weight ?: gTitleWeight)?.let { wStr ->
                                             ai.appdna.sdk.core.FontResolver.fontWeight(wStr.toIntOrNull() ?: when (wStr.lowercase()) {
                                                 "thin" -> 100; "extralight", "ultralight" -> 200
                                                 "light" -> 300; "normal", "regular" -> 400
@@ -8922,16 +8930,16 @@ private fun FormInputSelectBlock(
                                             horizontalAlignment = cellHAlign,
                                         ) {
                                             option.resolvedImageURL(isSelected)?.takeIf { it.isNotEmpty() }?.let { url ->
-                                                Box(modifier = Modifier.size((optImgSizeRaw ?: 40f).dp).clip(when (option.image_shape) { "rounded" -> RoundedCornerShape(12.dp); "square" -> RoundedCornerShape(0.dp); else -> CircleShape })) {
+                                                Box(modifier = Modifier.size((optImgSizeRaw ?: 40f).dp).clip(when (option.image_shape ?: gImageShape) { "rounded" -> RoundedCornerShape(12.dp); "square" -> RoundedCornerShape(0.dp); else -> CircleShape })) {
                                                     ai.appdna.sdk.core.NetworkImage(
                                                         url = url,
                                                         modifier = Modifier.fillMaxSize(),
                                                         contentScale = ContentScale.Crop,
                                                     )
                                                     // EPIC-1 — image overlay tint; selected uses selected_image_overlay_* (falls back to base).
-                                                    (if (isSelected) (option.selected_image_overlay_color ?: option.image_overlay_color) else option.image_overlay_color)
+                                                    (if (isSelected) (option.selected_image_overlay_color ?: gSelectedOverlayHex ?: option.image_overlay_color ?: gOverlayHex) else (option.image_overlay_color ?: gOverlayHex))
                                                         ?.takeIf { it.isNotBlank() }?.let { ov ->
-                                                            val ovA = ((if (isSelected) (option.selected_image_overlay_opacity ?: option.image_overlay_opacity) else option.image_overlay_opacity) ?: 0.3).toFloat()
+                                                            val ovA = ((if (isSelected) (option.selected_image_overlay_opacity ?: option.image_overlay_opacity ?: gOverlayOpacity) else (option.image_overlay_opacity ?: gOverlayOpacity)) ?: 0.3).toFloat()
                                                             Box(Modifier.matchParentSize().background(StyleEngine.parseColor(ov).copy(alpha = ovA)))
                                                         }
                                                 }
@@ -8956,7 +8964,7 @@ private fun FormInputSelectBlock(
                                                 // Grid honors block-level title default (0.85 factor, parity with iOS gridSelectView + preview).
                                                 fontSize = (option.title_font_size?.toFloat() ?: defaultTitleSize * 0.85f).sp,
                                                 color = optTitleColor,
-                                                fontWeight = option.title_font_weight?.let { wStr ->
+                                                fontWeight = (option.title_font_weight ?: gTitleWeight)?.let { wStr ->
                                                     ai.appdna.sdk.core.FontResolver.fontWeight(wStr.toIntOrNull() ?: when (wStr.lowercase()) {
                                                         "thin" -> 100; "extralight", "ultralight" -> 200
                                                         "light" -> 300; "normal", "regular" -> 400
@@ -9081,9 +9089,9 @@ private fun FormInputSelectBlock(
                                             contentScale = ContentScale.Crop,
                                         )
                                     }
-                                    (if (isSelected) (option.selected_image_overlay_color ?: option.image_overlay_color) else option.image_overlay_color)
+                                    (if (isSelected) (option.selected_image_overlay_color ?: gSelectedOverlayHex ?: option.image_overlay_color ?: gOverlayHex) else (option.image_overlay_color ?: gOverlayHex))
                                         ?.takeIf { it.isNotBlank() }?.let { ov ->
-                                            val ovA = ((if (isSelected) (option.selected_image_overlay_opacity ?: option.image_overlay_opacity) else option.image_overlay_opacity) ?: 0.3).toFloat()
+                                            val ovA = ((if (isSelected) (option.selected_image_overlay_opacity ?: option.image_overlay_opacity ?: gOverlayOpacity) else (option.image_overlay_opacity ?: gOverlayOpacity)) ?: 0.3).toFloat()
                                             Box(Modifier.matchParentSize().background(StyleEngine.parseColor(ov).copy(alpha = ovA)))
                                         }
                                     // Bottom scrim so the label stays legible over any image.
