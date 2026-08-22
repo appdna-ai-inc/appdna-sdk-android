@@ -1375,8 +1375,11 @@ private fun VideoBackgroundView(
 }
 
 @OptIn(ExperimentalFoundationApi::class, androidx.compose.material3.ExperimentalMaterial3Api::class)
+// `internal`, not `private`, so the Roborazzi snapshot test can render the REAL plan card
+// rather than a copy of it. `internal` is module-scoped — it does not widen the SDK's public
+// API surface for consumers.
 @Composable
-private fun PaywallSectionView(
+internal fun PaywallSectionView(
     section: PaywallSection,
     config: PaywallConfig,
     selectedPlanId: String?,
