@@ -4902,6 +4902,10 @@ private fun AnimatedLoadingBlock(block: ContentBlock, onAction: (String) -> Unit
     val loadingMessage = block.loading_text
     val loadingTextPos = block.loading_text_position ?: "below"
     val loadingTextSize = (block.loading_text_size ?: 15.0).sp
+    // SPEC-440 (#547) — per-sub-element sizing. Both were hardcoded, so the element's single
+    // size parameter scaled the bar and the item text together.
+    val loadingBarHeight = (block.loading_bar_height ?: 8.0).dp
+    val loadingItemSize = (block.loading_item_size ?: 14.0).sp
     // SPEC-419 pass-15 #13 — loading message color falls back loading_text_color → text_color → #9CA3AF
     // (matches iOS + preview; Android previously fell back to text_color→#000).
     val loadingMessageColor = block.loading_text_color?.let { StyleEngine.parseColor(it) }
@@ -5169,8 +5173,8 @@ private fun AnimatedLoadingBlock(block: ContentBlock, onAction: (String) -> Unit
                         // `RoundedRectangle(cornerRadius: 4)` filling
                         // `height: 8`. Was 6dp/3dp on Android (visibly
                         // thinner bar).
-                        .height(8.dp)
-                        .clip(RoundedCornerShape(4.dp)),
+                        .height(loadingBarHeight)
+                        .clip(RoundedCornerShape(loadingBarHeight / 2)),
                     color = progressColor,
                     // SPEC-401-A R46 (Lens A #9) — neutral track (was tinted
                     // copy of progressColor at 0.2). iOS uses Color.gray.opacity(0.2)
@@ -5256,7 +5260,9 @@ private fun AnimatedLoadingBlock(block: ContentBlock, onAction: (String) -> Unit
 
                         Text(
                             text = item.label,
-                            fontSize = 15.sp,
+                            // SPEC-440 (#547) — authored item size; 15.sp was hardcoded, so
+                            // items could not be sized independently of the rest of the block.
+                            fontSize = loadingItemSize,
                             // SPEC-401-A R46 (Lens A #8) — match iOS color logic
                             // at ContentBlockStandaloneViews.swift:294-295:
                             // current and completed both .primary; pending
