@@ -8473,7 +8473,12 @@ private fun FormInputSelectBlock(
         // EPIC-1 — neutral gray default (was accent fillCol@0.3 = the "purple-border bug" that
         // tinted every unselected option with the accent). Matches iOS field-border #D1D5DB.
         ?: StyleEngine.parseColor("#D1D5DB")
-    val selectedBorder = fillCol
+    // SPEC-442 (#552) — the GLOBAL selected-border colour. It existed per-option only, so
+    // matching the selected border across N options meant editing N options by hand. A
+    // per-option selected_border_color still wins; this is the shared fallback (was the
+    // accent, unconditionally).
+    val selectedBorder = (cfg?.get("selected_border_color") as? String)
+        ?.let { StyleEngine.parseColor(it) } ?: fillCol
     val textCol = cfgOptText
         ?: block.field_style?.text_color?.let { StyleEngine.parseColor(it) }
         ?: Color.Unspecified
@@ -9128,7 +9133,7 @@ private fun FormInputSelectBlock(
                         val isSelected = isOptionSelected(option.value)
                         val chipBg = if (isSelected) (option.selected_bg_color?.let { StyleEngine.parseColor(it) } ?: fillCol)
                             else (option.bg_color?.let { StyleEngine.parseColor(it) } ?: Color.Transparent)
-                        val chipBorder = if (isSelected) (option.selected_border_color?.let { StyleEngine.parseColor(it) } ?: fillCol)
+                        val chipBorder = if (isSelected) (option.selected_border_color?.let { StyleEngine.parseColor(it) } ?: selectedBorder)
                             else (option.border_color?.let { StyleEngine.parseColor(it) } ?: unselectedBorder)
                         val chipText = if (isSelected) selectedTextCol else textCol
                         Box(
