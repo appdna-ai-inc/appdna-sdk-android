@@ -973,6 +973,10 @@ data class InputOption(
     /** SPEC-441 (#541) — which category chip this option belongs to. An option with NO
      *  category shows under EVERY chip, so adding chips never hides existing options. */
     val category: String? = null,
+    /** SPEC-444 (#540, #542) — the bottom sheet this option opens when picked. Contents are
+     *  ordinary content blocks, so one engine serves both the chooser and the detail sheet.
+     *  Presentation-only: nothing set inside is reported back. */
+    val sheet_blocks: kotlinx.collections.immutable.ImmutableList<ContentBlock>? = null,
     /** Per-option subtitle (smaller font under label). */
     val subtitle: String? = null,
     /** Per-option text styling — overrides field_config defaults. */
@@ -8580,6 +8584,9 @@ private fun FormInputSelectBlock(
     }
     fun isOptionSelected(value: String): Boolean =
         if (isMulti) selectedValues.contains(value) else selectedValue == value
+    // SPEC-444 (#540, #542) — the option whose bottom sheet is showing, if any.
+    var sheetOption by remember(block.id) { mutableStateOf<InputOption?>(null) }
+
     fun pickOption(value: String) {
         if (isMulti) {
             toggleMulti(value)
@@ -8587,6 +8594,15 @@ private fun FormInputSelectBlock(
             selectedValue = value
             inputValues[fieldId] = value
         }
+        // Picking an option that owns a sheet opens it. The choice is already recorded above;
+        // the sheet only presents, so nothing else is reported to the host app.
+        allOptions.firstOrNull { it.value == value }
+            ?.takeIf { !it.sheet_blocks.isNullOrEmpty() }
+            ?.let { sheetOption = it }
+    }
+
+    sheetOption?.let { opt ->
+        OptionBottomSheet(option = opt, onDismiss = { sheetOption = null })
     }
 
     Column(
@@ -10780,4 +10796,43 @@ private fun StubBlockPlaceholder(typeName: String) {
         )
     }
     // In non-debug mode: renders nothing (empty composable)
+}
+
+// MARK: - SPEC-444 (#540, #542) — the option bottom sheet
+
+/**
+ * Presents an option's `sheet_blocks` through the ordinary content-block renderer.
+ *
+ * One engine, two authoring presets: the console seeds a chooser set (slider / toggle /
+ * preview / CTA) or a detail set (badge / heading / media / CTA), and the author edits from
+ * there. Mirrors iOS `OptionBottomSheetView`.
+ *
+ * Presentation-only by design: values set inside are NOT reported to the host app. The
+ * reporter confirmed only the option choice matters, which is why there is no response
+ * plumbing here on either platform.
+ */
+@OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
+@Composable
+private fun OptionBottomSheet(option: InputOption, onDismiss: () -> Unit) {
+    val sheetToggles = remember { mutableStateMapOf<String, Boolean>() }
+    val sheetInputs = remember { mutableStateMapOf<String, Any>() }
+    androidx.compose.material3.ModalBottomSheet(onDismissRequest = onDismiss) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 20.dp)
+                .padding(bottom = 24.dp),
+        ) {
+            ContentBlockRendererView(
+                blocks = option.sheet_blocks.orEmpty(),
+                onAction = { action ->
+                    // The CTA closes the sheet; the flow continues underneath, where the
+                    // option is already selected.
+                    if (action == "next" || action == "continue" || action == "dismiss") onDismiss()
+                },
+                toggleValues = sheetToggles,
+                inputValues = sheetInputs,
+            )
+        }
+    }
 }

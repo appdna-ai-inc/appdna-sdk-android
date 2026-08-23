@@ -1480,6 +1480,9 @@ internal object OnboardingConfigParser {
                         // Android maps every key by hand — omit this and category is null
                         // forever and the chip filter can never match anything.
                         category = fm["category"] as? String,
+                        // SPEC-444 (#540, #542) — the option's bottom-sheet contents, parsed
+                        // with the same child-block helper the stack/row containers use.
+                        sheet_blocks = parseChildBlocks(fm["sheet_blocks"]),
                         image_url = fm["image_url"] as? String,
                         // SPEC-401-A R43 — match iOS rawValue fallback at
                         // ContentBlockTypes.swift:357-360. Was id-only; when

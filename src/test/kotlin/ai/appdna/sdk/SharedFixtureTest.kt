@@ -1040,6 +1040,12 @@ class SharedFixtureTest(
                 spy.state["parsed_label_position"] = block.field_style?.label_position
                 spy.state["parsed_label_align"] = block.field_style?.label_align
                 spy.state["parsed_label_font_family"] = block.field_style?.label_font_family
+                // SPEC-444 (#540, #542) — the option's nested sheet blocks.
+                val fopts = block.field_options.orEmpty()
+                spy.state["parsed_opt0_sheet_block_count"] = fopts.getOrNull(0)?.sheet_blocks?.size ?: 0
+                spy.state["parsed_opt0_sheet_first_type"] = fopts.getOrNull(0)?.sheet_blocks?.firstOrNull()?.type
+                spy.state["parsed_opt0_sheet_last_type"] = fopts.getOrNull(0)?.sheet_blocks?.lastOrNull()?.type
+                spy.state["parsed_opt1_sheet_block_count"] = fopts.getOrNull(1)?.sheet_blocks?.size ?: 0
             }
             "paywalls" -> {
                 val parsed = PaywallConfigParser.parseSinglePaywall(map["id"] as String, map)
