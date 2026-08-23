@@ -8425,7 +8425,8 @@ private fun FormInputSelectBlock(
     val fieldId = block.field_id ?: block.id
     val allOptions = block.field_options ?: emptyList()
     // SPEC-441 (#541) — an optional row of category chips above the options; the active chip
-    // filters what the Select shows. Authored as field_config.categories = [{id,label,icon?}].
+    // SCROLLS to that section (see the note on `options` below — nothing is filtered out).
+    // Authored as field_config.categories = [{id,label,icon?}]; an option points at one by id.
     val categories: List<Triple<String, String, String?>> =
         (block.field_config?.get("categories") as? List<*>)?.mapNotNull { entry ->
             val m = entry as? Map<*, *> ?: return@mapNotNull null

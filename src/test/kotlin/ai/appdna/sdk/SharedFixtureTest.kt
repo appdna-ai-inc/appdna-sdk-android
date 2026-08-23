@@ -1051,8 +1051,10 @@ class SharedFixtureTest(
                 // while the chip renderer still compiles and draws an empty row.
                 spy.state["parsed_opt0_category"] = fopts.getOrNull(0)?.category
                 spy.state["parsed_opt2_category"] = fopts.getOrNull(2)?.category
-                spy.state["parsed_categories"] =
-                    (block.field_config?.get("categories") as? List<*>)?.mapNotNull { it as? String }
+                val rawCats = (block.field_config?.get("categories") as? List<*>)
+                    ?.mapNotNull { it as? Map<*, *> }.orEmpty()
+                spy.state["parsed_category_ids"] = rawCats.mapNotNull { it["id"] as? String }
+                spy.state["parsed_category_labels"] = rawCats.mapNotNull { it["label"] as? String }
             }
             "paywalls" -> {
                 val parsed = PaywallConfigParser.parseSinglePaywall(map["id"] as String, map)
