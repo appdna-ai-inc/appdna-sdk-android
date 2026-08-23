@@ -8431,11 +8431,13 @@ private fun FormInputSelectBlock(
         }.orEmpty()
     val showCategoryHeader = (block.field_config?.get("category_header") as? Boolean) ?: true
     var activeCategory by remember(block.id) { mutableStateOf(categories.firstOrNull()?.first ?: "") }
-    // An option with NO category shows under EVERY chip, so adding chips to an existing Select
-    // never hides options the author already had.
-    val options = if (categories.isEmpty()) allOptions else allOptions.filter {
-        it.category == null || it.category == activeCategory
-    }
+    // The chips are scroll-spy NAVIGATION, not a filter — every category renders as its own
+    // titled section in one scrolling list. (An earlier build filtered to the active chip; that
+    // was a misread of a screenshot showing only the first section.) Uncategorised options lead,
+    // then each category's options in the authored order.
+    val options = if (categories.isEmpty()) allOptions else
+        allOptions.filter { it.category == null } +
+            categories.flatMap { (catId, _, _) -> allOptions.filter { it.category == catId } }
     // Gap 1: Read display_style from field_config; defaults to "dropdown".
     val displayStyle = (block.field_config?.get("display_style") as? String) ?: "dropdown"
     // Gap 8: Gracefully handle dynamic options (use_variable / use_webhook) — parse but ignore
@@ -8621,15 +8623,6 @@ private fun FormInputSelectBlock(
                     }
                 }
             }
-            if (showCategoryHeader) {
-                categories.firstOrNull { it.first == activeCategory }?.let { (_, catLabel, catIcon) ->
-                    Text(
-                        text = catIcon?.let { "$it $catLabel" } ?: catLabel,
-                        fontSize = 13.sp,
-                        color = Color.Gray,
-                    )
-                }
-            }
         }
 
         when (displayStyle) {
@@ -8651,6 +8644,21 @@ private fun FormInputSelectBlock(
                     modifier = Modifier.fillMaxWidth(),
                 ) {
                     options.forEachIndexed { oi, option ->   // SPEC-419 — per-index parity node key
+                        // SPEC-441 (#541) — section header before the first option of each
+                        // category. Mirrors iOS sectionStart + the console preview.
+                        if (showCategoryHeader && option.category != null &&
+                            (oi == 0 || options[oi - 1].category != option.category)
+                        ) {
+                            categories.firstOrNull { it.first == option.category }?.let { (_, cl, ci) ->
+                                Text(
+                                    text = ci?.let { "$it $cl" } ?: cl,
+                                    fontSize = 13.sp,
+                                    fontWeight = FontWeight.Medium,
+                                    color = Color.Gray,
+                                    modifier = Modifier.fillMaxWidth().padding(top = if (oi == 0) 0.dp else 8.dp),
+                                )
+                            }
+                        }
                         val isSelected = isOptionSelected(option.value)
                         // Per-option color overrides — each option can carry its own
                         // bg / border / selected colors that override the field_config
