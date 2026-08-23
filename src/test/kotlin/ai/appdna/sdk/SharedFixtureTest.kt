@@ -1046,6 +1046,13 @@ class SharedFixtureTest(
                 spy.state["parsed_opt0_sheet_first_type"] = fopts.getOrNull(0)?.sheet_blocks?.firstOrNull()?.type
                 spy.state["parsed_opt0_sheet_last_type"] = fopts.getOrNull(0)?.sheet_blocks?.lastOrNull()?.type
                 spy.state["parsed_opt1_sheet_block_count"] = fopts.getOrNull(1)?.sheet_blocks?.size ?: 0
+                // SPEC-441 (#541) — the option's `category` drives section navigation. Android
+                // maps every option key by hand, so this is exactly the field that can go missing
+                // while the chip renderer still compiles and draws an empty row.
+                spy.state["parsed_opt0_category"] = fopts.getOrNull(0)?.category
+                spy.state["parsed_opt2_category"] = fopts.getOrNull(2)?.category
+                spy.state["parsed_categories"] =
+                    (block.field_config?.get("categories") as? List<*>)?.mapNotNull { it as? String }
             }
             "paywalls" -> {
                 val parsed = PaywallConfigParser.parseSinglePaywall(map["id"] as String, map)
