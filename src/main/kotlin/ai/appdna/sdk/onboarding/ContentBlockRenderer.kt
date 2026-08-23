@@ -4910,6 +4910,10 @@ private fun AnimatedLoadingBlock(block: ContentBlock, onAction: (String) -> Unit
     // top-level fields broke ContentBlock at runtime with a ClassFormatError.
     val loadingBarHeight = ((block.field_config?.get("loading_bar_height") as? Number)?.toDouble() ?: 8.0).dp
     val loadingItemSize = ((block.field_config?.get("loading_item_size") as? Number)?.toDouble() ?: 14.0).sp
+    // SPEC-443 (#547) — explicit top-to-bottom order of the Loading sub-elements. The only
+    // control before this was "message above/below the indicator", which cannot express
+    // bar -> message -> items. Absent = today's arrangement, so existing flows are unchanged.
+    val loadingOrder = (block.field_config?.get("loading_order") as? List<*>)?.mapNotNull { it as? String }
     // SPEC-419 pass-15 #13 — loading message color falls back loading_text_color → text_color → #9CA3AF
     // (matches iOS + preview; Android previously fell back to text_color→#000).
     val loadingMessageColor = block.loading_text_color?.let { StyleEngine.parseColor(it) }
@@ -4992,7 +4996,8 @@ private fun AnimatedLoadingBlock(block: ContentBlock, onAction: (String) -> Unit
         // layout (icons arranged in a circle around a central dot), matching
         // iOS OrbitingIconsLoaderView + the console preview. Previously it
         // fell back to the plain circular spinner.
-        if (loadingMessage != null && loadingTextPos == "above") {
+        val orderOwnsMessage = variant == "linear" && loadingOrder != null
+        if (loadingMessage != null && loadingTextPos == "above" && !orderOwnsMessage) {
             Text(
                 text = loadingMessage,
                 fontSize = loadingTextSize,
@@ -5167,6 +5172,27 @@ private fun AnimatedLoadingBlock(block: ContentBlock, onAction: (String) -> Unit
                 }
             }
             "linear" -> {
+                // SPEC-443 (#547) — sub-elements drawn in the authored order. Default
+                // reproduces today's arrangement exactly.
+                val order = loadingOrder ?: if (loadingTextPos == "above")
+                    listOf("message", "bar", "items") else listOf("bar", "items", "message")
+                order.forEach { part ->
+                    when (part) {
+                        "message" -> if (loadingOrder != null && !loadingMessage.isNullOrBlank()) {
+                            Text(
+                                text = loadingMessage,
+                                fontSize = loadingTextSize,
+                                color = loadingMessageColor,
+                            )
+                        }
+                        "items" -> items.getOrNull(minOf(1, items.size - 1))?.let { it ->
+                            Text(
+                                text = it.label,
+                                fontSize = loadingItemSize,
+                                color = if (block.text_color == null) MaterialTheme.colorScheme.onSurface else textColor,
+                            )
+                        }
+                        "bar" -> {
                 // SPEC-401-A R22 — Material3 1.2 lambda form (see
                 // OnboardingActivity.kt:1093 for the same pre-emptive switch).
                 LinearProgressIndicator(
@@ -5185,6 +5211,10 @@ private fun AnimatedLoadingBlock(block: ContentBlock, onAction: (String) -> Unit
                     // (ContentBlockStandaloneViews.swift:258).
                     trackColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.2f),
                 )
+                        }
+                        else -> Unit
+                    }
+                }
                 if (showPercentage) {
                     Text(
                         text = "${(overallProgress * 100).toInt()}%",
@@ -5297,7 +5327,7 @@ private fun AnimatedLoadingBlock(block: ContentBlock, onAction: (String) -> Unit
                 }
             }
         }
-        if (loadingMessage != null && loadingTextPos == "below") {
+        if (loadingMessage != null && loadingTextPos == "below" && !orderOwnsMessage) {
             Text(
                 text = loadingMessage,
                 fontSize = loadingTextSize,
