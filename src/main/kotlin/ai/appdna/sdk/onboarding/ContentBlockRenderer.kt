@@ -1122,6 +1122,9 @@ private fun resolveDotPath(
     hookData: Map<String, Any>?,
     userTraits: Map<String, Any>?,
     sessionData: Map<String, Any>?,
+    /** SPEC-446 — the current step's live inputValues, addressable as `{{step.field_id}}`.
+     *  Defaulted so every existing call site compiles and behaves exactly as before. */
+    stepInputs: Map<String, Any>? = null,
 ): Any? {
     if (path.isNullOrEmpty()) return null
     val parts = path.split(".")
@@ -1132,6 +1135,9 @@ private fun resolveDotPath(
         "hook_data" -> hookData
         "user" -> userTraits
         "session" -> sessionData
+        // SPEC-446 — `responses` holds COMPLETED steps only, so a stat showing the value of a
+        // slider on the same card resolved to nothing until the step ended and the card was gone.
+        "step" -> stepInputs
         else -> null
     }
 
@@ -1151,12 +1157,17 @@ fun resolveTemplateString(
     responses: Map<String, Any>,
     sessionData: Map<String, Any>? = null,
     userTraits: Map<String, Any>? = null,
+    stepInputs: Map<String, Any>? = null,
 ): String {
-    val pattern = Regex("\\{\\{\\s*([a-zA-Z0-9_.]+)\\s*\\}\\}")
+    // SPEC-446 §3b — `{{var | fallback}}`. The console's picker advertises this syntax and the web
+    // preview implements it; neither native did, so the whole literal (pipe included) rendered on
+    // the user's screen when an author followed our own instruction.
+    val pattern = Regex("\\{\\{\\s*([a-zA-Z0-9_.]+)\\s*(?:\\|\\s*([^}]*?)\\s*)?\\}\\}")
     return pattern.replace(text) { matchResult ->
         val path = matchResult.groupValues[1]
-        val resolved = resolveDotPath(path, responses, hookData, userTraits, sessionData)
-        resolved?.toString() ?: matchResult.value
+        val fallback = matchResult.groupValues.getOrNull(2)?.takeIf { it.isNotEmpty() }
+        val resolved = resolveDotPath(path, responses, hookData, userTraits, sessionData, stepInputs)
+        resolved?.toString() ?: fallback ?: matchResult.value
     }
 }
 
@@ -1205,6 +1216,32 @@ private fun resolveBlockBindings(
             label = resolved.label?.let { if (it.contains("{{")) resolveTemplateString(it, hookData, responses) else it },
             markdown_content = resolved.markdown_content?.let { if (it.contains("{{")) resolveTemplateString(it, hookData, responses) else it },
         )
+
+        // SPEC-446 §2 — summary stats are an ARRAY OF DICTS nested inside field_config, so the
+        // resolver has to walk into it. Every entry above is a flat field; this is not, and
+        // treating it as "one more key in the whitelist" would have quietly done nothing.
+        val cfg = resolved.field_config
+        val rawStats = cfg?.get("summary_stats") as? List<*>
+        if (rawStats != null) {
+            var changed = false
+            val nextStats = rawStats.map { entry ->
+                val stat = entry as? Map<*, *> ?: return@map entry
+                val next = stat.toMutableMap()
+                for (key in listOf("value", "label")) {
+                    val s = stat[key] as? String ?: continue
+                    if (s.contains("{{")) {
+                        next[key] = resolveTemplateString(s, hookData, responses)
+                        changed = true
+                    }
+                }
+                next
+            }
+            if (changed) {
+                val nextCfg = cfg.toMutableMap()
+                nextCfg["summary_stats"] = nextStats
+                resolved = resolved.copy(field_config = nextCfg)
+            }
+        }
     }
 
     return resolved
