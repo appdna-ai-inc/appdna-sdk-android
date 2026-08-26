@@ -133,6 +133,7 @@ import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.ui.graphics.asImageBitmap
 import kotlinx.coroutines.launch
 import androidx.compose.foundation.Image
+import kotlinx.collections.immutable.toImmutableList
 
 // MARK: - Block Style Design Tokens (SPEC-089d §6.1)
 
@@ -1175,10 +1176,18 @@ fun resolveTemplateString(
  * AC-064/065/066: Resolves dynamic bindings and template strings on a block.
  * Returns a new ContentBlock with resolved text fields and binding property overrides.
  */
-private fun resolveBlockBindings(
+// `internal`, not private: the shared-fixture runner drives THIS function so a fixture proves the
+// whitelist applies a token to a given key — calling resolveTemplateString directly proves only that
+// the resolver can expand a token, which is what let a deleted `label` line pass as green.
+internal fun resolveBlockBindings(
     block: ContentBlock,
     hookData: Map<String, Any>?,
     responses: Map<String, Any>,
+    // SPEC-446 R4 — the LIVE values typed on the current step, addressable as `{{step.field_id}}`.
+    // resolveTemplateString has accepted a stepInputs map since the `step` root landed, but NO caller
+    // ever passed one, so the console's "This Step (live)" picker group offered authors a namespace
+    // that resolved to nothing on device. Declaring the parameter is not wiring it.
+    stepInputs: Map<String, Any>? = null,
 ): ContentBlock {
     val hasBindings = !block.bindings.isNullOrEmpty()
     val hasTemplates = (block.text?.contains("{{") == true)
@@ -1186,11 +1195,24 @@ private fun resolveBlockBindings(
         || (block.field_placeholder?.contains("{{") == true)
         || (block.badge_text?.contains("{{") == true)
         || (block.toggle_label?.contains("{{") == true)
+        // Legacy rating key. Kept because it costs nothing, NOT because iOS lacking it is a bug —
+        // SPEC-446 §3c claimed that and was wrong: SPEC-401-A R61 dropped `?: block.label` from the
+        // renderers so this field no longer reaches the screen on either platform.
         || (block.label?.contains("{{") == true)
         // RichText v2 — rich_text's primary content field is markdown_content; it
         // must run the SAME {{var}} interpolation as text so a rich_text block
         // referencing a prior-screen answer resolves on device (mirrors iOS).
         || (block.markdown_content?.contains("{{") == true)
+        // SPEC-446 R4 — mirrors iOS: the resolver below walks field_config.summary_stats, but this
+        // gate did not, so a summary screen with a static headline and variables only in its stats
+        // short-circuited here and shipped the raw token.
+        || ((block.field_config?.get("summary_stats") as? List<*>)?.any { s ->
+            val m = s as? Map<*, *> ?: return@any false
+            listOf("value", "label").any { k -> (m[k] as? String)?.contains("{{") == true }
+        } == true)
+        || (block.field_options?.any { o ->
+            listOf(o.label, o.subtitle, o.leading_text).any { it?.contains("{{") == true }
+        } == true)
     if (!hasBindings && !hasTemplates) return block
 
     var resolved = block
@@ -1198,7 +1220,7 @@ private fun resolveBlockBindings(
     // AC-066: Resolve bindings map — override block properties from data context
     if (hasBindings) {
         block.bindings?.forEach { (property, path) ->
-            val value = resolveDotPath(path, responses, hookData, null, null)
+            val value = resolveDotPath(path, responses, hookData, null, null, stepInputs)
             if (value != null) {
                 resolved = applyBindingProperty(resolved, property, value)
             }
@@ -1208,14 +1230,38 @@ private fun resolveBlockBindings(
     // AC-064/065: Resolve template strings in text fields
     if (hasTemplates) {
         resolved = resolved.copy(
-            text = resolved.text?.let { if (it.contains("{{")) resolveTemplateString(it, hookData, responses) else it },
-            field_label = resolved.field_label?.let { if (it.contains("{{")) resolveTemplateString(it, hookData, responses) else it },
-            field_placeholder = resolved.field_placeholder?.let { if (it.contains("{{")) resolveTemplateString(it, hookData, responses) else it },
-            badge_text = resolved.badge_text?.let { if (it.contains("{{")) resolveTemplateString(it, hookData, responses) else it },
-            toggle_label = resolved.toggle_label?.let { if (it.contains("{{")) resolveTemplateString(it, hookData, responses) else it },
-            label = resolved.label?.let { if (it.contains("{{")) resolveTemplateString(it, hookData, responses) else it },
-            markdown_content = resolved.markdown_content?.let { if (it.contains("{{")) resolveTemplateString(it, hookData, responses) else it },
+            text = resolved.text?.let { if (it.contains("{{")) resolveTemplateString(it, hookData, responses, stepInputs = stepInputs) else it },
+            field_label = resolved.field_label?.let { if (it.contains("{{")) resolveTemplateString(it, hookData, responses, stepInputs = stepInputs) else it },
+            field_placeholder = resolved.field_placeholder?.let { if (it.contains("{{")) resolveTemplateString(it, hookData, responses, stepInputs = stepInputs) else it },
+            badge_text = resolved.badge_text?.let { if (it.contains("{{")) resolveTemplateString(it, hookData, responses, stepInputs = stepInputs) else it },
+            toggle_label = resolved.toggle_label?.let { if (it.contains("{{")) resolveTemplateString(it, hookData, responses, stepInputs = stepInputs) else it },
+            label = resolved.label?.let { if (it.contains("{{")) resolveTemplateString(it, hookData, responses, stepInputs = stepInputs) else it },
+            markdown_content = resolved.markdown_content?.let { if (it.contains("{{")) resolveTemplateString(it, hookData, responses, stepInputs = stepInputs) else it },
         )
+
+        // SPEC-446 R4 — OPTION text. `{{var}}` in a select/image-tile option was resolved by NOTHING
+        // on either platform: the whitelist only ever touched the block's own top-level `label`. The
+        // console's variable picker is available wherever an author types, options included, so this
+        // was a raw token on screen on BOTH platforms rather than a cross-platform difference — which
+        // is why symmetric fixtures never noticed it.
+        val opts = resolved.field_options
+        if (opts != null) {
+            var optChanged = false
+            val nextOpts = opts.map { o ->
+                var next = o
+                if (o.label?.contains("{{") == true) {
+                    next = next.copy(label = resolveTemplateString(o.label, hookData, responses, stepInputs = stepInputs)); optChanged = true
+                }
+                if (o.subtitle?.contains("{{") == true) {
+                    next = next.copy(subtitle = resolveTemplateString(o.subtitle, hookData, responses, stepInputs = stepInputs)); optChanged = true
+                }
+                if (o.leading_text?.contains("{{") == true) {
+                    next = next.copy(leading_text = resolveTemplateString(o.leading_text, hookData, responses, stepInputs = stepInputs)); optChanged = true
+                }
+                next
+            }
+            if (optChanged) resolved = resolved.copy(field_options = nextOpts.toImmutableList())
+        }
 
         // SPEC-446 §2 — summary stats are an ARRAY OF DICTS nested inside field_config, so the
         // resolver has to walk into it. Every entry above is a flat field; this is not, and
@@ -1230,7 +1276,7 @@ private fun resolveBlockBindings(
                 for (key in listOf("value", "label")) {
                     val s = stat[key] as? String ?: continue
                     if (s.contains("{{")) {
-                        next[key] = resolveTemplateString(s, hookData, responses)
+                        next[key] = resolveTemplateString(s, hookData, responses, stepInputs = stepInputs)
                         changed = true
                     }
                 }
@@ -1457,7 +1503,7 @@ fun ContentBlockRendererView(
             // AFTER resolveBlockBindings (which early-returns raw blocks that have no bindings — i.e.
             // every EPIC-11 element, so the merge can't live inside it). Empty overrides → no change.
             val block = resolvedFieldConfig(
-                resolveBlockBindings(rawBlock, hookData = hookData, responses = responses),
+                resolveBlockBindings(rawBlock, hookData = hookData, responses = responses, stepInputs = inputValues),
                 fieldConfigOverrides,
             )
 

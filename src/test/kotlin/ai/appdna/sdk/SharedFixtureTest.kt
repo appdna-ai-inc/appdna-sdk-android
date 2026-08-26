@@ -110,6 +110,7 @@ import org.robolectric.ParameterizedRobolectricTestRunner
 import org.robolectric.Shadows.shadowOf
 import org.robolectric.annotation.Config
 import java.io.File
+import ai.appdna.sdk.onboarding.resolveBlockBindings
 
 @RunWith(ParameterizedRobolectricTestRunner::class)
 @Config(sdk = [34])
@@ -1075,19 +1076,18 @@ class SharedFixtureTest(
                 val fixtureStepInputs: Map<String, Any> =
                     stepJson.keys().asSequence().associateWith { stepJson.get(it) }
                 if (fixtureResponses.isNotEmpty() || fixtureStepInputs.isNotEmpty()) {
-                    spy.state["resolved_text"] = resolveTemplateString(
-                        block.text ?: "", null, fixtureResponses, null, null, fixtureStepInputs,
+                    // Drive the REAL whitelist, not resolveTemplateString directly. Calling the
+                    // resolver by hand proves only that it can expand a token; it says nothing about
+                    // whether the block pass applies it to a given key — round-4 bug injection deleted
+                    // the `label` line from the whitelist and this file stayed green.
+                    val r = resolveBlockBindings(
+                        block, hookData = null, responses = fixtureResponses, stepInputs = fixtureStepInputs,
                     )
-                    spy.state["resolved_option_label"] = resolveTemplateString(
-                        block.field_options?.firstOrNull()?.label ?: "",
-                        null, fixtureResponses, null, null, fixtureStepInputs,
-                    )
-                    val rawStats = block.field_config?.get("summary_stats") as? List<*>
+                    spy.state["resolved_text"] = r.text ?: ""
+                    spy.state["resolved_option_label"] = r.field_options?.firstOrNull()?.label ?: ""
+                    val rawStats = r.field_config?.get("summary_stats") as? List<*>
                     val firstStat = rawStats?.firstOrNull() as? Map<*, *>
-                    spy.state["resolved_stat0_value"] = resolveTemplateString(
-                        (firstStat?.get("value") as? String) ?: "",
-                        null, fixtureResponses, null, null, fixtureStepInputs,
-                    )
+                    spy.state["resolved_stat0_value"] = (firstStat?.get("value") as? String) ?: ""
                 }
 
                 // SPEC-441 (#541) — the option's `category` drives section navigation. Android
