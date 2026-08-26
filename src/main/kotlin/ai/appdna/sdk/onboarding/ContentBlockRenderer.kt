@@ -1230,6 +1230,23 @@ internal fun resolveBlockBindings(
         }
     }
 
+    // SPEC-446 — a sibling stat reading `{{step.<field_id>}}` must resolve on the FIRST frame. The
+    // control seeds its authored default after composition, so on that first pass the id is absent
+    // from stepInputs, the token does not resolve, and the suppression below then DROPS the stat
+    // entirely: the live-value card the reporter asked for was simply not there until the user
+    // touched the slider. Authored defaults are merged in UNDER the live values, which always win.
+    @Suppress("NAME_SHADOWING")
+    val stepInputs = run {
+        val defaults = (block.field_config?.get("summary_stats") as? List<*>)
+            ?.mapNotNull { it as? Map<*, *> }
+            ?.mapNotNull { s ->
+                val fid = (s["field_id"] as? String)?.takeIf { it.isNotEmpty() } ?: return@mapNotNull null
+                val def = s["default"] ?: return@mapNotNull null
+                fid to def
+            }.orEmpty().toMap()
+        if (defaults.isEmpty()) stepInputs else defaults + (stepInputs ?: emptyMap())
+    }
+
     // AC-064/065: Resolve template strings in text fields
     if (hasTemplates) {
         resolved = resolved.copy(
@@ -1649,7 +1666,7 @@ private fun RenderBlockContent(
         "password_strength" -> PasswordStrengthBlock(block)
         "speech_bubble" -> SpeechBubbleBlock(block, loc)
         "feedback_panel" -> FeedbackPanelBlock(block, loc)
-        "summary_screen" -> SummaryScreenBlock(block, loc)
+        "summary_screen" -> SummaryScreenBlock(block, loc, inputValues)
         "press_hold_confirm" -> PressHoldConfirmBlock(block, inputValues, loc, onInteract)
         "health_connect" -> HealthConnectBlock(block, onAction, loc, onInteract)
         "settings_footer" -> SettingsFooterBlock(block, onAction, onInteract)
@@ -2800,7 +2817,15 @@ private fun FeedbackPanelBlock(block: ContentBlock, loc: ((String, String) -> St
  * stat cards. `field_config.summary_stats` = [{value, label, color?}]; each card shows a big colored value +
  * a muted label. */
 @Composable
-private fun SummaryScreenBlock(block: ContentBlock, loc: ((String, String) -> String)? = null) {
+private fun SummaryScreenBlock(
+    block: ContentBlock,
+    loc: ((String, String) -> String)? = null,
+    // SPEC-446 §3 — a stat may HOST a control. The required-gate half of this shipped without
+    // the rendering half on BOTH platforms: RequiredFieldGate blocks on an unanswered stat input
+    // while nothing ever drew one, so a stat marked required could not be satisfied and the step
+    // could not be advanced at all. A gate for a control that does not exist is worse than neither.
+    inputValues: MutableMap<String, Any> = mutableMapOf(),
+) {
     val statsRaw = (block.field_config?.get("summary_stats") as? List<*>) ?: emptyList<Any>()
     val stats = statsRaw.mapNotNull { it as? Map<*, *> }
     val headline = loc?.invoke("block.${block.id}.text", block.text ?: "") ?: (block.text ?: "")
@@ -2840,8 +2865,21 @@ private fun SummaryScreenBlock(block: ContentBlock, loc: ((String, String) -> St
                             .padding(16.dp),
                         verticalArrangement = Arrangement.spacedBy(4.dp),
                     ) {
-                        Text(value, fontSize = 24.sp, fontWeight = FontWeight.Bold, color = color)
-                        Text(label, fontSize = 13.sp, color = textColor.copy(alpha = 0.7f))
+                        val statInput = (m["input"] as? String) ?: "none"
+                        val statFieldId = (m["field_id"] as? String) ?: ""
+                        if (statInput != "none" && statFieldId.isNotEmpty()) {
+                            SummaryStatInput(
+                                stat = m,
+                                fieldId = statFieldId,
+                                valueColor = color,
+                                labelColor = textColor.copy(alpha = 0.7f),
+                                label = label,
+                                inputValues = inputValues,
+                            )
+                        } else {
+                            Text(value, fontSize = 24.sp, fontWeight = FontWeight.Bold, color = color)
+                            Text(label, fontSize = 13.sp, color = textColor.copy(alpha = 0.7f))
+                        }
                     }
                 }
                 if (perRow == 2 && rowStats.size == 1) Spacer(modifier = Modifier.weight(1f))
@@ -11029,5 +11067,97 @@ private fun OptionBottomSheet(option: InputOption, onDismiss: () -> Unit) {
                 inputValues = sheetInputs,
             )
         }
+    }
+}
+
+/**
+ * SPEC-446 §3 — the control a Summary Screen stat can host. Mirrors iOS `SummaryStatInput`.
+ *
+ * The value written here is what a LATER step reads through `{{responses.<field_id>}}` and what a
+ * stat on the SAME card reads live through `{{step.<field_id>}}` — the case the reporter actually
+ * described. That live path works because the renderer passes `inputValues` into the template
+ * resolver as `stepInputs`, so a write here recomposes the sibling stat.
+ */
+@Composable
+private fun SummaryStatInput(
+    stat: Map<*, *>,
+    fieldId: String,
+    valueColor: Color,
+    labelColor: Color,
+    label: String,
+    inputValues: MutableMap<String, Any>,
+) {
+    fun statDouble(key: String, fallback: Double): Double = when (val v = stat[key]) {
+        is Number -> v.toDouble()
+        // A numeric STRING survives even though normalize-step-numerics coerces on save: a flow
+        // imported or AI-generated outside that path still reaches the device as a string.
+        is String -> v.toDoubleOrNull() ?: fallback
+        else -> fallback
+    }
+
+    val stepV = statDouble("step", 1.0).coerceAtLeast(0.0001)
+    val lo = statDouble("min", 0.0)
+    val hi = statDouble("max", 100.0).coerceAtLeast(lo + stepV)
+
+    var current by remember(fieldId) {
+        mutableStateOf(
+            when (val v = inputValues[fieldId]) {
+                is Number -> v.toDouble()
+                is String -> v.toDoubleOrNull() ?: statDouble("default", lo)
+                else -> statDouble("default", lo)
+            },
+        )
+    }
+
+    fun write(v: Double) {
+        val clamped = v.coerceIn(lo, hi)
+        current = clamped
+        // Whole numbers go back as Int so `{{step.x}}` renders "4" and not "4.0" — the raw value is
+        // what a summary card shows the user, so the formatting is the feature.
+        inputValues[fieldId] = if (clamped == kotlin.math.floor(clamped)) clamped.toInt() else clamped
+    }
+
+    LaunchedEffect(fieldId) {
+        // Seed the authored default so a stat that is NOT required still reports a value, and so the
+        // sibling `{{step.x}}` stat has something to show before the first drag.
+        if (inputValues[fieldId] == null && stat["default"] != null) write(statDouble("default", lo))
+    }
+
+    val shown = if (current == kotlin.math.floor(current)) current.toInt().toString() else current.toString()
+    Text(shown, fontSize = 24.sp, fontWeight = FontWeight.Bold, color = valueColor)
+    Text(label, fontSize = 13.sp, color = labelColor)
+    if ((stat["input"] as? String) == "stepper") {
+        Row(
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text(
+                "−",
+                fontSize = 22.sp,
+                fontWeight = FontWeight.Bold,
+                color = valueColor,
+                modifier = Modifier
+                    .semantics { contentDescription = "Decrease $label" }
+                    .clickable { write(current - stepV) },
+            )
+            Text(
+                "+",
+                fontSize = 22.sp,
+                fontWeight = FontWeight.Bold,
+                color = valueColor,
+                modifier = Modifier
+                    .semantics { contentDescription = "Increase $label" }
+                    .clickable { write(current + stepV) },
+            )
+        }
+    } else {
+        Slider(
+            value = current.toFloat(),
+            onValueChange = { write(it.toDouble()) },
+            valueRange = lo.toFloat()..hi.toFloat(),
+            steps = (((hi - lo) / stepV).toInt() - 1).coerceAtLeast(0),
+            colors = SliderDefaults.colors(thumbColor = valueColor, activeTrackColor = valueColor),
+            modifier = Modifier.semantics { contentDescription = label },
+        )
     }
 }

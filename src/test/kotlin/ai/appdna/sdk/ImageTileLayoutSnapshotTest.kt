@@ -131,6 +131,43 @@ class ImageTileLayoutSnapshotTest {
         )
     }
 
+    /**
+     * SPEC-446 §3 — a Summary Screen stat that HOSTS a control.
+     *
+     * The required-gate for these shipped without the rendering half on both platforms:
+     * `RequiredFieldGate` blocked on an unanswered stat input while nothing ever drew one, so a
+     * stat marked required could not be satisfied and the step could not be advanced. Every fixture
+     * passed, because a fixture sets `inputValues` directly and never asks a renderer to produce the
+     * control the user is supposed to touch. Only pixels can tell those two states apart.
+     */
+    @Test
+    fun summaryStat_rendersItsSliderControl() {
+        val step = mapOf<String, Any>(
+            "type" to "custom", "name" to "s", "analytics_name" to "s", "skip_allowed" to false,
+            "config" to mapOf<String, Any>(
+                "content_blocks" to listOf(
+                    mapOf<String, Any>(
+                        "id" to "sum_input",
+                        "type" to "summary_screen",
+                        "text" to "Your trip",
+                        "field_config" to mapOf<String, Any>(
+                            "stats_layout" to "vertical",
+                            "summary_stats" to listOf(
+                                mapOf<String, Any>(
+                                    "label" to "Party size", "color" to "#6366F1",
+                                    "input" to "slider", "field_id" to "party",
+                                    "min" to 1, "max" to 30, "step" to 1, "default" to 4,
+                                ),
+                                mapOf<String, Any>("value" to "{{step.party}}", "label" to "Guests"),
+                            ),
+                        ),
+                    ),
+                ),
+            ),
+        )
+        capture("summary_stat_slider", OnboardingConfigParser.parseStepForTest(step)?.config?.content_blocks ?: emptyList())
+    }
+
     @Test
     fun imageTiles_contained() {
         capture(
