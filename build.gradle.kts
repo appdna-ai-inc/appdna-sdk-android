@@ -75,7 +75,11 @@ android {
             // bridge server. 1g is the balance — the default-heap run completed without killing the
             // server, so 1g (modestly above default) is server-safe while clearing the test OOM.
             all {
-                it.maxHeapSize = "1g"
+                // …and 1g is not enough to VERIFY the whole Roborazzi suite in one JVM: it renders
+                // every snapshot and OOMs. That cap exists to protect the Mac BUILD BRIDGE, which is
+                // not a factor on a CI runner — so CI gets the headroom the verification needs while
+                // local runs keep the server-safe value. Locally, verify per test class.
+                it.maxHeapSize = if (System.getenv("CI") != null) "4g" else "1g"
 
                 // SPEC-070-B AC-35 — the shared fixtures live OUTSIDE this module
                 // (packages/sdk-shared-fixtures), so Gradle saw no input change when one was edited
