@@ -1163,7 +1163,10 @@ fun resolveTemplateString(
     // SPEC-446 §3b — `{{var | fallback}}`. The console's picker advertises this syntax and the web
     // preview implements it; neither native did, so the whole literal (pipe included) rendered on
     // the user's screen when an author followed our own instruction.
-    val pattern = Regex("\\{\\{\\s*([a-zA-Z0-9_.]+)\\s*(?:\\|\\s*([^}]*?)\\s*)?\\}\\}")
+    // Includes `-`: field_id is a free string in the console schema, so `party-size` is authorable
+    // and AI-generated flows produce it. The picker offered it and the preview chipped it while
+    // this pattern matched nothing, so the literal shipped. Mirrors iOS exactly.
+    val pattern = Regex("\\{\\{\\s*([a-zA-Z0-9_.\\-]+)\\s*(?:\\|\\s*([^}]*?)\\s*)?\\}\\}")
     return pattern.replace(text) { matchResult ->
         val path = matchResult.groupValues[1]
         val fallback = matchResult.groupValues.getOrNull(2)?.takeIf { it.isNotEmpty() }
