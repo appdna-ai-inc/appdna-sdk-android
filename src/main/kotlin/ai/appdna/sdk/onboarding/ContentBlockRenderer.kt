@@ -9208,8 +9208,12 @@ private fun FormInputSelectBlock(
                                         ),
                                 ) {
                                     if (tileLayout != "full_bleed") {
-                                        // The text surface sits under everything; the image then
-                                        // takes only its share, so the label never has a photo behind it.
+                                        // The tile surface sits under everything. The BAND under the
+                                        // text is drawn separately, below, sized by the text itself:
+                                        // a fixed share of the tile cannot be right at every tile
+                                        // height and font size, and when the text is taller than the
+                                        // share it spills back onto the photograph — which is the
+                                        // exact defect #555 reported.
                                         Box(Modifier.matchParentSize().background(surfaceCol))
                                     }
                                     option.resolvedImageURL(isSelected)?.takeIf { it.isNotEmpty() }?.let { url ->
@@ -9261,6 +9265,19 @@ private fun FormInputSelectBlock(
                                         modifier = Modifier
                                             .align(Alignment.BottomStart)
                                             .fillMaxWidth()
+                                            // SPEC-447 — the band is painted UNDER THE TEXT and is
+                                            // therefore exactly as tall as the text needs. Painting
+                                            // it as a fixed share of the tile (1 - strip_ratio) put
+                                            // the title back on the photograph whenever two lines
+                                            // did not fit the share — at the default 140dp tile and
+                                            // ratio 0.75 that is 35dp for a 15sp title plus a 12sp
+                                            // subtitle, so it always overflowed. Verified in the
+                                            // golden before this line existed.
+                                            .then(
+                                                if (tileLayout != "full_bleed") {
+                                                    Modifier.background(surfaceCol)
+                                                } else Modifier,
+                                            )
                                             .padding(10.dp),
                                     ) {
                                         Text(
