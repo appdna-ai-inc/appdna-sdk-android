@@ -9305,7 +9305,23 @@ private fun FormInputSelectBlock(
                                     (if (isSelected) (option.selected_image_overlay_color ?: gSelectedOverlayHex ?: option.image_overlay_color ?: gOverlayHex) else (option.image_overlay_color ?: gOverlayHex))
                                         ?.takeIf { it.isNotBlank() }?.let { ov ->
                                             val ovA = ((if (isSelected) (option.selected_image_overlay_opacity ?: option.image_overlay_opacity ?: gOverlayOpacity) else (option.image_overlay_opacity ?: gOverlayOpacity)) ?: 0.3).toFloat()
-                                            Box(Modifier.matchParentSize().background(StyleEngine.parseColor(ov).copy(alpha = ovA)))
+                                            // SPEC-447 AC — the overlay covers the IMAGE REGION ONLY in the
+                                            // two surfaced layouts. It used matchParentSize(), so authoring a
+                                            // dark scrim and then switching layout dimmed the text band too:
+                                            // the very surface these layouts exist to provide, tinted by a
+                                            // setting meant for the photograph. The bottom scrim below was
+                                            // already gated on full_bleed; this is that same reasoning applied
+                                            // to the other overlay. Geometry mirrors the image, inset included.
+                                            Box(
+                                                when (tileLayout) {
+                                                    "image_strip" -> Modifier
+                                                        .fillMaxWidth().fillMaxHeight(stripRatio).align(Alignment.TopStart)
+                                                    "contained" -> Modifier
+                                                        .fillMaxWidth().fillMaxHeight(stripRatio).align(Alignment.TopStart)
+                                                        .padding(imgInsetDp).clip(RoundedCornerShape(8.dp))
+                                                    else -> Modifier.matchParentSize()
+                                                }.background(StyleEngine.parseColor(ov).copy(alpha = ovA)),
+                                            )
                                         }
                                     // Bottom scrim — only meaningful when the text is ON the image.
                                     // With a text surface it would dim the very surface these

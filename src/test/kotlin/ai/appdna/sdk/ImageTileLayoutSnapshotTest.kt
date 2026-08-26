@@ -48,7 +48,7 @@ class ImageTileLayoutSnapshotTest {
      * that gap, and only per-platform pixels close it on the platform that regressed — an iOS
      * golden cannot see an Android renderer ignoring a key.
      */
-    private fun tilesStep(layoutConfig: Map<String, Any>): List<ContentBlock> {
+    private fun tilesStep(layoutConfig: Map<String, Any>, optionExtras: Map<String, Any> = emptyMap()): List<ContentBlock> {
         val step = mapOf<String, Any>(
             "type" to "custom", "name" to "t", "analytics_name" to "t", "skip_allowed" to false,
             "config" to mapOf<String, Any>(
@@ -62,8 +62,8 @@ class ImageTileLayoutSnapshotTest {
                             mapOf<String, Any>("display_style" to "image_tiles", "grid_columns" to 2) + layoutConfig
                             ),
                         "field_options" to listOf(
-                            mapOf<String, Any>("id" to "w1", "label" to "Winnica Wschód", "subtitle" to "Dolny Śląsk", "image_url" to "https://example.com/a.png"),
-                            mapOf<String, Any>("id" to "w2", "label" to "Winnica Południe", "subtitle" to "Małopolska", "image_url" to "https://example.com/b.png"),
+                            mapOf<String, Any>("id" to "w1", "label" to "Winnica Wschód", "subtitle" to "Dolny Śląsk", "image_url" to "https://example.com/a.png") + optionExtras,
+                            mapOf<String, Any>("id" to "w2", "label" to "Winnica Południe", "subtitle" to "Małopolska", "image_url" to "https://example.com/b.png") + optionExtras,
                         ),
                     ),
                 ),
@@ -102,6 +102,31 @@ class ImageTileLayoutSnapshotTest {
                     "tile_strip_ratio" to 0.75,
                     "tile_surface_color" to "#1F2937",
                 ),
+            ),
+        )
+    }
+
+    /**
+     * SPEC-447 AC — "in image_strip and contained the overlay covers the IMAGE REGION ONLY;
+     * switching layout with a dark scrim set must not dim the text surface."
+     *
+     * The overlay used matchParentSize(), so it tinted the band as well and the authored
+     * tile_surface_color came out muddied by a setting that is supposed to affect the photograph.
+     * Nothing but pixels can show that: every key still parses, every renderer still draws, and
+     * the tile still looks plausible. The scrim here is opaque black at 0.6 precisely so a
+     * regression is unmissable in the diff rather than a subtle shade.
+     */
+    @Test
+    fun imageTiles_stripOverlayDoesNotDimTheBand() {
+        capture(
+            "image_tiles_strip_overlay",
+            tilesStep(
+                mapOf(
+                    "tile_image_layout" to "image_strip",
+                    "tile_strip_ratio" to 0.75,
+                    "tile_surface_color" to "#1F2937",
+                ),
+                optionExtras = mapOf("image_overlay_color" to "#000000", "image_overlay_opacity" to 0.6),
             ),
         )
     }
