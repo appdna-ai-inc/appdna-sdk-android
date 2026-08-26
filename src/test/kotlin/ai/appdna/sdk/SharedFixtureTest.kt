@@ -41,6 +41,7 @@ import ai.appdna.sdk.billing.BillingError
 import ai.appdna.sdk.billing.billingErrorType
 import ai.appdna.sdk.config.ExperimentManager
 import ai.appdna.sdk.config.RemoteConfigManager
+import ai.appdna.sdk.onboarding.resolveTemplateString
 import ai.appdna.sdk.core.AudienceRuleEvaluator
 import ai.appdna.sdk.core.AudienceRuleSet
 import ai.appdna.sdk.core.TemplateContext
@@ -1046,6 +1047,31 @@ class SharedFixtureTest(
                 spy.state["parsed_opt0_sheet_first_type"] = fopts.getOrNull(0)?.sheet_blocks?.firstOrNull()?.type
                 spy.state["parsed_opt0_sheet_last_type"] = fopts.getOrNull(0)?.sheet_blocks?.lastOrNull()?.type
                 spy.state["parsed_opt1_sheet_block_count"] = fopts.getOrNull(1)?.sheet_blocks?.size ?: 0
+                // SPEC-446 — resolution, not just parsing (mirrors the iOS driver exactly).
+                // `sessionData` is the runner's own accessor for setup.session_data; the responses
+                // and step inputs come from there because the fixture schema has no `responses` key.
+                val respJson = sessionData.optJSONObject("responses") ?: org.json.JSONObject()
+                val stepJson = sessionData.optJSONObject("step_inputs") ?: org.json.JSONObject()
+                val fixtureResponses: Map<String, Any> =
+                    respJson.keys().asSequence().associateWith { respJson.get(it) }
+                val fixtureStepInputs: Map<String, Any> =
+                    stepJson.keys().asSequence().associateWith { stepJson.get(it) }
+                if (fixtureResponses.isNotEmpty() || fixtureStepInputs.isNotEmpty()) {
+                    spy.state["resolved_text"] = resolveTemplateString(
+                        block.text ?: "", null, fixtureResponses, null, null, fixtureStepInputs,
+                    )
+                    spy.state["resolved_option_label"] = resolveTemplateString(
+                        block.field_options?.firstOrNull()?.label ?: "",
+                        null, fixtureResponses, null, null, fixtureStepInputs,
+                    )
+                    val rawStats = block.field_config?.get("summary_stats") as? List<*>
+                    val firstStat = rawStats?.firstOrNull() as? Map<*, *>
+                    spy.state["resolved_stat0_value"] = resolveTemplateString(
+                        (firstStat?.get("value") as? String) ?: "",
+                        null, fixtureResponses, null, null, fixtureStepInputs,
+                    )
+                }
+
                 // SPEC-441 (#541) — the option's `category` drives section navigation. Android
                 // maps every option key by hand, so this is exactly the field that can go missing
                 // while the chip renderer still compiles and draws an empty row.
