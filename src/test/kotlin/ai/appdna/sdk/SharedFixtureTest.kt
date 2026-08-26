@@ -1047,6 +1047,11 @@ class SharedFixtureTest(
                 spy.state["parsed_opt0_sheet_first_type"] = fopts.getOrNull(0)?.sheet_blocks?.firstOrNull()?.type
                 spy.state["parsed_opt0_sheet_last_type"] = fopts.getOrNull(0)?.sheet_blocks?.lastOrNull()?.type
                 spy.state["parsed_opt1_sheet_block_count"] = fopts.getOrNull(1)?.sheet_blocks?.size ?: 0
+                // SPEC-447 (#555) — the image-tile layout keys.
+                spy.state["parsed_tile_image_layout"] = block.field_config?.get("tile_image_layout") as? String
+                spy.state["parsed_tile_strip_ratio"] = (block.field_config?.get("tile_strip_ratio") as? Number)?.toDouble()
+                spy.state["parsed_tile_surface_color"] = block.field_config?.get("tile_surface_color") as? String
+
                 // SPEC-446 — resolution, not just parsing (mirrors the iOS driver exactly).
                 // `sessionData` is the runner's own accessor for setup.session_data; the responses
                 // and step inputs come from there because the fixture schema has no `responses` key.
