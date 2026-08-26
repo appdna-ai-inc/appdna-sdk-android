@@ -76,10 +76,15 @@ android {
             // server, so 1g (modestly above default) is server-safe while clearing the test OOM.
             all {
                 // …and 1g is not enough to VERIFY the whole Roborazzi suite in one JVM: it renders
-                // every snapshot and OOMs. That cap exists to protect the Mac BUILD BRIDGE, which is
-                // not a factor on a CI runner — so CI gets the headroom the verification needs while
-                // local runs keep the server-safe value. Locally, verify per test class.
-                it.maxHeapSize = if (System.getenv("CI") != null) "4g" else "1g"
+                // every snapshot and OOMs. The cap protects the Mac BUILD BRIDGE, which is not a
+                // factor on a CI runner — so CI passes `-ProborazziHeap=4g` for the verification
+                // and local runs keep the server-safe default.
+                //
+                // Deliberately a PROJECT PROPERTY rather than `System.getenv("CI")`: build scripts
+                // are evaluated at CONFIGURATION time, so an already-running daemon reuses its
+                // cached configuration and an env var set on a later invocation silently does
+                // nothing. I watched that happen — a run launched with CI=1 still OOMed at 1g.
+                it.maxHeapSize = (project.findProperty("roborazziHeap") as String?) ?: "1g"
 
                 // SPEC-070-B AC-35 — the shared fixtures live OUTSIDE this module
                 // (packages/sdk-shared-fixtures), so Gradle saw no input change when one was edited
