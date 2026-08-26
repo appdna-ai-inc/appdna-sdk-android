@@ -1,3 +1,4 @@
+import java.io.File
 plugins {
     alias(libs.plugins.android.library)
     alias(libs.plugins.kotlin.android)
@@ -93,12 +94,32 @@ android {
                 // Found by falsification — planting `429: transient=false` (the exact live defect the
                 // fixture forbids) still produced BUILD SUCCESSFUL. Declaring the tree as an input
                 // makes a fixture edit invalidate the cache, which is what makes these gates real.
-                val fixtures = rootProject.file("../sdk-shared-fixtures")
-                if (fixtures.isDirectory) {
-                    it.inputs.dir(fixtures)
-                        .withPropertyName("sharedFixtures")
-                        .withPathSensitivity(PathSensitivity.RELATIVE)
-                }
+                //
+                // R4 — the single hardcoded path above was wrong on the Mac build bridge, where this
+                // repo is checked out standalone and `pnpm sdk:sync:android` copies the tree to
+                // packages/sdk-shared-fixtures INSIDE it. `../sdk-shared-fixtures` did not exist,
+                // `if (isDirectory)` skipped the declaration without a word, and the up-to-date
+                // false-green this whole block exists to prevent was live again on the one machine
+                // that actually runs these tests. Editing a fixture there produced
+                // "BUILD SUCCESSFUL in 1s" without running anything.
+                // So: try the layouts the runtime resolver already knows about (see
+                // SharedFixtureTest's FIXTURE PATH RESOLUTION), and FAIL if none of them match.
+                // A missing fixture input must never be a silent skip.
+                val fixtureCandidates = listOf(
+                    rootProject.file("../sdk-shared-fixtures"),      // monorepo: packages/appdna-sdk-android/..
+                    rootProject.file("packages/sdk-shared-fixtures"), // bridge: synced copy inside the repo
+                    File(System.getenv("APPDNA_SDK_FIXTURES_DIR") ?: "/nonexistent"),
+                )
+                val fixtures = fixtureCandidates.firstOrNull { c -> c.isDirectory }
+                    ?: throw GradleException(
+                        "Shared fixtures not found in any known layout " +
+                            fixtureCandidates.joinToString { c -> c.path } +
+                            ". They must be declared as a task input or a fixture edit leaves this " +
+                            "test task UP-TO-DATE and it reports the PREVIOUS run's result.",
+                    )
+                it.inputs.dir(fixtures)
+                    .withPropertyName("sharedFixtures")
+                    .withPathSensitivity(PathSensitivity.RELATIVE)
             }
         }
     }
