@@ -9133,6 +9133,18 @@ private fun FormInputSelectBlock(
                 }
             }
             "image_tiles" -> {
+                // SPEC-447 (#555) — where the TEXT sits relative to the image. `full_bleed` is the
+                // default and renders exactly as before; the other two give the label a surface of
+                // its own instead of dimming the photograph with a scrim. Parity with iOS
+                // FormInputBlockViews.swift image_tiles.
+                val tileLayout = (cfg?.get("tile_image_layout") as? String) ?: "full_bleed"
+                val stripRatio = ((cfg?.get("tile_strip_ratio") as? Number)?.toFloat() ?: 0.75f)
+                    .coerceIn(0.5f, 0.95f)
+                val surfaceCol = ((cfg?.get("tile_surface_color") as? String)
+                    ?: block.field_style?.background_color ?: "#111827").let { StyleEngine.parseColor(it) }
+                val imgInsetDp = ((cfg?.get("tile_image_inset") as? Number)?.toFloat() ?: 8f).dp
+                val frameWDp = ((cfg?.get("tile_image_frame_width") as? Number)?.toFloat() ?: 0f).dp
+                val frameCol = StyleEngine.parseColor((cfg?.get("tile_image_frame_color") as? String) ?: "#374151")
                 // EPIC-1 — tall tiles: image fills the tile, label overlaid at the bottom over a
                 // dark scrim; selected = accent border. N-column grid (grid_columns, default 2).
                 val tileCols = ((cfg?.get("grid_columns") as? Number)?.toInt() ?: 2).coerceIn(1, 4)
@@ -9174,10 +9186,33 @@ private fun FormInputSelectBlock(
                                             RoundedCornerShape(cornerR),
                                         ),
                                 ) {
+                                    if (tileLayout != "full_bleed") {
+                                        // The text surface sits under everything; the image then
+                                        // takes only its share, so the label never has a photo behind it.
+                                        Box(Modifier.matchParentSize().background(surfaceCol))
+                                    }
                                     option.resolvedImageURL(isSelected)?.takeIf { it.isNotEmpty() }?.let { url ->
+                                        val imgModifier = when (tileLayout) {
+                                            "image_strip" -> Modifier.fillMaxWidth().fillMaxHeight(stripRatio).align(Alignment.TopStart)
+                                            "contained" -> Modifier
+                                                .fillMaxWidth()
+                                                .fillMaxHeight(stripRatio)
+                                                .align(Alignment.TopStart)
+                                                .padding(imgInsetDp)
+                                                .clip(RoundedCornerShape(8.dp))
+                                                .then(
+                                                    if (frameWDp.value > 0f) {
+                                                        Modifier.border(
+                                                            androidx.compose.foundation.BorderStroke(frameWDp, frameCol),
+                                                            RoundedCornerShape(8.dp),
+                                                        )
+                                                    } else Modifier,
+                                                )
+                                            else -> Modifier.matchParentSize()
+                                        }
                                         ai.appdna.sdk.core.NetworkImage(
                                             url = url,
-                                            modifier = Modifier.matchParentSize(),
+                                            modifier = imgModifier,
                                             contentScale = ContentScale.Crop,
                                         )
                                     }
@@ -9186,17 +9221,21 @@ private fun FormInputSelectBlock(
                                             val ovA = ((if (isSelected) (option.selected_image_overlay_opacity ?: option.image_overlay_opacity ?: gOverlayOpacity) else (option.image_overlay_opacity ?: gOverlayOpacity)) ?: 0.3).toFloat()
                                             Box(Modifier.matchParentSize().background(StyleEngine.parseColor(ov).copy(alpha = ovA)))
                                         }
-                                    // Bottom scrim so the label stays legible over any image.
-                                    Box(
-                                        modifier = Modifier
-                                            .matchParentSize()
-                                            .background(
-                                                Brush.verticalGradient(
-                                                    0.45f to Color.Transparent,
-                                                    1f to Color.Black.copy(alpha = 0.65f),
+                                    // Bottom scrim — only meaningful when the text is ON the image.
+                                    // With a text surface it would dim the very surface these
+                                    // layouts exist to provide.
+                                    if (tileLayout == "full_bleed") {
+                                        Box(
+                                            modifier = Modifier
+                                                .matchParentSize()
+                                                .background(
+                                                    Brush.verticalGradient(
+                                                        0.45f to Color.Transparent,
+                                                        1f to Color.Black.copy(alpha = 0.65f),
+                                                    ),
                                                 ),
-                                            ),
-                                    )
+                                        )
+                                    }
                                     Column(
                                         modifier = Modifier
                                             .align(Alignment.BottomStart)
