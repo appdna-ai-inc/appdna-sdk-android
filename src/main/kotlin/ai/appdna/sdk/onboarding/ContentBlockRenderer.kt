@@ -1282,9 +1282,24 @@ internal fun resolveBlockBindings(
                 }
                 next
             }
-            if (changed) {
+            // SPEC-446 AC — "no raw {{token}} can reach the screen from a stat". resolveTemplateString
+            // returns the LITERAL when a path misses and no `| fallback` was written, which is correct
+            // for a headline (an author sees their typo) and wrong for a stat: it puts `{{responses.x}}`
+            // in the big colored number on a summary card. Dropping the stat here rather than in the
+            // renderer means no current or future renderer can leak it, and a fixture can see it as a
+            // count. A stat whose LABEL alone is unresolved keeps its value and loses the caption.
+            val safeStats = nextStats.mapNotNull { entry ->
+                val stat = entry as? Map<*, *> ?: return@mapNotNull entry
+                if ((stat["value"] as? String)?.contains("{{") == true) return@mapNotNull null
+                if ((stat["label"] as? String)?.contains("{{") == true) {
+                    stat.toMutableMap().apply { remove("label") }
+                } else {
+                    stat
+                }
+            }
+            if (changed || safeStats.size != nextStats.size) {
                 val nextCfg = cfg.toMutableMap()
-                nextCfg["summary_stats"] = nextStats
+                nextCfg["summary_stats"] = safeStats
                 resolved = resolved.copy(field_config = nextCfg)
             }
         }

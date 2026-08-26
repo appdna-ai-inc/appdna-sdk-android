@@ -1088,6 +1088,10 @@ class SharedFixtureTest(
                     val rawStats = r.field_config?.get("summary_stats") as? List<*>
                     val firstStat = rawStats?.firstOrNull() as? Map<*, *>
                     spy.state["resolved_stat0_value"] = (firstStat?.get("value") as? String) ?: ""
+                    // A stat that could not resolve and had no `| fallback` is DROPPED, so the count
+                    // is what proves the raw token never reaches a renderer.
+                    spy.state["resolved_stat_count"] = rawStats?.size ?: 0
+                    spy.state["resolved_stat0_label"] = (firstStat?.get("label") as? String) ?: ""
                 }
 
                 // SPEC-441 (#541) — the option's `category` drives section navigation. Android
