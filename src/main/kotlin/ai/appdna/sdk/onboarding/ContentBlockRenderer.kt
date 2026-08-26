@@ -1352,7 +1352,28 @@ fun mergeFieldConfigOverrides(
  */
 object RequiredFieldGate {
     fun evaluate(blocks: List<ContentBlock>, inputValues: Map<String, Any>): Pair<Boolean, String?> {
+        // SPEC-446 §3 — a Summary Screen can host inputs INSIDE its stats, so one block may carry
+        // several field ids while the loop below reads exactly one (`field_id ?: id`). Without this
+        // pass the gate sees none of them; and block-level `field_required` on such a block would
+        // read a key nothing writes, so the CTA could never enable — an unadvanceable step.
+        // Required-ness is PER STAT; block-level field_required on a summary_screen is ignored.
+        // Parity with iOS RequiredFieldGate.
         for (block in blocks) {
+            if (block.type != "summary_screen") continue
+            val stats = block.field_config?.get("summary_stats") as? List<*> ?: continue
+            for (entry in stats) {
+                val stat = entry as? Map<*, *> ?: continue
+                val input = stat["input"] as? String ?: continue
+                if (input == "none") continue
+                if (stat["required"]?.toString() != "true") continue
+                val fieldId = (stat["field_id"] as? String)?.takeIf { it.isNotEmpty() } ?: continue
+                val v = inputValues[fieldId]
+                if (v == null || (v is String && v.isEmpty())) return false to fieldId
+            }
+        }
+
+        for (block in blocks) {
+            if (block.type == "summary_screen") continue // see above — per-stat, never block-level
             if (block.field_required != true) continue
             val fieldId = block.field_id ?: block.id
             val empty = when (val v = inputValues[fieldId]) {

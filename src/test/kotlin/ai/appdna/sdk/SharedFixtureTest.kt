@@ -41,6 +41,7 @@ import ai.appdna.sdk.billing.BillingError
 import ai.appdna.sdk.billing.billingErrorType
 import ai.appdna.sdk.config.ExperimentManager
 import ai.appdna.sdk.config.RemoteConfigManager
+import ai.appdna.sdk.onboarding.RequiredFieldGate
 import ai.appdna.sdk.onboarding.resolveTemplateString
 import ai.appdna.sdk.core.AudienceRuleEvaluator
 import ai.appdna.sdk.core.AudienceRuleSet
@@ -1047,6 +1048,18 @@ class SharedFixtureTest(
                 spy.state["parsed_opt0_sheet_first_type"] = fopts.getOrNull(0)?.sheet_blocks?.firstOrNull()?.type
                 spy.state["parsed_opt0_sheet_last_type"] = fopts.getOrNull(0)?.sheet_blocks?.lastOrNull()?.type
                 spy.state["parsed_opt1_sheet_block_count"] = fopts.getOrNull(1)?.sheet_blocks?.size ?: 0
+                // SPEC-446 §3 — the gate, exercised in BOTH directions plus the deadlock case.
+                if (block.type == "summary_screen") {
+                    val statFieldIds = (block.field_config?.get("summary_stats") as? List<*>)
+                        ?.mapNotNull { (it as? Map<*, *>)?.get("field_id") as? String }.orEmpty()
+                    val unanswered = RequiredFieldGate.evaluate(listOf(block), emptyMap())
+                    val answered = statFieldIds.associateWith { "5" as Any }
+                    val satisfied = RequiredFieldGate.evaluate(listOf(block), answered)
+                    spy.state["gate_blocks_when_unanswered"] = !unanswered.first
+                    spy.state["gate_releases_when_answered"] = satisfied.first
+                    spy.state["gate_ignores_block_level_required"] = satisfied.first
+                }
+
                 // SPEC-447 (#555) — the image-tile layout keys.
                 spy.state["parsed_tile_image_layout"] = block.field_config?.get("tile_image_layout") as? String
                 spy.state["parsed_tile_strip_ratio"] = (block.field_config?.get("tile_strip_ratio") as? Number)?.toDouble()
