@@ -111,6 +111,7 @@ import org.robolectric.Shadows.shadowOf
 import org.robolectric.annotation.Config
 import java.io.File
 import ai.appdna.sdk.onboarding.resolveBlockBindings
+import ai.appdna.sdk.onboarding.SelectedOptionStore
 
 @RunWith(ParameterizedRobolectricTestRunner::class)
 @Config(sdk = [34])
@@ -1098,7 +1099,18 @@ class SharedFixtureTest(
                     respJson.keys().asSequence().associateWith { respJson.get(it) }
                 val fixtureStepInputs: Map<String, Any> =
                     stepJson.keys().asSequence().associateWith { stepJson.get(it) }
-                if (fixtureResponses.isNotEmpty() || fixtureStepInputs.isNotEmpty()) {
+                // SPEC-448 — seed the selected-option store so `{{selected.…}}` has something to
+                // resolve. It is a process-lifetime object, so it is reset first: a value left over
+                // from an earlier fixture would make this one pass for the wrong reason.
+                SelectedOptionStore.resetForTesting()
+                val selectedJson = sessionData.optJSONObject("selected")
+                if (selectedJson != null) {
+                    for (fieldId in selectedJson.keys()) {
+                        SelectedOptionStore.seedForTesting(fieldId, jsonValueToKotlin(selectedJson.get(fieldId)))
+                    }
+                }
+
+                if (fixtureResponses.isNotEmpty() || fixtureStepInputs.isNotEmpty() || selectedJson != null) {
                     // Drive the REAL whitelist, not resolveTemplateString directly. Calling the
                     // resolver by hand proves only that it can expand a token; it says nothing about
                     // whether the block pass applies it to a given key — round-4 bug injection deleted
@@ -1526,4 +1538,16 @@ class SharedFixtureTest(
             return out
         }
     }
+}
+
+
+/**
+ * JSON → plain Kotlin maps/lists, so a seeded payload is walkable by the same dot-path code the
+ * resolver uses. org.json types are NOT Map/List, so seeding them raw would make every
+ * `{{selected.…}}` resolve to nothing while looking perfectly correct in the fixture.
+ */
+private fun jsonValueToKotlin(v: Any?): Any = when (v) {
+    is org.json.JSONObject -> v.keys().asSequence().associateWith { jsonValueToKotlin(v.get(it)) }
+    is org.json.JSONArray -> (0 until v.length()).map { jsonValueToKotlin(v.get(it)) }
+    else -> v ?: ""
 }

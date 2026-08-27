@@ -1139,12 +1139,26 @@ private fun resolveDotPath(
         // SPEC-446 — `responses` holds COMPLETED steps only, so a stat showing the value of a
         // slider on the same card resolved to nothing until the step ended and the card was gone.
         "step" -> stepInputs
+        // SPEC-448 — the OPTION the user picked, not just its value. Read from its own store
+        // rather than `responses`, because `responses` is what customer webhooks receive and must
+        // stay byte-identical for anyone not using this. Mirrors iOS.
+        "selected" -> SelectedOptionStore.snapshot()
         else -> null
     }
 
     var current: Any? = root ?: return null
     for (part in parts.drop(1)) {
-        current = (current as? Map<*, *>)?.get(part) ?: return null
+        val next = when {
+            current is Map<*, *> -> (current as Map<*, *>)[part]
+            // Numeric step into a list — `{{selected.tags.0.label}}`. Multi-select records a list
+            // in selection order, so without this the first choice is unreachable. Mirrors iOS.
+            current is List<*> && part.toIntOrNull() != null -> {
+                val idx = part.toInt()
+                (current as List<*>).getOrNull(idx)
+            }
+            else -> null
+        }
+        current = next ?: return null
     }
     return current
 }
@@ -8811,6 +8825,13 @@ private fun FormInputSelectBlock(
             selectedValues + value
         }
         inputValues[fieldId] = selectedValues.toList()
+        // SPEC-448 — record the full OPTIONS alongside the values, in selection order, so a later
+        // screen can say `{{selected.<field_id>.0.label}}`. inputValues keeps carrying the values
+        // alone, which is what reaches responses and therefore customer webhooks.
+        SelectedOptionStore.record(
+            fieldId,
+            selectedValues.mapNotNull { v -> allOptions.firstOrNull { (it.value ?: it.id) == v } },
+        )
     }
     fun isOptionSelected(value: String): Boolean =
         if (isMulti) selectedValues.contains(value) else selectedValue == value
@@ -9662,6 +9683,8 @@ private fun FormInputSelectBlock(
                                     selectedLabel = option.label
                                     selectedValue = option.value
                                     inputValues[fieldId] = option.value
+                                    // SPEC-448 — the full option, for `{{selected.<field_id>.…}}` on a later screen.
+                                    SelectedOptionStore.record(fieldId, option)
                                     expanded = false
                                 },
                             )
@@ -10122,6 +10145,8 @@ private fun FormInputSegmentedBlock(
                         .clickable {
                             selectedValue = option.value
                             inputValues[fieldId] = option.value
+                            // SPEC-448 — the full option, for `{{selected.<field_id>.…}}` on a later screen.
+                            SelectedOptionStore.record(fieldId, option)
                         }
                         .padding(vertical = 10.dp),
                     contentAlignment = Alignment.Center,
