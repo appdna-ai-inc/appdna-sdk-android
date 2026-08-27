@@ -4,6 +4,30 @@ All notable changes to the AppDNA Android SDK are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and
 the project uses [Semantic Versioning](https://semver.org/).
 
+## [1.0.45] — 2026-08-27
+
+### Added
+- Summary Screen stats can host a `slider` or `stepper` control (`input`, `field_id`, `min`,
+  `max`, `step`, `default`, `required`). The value is written to the step's inputs, so a later
+  step — or another stat on the same card via `{{step.field_id}}` — can read it live.
+- Image tiles gained `tile_image_layout`: `full_bleed` (unchanged default), `image_strip` and
+  `contained`, with `tile_strip_ratio`, `tile_surface_color`, `tile_image_inset`,
+  `tile_image_frame_width` and `tile_image_frame_color`.
+
+### Fixed
+- `{{var}}` in an option's `label`, `subtitle` or `leading_text` was not resolved at all.
+- A summary screen whose variables lived only in its stats skipped resolution entirely, because
+  the has-templates gate did not look inside `summary_stats`.
+- `{{var | fallback}}` and hyphenated field ids (`{{responses.party-size}}`) did not match the
+  token pattern, so the literal reached the screen.
+- A stat binding that cannot resolve and has no fallback now hides the stat instead of printing
+  the raw token in the card's numeral.
+- The image overlay tinted the text band in the two surfaced layouts; it now covers the image only.
+- A stat with `step: 0` produced a slider with 290,001 tick marks. A step at or below zero now
+  means continuous.
+- A required stat with an authored `default` no longer blocks the CTA before the control has been
+  scrolled into view.
+
 ## [1.0.41] — 2026-07-06
 
 Revoking analytics consent (`AppDNA.setConsent(analytics = false)`) now purges any
