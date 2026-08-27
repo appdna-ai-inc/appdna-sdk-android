@@ -88,8 +88,8 @@ internal object OptionSetStore {
     suspend fun search(setId: String, query: String, client: ApiClient?): List<InputOption>? {
         if (client == null) return null
         return try {
-            // Encoded: a set id is a UUID, but a QUERY is whatever the user typed — `Wschód
-            // słońca` or an ampersand would otherwise corrupt the URL.
+            // Encoded: a set id is a UUID, but a QUERY is whatever the user typed — an accented
+            // name or an ampersand would otherwise corrupt the URL.
             val q = URLEncoder.encode(query, "UTF-8")
             val json = client.get("/api/v1/sdk/option-sets/$setId?q=$q") ?: return null
             parsePage(json)?.items

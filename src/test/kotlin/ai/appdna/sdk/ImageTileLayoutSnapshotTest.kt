@@ -57,13 +57,13 @@ class ImageTileLayoutSnapshotTest {
                         "id" to "tiles_layout",
                         "type" to "input_select",
                         "field_id" to "winery",
-                        "field_label" to "Wybierz winnicę",
+                        "field_label" to "Pick a vineyard",
                         "field_config" to (
                             mapOf<String, Any>("display_style" to "image_tiles", "grid_columns" to 2) + layoutConfig
                             ),
                         "field_options" to listOf(
-                            mapOf<String, Any>("id" to "w1", "label" to "Winnica Wschód", "subtitle" to "Dolny Śląsk", "image_url" to "https://example.com/a.png") + optionExtras,
-                            mapOf<String, Any>("id" to "w2", "label" to "Winnica Południe", "subtitle" to "Małopolska", "image_url" to "https://example.com/b.png") + optionExtras,
+                            mapOf<String, Any>("id" to "w1", "label" to "Sunrise Vineyard", "subtitle" to "Lakeside", "image_url" to "https://example.com/a.png") + optionExtras,
+                            mapOf<String, Any>("id" to "w2", "label" to "Southridge Vineyard", "subtitle" to "Highlands", "image_url" to "https://example.com/b.png") + optionExtras,
                         ),
                     ),
                 ),
