@@ -1457,76 +1457,7 @@ internal object OnboardingConfigParser {
             calendar_bg_color = bm["calendar_bg_color"] as? String,
             // SPEC-401-A R49 (Lens A #2) — Sprint 7 scroll-collapse.
             collapse_on_scroll = bm["collapse_on_scroll"] as? Boolean,
-            field_options = (bm["field_options"] as? List<*>)?.mapNotNull { fo ->
-                if (fo is Map<*, *>) {
-                    @Suppress("UNCHECKED_CAST")
-                    val fm = fo as Map<String, Any>
-                    // SPEC-070-A finalization P0 audit-11 Drift 2 —
-                    // expanded to read all 24 iOS InputOption fields.
-                    // Console-authored per-option styling now reaches
-                    // the renderer instead of being dropped on parse.
-                    InputOption(
-                        // SPEC-401-A R37 — match iOS canonical
-                        // value-first fallback (ContentBlockTypes.swift:358-360
-                        // `let rawValue = decode(.value); self.value =
-                        // rawValue ?? rawId`). Was id-first → response
-                        // payload reported display id instead of
-                        // authored canonical answer code, breaking
-                        // server-side analytics joins + next_step_rule
-                        // comparisons + webhook payloads when console
-                        // author set both id and value.
-                        value = fm["value"] as? String ?: fm["id"] as? String ?: "",
-                        label = fm["label"] as? String ?: "",
-                        // Android maps every key by hand — omit this and category is null
-                        // forever and the chip filter can never match anything.
-                        category = fm["category"] as? String,
-                        // SPEC-444 (#540, #542) — the option's bottom-sheet contents, parsed
-                        // with the same child-block helper the stack/row containers use.
-                        sheet_blocks = parseChildBlocks(fm["sheet_blocks"]),
-                        image_url = fm["image_url"] as? String,
-                        // SPEC-401-A R43 — match iOS rawValue fallback at
-                        // ContentBlockTypes.swift:357-360. Was id-only; when
-                        // console author writes only `value`, iOS resolves
-                        // `id=value`, Android got `id=null` → renderer code
-                        // keying selection state by option.id silently broke.
-                        id = fm["id"] as? String ?: fm["value"] as? String,
-                        icon = fm["icon"] as? String,
-                        selected_image_url = fm["selected_image_url"] as? String,
-                        unselected_image_url = fm["unselected_image_url"] as? String,
-                        subtitle = fm["subtitle"] as? String,
-                        title_color = fm["title_color"] as? String,
-                        subtitle_color = fm["subtitle_color"] as? String,
-                        title_font_size = (fm["title_font_size"] as? Number)?.toDouble(),
-                        subtitle_font_size = (fm["subtitle_font_size"] as? Number)?.toDouble(),
-                        title_font_weight = fm["title_font_weight"] as? String,
-                        selected_icon = fm["selected_icon"] as? String,
-                        unselected_icon = fm["unselected_icon"] as? String,
-                        image_overlay_color = fm["image_overlay_color"] as? String,
-                        image_overlay_opacity = (fm["image_overlay_opacity"] as? Number)?.toDouble(),
-                        selected_image_overlay_color = fm["selected_image_overlay_color"] as? String,
-                        selected_image_overlay_opacity = (fm["selected_image_overlay_opacity"] as? Number)?.toDouble(),
-                        image_shape = fm["image_shape"] as? String,
-                        border_color = fm["border_color"] as? String,
-                        selected_border_color = fm["selected_border_color"] as? String,
-                        bg_color = fm["bg_color"] as? String,
-                        selected_bg_color = fm["selected_bg_color"] as? String,
-                        selected_text_color = fm["selected_text_color"] as? String,
-                        cell_alignment = fm["cell_alignment"] as? String,
-                        // SPEC-419 D7/D5 — leading/trailing labels + per-option badge (were unparsed).
-                        leading_text = fm["leading_text"] as? String,
-                        trailing_text = fm["trailing_text"] as? String,
-                        text_alignment = fm["text_alignment"] as? String,
-                        badge = (fm["badge"] as? Map<*, *>)?.let { bdg ->
-                            ai.appdna.sdk.onboarding.OptionBadge(
-                                text = bdg["text"] as? String,
-                                bg_color = bdg["bg_color"] as? String,
-                                text_color = bdg["text_color"] as? String,
-                                position = bdg["position"] as? String,
-                            )
-                        },
-                    )
-                } else null
-            }?.toImmutableList(),
+            field_options = parseInputOptionList(bm["field_options"] as? List<*>).toImmutableList(),
             // Gap 8: Parse field_config for display_style, use_variable, use_webhook
             // SPEC-419 gap#6 — progress_bar `label_format`/`custom_label` are authored
             // top-level by the console editor, but Android can't add top-level ContentBlock
@@ -1932,4 +1863,87 @@ internal object OnboardingConfigParser {
             } else null
         }.takeIf { it.isNotEmpty() }?.toImmutableList()
     }
+
+    /**
+     * SPEC-448 — ONE option parser, shared by the inline `field_options` path and the dynamic
+     * Option Set path.
+     *
+     * Extracted from the inline lambda it used to be. The spec requires that an option authored in
+     * a set and the identical option authored inline render IDENTICALLY, and the surest way to break
+     * that is to give the two sources their own parsers and let them drift a field at a time — which
+     * is exactly how this DTO reached 24 fields with a comment noting the last audit found them
+     * dropped on parse.
+     */
+    internal fun parseInputOptionList(raw: List<*>?): List<InputOption> =
+        raw?.mapNotNull { fo ->
+                    if (fo is Map<*, *>) {
+                        @Suppress("UNCHECKED_CAST")
+                        val fm = fo as Map<String, Any>
+                        // SPEC-070-A finalization P0 audit-11 Drift 2 —
+                        // expanded to read all 24 iOS InputOption fields.
+                        // Console-authored per-option styling now reaches
+                        // the renderer instead of being dropped on parse.
+                        InputOption(
+                            // SPEC-401-A R37 — match iOS canonical
+                            // value-first fallback (ContentBlockTypes.swift:358-360
+                            // `let rawValue = decode(.value); self.value =
+                            // rawValue ?? rawId`). Was id-first → response
+                            // payload reported display id instead of
+                            // authored canonical answer code, breaking
+                            // server-side analytics joins + next_step_rule
+                            // comparisons + webhook payloads when console
+                            // author set both id and value.
+                            value = fm["value"] as? String ?: fm["id"] as? String ?: "",
+                            label = fm["label"] as? String ?: "",
+                            // Android maps every key by hand — omit this and category is null
+                            // forever and the chip filter can never match anything.
+                            category = fm["category"] as? String,
+                            // SPEC-444 (#540, #542) — the option's bottom-sheet contents, parsed
+                            // with the same child-block helper the stack/row containers use.
+                            sheet_blocks = parseChildBlocks(fm["sheet_blocks"]),
+                            image_url = fm["image_url"] as? String,
+                            // SPEC-401-A R43 — match iOS rawValue fallback at
+                            // ContentBlockTypes.swift:357-360. Was id-only; when
+                            // console author writes only `value`, iOS resolves
+                            // `id=value`, Android got `id=null` → renderer code
+                            // keying selection state by option.id silently broke.
+                            id = fm["id"] as? String ?: fm["value"] as? String,
+                            icon = fm["icon"] as? String,
+                            selected_image_url = fm["selected_image_url"] as? String,
+                            unselected_image_url = fm["unselected_image_url"] as? String,
+                            subtitle = fm["subtitle"] as? String,
+                            title_color = fm["title_color"] as? String,
+                            subtitle_color = fm["subtitle_color"] as? String,
+                            title_font_size = (fm["title_font_size"] as? Number)?.toDouble(),
+                            subtitle_font_size = (fm["subtitle_font_size"] as? Number)?.toDouble(),
+                            title_font_weight = fm["title_font_weight"] as? String,
+                            selected_icon = fm["selected_icon"] as? String,
+                            unselected_icon = fm["unselected_icon"] as? String,
+                            image_overlay_color = fm["image_overlay_color"] as? String,
+                            image_overlay_opacity = (fm["image_overlay_opacity"] as? Number)?.toDouble(),
+                            selected_image_overlay_color = fm["selected_image_overlay_color"] as? String,
+                            selected_image_overlay_opacity = (fm["selected_image_overlay_opacity"] as? Number)?.toDouble(),
+                            image_shape = fm["image_shape"] as? String,
+                            border_color = fm["border_color"] as? String,
+                            selected_border_color = fm["selected_border_color"] as? String,
+                            bg_color = fm["bg_color"] as? String,
+                            selected_bg_color = fm["selected_bg_color"] as? String,
+                            selected_text_color = fm["selected_text_color"] as? String,
+                            cell_alignment = fm["cell_alignment"] as? String,
+                            // SPEC-419 D7/D5 — leading/trailing labels + per-option badge (were unparsed).
+                            leading_text = fm["leading_text"] as? String,
+                            trailing_text = fm["trailing_text"] as? String,
+                            text_alignment = fm["text_alignment"] as? String,
+                            badge = (fm["badge"] as? Map<*, *>)?.let { bdg ->
+                                ai.appdna.sdk.onboarding.OptionBadge(
+                                    text = bdg["text"] as? String,
+                                    bg_color = bdg["bg_color"] as? String,
+                                    text_color = bdg["text_color"] as? String,
+                                    position = bdg["position"] as? String,
+                                )
+                            },
+                        )
+                    } else null
+        }.orEmpty()
+
 }

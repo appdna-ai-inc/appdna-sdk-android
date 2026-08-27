@@ -8589,7 +8589,28 @@ private fun FormInputSelectBlock(
     inputValues: MutableMap<String, Any>,
 ) {
     val fieldId = block.field_id ?: block.id
-    val allOptions = block.field_options ?: emptyList()
+    // SPEC-448 (#556) — a Select can source its options from an Option Set instead of the
+    // authored list. The ladder is cache → embedded page → authored, resolved SYNCHRONOUSLY so the
+    // first frame has something real; awaiting here would put the network on the render path,
+    // which is the "looks like it is fetching" the spec forbids. `field_options` doubles as the
+    // embedded page — the same array an SDK predating this spec renders — so an old build degrades
+    // to a short list rather than an empty Select. Mirrors iOS FormInputSelectBlock.
+    val optionSetId = block.field_config?.get("option_set_id") as? String
+    val optionSetVersion = (block.field_config?.get("option_set_version") as? Number)?.toInt()
+    val authoredOptions = block.field_options ?: emptyList()
+    var dynamicOptions by remember(optionSetId) { mutableStateOf<List<InputOption>>(emptyList()) }
+    val allOptions = if (optionSetId.isNullOrEmpty()) authoredOptions else
+        OptionSetStore.immediateOptions(optionSetId, authoredOptions, authoredOptions)
+            .let { if (dynamicOptions.isNotEmpty()) dynamicOptions else it }
+
+    // Refresh AFTER the first composition. A fresher list swaps in when it arrives; a failed
+    // refresh returns empty and must NOT clear a working list, so the ladder stays standing.
+    if (!optionSetId.isNullOrEmpty()) {
+        LaunchedEffect(optionSetId) {
+            val fresh = OptionSetStore.refresh(optionSetId, AppDNA.optionSetClient, optionSetVersion)
+            if (fresh.isNotEmpty()) dynamicOptions = fresh
+        }
+    }
     // SPEC-441 (#541) — an optional row of category chips above the options; the active chip
     // SCROLLS to that section (see the note on `options` below — nothing is filtered out).
     // Authored as field_config.categories = [{id,label,icon?}]; an option points at one by id.
@@ -8611,10 +8632,10 @@ private fun FormInputSelectBlock(
             categories.flatMap { (catId, _, _) -> allOptions.filter { it.category == catId } }
     // Gap 1: Read display_style from field_config; defaults to "dropdown".
     val displayStyle = (block.field_config?.get("display_style") as? String) ?: "dropdown"
-    // Gap 8: Gracefully handle dynamic options (use_variable / use_webhook) — parse but ignore
-    val useVariable = block.field_config?.get("use_variable") as? String
-    val useWebhook = block.field_config?.get("use_webhook") as? String
-    // For now, dynamic options require server round-trip. Display static options if present.
+    // SPEC-448 (#556) — `use_variable` / `use_webhook` used to be read into variables right here,
+    // under a comment saying "parse but ignore". They are gone from the console and from this
+    // parse: an Option Set is the real mechanism, and reading a key in order to ignore it is how
+    // a dead control looks alive to anyone grepping for it.
     // SPEC-401-A R49 (Lens A #1) — multi-select branch. iOS
     // FormInputBlockViews.swift:403-406 selects between single + multi
     // based on `block.multi_select == true`. For multi-mode the value

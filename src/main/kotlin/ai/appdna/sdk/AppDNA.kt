@@ -1837,6 +1837,13 @@ object AppDNA {
      */
     internal fun getApiKey(): String? = apiKey
 
+    /**
+     * SPEC-448 — the Option Set store's client. Mirrors iOS `AppDNA.optionSetClient`.
+     * Null before [configure] runs, which the store treats as "no refresh possible" rather than an
+     * error, so the fallback ladder still renders.
+     */
+    internal val optionSetClient: ApiClient? get() = apiClient
+
     internal fun getCurrentUserId(): String? {
         return identityManager?.currentIdentity?.userId
             ?: identityManager?.currentIdentity?.anonId
