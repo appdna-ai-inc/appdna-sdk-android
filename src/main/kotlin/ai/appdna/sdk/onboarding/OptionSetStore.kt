@@ -31,6 +31,8 @@ internal object OptionSetStore {
     )
 
     private val cache = mutableMapOf<String, CacheEntry>()
+    /** Next-page cursor per set. Absence means 'no next page'. */
+    private val cursors = mutableMapOf<String, String>()
     private val mutex = Mutex()
 
     /**
@@ -72,8 +74,11 @@ internal object OptionSetStore {
         return try {
             val json = client.get("/api/v1/sdk/option-sets/$setId") ?: return emptyList()
             val page = parsePage(json) ?: return emptyList()
-            mutex.withLock { cache[setId] = page }
-            page.items
+            mutex.withLock {
+                cache[setId] = page.first
+                setCursor(setId, page.second)
+            }
+            page.first.items
         } catch (e: Exception) {
             Log.debug("Option set $setId refresh failed: ${e.message}")
             emptyList()
@@ -92,7 +97,7 @@ internal object OptionSetStore {
             // name or an ampersand would otherwise corrupt the URL.
             val q = URLEncoder.encode(query, "UTF-8")
             val json = client.get("/api/v1/sdk/option-sets/$setId?q=$q") ?: return null
-            parsePage(json)?.items
+            parsePage(json)?.first?.items
         } catch (e: Exception) {
             null
         }
@@ -104,8 +109,10 @@ internal object OptionSetStore {
         return try {
             val c = URLEncoder.encode(cursor, "UTF-8")
             val json = client.get("/api/v1/sdk/option-sets/$setId?cursor=$c") ?: return null
-            val page = parsePage(json) ?: return null
+            val parsed = parsePage(json) ?: return null
+            val page = parsed.first
             mutex.withLock {
+                setCursor(setId, parsed.second)
                 val existing = cache[setId]
                 if (existing == null) {
                     cache[setId] = page
@@ -133,7 +140,19 @@ internal object OptionSetStore {
      * a parallel type — an option authored in a set and the identical option authored inline must
      * render identically, and a second parser here is how that drifts.
      */
-    private fun parsePage(json: JSONObject): CacheEntry? {
+    /** The cursor for the next page, or null at the end. */
+    @Synchronized
+    fun cursor(setId: String): String? = cursors[setId]
+
+    /** Everything cached for this set, after de-duplication. */
+    @Synchronized
+    fun cachedItems(setId: String): List<InputOption> = cache[setId]?.items.orEmpty()
+
+    private fun setCursor(setId: String, next: String?) {
+        if (!next.isNullOrEmpty()) cursors[setId] = next else cursors.remove(setId)
+    }
+
+    private fun parsePage(json: JSONObject): Pair<CacheEntry, String?>? {
         val data = json.optJSONObject("data") ?: return null
         val arr = data.optJSONArray("items") ?: return null
         // JSONObject → Map so the SHARED parser can read it. Going through the same
@@ -147,7 +166,7 @@ internal object OptionSetStore {
             version = data.optInt("version", 0),
             items = items,
             totalCount = data.optInt("total_count", items.size),
-        )
+        ) to data.optString("next_cursor").takeIf { it.isNotEmpty() && it != "null" }
     }
 
     /** Recursive so nested option payloads (badge, sheet_blocks) survive the conversion. */
@@ -173,5 +192,6 @@ internal object OptionSetStore {
     /** Test seam — the cache is process-lifetime, so tests must be able to start clean. */
     fun resetForTesting() {
         cache.clear()
+        cursors.clear()
     }
 }

@@ -8632,6 +8632,7 @@ private fun FormInputSelectBlock(
     var searchText by remember(block.id) { mutableStateOf("") }
     var searchResults by remember(block.id) { mutableStateOf<List<InputOption>?>(null) }
     var isSearching by remember(block.id) { mutableStateOf(false) }
+    val pagingScope = rememberCoroutineScope()
 
     // Debounced: each keystroke restarts this effect, so a fast typist issues ONE request rather
     // than one per character. The endpoint has its own rate-limit bucket precisely because a
@@ -8667,6 +8668,32 @@ private fun FormInputSelectBlock(
     // An active search REPLACES the list, including an empty result — that is the honest answer to
     // "nothing matched", and falling back to the full list would silently ignore what was typed.
     val allOptions = searchResults ?: baseOptions
+
+    // SPEC-448 — paging. Triggered by the LAST option becoming visible rather than by a scroll
+    // offset: offsets differ per display style (grid, stacked list and dropdown all scroll
+    // differently) and would need separate maths for each, while "the last row appeared" means the
+    // same thing everywhere. Search results are never paged — the server already returned the
+    // matches for that query, and appending page 2 of the UNFILTERED list under them would mix
+    // the two. `isPaging` stops a burst of callbacks issuing several identical requests.
+    var isPaging by remember(block.id) { mutableStateOf(false) }
+    val pageInIfNeeded: (InputOption) -> Unit = remember(optionSetId, searchResults, allOptions) {
+        { option ->
+            val cursor = optionSetId?.let { OptionSetStore.cursor(it) }
+            val isLast = (option.value ?: option.id) == allOptions.lastOrNull()?.let { it.value ?: it.id }
+            if (searchResults == null && !optionSetId.isNullOrEmpty() && cursor != null && !isPaging && isLast) {
+                isPaging = true
+                pagingScope.launch {
+                    OptionSetStore.nextPage(optionSetId, cursor, AppDNA.optionSetClient)
+                    // Read the merged list back from the store rather than appending here: the
+                    // store de-duplicates by value, and a reorder between two fetches can
+                    // legitimately return an item already held.
+                    val merged = OptionSetStore.cachedItems(optionSetId)
+                    if (merged.isNotEmpty()) dynamicOptions = merged
+                    isPaging = false
+                }
+            }
+        }
+    }
     // SPEC-441 (#541) — an optional row of category chips above the options; the active chip
     // SCROLLS to that section (see the note on `options` below — nothing is filtered out).
     // Authored as field_config.categories = [{id,label,icon?}]; an option points at one by id.
