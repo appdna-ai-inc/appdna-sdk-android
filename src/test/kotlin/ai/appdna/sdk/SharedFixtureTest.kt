@@ -1080,6 +1080,15 @@ class SharedFixtureTest(
                 spy.state["parsed_tile_strip_ratio"] = (block.field_config?.get("tile_strip_ratio") as? Number)?.toDouble()
                 spy.state["parsed_tile_surface_color"] = block.field_config?.get("tile_surface_color") as? String
 
+                // SPEC-448 (#556) — the Option Set source keys. field_options must STILL parse when
+                // a set is bound: it doubles as the embedded page, and a parser treating a bound set
+                // as "ignore the inline options" would leave older builds with an empty Select.
+                spy.state["parsed_option_set_id"] = block.field_config?.get("option_set_id") as? String
+                spy.state["parsed_option_set_version"] =
+                    (block.field_config?.get("option_set_version") as? Number)?.toInt()
+                spy.state["parsed_options_search"] = block.field_config?.get("options_search") as? Boolean
+                spy.state["parsed_embedded_option_count"] = block.field_options?.size ?: 0
+
                 // SPEC-446 — resolution, not just parsing (mirrors the iOS driver exactly).
                 // `sessionData` is the runner's own accessor for setup.session_data; the responses
                 // and step inputs come from there because the fixture schema has no `responses` key.

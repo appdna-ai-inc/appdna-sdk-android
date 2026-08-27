@@ -8599,7 +8599,7 @@ private fun FormInputSelectBlock(
     val optionSetVersion = (block.field_config?.get("option_set_version") as? Number)?.toInt()
     val authoredOptions = block.field_options ?: emptyList()
     var dynamicOptions by remember(optionSetId) { mutableStateOf<List<InputOption>>(emptyList()) }
-    val allOptions = if (optionSetId.isNullOrEmpty()) authoredOptions else
+    val baseOptions = if (optionSetId.isNullOrEmpty()) authoredOptions else
         OptionSetStore.immediateOptions(optionSetId, authoredOptions, authoredOptions)
             .let { if (dynamicOptions.isNotEmpty()) dynamicOptions else it }
 
@@ -8611,6 +8611,48 @@ private fun FormInputSelectBlock(
             if (fresh.isNotEmpty()) dynamicOptions = fresh
         }
     }
+
+    // SPEC-448 — the search box. `searchResults` is null when no search is active, which is a
+    // different state from "searched and found nothing" and renders differently. Mirrors iOS.
+    val showsSearch = (block.field_config?.get("options_search") as? Boolean) == true
+    var searchText by remember(block.id) { mutableStateOf("") }
+    var searchResults by remember(block.id) { mutableStateOf<List<InputOption>?>(null) }
+    var isSearching by remember(block.id) { mutableStateOf(false) }
+
+    // Debounced: each keystroke restarts this effect, so a fast typist issues ONE request rather
+    // than one per character. The endpoint has its own rate-limit bucket precisely because a
+    // search box is the chattiest thing pointed at it.
+    LaunchedEffect(searchText, optionSetId) {
+        val trimmed = searchText.trim()
+        if (trimmed.isEmpty()) {
+            // Clearing the box restores the full list — an empty query is not a filter.
+            searchResults = null
+            isSearching = false
+            return@LaunchedEffect
+        }
+        if (optionSetId.isNullOrEmpty()) {
+            // A locally-authored list is searched in memory: no network, no spinner, and it works
+            // with no Option Set at all.
+            val folded = trimmed.lowercase()
+            searchResults = authoredOptions.filter {
+                (it.label ?: "").lowercase().contains(folded) ||
+                    (it.subtitle ?: "").lowercase().contains(folded)
+            }
+            return@LaunchedEffect
+        }
+        kotlinx.coroutines.delay(250)
+        isSearching = true
+        val results = OptionSetStore.search(optionSetId, trimmed, AppDNA.optionSetClient)
+        isSearching = false
+        // null means the search could NOT be performed. Leaving the previous list up is right:
+        // replacing it with an empty one would tell the user their query matched nothing, which is
+        // a different and wrong statement.
+        if (results != null) searchResults = results
+    }
+
+    // An active search REPLACES the list, including an empty result — that is the honest answer to
+    // "nothing matched", and falling back to the full list would silently ignore what was typed.
+    val allOptions = searchResults ?: baseOptions
     // SPEC-441 (#541) — an optional row of category chips above the options; the active chip
     // SCROLLS to that section (see the note on `options` below — nothing is filtered out).
     // Authored as field_config.categories = [{id,label,icon?}]; an option points at one by id.
@@ -8798,6 +8840,42 @@ private fun FormInputSelectBlock(
         verticalArrangement = Arrangement.spacedBy(6.dp),
     ) {
         FormFieldLabel(block)
+
+        // SPEC-448 — search sits ABOVE the category chips. Both occupy the strip over the list,
+        // and the spec resolves the collision this way so the chips stay adjacent to the options
+        // they scroll to; putting search between them would separate a chip from its section.
+        //
+        // Progress shows INSIDE the field and nowhere else. A spinner over the list would say
+        // "this screen is loading", which is false — the list is right there and still usable.
+        if (showsSearch) {
+            OutlinedTextField(
+                value = searchText,
+                onValueChange = { searchText = it },
+                singleLine = true,
+                placeholder = { Text("Search", fontSize = 15.sp) },
+                leadingIcon = {
+                    Text("\uD83D\uDD0D", fontSize = 14.sp)
+                },
+                trailingIcon = {
+                    when {
+                        isSearching -> CircularProgressIndicator(
+                            modifier = Modifier.size(16.dp),
+                            strokeWidth = 2.dp,
+                        )
+                        searchText.isNotEmpty() -> Text(
+                            "\u2715",
+                            fontSize = 14.sp,
+                            modifier = Modifier.clickable {
+                                searchText = ""
+                                searchResults = null
+                            },
+                        )
+                        else -> Unit
+                    }
+                },
+                modifier = Modifier.fillMaxWidth(),
+            )
+        }
 
         // SPEC-441 (#541) — the chip row, above the options it filters. Mirrors iOS
         // FormInputSelectBlock.categoryChipRow and the console preview.
