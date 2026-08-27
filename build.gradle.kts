@@ -87,6 +87,17 @@ android {
                 // nothing. I watched that happen — a run launched with CI=1 still OOMed at 1g.
                 it.maxHeapSize = (project.findProperty("roborazziHeap") as String?) ?: "1g"
 
+                // …and even 4g was not enough, because the problem is ACCUMULATION, not ceiling.
+                // All 917 tests share one JVM, and the Canvas-heavy snapshots (gauges, rings,
+                // spinners, phone mockups) hold bitmaps that outlive the test that made them, so
+                // the last few OOM however high the cap is raised. On the CI runner that killed
+                // `loadingCogSpinner` and `loadingSplashBottom` -- the two that happen to run last,
+                // which is the tell that it is the heap's history and not those two tests.
+                //
+                // Recycling the JVM releases the accumulation. 250 keeps it to ~4 forks, so the
+                // fixed Robolectric start-up cost is paid a handful of times rather than per class.
+                it.setForkEvery(250L)
+
                 // SPEC-070-B AC-35 — the shared fixtures live OUTSIDE this module
                 // (packages/sdk-shared-fixtures), so Gradle saw no input change when one was edited
                 // and marked the test task UP-TO-DATE. Editing a fixture's expected value therefore
