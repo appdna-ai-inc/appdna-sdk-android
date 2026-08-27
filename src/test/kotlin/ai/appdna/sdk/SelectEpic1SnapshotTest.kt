@@ -1018,6 +1018,47 @@ class SelectEpic1SnapshotTest {
     }
 
     @Test
+    fun socialLoginProviderFontSize() {
+        // #560 — per-provider label size. The DTO fixture proves the number is DECODED; only a
+        // snapshot proves it is DRAWN, which is the half a decode-only test would let ship broken.
+        // Two providers at different sizes, so the golden fails on a renderer that reads the field
+        // and then ignores it as much as on one that never reads it.
+        val step = mapOf<String, Any>(
+            "type" to "custom", "name" to "t", "analytics_name" to "t", "skip_allowed" to false,
+            "config" to mapOf<String, Any>(
+                "content_blocks" to listOf(
+                    mapOf<String, Any>(
+                        "id" to "sl_size", "type" to "social_login",
+                        "providers" to listOf(
+                            mapOf<String, Any>("type" to "google", "label" to "Continue with Google", "font_size" to 22),
+                            mapOf<String, Any>("type" to "email", "label" to "Continue with Email", "font_size" to 12),
+                        ),
+                    ),
+                ),
+            ),
+        )
+        val blocks = OnboardingConfigParser.parseStepForTest(step)?.config?.content_blocks ?: emptyList()
+
+        captureRoboImage("src/test/snapshots/social_login_font_size.png") {
+            MaterialTheme {
+                Column(
+                    Modifier
+                        .fillMaxWidth()
+                        .background(Color(0xFF0F1117))
+                        .padding(16.dp),
+                ) {
+                    ContentBlockRendererView(
+                        blocks = blocks,
+                        onAction = {},
+                        toggleValues = mutableMapOf(),
+                        inputValues = mutableMapOf(),
+                    )
+                }
+            }
+        }
+    }
+
+    @Test
     fun carouselPaged() {
         // EPIC-8 — swipeable carousel: 3 pages + dot indicator (page 0 active). Snapshot = first page.
         val pageStyle = mapOf<String, Any>("font_size" to 24, "font_weight" to 700, "color" to "#FFFFFF")
