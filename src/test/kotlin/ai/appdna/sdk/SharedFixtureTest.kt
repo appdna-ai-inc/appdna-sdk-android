@@ -1059,6 +1059,20 @@ class SharedFixtureTest(
                     spy.state["gate_blocks_when_unanswered"] = !unanswered.first
                     spy.state["gate_releases_when_answered"] = satisfied.first
                     spy.state["gate_ignores_block_level_required"] = satisfied.first
+                    // A required stat carrying an authored `default` must not block: the control
+                    // seeds that value on first composition, so a gate waiting on inputValues would
+                    // keep the CTA disabled for a block below the fold. Answer ONLY the required
+                    // stats that have no default — if the gate still releases, the defaulted one did
+                    // not block, and the assertion cannot be met by simply answering everything.
+                    val rawStats = (block.field_config?.get("summary_stats") as? List<*>)
+                        ?.mapNotNull { it as? Map<*, *> }.orEmpty()
+                    if (rawStats.any { it["default"] != null }) {
+                        val partial = rawStats.filter { it["default"] == null }
+                            .mapNotNull { it["field_id"] as? String }
+                            .associateWith { "5" as Any }
+                        spy.state["gate_ignores_required_stat_with_default"] =
+                            RequiredFieldGate.evaluate(listOf(block), partial).first
+                    }
                 }
 
                 // SPEC-447 (#555) — the image-tile layout keys.

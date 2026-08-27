@@ -1448,6 +1448,12 @@ object RequiredFieldGate {
                 if (input == "none") continue
                 if (stat["required"]?.toString() != "true") continue
                 val fieldId = (stat["field_id"] as? String)?.takeIf { it.isNotEmpty() } ?: continue
+                // An authored `default` SATISFIES the requirement, checked here rather than relying
+                // on the control having seeded it. The control seeds on first composition, so a
+                // summary block below the fold has not run that code yet — the CTA would stay
+                // disabled until the user scrolled to a control they never needed to touch. The gate
+                // must not depend on view lifecycle to agree with what the screen will show.
+                if (stat["default"] != null) continue
                 val v = inputValues[fieldId]
                 if (v == null || (v is String && v.isEmpty())) return false to fieldId
             }
