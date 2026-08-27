@@ -1476,7 +1476,12 @@ internal object OnboardingConfigParser {
             calendar_bg_color = bm["calendar_bg_color"] as? String,
             // SPEC-401-A R49 (Lens A #2) — Sprint 7 scroll-collapse.
             collapse_on_scroll = bm["collapse_on_scroll"] as? Boolean,
-            field_options = parseInputOptionList(bm["field_options"] as? List<*>).toImmutableList(),
+            // The `?.let` is load-bearing. Extracting this into the shared parser gave it an
+            // `.orEmpty()` tail -- correct for the Option Set path, where an empty list is a real
+            // answer -- and that turned an ABSENT `field_options` into an empty list rather than
+            // null. iOS decodes absent as nil, and a Select distinguishes "no options authored"
+            // from "options authored, none of them valid", so the two platforms disagreed.
+            field_options = (bm["field_options"] as? List<*>)?.let { parseInputOptionList(it).toImmutableList() },
             // Gap 8: Parse field_config for display_style, use_variable, use_webhook
             // SPEC-419 gap#6 — progress_bar `label_format`/`custom_label` are authored
             // top-level by the console editor, but Android can't add top-level ContentBlock

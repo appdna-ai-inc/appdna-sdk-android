@@ -49,7 +49,7 @@ class SelectCategoryChipsSnapshotTest {
                         "id" to "sel_chips",
                         "type" to "input_select",
                         "field_id" to "sound",
-                        "field_label" to "Wybierz własny dźwięk alarmu",
+                        "field_label" to "Choose your own alarm sound",
                         "field_config" to mapOf<String, Any>(
                             "display_style" to "stacked",
                             "category_header" to true,
