@@ -1093,6 +1093,13 @@ class SharedFixtureTest(
                 spy.state["parsed_label_position"] = block.field_style?.label_position
                 spy.state["parsed_label_align"] = block.field_style?.label_align
                 spy.state["parsed_label_font_family"] = block.field_style?.label_font_family
+                // #560 follow-up — per-provider label size. Two providers, one with and one
+                // without, so an omitted size must decode as null rather than 0.
+                val provs = block.providers.orEmpty()
+                spy.state["parsed_provider_count"] = provs.size
+                spy.state["parsed_provider0_font_size"] = provs.getOrNull(0)?.font_size?.toDouble()
+                spy.state["parsed_provider0_text_color"] = provs.getOrNull(0)?.text_color
+                spy.state["parsed_provider1_font_size"] = provs.getOrNull(1)?.font_size?.toDouble()
                 // SPEC-444 (#540, #542) — the option's nested sheet blocks.
                 val fopts = block.field_options.orEmpty()
                 spy.state["parsed_opt0_sheet_block_count"] = fopts.getOrNull(0)?.sheet_blocks?.size ?: 0

@@ -1342,6 +1342,10 @@ internal object OnboardingConfigParser {
                         corner_radius = (pm["corner_radius"] as? Number)?.toFloat(),
                         icon_style = pm["icon_style"] as? String,
                         icon_url = pm["icon_url"] as? String,
+                        // #560 — Android maps every provider key by hand, so a field the console
+                        // writes and this line omits is null forever and the renderer silently uses
+                        // its default. That is the exact class this file's own comments record.
+                        font_size = (pm["font_size"] as? Number)?.toFloat(),
                     )
                 } else null
             }?.toImmutableList(),

@@ -817,6 +817,12 @@ data class SocialProvider(
     // Social-Login styling v2 — per-provider custom icon override. When set to a
     // non-empty URL the SDK loads the remote image instead of the built-in glyph.
     val icon_url: String? = null,
+    /**
+     * Per-provider label size. Requested by QA on #560 once the Style section became findable: the
+     * colours were there and the size was not, so a provider could be styled to match a brand
+     * everywhere except its type.
+     */
+    val font_size: Float? = null,
 )
 
 /** Countdown labels config (SPEC-089d §3.7). */
@@ -4011,7 +4017,15 @@ private fun SocialLoginBlock(
                     // SPEC-401-A R56 (Lens A R56 #2, P1) — explicit 17sp matches
                     // iOS .body.weight(.semibold) (ContentBlockRendererView.swift:759).
                     // Material Button content defaults to labelLarge=14sp.
-                    Text(displayLabel, fontSize = 17.sp, fontWeight = FontWeight.SemiBold, color = textColor)
+                    // #560 — per-provider label size. 17sp is what this rendered at before the
+                    // field existed, so an unset value is byte-identical to the previous behaviour
+                    // rather than a silent restyle of every existing flow. Mirrors iOS.
+                    Text(
+                        displayLabel,
+                        fontSize = (provider.font_size ?: 17f).sp,
+                        fontWeight = FontWeight.SemiBold,
+                        color = textColor,
+                    )
                 }
             }
             // SPEC-089d §6.5 parity — pressed style (scale/opacity) for social
@@ -8621,6 +8635,12 @@ private fun FormInputSelectBlock(
     // refresh returns empty and must NOT clear a working list, so the ladder stays standing.
     if (!optionSetId.isNullOrEmpty()) {
         LaunchedEffect(optionSetId) {
+            // Load any persisted copy FIRST, so a cold launch has a real cache rung rather than
+            // falling to the embedded page and re-downloading on every app start.
+            OptionSetStore.hydrate(optionSetId)
+            val hydrated = OptionSetStore.cachedItems(optionSetId)
+            if (hydrated.isNotEmpty()) dynamicOptions = hydrated
+
             val fresh = OptionSetStore.refresh(optionSetId, AppDNA.optionSetClient, optionSetVersion)
             if (fresh.isNotEmpty()) dynamicOptions = fresh
         }

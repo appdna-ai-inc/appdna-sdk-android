@@ -30,10 +30,113 @@ internal object OptionSetStore {
         val totalCount: Int,
     )
 
+    /**
+     * 🔴 SCALE. Three limits, because this feature is explicitly for lists of thousands and an
+     * unbounded store is how that becomes an OOM report rather than a feature.
+     *
+     * - [MAX_ITEMS_PER_SET] caps what paging accumulates. A user scrolling a 20,000-item list would
+     *   otherwise hold all 20,000 parsed options resident; the oldest pages are dropped and
+     *   scrolling back re-fetches, which is far cheaper than never releasing them.
+     * - [MAX_CACHED_SETS] caps how many sets stay resident, evicting least-recently-used.
+     * - [MAX_DISK_BYTES] caps what is persisted, so the SDK cannot grow a user's storage without
+     *   bound on a device that never clears it.
+     */
+    private const val MAX_ITEMS_PER_SET = 2_000
+    private const val MAX_CACHED_SETS = 8
+    private const val MAX_DISK_BYTES = 2 * 1024 * 1024
+
     private val cache = mutableMapOf<String, CacheEntry>()
+    /** Access order for LRU eviction — most recent last. */
+    private val lru = mutableListOf<String>()
     /** Next-page cursor per set. Absence means 'no next page'. */
     private val cursors = mutableMapOf<String, String>()
     private val mutex = Mutex()
+
+    // ── Persistence ────────────────────────────────────────────────────────────────────────
+    //
+    // 🔴 Without this the ladder's FIRST rung is empty on every cold launch, and the promise that a
+    // warm run never looks like it is fetching only holds within one process. A user opening the
+    // app fresh would see the embedded 50 items and a re-download every time — on a list of
+    // thousands that is a worse experience AND real repeated bandwidth for the customer.
+    //
+    // Written to cacheDir, which Android may reclaim under pressure — correct, because this is
+    // re-derivable from the server. Every failure is swallowed: a cache that cannot be written must
+    // never break a render.
+
+    private fun cacheDir(): java.io.File? = try {
+        ai.appdna.sdk.AppDNA.appContextForBridges()?.let { ctx ->
+            java.io.File(ctx.cacheDir, "appdna-option-sets").apply { mkdirs() }
+        }
+    } catch (e: Exception) { null }
+
+    private fun persist(setId: String) {
+        try {
+            val dir = cacheDir() ?: return
+            val entry = cache[setId] ?: return
+            val arr = org.json.JSONArray()
+            for (item in entry.items) {
+                arr.put(
+                    org.json.JSONObject()
+                        .put("id", item.id ?: item.value)
+                        .put("value", item.value ?: item.id)
+                        .put("label", item.label ?: "")
+                        .putOpt("subtitle", item.subtitle)
+                        .putOpt("category", item.category)
+                        .putOpt("image_url", item.image_url)
+                        .putOpt("icon", item.icon),
+                )
+            }
+            val payload = org.json.JSONObject()
+                .put("version", entry.version)
+                .put("total_count", entry.totalCount)
+                .putOpt("cursor", cursors[setId])
+                .put("items", arr)
+                .toString()
+            if (payload.toByteArray().size > MAX_DISK_BYTES) return
+            java.io.File(dir, "$setId.json").writeText(payload)
+        } catch (e: Exception) { /* a cache write must never break a render */ }
+    }
+
+    /**
+     * Load a persisted set into memory. Called before the ladder is consulted, so a cold launch
+     * still has a real first rung.
+     */
+    @Synchronized
+    fun hydrate(setId: String) {
+        if (cache.containsKey(setId)) return
+        try {
+            val dir = cacheDir() ?: return
+            val f = java.io.File(dir, "$setId.json")
+            if (!f.exists()) return
+            val json = org.json.JSONObject(f.readText())
+            val arr = json.optJSONArray("items") ?: return
+            val maps = (0 until arr.length()).mapNotNull { i ->
+                arr.optJSONObject(i)?.let { o -> o.keys().asSequence().associateWith { o.get(it) } }
+            }
+            val items = OnboardingConfigParser.parseInputOptionList(maps)
+            if (items.isEmpty()) return
+            cache[setId] = CacheEntry(
+                version = json.optInt("version", 0),
+                items = items,
+                totalCount = json.optInt("total_count", items.size),
+            )
+            json.optString("cursor").takeIf { it.isNotEmpty() && it != "null" }?.let { cursors[setId] = it }
+            touch(setId)
+        } catch (e: Exception) { /* a corrupt cache file is a cold start, not a crash */ }
+    }
+
+    /** Mark a set as most-recently-used and evict past the cap. */
+    private fun touch(setId: String) {
+        lru.remove(setId)
+        lru.add(setId)
+        while (lru.size > MAX_CACHED_SETS) {
+            val oldest = lru.removeAt(0)
+            cache.remove(oldest)
+            cursors.remove(oldest)
+            // The DISK copy stays: eviction is about memory, and the file is what makes the next
+            // cold start fast. Disk is bounded by its own byte cap instead.
+        }
+    }
 
     /**
      * What a Select should render RIGHT NOW, without waiting for anything.
@@ -77,6 +180,8 @@ internal object OptionSetStore {
             mutex.withLock {
                 cache[setId] = page.first
                 setCursor(setId, page.second)
+                touch(setId)
+                persist(setId)
             }
             page.first.items
         } catch (e: Exception) {
@@ -126,7 +231,12 @@ internal object OptionSetStore {
                         val v = item.value ?: continue
                         if (seen.add(v)) merged.add(item)
                     }
-                    cache[setId] = existing.copy(items = merged, version = page.version, totalCount = page.totalCount)
+                    // Cap what paging accumulates: keep the MOST RECENT window. Scrolling back
+                    // re-fetches, which is cheaper than holding every page a long session touched.
+                    val capped = if (merged.size > MAX_ITEMS_PER_SET) merged.takeLast(MAX_ITEMS_PER_SET) else merged
+                    cache[setId] = existing.copy(items = capped, version = page.version, totalCount = page.totalCount)
+                    touch(setId)
+                    persist(setId)
                 }
             }
             page.items
@@ -193,5 +303,6 @@ internal object OptionSetStore {
     fun resetForTesting() {
         cache.clear()
         cursors.clear()
+        lru.clear()
     }
 }
