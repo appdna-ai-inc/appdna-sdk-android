@@ -11114,19 +11114,20 @@ private fun SummaryStatInput(
     // only costs layout. Snapping still uses the authored stepV; this bounds the DRAWN ticks.
     val tickCount = if (rawStep > 0.0) (((hi - lo) / stepV).toInt() - 1).coerceIn(0, 200) else 0
 
-    var current by remember(fieldId) {
-        mutableStateOf(
-            when (val v = inputValues[fieldId]) {
-                is Number -> v.toDouble()
-                is String -> v.toDoubleOrNull() ?: statDouble("default", lo)
-                else -> statDouble("default", lo)
-            },
-        )
+    // Read straight off the map rather than caching in local state. `inputValues` is a
+    // SnapshotStateMap, so this read subscribes and a write recomposes — the local
+    // `remember(fieldId) { mutableStateOf(...) }` this replaced was seeded ONCE, so a write from
+    // anywhere else (a delegate returning a value through onElementInteraction, for instance) would
+    // update the card on iOS, which computes from the map every time, and leave Android showing the
+    // stale number. Two sources of truth for one value is the bug; there is now one.
+    val current: Double = when (val v = inputValues[fieldId]) {
+        is Number -> v.toDouble()
+        is String -> v.toDoubleOrNull() ?: statDouble("default", lo)
+        else -> statDouble("default", lo)
     }
 
     fun write(v: Double) {
         val clamped = v.coerceIn(lo, hi)
-        current = clamped
         // Whole numbers go back as Int so `{{step.x}}` renders "4" and not "4.0" — the raw value is
         // what a summary card shows the user, so the formatting is the feature.
         inputValues[fieldId] = if (clamped == kotlin.math.floor(clamped)) clamped.toInt() else clamped
