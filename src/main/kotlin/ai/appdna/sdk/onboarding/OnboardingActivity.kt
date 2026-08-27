@@ -637,15 +637,29 @@ internal fun OnboardingFlowHost(
             viewModel?.lastViewedStepIndex = currentIndex
             val step = flow.steps[currentIndex]
             delegate?.let { d ->
-                val override = d.onBeforeStepRender(
-                    flowId = flow.id,
-                    stepId = step.id,
-                    stepIndex = currentIndex,
-                    stepType = step.type.value,
-                    responses = responses.toMap()
-                )
+                // 🔴 BOUNDED. This call used to have no timeout at all, which was mostly harmless
+                // while few hosts did real work in the hook — SPEC-448 §B asks every host to FETCH
+                // DATA here, so a customer awaiting their own backend on a bad connection, with no
+                // timeout of their own, would hang the step indefinitely and it would look like our
+                // bug. The SDK's own server hooks have always bounded themselves; this now matches.
+                // 3s rather than the hook default of 10s: a hook is a background call, this one
+                // stands between the user and a visible screen.
+                val override = kotlinx.coroutines.withTimeoutOrNull(3_000L) {
+                    d.onBeforeStepRender(
+                        flowId = flow.id,
+                        stepId = step.id,
+                        stepIndex = currentIndex,
+                        stepType = step.type.value,
+                        responses = responses.toMap()
+                    )
+                }
                 if (override != null) {
-                    configOverrides[step.id] = override
+                    // A late reply is applied only if the user is STILL on this step. Dropping it
+                    // into a step they have left would rewrite a screen they are no longer looking
+                    // at. On expiry the flow proceeds with cache then static options.
+                    if (currentIndex < flow.steps.size && flow.steps[currentIndex].id == step.id) {
+                        configOverrides[step.id] = override
+                    }
                 }
             }
             onStepViewed(step.id, currentIndex)

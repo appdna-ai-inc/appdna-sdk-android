@@ -478,7 +478,22 @@ data class StepConfigOverride(
     val title: String? = null,
     val subtitle: String? = null,
     val ctaText: String? = null,
-    val layoutOverrides: Map<String, Any>? = null
+    /**
+     * SPEC-448 §B — options supplied by the HOST APP, keyed by block id.
+     *
+     * The app reads its own backend with its own client, auth and cache and hands the list over.
+     * No network, no credentials and no retry semantics inside this SDK — which is the point: a
+     * customer whose list sits behind their own auth cannot be served by our fetcher.
+     *
+     * A block not named here keeps its authored options.
+     *
+     * `layoutOverrides` was REMOVED from this type. It was declared on all four SDKs and bridged
+     * by the wrappers, and no renderer ever read it — a host could set it and nothing happened.
+     * Making it work was the wrong fix: a bag that can overwrite any part of a step is unbounded,
+     * untestable and a promise we would have to keep forever. Removing a public field is normally
+     * breaking; here nothing ever read it, so no host can depend on its behaviour.
+     */
+    val fieldOptions: Map<String, List<InputOption>>? = null,
 )
 
 // MARK: - Step Hook Config (SPEC-083 P1)

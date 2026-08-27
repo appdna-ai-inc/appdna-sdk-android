@@ -214,6 +214,7 @@ class SharedFixtureTest(
             "pick_measurement" -> runPickMeasurement(action, spy)
             "interpolate_template" -> runInterpolateTemplate(action, spy)
             "fetch_remote_config" -> runFetchRemoteConfig(action, spy)
+            "merge_step_override" -> runMergeStepOverride(spy)
             "receive_push" -> runReceivePush(action, spy)
             "tap_push" -> runTapPush(action, spy)
             "present_surface_under_experiment" -> runPresentSurfaceUnderExperiment(action, spy)
@@ -1004,6 +1005,54 @@ class SharedFixtureTest(
     // ---------------------------------------------------------------------------------------------
     // dto_parsing — REAL parsers, no hand-rolled decoding
     // ---------------------------------------------------------------------------------------------
+
+    /**
+     * SPEC-448 §B — drives the REAL `applyingOverride` with host-supplied options.
+     *
+     * Its own driver rather than a branch of the config one: this is not a parse, it is a merge,
+     * and the thing under test is what the merge leaves ALONE. A merge that rebuilt the block array
+     * from only the named blocks would delete the heading and the button, and every assertion about
+     * the named block would still pass.
+     */
+    private fun runMergeStepOverride(spy: Spy) {
+        val hostOptions = sessionData.optJSONObject("host_field_options")
+            ?: error("merge_step_override needs setup.session_data.host_field_options")
+
+        val byBlock = mutableMapOf<String, List<ai.appdna.sdk.onboarding.InputOption>>()
+        for (blockId in hostOptions.keys()) {
+            val arr = hostOptions.optJSONArray(blockId) ?: continue
+            val maps = (0 until arr.length()).mapNotNull { i ->
+                arr.optJSONObject(i)?.let { jsonValueToKotlin(it) }
+            }
+            byBlock[blockId] = ai.appdna.sdk.onboarding.OnboardingConfigParser.parseInputOptionList(maps)
+        }
+
+        // Parsed through the SAME step parser the renderer uses, so the merger is fed the shape it
+        // is actually given at runtime.
+        val step = ai.appdna.sdk.onboarding.OnboardingConfigParser.parseStepForTest(
+            mapOf(
+                "type" to "custom", "name" to "m", "analytics_name" to "m", "skip_allowed" to false,
+                "config" to jsonValueToKotlin(config ?: error("setup.config missing")),
+            )
+        ) ?: error("setup.config did not parse as a step")
+
+        val merged = step.config.applyingOverride(
+            ai.appdna.sdk.onboarding.StepConfigOverride(fieldOptions = byBlock)
+        )
+        val blocks = merged.content_blocks.orEmpty()
+        spy.state["merged_block_count"] = blocks.size
+        spy.state["merged_block_ids"] = blocks.map { it.id }
+        blocks.firstOrNull { it.id == "winery_select" }?.let { target ->
+            spy.state["merged_target_option_count"] = target.field_options?.size ?: 0
+            spy.state["merged_target_first_value"] =
+                target.field_options?.firstOrNull()?.let { it.value ?: it.id }
+        }
+        blocks.firstOrNull { it.id == "other_select" }?.let { untouched ->
+            spy.state["merged_untouched_option_value"] =
+                untouched.field_options?.firstOrNull()?.let { it.value ?: it.id }
+        }
+        spy.state["merged_heading_text"] = blocks.firstOrNull { it.id == "intro_heading" }?.text
+    }
 
     private fun runFetchRemoteConfig(action: JSONObject, spy: Spy) {
         val cfg = config ?: unsupported("fetch_remote_config without setup.config")

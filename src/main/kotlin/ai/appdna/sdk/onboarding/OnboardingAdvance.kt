@@ -1,5 +1,7 @@
 package ai.appdna.sdk.onboarding
 
+import kotlinx.collections.immutable.toImmutableList
+
 /**
  * Pure onboarding advance state machine.
  *
@@ -370,6 +372,18 @@ internal fun StepConfig.applyingOverride(o: StepConfigOverride): StepConfig = co
     subtitle = o.subtitle ?: subtitle,
     cta_text = o.ctaText ?: cta_text,
     field_defaults = o.fieldDefaults ?: field_defaults,
+    // SPEC-448 §B — host-supplied options.
+    //
+    // ⚠️ NOT another flat `copy()` line like the four above. Those replace scalars on the step;
+    // options live at `content_blocks[i].field_options`, one level down inside an ImmutableList.
+    // So this maps over the blocks and rebuilds only the NAMED ones, leaving every sibling
+    // untouched. Rebuilding the array from just the named blocks would silently delete the rest of
+    // the step — invisible until an author noticed a missing block, which is why the fixture
+    // asserts the untouched siblings survive.
+    content_blocks = if (o.fieldOptions.isNullOrEmpty()) content_blocks else
+        content_blocks?.map { block ->
+            o.fieldOptions[block.id]?.let { block.copy(field_options = it.toImmutableList()) } ?: block
+        }?.toImmutableList(),
 )
 
 /**
