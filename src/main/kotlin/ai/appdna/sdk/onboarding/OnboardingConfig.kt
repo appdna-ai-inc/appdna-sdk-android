@@ -494,7 +494,35 @@ data class StepConfigOverride(
      * breaking; here nothing ever read it, so no host can depend on its behaviour.
      */
     val fieldOptions: Map<String, List<InputOption>>? = null,
-)
+) {
+    companion object {
+        /**
+         * SPEC-448 §B — the one public way to turn a wrapper bridge's raw
+         * `[blockId: [option maps]]` into typed options.
+         *
+         * It lives HERE, in the core, rather than in each wrapper. `OnboardingConfigParser` is
+         * `internal` on purpose, so the RN wrapper -- a separate Gradle module -- could not reach
+         * it and the wrapper's own copy failed to compile. Re-parsing the maps inside the wrapper
+         * would have compiled and been worse: ADR-001 says a wrapper carries no logic, and two
+         * option parsers are how the promise that a host-supplied option and an authored one
+         * render identically quietly stops being true.
+         *
+         * Returns null for anything unusable, so a malformed bridge payload leaves the block's
+         * authored options standing rather than blanking the field.
+         */
+        @JvmStatic
+        fun decodeFieldOptions(raw: Any?): Map<String, List<InputOption>>? {
+            val byBlock = raw as? Map<*, *> ?: return null
+            val out = mutableMapOf<String, List<InputOption>>()
+            for ((k, v) in byBlock) {
+                val blockId = k as? String ?: continue
+                val list = v as? List<*> ?: continue
+                out[blockId] = OnboardingConfigParser.parseInputOptionList(list)
+            }
+            return out.ifEmpty { null }
+        }
+    }
+}
 
 // MARK: - Step Hook Config (SPEC-083 P1)
 
