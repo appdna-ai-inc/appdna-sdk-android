@@ -11120,10 +11120,22 @@ private fun SummaryStatInput(
     // anywhere else (a delegate returning a value through onElementInteraction, for instance) would
     // update the card on iOS, which computes from the map every time, and leave Android showing the
     // stale number. Two sources of truth for one value is the bug; there is now one.
+    // `value` is display text and often not numeric ("3 nights", an unresolved token), so only a
+    // cleanly numeric one can seed a control.
+    val seededValue: Double? = when (val v = stat["value"]) {
+        is Number -> v.toDouble()
+        is String -> v.trim().toDoubleOrNull()
+        else -> null
+    }
+    // Seed order, and the middle entry is the point of #558: the stat's own resolved `value` is the
+    // PRE-FILL (`value: "{{responses.group_size}}"` has already been through the resolver), so it is
+    // the number an earlier answer produced. Without it the control ignored that number and opened
+    // on the authored default — the "pre-filled value I cannot adjust" the reporter described.
+    // Real data beats a static default. Mirrors iOS.
     val current: Double = when (val v = inputValues[fieldId]) {
         is Number -> v.toDouble()
-        is String -> v.toDoubleOrNull() ?: statDouble("default", lo)
-        else -> statDouble("default", lo)
+        is String -> v.toDoubleOrNull() ?: seededValue ?: statDouble("default", lo)
+        else -> seededValue ?: statDouble("default", lo)
     }
 
     fun write(v: Double) {
@@ -11136,7 +11148,7 @@ private fun SummaryStatInput(
     LaunchedEffect(fieldId) {
         // Seed the authored default so a stat that is NOT required still reports a value, and so the
         // sibling `{{step.x}}` stat has something to show before the first drag.
-        if (inputValues[fieldId] == null && stat["default"] != null) write(statDouble("default", lo))
+        if (inputValues[fieldId] == null && (stat["default"] != null || seededValue != null)) write(current)
     }
 
     val shown = if (current == kotlin.math.floor(current)) current.toInt().toString() else current.toString()

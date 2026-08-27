@@ -1106,6 +1106,20 @@ class SharedFixtureTest(
                     // is what proves the raw token never reaches a renderer.
                     spy.state["resolved_stat_count"] = rawStats?.size ?: 0
                     spy.state["resolved_stat0_label"] = (firstStat?.get("label") as? String) ?: ""
+                    // #558 — a stat BOUND to an earlier answer that also hosts a control must open on
+                    // the RESOLVED value, not the authored default. Read off `r`, not the raw block:
+                    // the first version of this read the unresolved `{{responses.group_size}}`, found
+                    // it non-numeric, fell back to the default and asserted 9 — the very bug it is
+                    // supposed to forbid, passing as if correct.
+                    (rawStats?.mapNotNull { it as? Map<*, *> }?.firstOrNull { it["field_id"] == "group" })?.let { bound ->
+                        val d = (bound["value"] as? String)?.trim()?.toDoubleOrNull()
+                        spy.state["prefilled_stat_seeds_control"] =
+                            if (d != null) {
+                                if (d == kotlin.math.floor(d)) d.toInt().toString() else d.toString()
+                            } else {
+                                bound["default"]?.toString() ?: ""
+                            }
+                    }
                 }
 
                 // SPEC-441 (#541) — the option's `category` drives section navigation. Android
