@@ -11095,9 +11095,18 @@ private fun SummaryStatInput(
         else -> fallback
     }
 
-    val stepV = statDouble("step", 1.0).coerceAtLeast(0.0001)
+    // The 0.0001 floor keeps a step of 0 from dividing by zero, and then hands Compose
+    // (30 - 1) / 0.0001 = 289,999 discrete steps, i.e. 290,001 tick marks to lay out. A single
+    // `step: 0` typed into the editor would hang the device. Guarding the divisor is not the same
+    // as guarding the RESULT.
+    val rawStep = statDouble("step", 1.0)
     val lo = statDouble("min", 0.0)
-    val hi = statDouble("max", 100.0).coerceAtLeast(lo + stepV)
+    val hi = statDouble("max", 100.0).coerceAtLeast(lo + 0.0001)
+    // A step at or below zero means "continuous", which is what a Slider with 0 steps already is.
+    val stepV = if (rawStep > 0.0) rawStep else (hi - lo)
+    // Above ~200 ticks the marks are sub-pixel anyway, so a finer authored step buys nothing and
+    // only costs layout. Snapping still uses the authored stepV; this bounds the DRAWN ticks.
+    val tickCount = if (rawStep > 0.0) (((hi - lo) / stepV).toInt() - 1).coerceIn(0, 200) else 0
 
     var current by remember(fieldId) {
         mutableStateOf(
@@ -11155,7 +11164,7 @@ private fun SummaryStatInput(
             value = current.toFloat(),
             onValueChange = { write(it.toDouble()) },
             valueRange = lo.toFloat()..hi.toFloat(),
-            steps = (((hi - lo) / stepV).toInt() - 1).coerceAtLeast(0),
+            steps = tickCount,
             colors = SliderDefaults.colors(thumbColor = valueColor, activeTrackColor = valueColor),
             modifier = Modifier.semantics { contentDescription = label },
         )
