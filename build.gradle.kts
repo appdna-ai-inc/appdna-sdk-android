@@ -96,7 +96,12 @@ android {
                 //
                 // Recycling the JVM releases the accumulation. 250 keeps it to ~4 forks, so the
                 // fixed Robolectric start-up cost is paid a handful of times rather than per class.
-                it.setForkEvery(150L)
+                // A PROPERTY, not a constant, for the same reason the heap is one: the number that
+                // makes a normal `test` run fast is not the number that survives rendering every
+                // snapshot in one pass. Two runs picked 250 then 150 by halving, which is guessing;
+                // the roborazzi jobs now pass a small window so accumulation stops being a variable
+                // at all, and ordinary runs keep the cheap one.
+                it.setForkEvery(((project.findProperty("testForkEvery") as String?)?.toLong() ?: 250L))
 
                 // SPEC-070-B AC-35 — the shared fixtures live OUTSIDE this module
                 // (packages/sdk-shared-fixtures), so Gradle saw no input change when one was edited
