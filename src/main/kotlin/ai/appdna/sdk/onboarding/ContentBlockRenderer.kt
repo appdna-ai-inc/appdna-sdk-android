@@ -68,6 +68,7 @@ import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.LinearEasing
 import kotlinx.coroutines.delay
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Star
 import androidx.compose.material.icons.filled.StarHalf
 import androidx.compose.material.icons.outlined.Star
@@ -2511,15 +2512,45 @@ private fun ButtonBlock(
             // when both are set (ContentBlockRendererView.swift:383-394).
             // Android previously gated image_url on icon_emoji being
             // null/empty, so authored buttons with both lost the image.
+            // #580 — the icon and its spacing are authored. The gap defaults to the 8dp the button
+            // has always used, so a button with no icon settings lays out identically.
+            val soundIconGap = ((block.field_config?.get("sound_icon_gap") as? Number)?.toFloat() ?: 8f).dp
             block.icon_emoji?.let { emoji ->
                 if (emoji.isNotEmpty()) {
-                    Text(emoji, modifier = Modifier.padding(end = 8.dp))
+                    Text(emoji, modifier = Modifier.padding(end = soundIconGap))
+                }
+            }
+            // #580 — an authored icon: a built-in play triangle, or an uploaded image.
+            //
+            // Defaults to "none". The button has never drawn an icon, so anything else would
+            // change the appearance of every sound button already authored — a fix nobody asked
+            // for arriving as a surprise on customers' screens.
+            run {
+                val kind = (block.field_config?.get("sound_icon") as? String) ?: "none"
+                val iconSize = ((block.field_config?.get("sound_icon_size") as? Number)?.toFloat() ?: 18f).dp
+                val tint = StyleEngine.parseColor((block.field_config?.get("sound_icon_color") as? String) ?: "#FFFFFF")
+                if (kind == "play") {
+                    androidx.compose.material3.Icon(
+                        imageVector = Icons.Filled.PlayArrow,
+                        contentDescription = null,
+                        tint = tint,
+                        modifier = Modifier.size(iconSize).padding(end = soundIconGap),
+                    )
+                } else if (kind == "custom") {
+                    val iconUrl = block.field_config?.get("sound_icon_url") as? String
+                    if (!iconUrl.isNullOrEmpty()) {
+                        ai.appdna.sdk.core.NetworkImage(
+                            url = iconUrl,
+                            modifier = Modifier.size(iconSize).padding(end = soundIconGap),
+                            contentScale = ContentScale.Fit,
+                        )
+                    }
                 }
             }
             if (!block.image_url.isNullOrEmpty()) {
                 ai.appdna.sdk.core.NetworkImage(
                     url = block.image_url,
-                    modifier = Modifier.size(20.dp).padding(end = 8.dp),
+                    modifier = Modifier.size(20.dp).padding(end = soundIconGap),
                     contentScale = ContentScale.Fit,
                 )
             }

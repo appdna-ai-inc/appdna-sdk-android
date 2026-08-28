@@ -1104,6 +1104,11 @@ class SharedFixtureTest(
                 spy.state["parsed_image_frame"] = block.image_frame
                 spy.state["parsed_frame_color"] = block.field_config?.get("frame_color") as? String
                 spy.state["parsed_frame_glow_color"] = block.field_config?.get("frame_glow_color") as? String
+                // #580 — the Sound Button's authored icon.
+                spy.state["parsed_sound_icon"] = block.field_config?.get("sound_icon") as? String
+                spy.state["parsed_sound_icon_color"] = block.field_config?.get("sound_icon_color") as? String
+                spy.state["parsed_sound_icon_size"] = (block.field_config?.get("sound_icon_size") as? Number)?.toDouble()
+                spy.state["parsed_sound_icon_gap"] = (block.field_config?.get("sound_icon_gap") as? Number)?.toDouble()
                 spy.state["parsed_frame_corner_radius"] = (block.field_config?.get("frame_corner_radius") as? Number)?.toDouble()
                 // SPEC-444 (#540, #542) — the option's nested sheet blocks.
                 val fopts = block.field_options.orEmpty()
