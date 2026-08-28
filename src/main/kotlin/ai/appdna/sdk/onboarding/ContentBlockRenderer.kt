@@ -2261,7 +2261,14 @@ private fun ImageBlock(block: ContentBlock) {
         else -> Modifier.fillMaxWidth()
     }
     val imgHeightMax = if (iconSize != null) iconSize.dp else (block.height ?: 200.0).dp
-    if (block.image_frame == "phone") {
+    // #581 — `phone` stays the THICK mockup so flows authored before this release are untouched;
+    // `phone_thin` is the same shape with a narrower bezel, expressed as the same three numbers the
+    // preview and iOS use so "thin" cannot come to mean something different on each surface.
+    if (block.image_frame == "phone" || block.image_frame == "phone_thin") {
+        val thin = block.image_frame == "phone_thin"
+        val bezelPad = if (thin) 4.dp else 10.dp
+        val outerR = if (thin) 32.dp else 40.dp
+        val innerR = if (thin) 28.dp else 30.dp
         // EPIC-3 — phone mockup: dark bezel + dynamic-island notch, image fills the "screen".
         // SPEC-419 pass-13 — cap at 260dp wide + center, matching iOS phoneMockup
         // `.frame(maxWidth: 260)` (+ preview). Without the cap the bezel stretched
@@ -2270,9 +2277,9 @@ private fun ImageBlock(block: ContentBlock) {
         Box(
             modifier = Modifier
                 .then(if (explicitW != null) imgWidthMod else Modifier.widthIn(max = 260.dp).fillMaxWidth())
-                .clip(RoundedCornerShape(40.dp))
+                .clip(RoundedCornerShape(outerR))
                 .background(androidx.compose.ui.graphics.Color(0xFF101012))
-                .padding(10.dp),
+                .padding(bezelPad),
         ) {
             Box {
                 ai.appdna.sdk.core.NetworkImage(
@@ -2280,7 +2287,7 @@ private fun ImageBlock(block: ContentBlock) {
                     modifier = Modifier
                         .fillMaxWidth()
                         .height(imgHeightMax)
-                        .clip(RoundedCornerShape(30.dp))
+                        .clip(RoundedCornerShape(innerR))
                         .background(androidx.compose.ui.graphics.Color(0xFF2A2A2E)),
                     contentScale = androidx.compose.ui.layout.ContentScale.Crop,
                     contentDescription = block.alt ?: "Image",
@@ -2296,6 +2303,48 @@ private fun ImageBlock(block: ContentBlock) {
                 )
             }
         }
+        }
+        return
+    }
+    // #581 — effects on the plain image rather than mockups. Settings live in `field_config`:
+    // ContentBlock is at the JVM 255-argument ceiling, so a new top-level field would compile and
+    // then die at runtime with a bare ClassFormatError naming nothing.
+    if (block.image_frame == "glow" || block.image_frame == "color_frame") {
+        val cfg = block.field_config
+        val isGlow = block.image_frame == "glow"
+        val glowColor = StyleEngine.parseColor((cfg?.get("frame_glow_color") as? String) ?: "#6366F1")
+        val frameColor = StyleEngine.parseColor((cfg?.get("frame_color") as? String) ?: "#374151")
+        val frameRadius = ((cfg?.get("frame_corner_radius") as? Number)?.toFloat() ?: 16f).dp
+        val imageRadius = if (isGlow) (block.corner_radius?.toFloat() ?: 12f).dp
+                          else (frameRadius - 6.dp).coerceAtLeast(0.dp)
+        Box(
+            modifier = Modifier
+                .then(imgWidthMod)
+                // A coloured bloom BEHIND the image, not a border. Compose draws the shadow from
+                // the element's own shape, so the ambient/spot colours carry the authored hue —
+                // a border here would just be the OTHER option this dropdown offers.
+                .then(
+                    if (isGlow) Modifier.shadow(
+                        elevation = 16.dp,
+                        shape = RoundedCornerShape(imageRadius),
+                        ambientColor = glowColor,
+                        spotColor = glowColor,
+                    ) else Modifier
+                )
+                .clip(RoundedCornerShape(if (isGlow) imageRadius else frameRadius))
+                .background(if (isGlow) androidx.compose.ui.graphics.Color.Transparent else frameColor)
+                .padding(if (isGlow) 0.dp else 6.dp),
+        ) {
+            ai.appdna.sdk.core.NetworkImage(
+                url = block.image_url,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .heightIn(max = imgHeightMax)
+                    .clip(RoundedCornerShape(imageRadius)),
+                contentScale = contentScale,
+                alignment = imageAlignment,
+                contentDescription = block.alt ?: "Image",
+            )
         }
         return
     }
