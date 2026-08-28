@@ -140,6 +140,59 @@ class ImageTileLayoutSnapshotTest {
      * passed, because a fixture sets `inputValues` directly and never asks a renderer to produce the
      * control the user is supposed to touch. Only pixels can tell those two states apart.
      */
+    /**
+     * #581 / #580 — the new Image styles and the Sound Button icon.
+     *
+     * A fixture proves the keys are DECODED; only a snapshot proves they are DRAWN, and both
+     * features are entirely visual. Deliberately the same four cases iOS records, so the pair can
+     * be compared rather than each being checked against itself.
+     */
+    private fun blocksOf(vararg block: Map<String, Any>): List<ContentBlock> {
+        val step = mapOf<String, Any>(
+            "type" to "custom", "name" to "t", "analytics_name" to "t", "skip_allowed" to false,
+            "config" to mapOf<String, Any>("content_blocks" to block.toList()),
+        )
+        return OnboardingConfigParser.parseStepForTest(step)?.config?.content_blocks ?: emptyList()
+    }
+
+    @Test
+    fun image_glowStyle() {
+        capture("image_glow", blocksOf(mapOf(
+            "id" to "img_glow", "type" to "image", "image_url" to "https://example.com/a.png",
+            "image_frame" to "glow", "height" to 160, "corner_radius" to 16,
+            "field_config" to mapOf("frame_glow_color" to "#F472B6"),
+        )))
+    }
+
+    @Test
+    fun image_colorFrameStyle() {
+        capture("image_color_frame", blocksOf(mapOf(
+            "id" to "img_cf", "type" to "image", "image_url" to "https://example.com/a.png",
+            "image_frame" to "color_frame", "height" to 160,
+            "field_config" to mapOf("frame_color" to "#F59E0B", "frame_corner_radius" to 24),
+        )))
+    }
+
+    @Test
+    fun image_phoneMockupThin() {
+        capture("image_phone_thin", blocksOf(mapOf(
+            "id" to "img_thin", "type" to "image", "image_url" to "https://example.com/a.png",
+            "image_frame" to "phone_thin", "height" to 160,
+        )))
+    }
+
+    @Test
+    fun soundButton_playIcon() {
+        capture("sound_button_icon", blocksOf(mapOf(
+            "id" to "snd_icon", "type" to "sound_button", "text" to "Play sound",
+            "audio_url" to "https://example.com/clip.mp3",
+            "field_config" to mapOf(
+                "sound_icon" to "play", "sound_icon_size" to 24,
+                "sound_icon_color" to "#FDE047", "sound_icon_gap" to 12,
+            ),
+        )))
+    }
+
     @Test
     fun summaryStat_rendersItsSliderControl() {
         val step = mapOf<String, Any>(

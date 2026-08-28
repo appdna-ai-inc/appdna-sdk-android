@@ -2534,14 +2534,18 @@ private fun ButtonBlock(
                         imageVector = Icons.Filled.PlayArrow,
                         contentDescription = null,
                         tint = tint,
-                        modifier = Modifier.size(iconSize).padding(end = soundIconGap),
+                        // 🔴 Order matters. `.size(n).padding(g)` makes the box n and then insets
+                        // the CONTENT, so the glyph draws at n-2g — the Android triangle came out
+                        // visibly smaller than iOS's at the same authored size, which is exactly
+                        // what the paired goldens exist to catch. Pad first, then size the icon.
+                        modifier = Modifier.padding(end = soundIconGap).size(iconSize),
                     )
                 } else if (kind == "custom") {
                     val iconUrl = block.field_config?.get("sound_icon_url") as? String
                     if (!iconUrl.isNullOrEmpty()) {
                         ai.appdna.sdk.core.NetworkImage(
                             url = iconUrl,
-                            modifier = Modifier.size(iconSize).padding(end = soundIconGap),
+                            modifier = Modifier.padding(end = soundIconGap).size(iconSize),
                             contentScale = ContentScale.Fit,
                         )
                     }
