@@ -96,7 +96,7 @@ android {
                 //
                 // Recycling the JVM releases the accumulation. 250 keeps it to ~4 forks, so the
                 // fixed Robolectric start-up cost is paid a handful of times rather than per class.
-                it.setForkEvery(250L)
+                it.setForkEvery(150L)
 
                 // SPEC-070-B AC-35 — the shared fixtures live OUTSIDE this module
                 // (packages/sdk-shared-fixtures), so Gradle saw no input change when one was edited
