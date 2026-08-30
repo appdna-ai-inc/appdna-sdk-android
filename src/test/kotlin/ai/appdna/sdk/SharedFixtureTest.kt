@@ -1108,6 +1108,10 @@ class SharedFixtureTest(
                 spy.state["parsed_sound_icon"] = block.field_config?.get("sound_icon") as? String
                 spy.state["parsed_sound_icon_color"] = block.field_config?.get("sound_icon_color") as? String
                 spy.state["parsed_sound_icon_size"] = (block.field_config?.get("sound_icon_size") as? Number)?.toDouble()
+                // #578 — the divider slot. Android folds `divider_position` into field_config
+                // (JVM arg ceiling), so it is read from there, not top-level.
+                spy.state["parsed_divider_position"] = block.field_config?.get("divider_position") as? String
+                spy.state["parsed_divider_after_index"] = (block.field_config?.get("divider_after_index") as? Number)?.toDouble()
                 spy.state["parsed_sound_icon_gap"] = (block.field_config?.get("sound_icon_gap") as? Number)?.toDouble()
                 spy.state["parsed_frame_corner_radius"] = (block.field_config?.get("frame_corner_radius") as? Number)?.toDouble()
                 // SPEC-444 (#540, #542) — the option's nested sheet blocks.

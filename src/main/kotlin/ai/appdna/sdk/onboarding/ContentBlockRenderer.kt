@@ -4267,12 +4267,29 @@ private fun SocialLoginBlock(
             }
         }
 
-        if (showDivider && dividerPosition == "top") dividerRow()
+        // #578 — the divider is a SLOT in the stack, not one of two fixed ends.
+        //
+        // `top` is slot 0 and `bottom` is the last slot, kept as their own values so no flow
+        // authored before this release changes and an older SDK build still understands them.
+        // `after` names an interior slot via `field_config.divider_after_index` (0-based, the
+        // divider sits AFTER that provider) — ContentBlock is at the JVM argument ceiling, so the
+        // index cannot be a top-level field.
+        val dividerSlot: Int = when (dividerPosition) {
+            "top" -> 0
+            "after" -> ((block.field_config?.get("divider_after_index") as? Number)?.toInt() ?: 0)
+                .plus(1).coerceIn(0, topGroup.size)
+            else -> topGroup.size
+        }
+
+        if (showDivider && dividerSlot == 0) dividerRow()
 
         // SPEC-401-A R13 — render top group (email-first when
         // `below_inputs` placement, full author-order list otherwise),
         // then optional spacer, then the remaining providers below.
-        topGroup.forEachIndexed { idx, provider -> renderProvider(idx, provider) }
+        topGroup.forEachIndexed { idx, provider ->
+            renderProvider(idx, provider)
+            if (showDivider && dividerSlot == idx + 1 && dividerSlot < topGroup.size) dividerRow()
+        }
         if (placement == "below_inputs" && bottomGroup.isNotEmpty()) {
             // Column already inserts `spacing` between adjacent items
             // via verticalArrangement, so the additional gap to add is
@@ -4284,8 +4301,9 @@ private fun SocialLoginBlock(
             renderProvider(topGroup.size + idx, provider)
         }
 
-        // SPEC-401-A — single divider gated on show_divider, bottom by default.
-        if (showDivider && dividerPosition != "top") dividerRow()
+        // The end slot. Guarded on the slot rather than "not top", so an interior slot does not
+        // also draw one down here — which is exactly what a `!= top` test would do.
+        if (showDivider && dividerSlot >= topGroup.size) dividerRow()
     }
 }
 
