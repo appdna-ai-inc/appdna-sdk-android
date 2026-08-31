@@ -112,6 +112,17 @@ data class PaywallSectionData(
     // Features
     // SPEC-070-A J.22 — features list iterated by PaywallActivity FeaturesSection.
     val features: ImmutableList<String>? = null,
+    /**
+     * #591 — the feature subtitle's own type, and the shape an item image is clipped to.
+     * Section-level for the same reason `item_text_color` is: one setting keeps every subtitle in
+     * a paywall looking alike, which is the concern that got subtitles removed from these items in
+     * April. iOS parity: `itemSubtitleColor` / `itemSubtitleFontSize` / `itemImageShape`.
+     */
+    val item_subtitle_color: String? = null,
+    val item_subtitle_font_size: Float? = null,
+    val item_image_shape: String? = null,
+    /** The cross drawn on an EXCLUDED feature item. Authorable — a fixed red is unreadable on a red paywall. */
+    val item_excluded_color: String? = null,
 
     // Plans
     // SPEC-070-A J.22 — plans list iterated by PaywallActivity / LazyColumn.
@@ -992,6 +1003,10 @@ internal object PaywallConfigParser {
                 subtitle_style = parseDataTextStyle(d["subtitle_style"]),
                 // SPEC-070-A J.22 — wrap features/plans as ImmutableList.
                 features = (d["features"] as? List<*>)?.filterIsInstance<String>()?.toImmutableList(),
+                item_subtitle_color = d["item_subtitle_color"] as? String,
+                item_subtitle_font_size = (d["item_subtitle_font_size"] as? Number)?.toFloat(),
+                item_image_shape = d["item_image_shape"] as? String,
+                item_excluded_color = d["item_excluded_color"] as? String,
                 plans = (d["plans"] as? List<*>)?.mapIndexedNotNull { idx, planData ->
                     if (planData is Map<*, *>) {
                         @Suppress("UNCHECKED_CAST")

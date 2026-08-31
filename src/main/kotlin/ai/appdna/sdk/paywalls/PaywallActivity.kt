@@ -1492,6 +1492,81 @@ internal fun PaywallSectionView(
                             Text(text = loc("feature.$index", feature), style = featureItemStyle)
                         }
                     }
+
+                    // 🔴 RICH ITEMS. This branch read ONLY `section.data.features` — a list of plain
+                    // strings — while the console has long written `config.items`, the structured
+                    // shape with per-item emoji, icon, image and excluded state. So a features
+                    // section authored in the console rendered as an EMPTY BLOCK on Android while
+                    // iOS drew it in full (FeatureList.swift `richItemRow`). Nothing failed loudly;
+                    // the section was simply absent.
+                    //
+                    // Found while implementing #591: a per-item subtitle has nowhere to land on a
+                    // platform that does not render the items at all.
+                    //
+                    // The legacy `features` loop above is KEPT rather than replaced. Both keys can
+                    // be present on an older document, and rendering only one of them would trade
+                    // this bug for its mirror image.
+                    val richItems = section.data?.items.orEmpty()
+                    val subtitleColor = section.data?.item_subtitle_color?.takeIf { it.isNotBlank() }
+                        ?.let { StyleEngine.parseColor(it) } ?: Color.White.copy(alpha = 0.7f)
+                    val subtitleSize = (section.data?.item_subtitle_font_size ?: 12f).sp
+                    // #591 — `rounded` (default, unchanged), `circle` or `square`. iOS parity:
+                    // FeatureList.swift `imageClipShape`.
+                    val imageShape = when (section.data?.item_image_shape) {
+                        "circle" -> CircleShape
+                        "square" -> RoundedCornerShape(0.dp)
+                        else -> RoundedCornerShape(4.dp)
+                    }
+                    richItems.forEachIndexed { index, item ->
+                        val included = item.included ?: true
+                        Row(
+                            // `Top`, not `CenterVertically`: with a subtitle the row is two lines,
+                            // and centring floats the icon against the gap between them.
+                            verticalAlignment = Alignment.Top,
+                            modifier = Modifier.padding(vertical = 6.dp).alpha(if (included) 1f else 0.4f),
+                        ) {
+                            when {
+                                !item.emoji.isNullOrEmpty() ->
+                                    Text(text = item.emoji, fontSize = 18.sp)
+                                !item.image_url.isNullOrEmpty() ->
+                                    ai.appdna.sdk.core.NetworkImage(
+                                        url = item.image_url,
+                                        modifier = Modifier.size(20.dp).clip(imageShape),
+                                        contentScale = androidx.compose.ui.layout.ContentScale.Crop,
+                                    )
+                                !item.icon.isNullOrEmpty() ->
+                                    Text(text = item.icon, fontSize = 18.sp)
+                                // The excluded cross is AUTHORABLE, not a hardcoded red. A colour
+                                // a person sees is a colour a person should be able to set — and a
+                                // fixed red is unreadable on the red-toned paywalls it would land on.
+                                else -> Text(
+                                    text = if (included) "\u2713" else "\u2717",
+                                    color = if (included) {
+                                        ai.appdna.sdk.AppDNA.brandAccentColor()
+                                    } else {
+                                        section.data?.item_excluded_color?.takeIf { it.isNotBlank() }
+                                            ?.let { StyleEngine.parseColor(it) } ?: parseHexColor("#EF4444")
+                                    },
+                                    fontSize = 18.sp,
+                                )
+                            }
+                            Spacer(Modifier.width(12.dp))
+                            Column {
+                                Text(
+                                    text = loc("${'$'}{section.id}.items.$index", item.text ?: item.title ?: item.label ?: ""),
+                                    style = featureItemStyle,
+                                )
+                                // #591 — the second line, when the author wrote one.
+                                item.subtitle?.takeIf { it.isNotBlank() }?.let { sub ->
+                                    Text(
+                                        text = loc("${'$'}{section.id}.items.$index.subtitle", sub),
+                                        fontSize = subtitleSize,
+                                        color = subtitleColor,
+                                    )
+                                }
+                            }
+                        }
+                    }
                 }
             }
         }
