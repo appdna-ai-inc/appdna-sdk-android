@@ -1453,6 +1453,25 @@ fun mergeFieldConfigOverrides(
  * the validation pill copy) or null. Mirrors iOS `RequiredFieldGate` (Android keeps the extra
  * `List<*>` branch so an empty multi-select still fails the gate — pre-existing behavior).
  */
+/**
+ * #593 — a summary stat's authored font size.
+ *
+ * Sizes ride in the same string bag as `min`/`max`/`step`, so they arrive from the console as
+ * strings. Coerced the same way `statDouble` coerces those, with a fallback rather than a
+ * zero-size font on anything unparseable. iOS parity: `summaryStatSize`.
+ */
+/**
+ * A stat's string value by key. Key-as-argument like `summaryStatSize`, so the authorability gate
+ * can see WHICH key is read — a bare subscript on the loop variable tells it nothing.
+ */
+internal fun summaryStatString(stat: Map<*, *>, key: String): String? = stat[key] as? String
+
+internal fun summaryStatSize(stat: Map<*, *>, key: String, fallback: Float): Float = when (val raw = stat[key]) {
+    is Number -> raw.toFloat().takeIf { it > 0f } ?: fallback
+    is String -> raw.toFloatOrNull()?.takeIf { it > 0f } ?: fallback
+    else -> fallback
+}
+
 object RequiredFieldGate {
     fun evaluate(blocks: List<ContentBlock>, inputValues: Map<String, Any>): Pair<Boolean, String?> {
         // SPEC-446 §3 — a Summary Screen can host inputs INSIDE its stats, so one block may carry
@@ -2993,6 +3012,20 @@ private fun SummaryScreenBlock(
                     val value = m["value"]?.toString() ?: ""
                     val label = m["label"]?.toString() ?: ""
                     val color = StyleEngine.parseColor((m["color"] as? String) ?: defaultAccent)
+                    // #593 — the sub-headline's own type. `color` above styles the VALUE; the label
+                    // under it had no colour, size or alignment at all, and neither did a
+                    // slider/stepper's displayed number — the same text through a different
+                    // control. An authored label colour drops the 0.7 alpha with it: an author who
+                    // picked a colour meant that colour. iOS parity.
+                    val statLabelColor = summaryStatString(m, "label_color")?.takeIf { it.isNotBlank() }
+                        ?.let { StyleEngine.parseColor(it) } ?: textColor.copy(alpha = 0.7f)
+                    val statLabelSize = summaryStatSize(m, "label_font_size", 13f)
+                    val statValueSize = summaryStatSize(m, "value_font_size", 24f)
+                    val statAlign = when (summaryStatString(m, "align")) {
+                        "center" -> Alignment.CenterHorizontally
+                        "right" -> Alignment.End
+                        else -> Alignment.Start
+                    }
                     Column(
                         modifier = Modifier
                             .weight(1f)
@@ -3000,6 +3033,7 @@ private fun SummaryScreenBlock(
                             .background(cardBg)
                             .padding(16.dp),
                         verticalArrangement = Arrangement.spacedBy(4.dp),
+                        horizontalAlignment = statAlign,
                     ) {
                         val statInput = (m["input"] as? String) ?: "none"
                         val statFieldId = (m["field_id"] as? String) ?: ""
@@ -3008,13 +3042,15 @@ private fun SummaryScreenBlock(
                                 stat = m,
                                 fieldId = statFieldId,
                                 valueColor = color,
-                                labelColor = textColor.copy(alpha = 0.7f),
+                                labelColor = statLabelColor,
+                                labelSize = statLabelSize,
+                                valueSize = statValueSize,
                                 label = label,
                                 inputValues = inputValues,
                             )
                         } else {
-                            Text(value, fontSize = 24.sp, fontWeight = FontWeight.Bold, color = color)
-                            Text(label, fontSize = 13.sp, color = textColor.copy(alpha = 0.7f))
+                            Text(value, fontSize = statValueSize.sp, fontWeight = FontWeight.Bold, color = color)
+                            Text(label, fontSize = statLabelSize.sp, color = statLabelColor)
                         }
                     }
                 }
@@ -4985,7 +5021,22 @@ private fun ProgressBarBlock(block: ContentBlock, loc: ((String, String) -> Stri
         // pixel reference. Always render the plain caption/secondary style so both
         // platforms match. (label text itself is unchanged.)
         // SPEC-401-A R44 — theme-adaptive secondary (was Color.Gray).
-        val labelStyle = TextStyle(fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f))
+        //
+        // #584 — the label's OWN colour and size. It rendered in a theme secondary with no control
+        // at all, so an author could style the bar and its track and not the words beside them. An
+        // authored colour replaces the theme value outright, alpha included: an author who picked a
+        // colour meant that colour. iOS parity.
+        val labelColorAuthored = (block.field_config?.get("progress_label_color") as? String)
+            ?.takeIf { it.isNotBlank() }?.let { StyleEngine.parseColor(it) }
+        val labelSizeAuthored = when (val raw = block.field_config?.get("progress_label_font_size")) {
+            is Number -> raw.toFloat().takeIf { it > 0f }
+            is String -> raw.toFloatOrNull()?.takeIf { it > 0f }
+            else -> null
+        }
+        val labelStyle = TextStyle(
+            fontSize = (labelSizeAuthored ?: 12f).sp,
+            color = labelColorAuthored ?: MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
+        )
         Text(
             text = loc?.invoke("block.${block.id}.label", labelText) ?: labelText,
             style = labelStyle,
@@ -11787,6 +11838,9 @@ private fun SummaryStatInput(
     labelColor: Color,
     label: String,
     inputValues: MutableMap<String, Any>,
+    /** #593 — authored sizes, so a stat hosting a control matches one showing a fixed value. */
+    labelSize: Float = 13f,
+    valueSize: Float = 24f,
 ) {
     fun statDouble(key: String, fallback: Double): Double = when (val v = stat[key]) {
         is Number -> v.toDouble()
@@ -11847,8 +11901,8 @@ private fun SummaryStatInput(
     }
 
     val shown = if (current == kotlin.math.floor(current)) current.toInt().toString() else current.toString()
-    Text(shown, fontSize = 24.sp, fontWeight = FontWeight.Bold, color = valueColor)
-    Text(label, fontSize = 13.sp, color = labelColor)
+    Text(shown, fontSize = valueSize.sp, fontWeight = FontWeight.Bold, color = valueColor)
+    Text(label, fontSize = labelSize.sp, color = labelColor)
     if ((stat["input"] as? String) == "stepper") {
         Row(
             horizontalArrangement = Arrangement.spacedBy(12.dp),
