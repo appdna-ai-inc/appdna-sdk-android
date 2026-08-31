@@ -297,6 +297,70 @@ object AppDNA {
         registeredCustomViews[key] = factory
     }
 
+    // MARK: - Map View Registry (SPEC-451)
+
+    /**
+     * Host-provided interactive map Composables, keyed by the map block's `map_view_key`
+     * (or `"default"` when the block names none).
+     */
+    @JvmStatic
+    val registeredMapViews: MutableMap<String, @Composable (Map<String, Any>) -> Unit> = mutableMapOf()
+
+    /**
+     * Register an interactive map for the `map` content block.
+     *
+     * 🔴 The factory RECEIVES THE AUTHORED CONFIG — stops, route styling, mode, zoom — which is the
+     * whole reason this exists rather than pointing hosts at [registerCustomView]. With an opaque
+     * view the growth team can place a map and change nothing about it without an app release; here
+     * they keep control of the content and the developer supplies only the canvas.
+     *
+     * Registering nothing is a supported state, not a failure: the block falls back to a static map
+     * image, which needs no native dependency and no key in the binary.
+     *
+     * @param key matches the block's `map_view_key`; use `"default"` for every map block.
+     * @param factory builds the view from the block's resolved config (see SPEC-451 §4).
+     */
+    @JvmStatic
+    fun registerMapView(key: String = "default", factory: @Composable (Map<String, Any>) -> Unit) {
+        registeredMapViews[key] = factory
+    }
+
+    /**
+     * The Mapbox access token the `map` block's static images are fetched with.
+     *
+     * Normally the customer sets this once in the console and it arrives on every bootstrap — no
+     * host code at all. Setting it here overrides that, for hosts who would rather keep the token
+     * out of a network response and in their own binary.
+     *
+     * 🔴 It is always the CUSTOMER's token, never ours. Mapbox's terms forbid us proxying or
+     * caching the imagery, so the device fetches it directly and the request bills to whoever owns
+     * the token (SPEC-451 §5). A host token set here wins over the bootstrap value forever — an
+     * explicit choice beats a remote default.
+     */
+    @JvmStatic
+    var mapboxToken: String?
+        get() = hostMapboxToken
+            ?: remoteMapboxToken
+            ?: appContext?.getSharedPreferences(MAPBOX_TOKEN_PREFS, Context.MODE_PRIVATE)
+                ?.getString(MAPBOX_TOKEN_KEY, null)
+        set(value) { hostMapboxToken = value }
+
+    private var hostMapboxToken: String? = null
+    private var remoteMapboxToken: String? = null
+    private const val MAPBOX_TOKEN_PREFS = "appdna_map"
+    private const val MAPBOX_TOKEN_KEY = "mapbox_token"
+
+    /**
+     * Cached across launches so the very first onboarding of a cold, offline start still draws a
+     * map rather than the fallback text. Bootstrap has not answered yet at that point.
+     */
+    internal fun applyRemoteMapboxToken(token: String?) {
+        remoteMapboxToken = token
+        val prefs = appContext?.getSharedPreferences(MAPBOX_TOKEN_PREFS, Context.MODE_PRIVATE) ?: return
+        if (!token.isNullOrEmpty()) prefs.edit().putString(MAPBOX_TOKEN_KEY, token).apply()
+        else prefs.edit().remove(MAPBOX_TOKEN_KEY).apply()
+    }
+
     /** Current config bundle version reported in events. */
     @JvmStatic var currentBundleVersion: Int = 0
         internal set
@@ -1903,6 +1967,11 @@ object AppDNA {
                     val lockedAt = lockObj.optString("locked_at", "")
                     if (reason.isNotEmpty() && lockedAt.isNotEmpty()) Pair(reason, lockedAt) else null
                 }
+                // SPEC-451 — the customer's own Mapbox token, absent when they have not set one up.
+                applyRemoteMapboxToken(
+                    result.optJSONObject("settings")?.optString("mapboxToken", "")?.ifEmpty { null },
+                )
+
                 val previousLock = runtimeLock
                 runtimeLock = newLock
                 if (previousLock == null && newLock != null) {

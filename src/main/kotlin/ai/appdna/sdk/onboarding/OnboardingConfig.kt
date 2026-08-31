@@ -494,6 +494,22 @@ data class StepConfigOverride(
      * breaking; here nothing ever read it, so no host can depend on its behaviour.
      */
     val fieldOptions: Map<String, List<InputOption>>? = null,
+    /**
+     * SPEC-451 — the route a `map` block draws, supplied by the HOST APP, keyed by block id.
+     *
+     * The third and last route source, and the only one that can answer "where is this delivery
+     * right now": authored stops are fixed at publish time and a template variable can only carry
+     * what the flow already knows. The app reads its own routing service with its own client and
+     * hands the result over. No network, no credentials and no map-provider SDK inside ours.
+     *
+     * Typed rather than a free-form `field_config` patch on purpose. A bag that can overwrite any
+     * key of any block is exactly what `layoutOverrides` was, and removing that was the right call
+     * — it was unbounded, untestable, and a promise we would have had to keep forever. A route has
+     * a shape, so it gets a type.
+     *
+     * A block not named here keeps its authored route.
+     */
+    val mapRoutes: Map<String, MapRouteOverride>? = null,
 ) {
     companion object {
         /**
@@ -521,8 +537,62 @@ data class StepConfigOverride(
             }
             return out.ifEmpty { null }
         }
+
+        /**
+         * SPEC-451 — the one public way to turn a wrapper bridge's raw
+         * `[blockId: {polyline, stops}]` into typed route overrides.
+         *
+         * It lives HERE, in the core, for the same reason `decodeFieldOptions` does:
+         * `OnboardingConfigParser` is `internal`, so the RN wrapper — a separate Gradle module —
+         * cannot reach it, and a second decoder written inside the wrapper would compile happily
+         * while quietly diverging from this one.
+         *
+         * Returns null for anything unusable, so a malformed bridge payload leaves the block's
+         * authored route standing rather than blanking the map.
+         */
+        @JvmStatic
+        fun decodeMapRoutes(raw: Any?): Map<String, MapRouteOverride>? {
+            val byBlock = raw as? Map<*, *> ?: return null
+            val out = mutableMapOf<String, MapRouteOverride>()
+            for ((k, v) in byBlock) {
+                val blockId = k as? String ?: continue
+                val route = v as? Map<*, *> ?: continue
+                val stops = (route["stops"] as? List<*>)?.mapNotNull { s ->
+                    val stop = s as? Map<*, *> ?: return@mapNotNull null
+                    val lat = (stop["lat"] as? Number)?.toDouble() ?: return@mapNotNull null
+                    val lng = (stop["lng"] as? Number)?.toDouble() ?: return@mapNotNull null
+                    if (!lat.isFinite() || !lng.isFinite()) return@mapNotNull null
+                    MapRouteStop(lat, lng, stop["title"] as? String)
+                } ?: emptyList()
+                val polyline = (route["polyline"] as? String)?.ifEmpty { null }
+                // Neither a line nor a place is not a route — drop it rather than blanking the map.
+                if (polyline == null && stops.isEmpty()) continue
+                out[blockId] = MapRouteOverride(polyline, stops)
+            }
+            return out.ifEmpty { null }
+        }
     }
 }
+
+/**
+ * SPEC-451 — a route handed to a `map` block at runtime.
+ *
+ * `polyline` is Google's encoded-polyline format, which is what every routing service returns and
+ * what Mapbox's `path` overlay takes. Supplying it draws the real road geometry; supplying only
+ * `stops` draws straight lines between them. Both together is the normal case: the line follows
+ * the roads and the pins mark the stops.
+ */
+data class MapRouteOverride(
+    val polyline: String? = null,
+    val stops: List<MapRouteStop> = emptyList(),
+)
+
+/** One point on a host-supplied route. */
+data class MapRouteStop(
+    val lat: Double,
+    val lng: Double,
+    val title: String? = null,
+)
 
 // MARK: - Step Hook Config (SPEC-083 P1)
 

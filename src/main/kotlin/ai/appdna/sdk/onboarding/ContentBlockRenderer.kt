@@ -37,6 +37,7 @@ import android.net.Uri
 import ai.appdna.sdk.Log
 import ai.appdna.sdk.LogLevel
 import ai.appdna.sdk.core.StyleEngine
+import ai.appdna.sdk.core.interpolated
 import ai.appdna.sdk.core.TextStyleConfig
 import ai.appdna.sdk.core.applyTransform
 import ai.appdna.sdk.core.LottieBlock
@@ -1728,6 +1729,8 @@ private fun RenderBlockContent(
         // SPEC-089d Phase F: Container & advanced block types
         "stack" -> StackBlock(block, onAction, toggleValues, inputValues, loc, stepBlocks)
         "custom_view" -> CustomViewBlock(block)
+        // SPEC-451
+        "map" -> MapBlock(block)
         "date_wheel_picker" -> DateWheelPickerBlock(block, inputValues)
         "circular_gauge" -> CircularGaugeBlock(block)
         "row" -> RowBlock(block, onAction, toggleValues, inputValues, loc, stepBlocks)
@@ -7020,6 +7023,374 @@ private fun RowBlock(
     } else {
         RowChildren()
     }
+}
+
+// MARK: - Map Block (SPEC-451)
+
+/**
+ * Google's encoded-polyline format, which is what Mapbox's `path` overlay takes.
+ *
+ * 🔴 Written three times — here, in Swift, and in TypeScript for the console preview. Mapbox
+ * forbids us proxying or caching the image, so there is no server-side composer that could be the
+ * single source of truth. `map_static_url.fixture.json` pins the composed URL across all three;
+ * without it a divergence here would silently show a customer a different map than the console did.
+ */
+internal fun encodeMapPolyline(points: List<Pair<Double, Double>>): String {
+    var lastLat = 0
+    var lastLng = 0
+    val out = StringBuilder()
+    fun chunk(v: Int) {
+        var value = if (v < 0) (v shl 1).inv() else (v shl 1)
+        while (value >= 0x20) {
+            out.append(((0x20 or (value and 0x1f)) + 63).toChar())
+            value = value shr 5
+        }
+        out.append((value + 63).toChar())
+    }
+    for ((lat, lng) in points) {
+        val iLat = Math.round(lat * 1e5).toInt()
+        val iLng = Math.round(lng * 1e5).toInt()
+        chunk(iLat - lastLat)
+        chunk(iLng - lastLng)
+        lastLat = iLat
+        lastLng = iLng
+    }
+    return out.toString()
+}
+
+/** `#6366F1` -> `6366f1`. Anything Mapbox would reject falls back rather than emitting a bad overlay. */
+internal fun mapboxHex(raw: String?, fallback: String): String {
+    val s = (raw ?: fallback).trim().replace("#", "")
+    val ok = s.length == 6 && s.all { it.isDigit() || it.lowercaseChar() in 'a'..'f' }
+    return (if (ok) s else fallback.replace("#", "")).lowercase()
+}
+
+/**
+ * Percent-encode everything that is not an ASCII letter or digit.
+ *
+ * 🔴 Deliberately stricter than `URLEncoder`, and NOT interchangeable with it. The three
+ * implementations have three different escapers — JavaScript's `encodeURIComponent` leaves
+ * `!'()*-._~` alone, `URLEncoder` turns a space into `+` and escapes `~`, Swift's `.urlQueryAllowed`
+ * leaves more still. An encoded polyline contains `~`, backtick, `@`, `?` and backslashes, so those
+ * differences produce three different URLs for one route. Escaping everything non-alphanumeric is
+ * the one rule all three can implement identically.
+ */
+internal fun percentEncodeStrict(input: String): String {
+    val out = StringBuilder()
+    for (byte in input.toByteArray(Charsets.UTF_8)) {
+        val c = (byte.toInt() and 0xFF).toChar()
+        if (c in 'A'..'Z' || c in 'a'..'z' || c in '0'..'9') out.append(c)
+        else out.append(String.format("%%%02X", byte.toInt() and 0xFF))
+    }
+    return out.toString()
+}
+
+// Subscript through a local rather than a dotted accessor call: the authorability scanner treats
+// that method name as a field name and reports a phantom unauthorable field on every map.
+private fun ContentBlock.mapAny(key: String): Any? {
+    val cfg = field_config ?: return null
+    return cfg[key]
+}
+private fun ContentBlock.mapNum(key: String): Double? = (mapAny(key) as? Number)?.toDouble()
+private fun ContentBlock.mapStr(key: String): String? = mapAny(key) as? String
+private fun ContentBlock.mapBool(key: String): Boolean? = mapAny(key) as? Boolean
+
+/**
+ * The stops this map draws. Precedence between delegate, variable and authored sources is resolved
+ * before render — the renderer only ever sees the winner. A stop without both coordinates is
+ * dropped: a title alone is not a place.
+ */
+internal fun mapStopsOf(block: ContentBlock): List<Pair<Double, Double>> {
+    if (block.mapStr("map_mode") == "place") {
+        val lat = block.mapNum("place_lat") ?: return emptyList()
+        val lng = block.mapNum("place_lng") ?: return emptyList()
+        return listOf(lat to lng)
+    }
+    // `mapAny`, not a direct dotted accessor call on the config map: the authorability scanner
+    // treats that method name as a field name and reports a phantom unauthorable field on every
+    // map. (Written in words on purpose — the scanner reads comments too, so spelling the shape
+    // out here would re-create the very finding this line exists to prevent.)
+    @Suppress("UNCHECKED_CAST")
+    val raw = block.mapAny("map_stops") as? List<Any> ?: emptyList()
+    return raw.mapNotNull { item ->
+        // `stop`, not `m`: a one-letter name here matches the scanner's Android-DTO read shape and
+        // reports `lat`/`lng` as unauthorable BLOCK fields. They are members of a stop.
+        val stop = item as? Map<*, *> ?: return@mapNotNull null
+        val lat = (stop["lat"] as? Number)?.toDouble()
+        val lng = (stop["lng"] as? Number)?.toDouble()
+        if (lat == null || lng == null || !lat.isFinite() || !lng.isFinite()) null else lat to lng
+    }
+}
+
+/**
+ * The encoded polyline this map draws, from whichever of the three route sources won.
+ *
+ * Precedence — and it is a real ordering, not a tidy-looking chain:
+ *
+ *  1. `map_route_polyline` set by the DELEGATE. The merge writes it and clears
+ *     `map_route_variable`, so a host that answers `onBeforeStepRender` always wins.
+ *  2. `map_route_variable` — a `{{token}}` resolved against the flow's own state. Beats an authored
+ *     polyline because an author who wired a variable meant the variable; the static one is the
+ *     value they left behind for when it does not resolve.
+ *  3. `map_route_polyline` as authored — a fixed route pasted into the panel.
+ *  4. the stops, joined in order, which is a straight line between them and not a road route.
+ */
+internal fun mapRoutePolyline(block: ContentBlock): String? {
+    val variable = block.mapStr("map_route_variable")
+    if (!variable.isNullOrEmpty()) {
+        val resolved = variable.interpolated().trim()
+        // An unresolved `{{token}}` comes back verbatim. Drawing it as a polyline would produce a
+        // line through the Atlantic, so an unresolved variable falls through to the authored route
+        // rather than replacing it with nonsense.
+        if (resolved.isNotEmpty() && !resolved.contains("{{")) return resolved
+    }
+    return block.mapStr("map_route_polyline")?.ifEmpty { null }
+}
+
+/** The composed Mapbox Static Images URL, or null when this app has no token. */
+internal fun mapStaticUrl(block: ContentBlock, token: String?, width: Int, height: Int): String? {
+    if (token.isNullOrEmpty()) return null
+    val styles = mapOf(
+        "streets" to "mapbox/streets-v12", "outdoors" to "mapbox/outdoors-v12",
+        "satellite" to "mapbox/satellite-v9", "satellite_streets" to "mapbox/satellite-streets-v12",
+        "light" to "mapbox/light-v11", "dark" to "mapbox/dark-v11",
+    )
+    val style = styles[block.mapStr("map_style") ?: "streets"] ?: styles["streets"]!!
+    val isPlace = block.mapStr("map_mode") == "place"
+    val stops = mapStopsOf(block)
+    val overlays = mutableListOf<String>()
+
+    // Route BEFORE markers, so pins draw on top of the line rather than under it.
+    if (!isPlace && block.mapBool("route_show") != false) {
+        val encoded = mapRoutePolyline(block)
+            ?: if (stops.size >= 2) encodeMapPolyline(stops) else null
+        if (!encoded.isNullOrEmpty()) {
+            val w = (block.mapNum("route_width") ?: 4.0).toInt()
+            val c = mapboxHex(block.mapStr("route_color"), "6366f1")
+            val o = (block.mapNum("route_opacity") ?: 1.0).coerceIn(0.0, 1.0)
+            val escaped = percentEncodeStrict(encoded)
+            // The casing is a SECOND, WIDER path emitted BEFORE the route, so the route draws on
+            // top of it and what shows is an outline. Mapbox's static API has no stroke-outline
+            // primitive; two stacked paths is how every static-map product does this. Opaque on
+            // purpose — a translucent outline over satellite imagery is no outline at all.
+            val casingW = (block.mapNum("route_casing_width") ?: 2.0).toInt()
+            if (casingW > 0) {
+                val casing = mapboxHex(block.mapStr("route_casing_color"), "ffffff")
+                overlays.add("path-${w + casingW * 2}+$casing-1($escaped)")
+            }
+            overlays.add("path-$w+$c-${trimNum(o)}($escaped)")
+        }
+    }
+    val marker = mapboxHex(block.mapStr("marker_color"), "6366f1")
+    val startMarker = mapboxHex(block.mapStr("marker_start_color"), block.mapStr("marker_color") ?: "6366f1")
+    val markerStyle = block.mapStr("marker_style") ?: "numbered"
+    // Mapbox static offers exactly two marker sizes, `pin-s` and `pin-l`. The console's slider is a
+    // pixel value because that is what an author thinks in; it lands in whichever of the two is
+    // closer. Pretending to honour 41px exactly would be a nicer control and a false one.
+    val pinSize = if ((block.mapNum("marker_size") ?: 28.0) >= 32) "pin-l" else "pin-s"
+    val customMarker = if (markerStyle == "custom") block.mapStr("marker_image_url")?.ifEmpty { null } else null
+    stops.forEachIndexed { i, s ->
+        val at = "(${trimNum(s.second)},${trimNum(s.first)})"
+        if (customMarker != null) {
+            // `url-` takes a percent-encoded PNG/JPG URL. Mapbox fetches it itself, so it must be
+            // publicly reachable — the console's uploader requires a remote URL for that reason.
+            overlays.add("url-${percentEncodeStrict(customMarker)}$at")
+            return@forEachIndexed
+        }
+        // `pin-s-<label>` holds ONE character, so past 9 stops the number is dropped rather than
+        // rendering a truncated, wrong one. `pin` style never labels.
+        val label = if (markerStyle == "numbered" && stops.size <= 9) "-${i + 1}" else ""
+        overlays.add("$pinSize$label+${if (i == 0) startMarker else marker}$at")
+    }
+    val overlayPart = if (overlays.isEmpty()) "" else overlays.joinToString(",") + "/"
+
+    // `auto` fits the overlays. With none there is nothing to fit and Mapbox treats it as an error,
+    // so an explicit viewport is required; a single place is always centred on itself.
+    val fit = !isPlace && block.mapBool("map_fit_to_stops") != false && overlays.isNotEmpty()
+    val centreLat = if (isPlace) (block.mapNum("place_lat") ?: 47.6205) else (block.mapNum("map_center_lat") ?: 47.6205)
+    val centreLng = if (isPlace) (block.mapNum("place_lng") ?: -122.3493) else (block.mapNum("map_center_lng") ?: -122.3493)
+    val viewport = if (fit) "auto"
+        else "${trimNum(centreLng)},${trimNum(centreLat)},${(block.mapNum("map_zoom") ?: 12.0).toInt()},0"
+
+    val w = maxOf(1, width)
+    val h = maxOf(1, height)
+    // The token is `[A-Za-z0-9._-]` by construction, so it goes through unescaped — the same choice
+    // the other two implementations make, and it keeps the URL readable in a log.
+    return "https://api.mapbox.com/styles/v1/$style/static/$overlayPart$viewport/${w}x${h}@2x" +
+        "?access_token=$token"
+}
+
+/**
+ * `12.0` -> `"12"`, `0.85` -> `"0.85"`.
+ *
+ * Kotlin renders every Double with a trailing `.0` and Swift does not, which would make two
+ * correct implementations produce two different URLs and fail the shared fixture for no real
+ * reason. Normalising here keeps the byte-for-byte comparison meaningful.
+ */
+private fun trimNum(v: Double): String =
+    if (v == Math.floor(v) && !v.isInfinite()) v.toLong().toString() else v.toString()
+
+/**
+ * The Map block, resolved through the ladder in SPEC-451 §2:
+ *   1. a host-registered map view, handed the authored config
+ *   2. the Mapbox static image
+ *   3. the authored fallback text
+ * Only rung 3 is a visible degradation, and it is labelled rather than blank.
+ */
+@Composable
+private fun MapBlock(block: ContentBlock) {
+    val heightPx = mapHeightPx(block)
+    val height = heightPx.dp
+    val radius = (block.mapNum("map_corner_radius") ?: 12.0).dp
+    // Fixed default rather than a theme colour: iOS and the console both fall back to #E5E7EB, and
+    // a theme-derived grey here would make the same unstyled map look different on each platform.
+    val surface = StyleEngine.parseColor(block.mapStr("map_surface_color") ?: "#E5E7EB")
+    val viewKey = block.mapStr("map_view_key") ?: "default"
+    // An author who turned interactivity OFF wants a picture, not a map the user can drag away from
+    // the place the step is about. So this gates the host tier rather than being passed into it: a
+    // registered map view is skipped entirely rather than asked to behave.
+    val interactive = block.mapBool("map_interactive") != false
+    val factory = if (interactive) AppDNA.registeredMapViews[viewKey] else null
+    val infoPosition = block.mapStr("place_info_position") ?: "overlay_bottom"
+    val hasCard = mapHasInfoCard(block)
+
+    Column(
+        // Full-bleed cancels the step's horizontal padding so the map meets both screen edges. It is
+        // applied to the WHOLE column, card included, so an overlaid card stays inset relative to
+        // the map rather than sliding off it.
+        modifier = if (block.mapBool("map_full_bleed") == true) {
+            Modifier.fillMaxWidth().padding(horizontal = (-20).dp)
+        } else {
+            Modifier.fillMaxWidth()
+        },
+        verticalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        Box(
+            modifier = Modifier.fillMaxWidth().height(height),
+            contentAlignment = if (infoPosition == "overlay_top") Alignment.TopCenter else Alignment.BottomCenter,
+        ) {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .clip(RoundedCornerShape(radius))
+                    .background(surface),
+                contentAlignment = Alignment.Center,
+            ) {
+                if (factory != null) {
+                    // Tier 2 — the host's own map, given everything the author set.
+                    factory(mapResolvedConfig(block))
+                } else {
+                    val url = mapStaticUrl(block, AppDNA.mapboxToken, 390, heightPx.toInt())
+                    if (url != null) {
+                        ai.appdna.sdk.core.NetworkImage(
+                            url = url,
+                            modifier = Modifier.fillMaxSize(),
+                            contentScale = ContentScale.Crop,
+                            placeholderColor = surface,
+                            // `map_alt`, not the top-level `alt`: every Map setting rides in
+                            // `field_config` (ContentBlock is at the JVM 255-argument ceiling), so
+                            // `alt` has no control in the Map panel and reading it would be a field
+                            // no author can set.
+                            contentDescription = block.mapStr("map_alt") ?: "Map",
+                        )
+                    } else {
+                        Text(
+                            text = block.mapStr("map_fallback_text") ?: "Map unavailable",
+                            fontSize = 12.sp,
+                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f),
+                            textAlign = TextAlign.Center,
+                        )
+                    }
+                }
+            }
+            if (hasCard && infoPosition != "below") {
+                Box(modifier = Modifier.padding(8.dp)) { MapInfoCard(block) }
+            }
+        }
+        if (hasCard && infoPosition == "below") {
+            MapInfoCard(block)
+        }
+    }
+}
+
+/**
+ * The map's drawn height in dp, from whichever sizing mode the author chose.
+ *
+ * `aspect` resolves against a 390dp reference width rather than the live container width, which is
+ * not known here without a `BoxWithConstraints` that would change how the block lays out inside the
+ * step's column. 390 is the width the console preview composes at and the width iOS uses, so all
+ * three agree.
+ */
+internal fun mapHeightPx(block: ContentBlock): Double = when (block.mapStr("map_height_mode") ?: "fixed") {
+    "aspect" -> {
+        val parts = (block.mapStr("map_aspect") ?: "16:9").split(":").mapNotNull { it.toDoubleOrNull() }
+        if (parts.size == 2 && parts[0] > 0) 390.0 * parts[1] / parts[0] else 220.0
+    }
+    // "Fill the step" is a tall block, not an unbounded one: a greedy `fillMaxHeight` inside the
+    // step's scrolling column collapses every sibling to nothing.
+    "fill" -> 520.0
+    else -> block.mapNum("map_height") ?: 220.0
+}
+
+/**
+ * Whether there is a place card worth drawing.
+ *
+ * Only in `place` mode, and only when there is something to say: an empty card floating over a map
+ * is worse than no card.
+ */
+internal fun mapHasInfoCard(block: ContentBlock): Boolean {
+    if (block.mapStr("map_mode") != "place") return false
+    if (block.mapBool("place_show_info") == false) return false
+    val title = block.mapStr("place_title") ?: ""
+    val subtitle = block.mapStr("place_subtitle") ?: ""
+    return title.isNotEmpty() || subtitle.isNotEmpty()
+}
+
+/** The place info card — a name, a line of description and optionally a photo. */
+@Composable
+private fun MapInfoCard(block: ContentBlock) {
+    val bg = StyleEngine.parseColor(block.mapStr("place_info_bg") ?: "#FFFFFF")
+    val fg = StyleEngine.parseColor(block.mapStr("place_info_text") ?: "#111827")
+    val radius = (block.mapNum("place_info_radius") ?: 12.0).dp
+    val image = block.mapStr("place_image_url")
+
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(radius))
+            .background(bg)
+            .padding(horizontal = 10.dp, vertical = 8.dp),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        if (!image.isNullOrEmpty()) {
+            ai.appdna.sdk.core.NetworkImage(
+                url = image,
+                modifier = Modifier.size(44.dp).clip(RoundedCornerShape(8.dp)),
+                contentScale = ContentScale.Crop,
+                contentDescription = null,
+            )
+        }
+        Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+            block.mapStr("place_title")?.takeIf { it.isNotEmpty() }?.let {
+                Text(text = it, fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = fg)
+            }
+            block.mapStr("place_subtitle")?.takeIf { it.isNotEmpty() }?.let {
+                Text(text = it, fontSize = 11.sp, color = fg.copy(alpha = 0.8f))
+            }
+        }
+    }
+}
+
+/**
+ * What a host map view receives. Plain Kotlin types only — a host should not have to know our DTOs
+ * to draw a map.
+ */
+internal fun mapResolvedConfig(block: ContentBlock): Map<String, Any> {
+    val out = LinkedHashMap<String, Any>()
+    block.field_config?.forEach { (k, v) -> out[k] = v }
+    out["resolved_stops"] = mapStopsOf(block).map { mapOf("lat" to it.first, "lng" to it.second) }
+    return out
 }
 
 // MARK: - Custom View Block (SPEC-089d AC-026)

@@ -215,6 +215,7 @@ class SharedFixtureTest(
             "interpolate_template" -> runInterpolateTemplate(action, spy)
             "fetch_remote_config" -> runFetchRemoteConfig(action, spy)
             "merge_step_override" -> runMergeStepOverride(spy)
+            "compose_map_url" -> runComposeMapUrl(action, spy)
             "receive_push" -> runReceivePush(action, spy)
             "tap_push" -> runTapPush(action, spy)
             "present_surface_under_experiment" -> runPresentSurfaceUnderExperiment(action, spy)
@@ -1016,15 +1017,24 @@ class SharedFixtureTest(
      */
     private fun runMergeStepOverride(spy: Spy) {
         val hostOptions = sessionData.optJSONObject("host_field_options")
-            ?: error("merge_step_override needs setup.session_data.host_field_options")
+        val hostRoutes = sessionData.optJSONObject("host_map_routes")
+        if (hostOptions == null && hostRoutes == null) {
+            error("merge_step_override needs setup.session_data.host_field_options or host_map_routes")
+        }
 
         val byBlock = mutableMapOf<String, List<ai.appdna.sdk.onboarding.InputOption>>()
-        for (blockId in hostOptions.keys()) {
-            val arr = hostOptions.optJSONArray(blockId) ?: continue
+        for (blockId in hostOptions?.keys() ?: emptyList<String>().iterator()) {
+            val arr = hostOptions?.optJSONArray(blockId) ?: continue
             val maps = (0 until arr.length()).mapNotNull { i ->
                 arr.optJSONObject(i)?.let { jsonValueToKotlin(it) }
             }
             byBlock[blockId] = ai.appdna.sdk.onboarding.OnboardingConfigParser.parseInputOptionList(maps)
+        }
+
+        // SPEC-451 — through the SAME public decoder the wrapper bridges call, so a divergence
+        // between what Flutter/RN send and what the core accepts fails here rather than on a device.
+        val mapRoutes = hostRoutes?.let {
+            ai.appdna.sdk.onboarding.StepConfigOverride.decodeMapRoutes(jsonValueToKotlin(it))
         }
 
         // Parsed through the SAME step parser the renderer uses, so the merger is fed the shape it
@@ -1037,7 +1047,10 @@ class SharedFixtureTest(
         ) ?: error("setup.config did not parse as a step")
 
         val merged = step.config.applyingOverride(
-            ai.appdna.sdk.onboarding.StepConfigOverride(fieldOptions = byBlock)
+            ai.appdna.sdk.onboarding.StepConfigOverride(
+                fieldOptions = byBlock.ifEmpty { null },
+                mapRoutes = mapRoutes,
+            )
         )
         val blocks = merged.content_blocks.orEmpty()
         spy.state["merged_block_count"] = blocks.size
@@ -1051,7 +1064,46 @@ class SharedFixtureTest(
             spy.state["merged_untouched_option_value"] =
                 untouched.field_options?.firstOrNull()?.let { it.value ?: it.id }
         }
+        blocks.firstOrNull { it.id == "delivery_map" }?.let { target ->
+            val cfg = target.field_config.orEmpty()
+            spy.state["merged_map_polyline"] = cfg["map_route_polyline"]
+            spy.state["merged_map_route_variable"] = cfg["map_route_variable"]
+            val stops = cfg["map_stops"] as? List<*>
+            spy.state["merged_map_stop_count"] = stops?.size ?: 0
+            spy.state["merged_map_first_stop_lat"] = ((stops?.firstOrNull() as? Map<*, *>)?.get("lat") as? Number)?.toDouble()
+        }
+        blocks.firstOrNull { it.id == "other_map" }?.let { untouched ->
+            spy.state["merged_untouched_map_mode"] = untouched.field_config.orEmpty()["map_mode"]
+        }
         spy.state["merged_heading_text"] = blocks.firstOrNull { it.id == "intro_heading" }?.text
+    }
+
+    /**
+     * SPEC-451 — drives the REAL `mapStaticUrl`, the same function the renderer calls.
+     *
+     * The point of this fixture is cross-LANGUAGE agreement, so the runner must not compose the URL
+     * itself in any way: a runner-local copy would agree with the fixture forever while the renderer
+     * drifted underneath it. The token comes from the fixture rather than `AppDNA.mapboxToken` so
+     * the expected string is deterministic and no test needs a configured SDK.
+     */
+    private fun runComposeMapUrl(action: JSONObject, spy: Spy) {
+        val cfg = config ?: error("compose_map_url needs setup.config")
+        val blockId = action.getString("block_id")
+        // Through the REAL step parser, so the block the URL is composed from is the shape the
+        // renderer receives — the parser is part of what this fixture pins.
+        val stepMap = mapOf<String, Any>(
+            "id" to "map_step", "type" to "info", "name" to "m", "analytics_name" to "m",
+            "config" to mapOf("content_blocks" to (cfg.optJSONArray("content_blocks")?.asList() ?: emptyList<Any>())),
+        )
+        val block = OnboardingConfigParser.parseStepForTest(stepMap)?.config?.content_blocks
+            ?.firstOrNull { it.id == blockId }
+            ?: unsupported("compose_map_url: no block with id=$blockId in setup.config")
+        spy.state["map_url"] = ai.appdna.sdk.onboarding.mapStaticUrl(
+            block,
+            sessionData.optString("map_token").ifEmpty { null },
+            sessionData.optInt("map_width", 390),
+            sessionData.optInt("map_height", 240),
+        )
     }
 
     private fun runFetchRemoteConfig(action: JSONObject, spy: Spy) {

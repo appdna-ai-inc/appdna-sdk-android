@@ -1,5 +1,6 @@
 package ai.appdna.sdk.onboarding
 
+import kotlinx.collections.immutable.ImmutableList
 import kotlinx.collections.immutable.toImmutableList
 
 /**
@@ -380,11 +381,56 @@ internal fun StepConfig.applyingOverride(o: StepConfigOverride): StepConfig = co
     // untouched. Rebuilding the array from just the named blocks would silently delete the rest of
     // the step — invisible until an author noticed a missing block, which is why the fixture
     // asserts the untouched siblings survive.
-    content_blocks = if (o.fieldOptions.isNullOrEmpty()) content_blocks else
-        content_blocks?.map { block ->
-            o.fieldOptions[block.id]?.let { block.copy(field_options = it.toImmutableList()) } ?: block
-        }?.toImmutableList(),
+    content_blocks = applyBlockLevelOverrides(content_blocks, o),
 )
+
+/**
+ * The two override kinds that live one level down, inside `content_blocks`.
+ *
+ * ⚠️ NOT flat `copy()` lines like the four above. Those replace scalars on the step; these reach
+ * into a named block. Both map over EVERY block and rebuild only the named ones — rebuilding the
+ * array from just the named blocks would silently delete the rest of the step, invisible until an
+ * author noticed a missing block, which is why the fixtures assert the untouched siblings survive.
+ *
+ * They compose: a step may legitimately have a host-supplied option list on one block and a
+ * host-supplied route on another, so this runs both passes rather than choosing between them.
+ */
+private fun applyBlockLevelOverrides(
+    blocks: ImmutableList<ContentBlock>?,
+    o: StepConfigOverride,
+): ImmutableList<ContentBlock>? {
+    if (blocks == null) return null
+    if (o.fieldOptions.isNullOrEmpty() && o.mapRoutes.isNullOrEmpty()) return blocks
+    return blocks.map { block ->
+        var next = block
+        // SPEC-448 §B — host-supplied options.
+        o.fieldOptions?.get(block.id)?.let { next = next.copy(field_options = it.toImmutableList()) }
+        // SPEC-451 — host-supplied route. Written into `field_config` under the SAME keys the
+        // console authors, so the renderer has exactly one code path and a delegate route cannot
+        // render differently from an authored one.
+        o.mapRoutes?.get(block.id)?.let { route ->
+            val patch = mutableMapOf<String, Any>()
+            route.polyline?.let {
+                patch["map_route_polyline"] = it
+                // A host that answered with a route outranks a `{{token}}` the author wired as the
+                // fallback. Clearing it here is what makes that ordering true — leaving it would
+                // let a stale variable win over a live answer.
+                patch["map_route_variable"] = ""
+            }
+            if (route.stops.isNotEmpty()) {
+                patch["map_stops"] = route.stops.map { s ->
+                    val m = mutableMapOf<String, Any>("lat" to s.lat, "lng" to s.lng)
+                    s.title?.let { m["title"] = it }
+                    m
+                }
+            }
+            if (patch.isNotEmpty()) {
+                next = next.copy(field_config = (next.field_config ?: emptyMap()) + patch)
+            }
+        }
+        next
+    }.toImmutableList()
+}
 
 /**
  * Mirrors the `socialClick` closure in `ContentBlockRenderer` — the actions a social-login
