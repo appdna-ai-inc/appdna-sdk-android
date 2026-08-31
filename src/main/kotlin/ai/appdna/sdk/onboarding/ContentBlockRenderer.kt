@@ -7058,6 +7058,31 @@ internal fun encodeMapPolyline(points: List<Pair<Double, Double>>): String {
     return out.toString()
 }
 
+/**
+ * A readable text colour for the map's fallback state, given the authored surface behind it.
+ *
+ * 🔴 Found by a golden, not by reading: the label used the theme's secondary text colour, so on a
+ * dark authored surface it rendered dark-grey-on-near-black and was effectively invisible. The
+ * fallback exists so a map that cannot be drawn is LABELLED rather than blank, and an unreadable
+ * label is a blank space with extra steps.
+ *
+ * Relative luminance with the sRGB coefficients, thresholded at 0.5 — deliberately the plainest
+ * formula all three implementations can share, since the console preview must agree with both
+ * natives about a colour nobody authored.
+ */
+internal fun mapFallbackTextColor(surface: String?, authored: String?): String {
+    // The authored value stays on the LEFT of the coalescer in every return below, rather than
+    // being short-circuited at the top. Same result, and it keeps the shape the authorability gate
+    // reads as "a default behind an editable field" — which these literals genuinely are.
+    val picked = authored?.trim()?.ifEmpty { null }
+    val hex = (surface ?: "#E5E7EB").trim().replace("#", "")
+    if (hex.length != 6 || !hex.all { it.isDigit() || it.lowercaseChar() in 'a'..'f' }) return picked ?: "#374151"
+    val r = hex.substring(0, 2).toInt(16) / 255.0
+    val g = hex.substring(2, 4).toInt(16) / 255.0
+    val b = hex.substring(4, 6).toInt(16) / 255.0
+    return if (0.2126 * r + 0.7152 * g + 0.0722 * b < 0.5) picked ?: "#F9FAFB" else picked ?: "#374151"
+}
+
 /** `#6366F1` -> `6366f1`. Anything Mapbox would reject falls back rather than emitting a bad overlay. */
 internal fun mapboxHex(raw: String?, fallback: String): String {
     val s = (raw ?: fallback).trim().replace("#", "")
@@ -7297,7 +7322,10 @@ private fun MapBlock(block: ContentBlock) {
                         Text(
                             text = block.mapStr("map_fallback_text") ?: "Map unavailable",
                             fontSize = 12.sp,
-                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f),
+                            color = StyleEngine.parseColor(mapFallbackTextColor(
+                                block.mapStr("map_surface_color"),
+                                block.mapStr("map_fallback_text_color"),
+                            )),
                             textAlign = TextAlign.Center,
                         )
                     }
