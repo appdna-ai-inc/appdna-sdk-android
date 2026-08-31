@@ -1481,6 +1481,29 @@ object RequiredFieldGate {
             }
         }
 
+        // #585 — a MINIMUM selection count gates the CTA.
+        //
+        // 🔴 `min_selections` has been in the Zod schema since EPIC-5, with a console control on
+        // form fields, and NOTHING on any platform ever read it. An author could set "Min
+        // selections: 3", publish, and the CTA advanced on zero — a control that lied. This branch
+        // is what makes it true.
+        //
+        // Deliberately INDEPENDENT of `field_required`: setting a minimum IS the requirement, and
+        // making an author tick a separate box to arm it is the same trap one layer up. A missing
+        // or non-list value counts as zero selections rather than passing, so a step whose control
+        // has not been touched yet blocks rather than advances.
+        //
+        // `min_selections <= 0` is not a gate — the console writes 0 for "no minimum", and treating
+        // that as "at least zero, always satisfied" is both correct and what an author means.
+        // Parity with iOS RequiredFieldGate.
+        for (block in blocks) {
+            val minimum = (block.field_config?.get("min_selections") as? Number)?.toInt() ?: continue
+            if (minimum <= 0) continue
+            val fieldId = block.field_id ?: block.id
+            val count = (inputValues[fieldId] as? List<*>)?.size ?: 0
+            if (count < minimum) return false to (block.field_label ?: block.label ?: fieldId)
+        }
+
         for (block in blocks) {
             if (block.type == "summary_screen") continue // see above — per-stat, never block-level
             if (block.field_required != true) continue

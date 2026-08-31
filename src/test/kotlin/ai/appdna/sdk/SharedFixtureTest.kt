@@ -1172,6 +1172,31 @@ class SharedFixtureTest(
                 spy.state["parsed_opt0_sheet_first_type"] = fopts.getOrNull(0)?.sheet_blocks?.firstOrNull()?.type
                 spy.state["parsed_opt0_sheet_last_type"] = fopts.getOrNull(0)?.sheet_blocks?.lastOrNull()?.type
                 spy.state["parsed_opt1_sheet_block_count"] = fopts.getOrNull(1)?.sheet_blocks?.size ?: 0
+                // #585 — the min-selection gate, in BOTH directions plus the untouched state.
+                //
+                // Driven through the REAL `RequiredFieldGate`, the same object the CTA consults, so
+                // a gate that stops reading `min_selections` fails here rather than shipping a
+                // control that silently does nothing again.
+                val minSel = (block.field_config?.get("min_selections") as? Number)?.toInt()
+                if (minSel != null && minSel > 0) {
+                    val fieldId = block.field_id ?: block.id
+                    fun gateWith(n: Int) = RequiredFieldGate.evaluate(
+                        listOf(block),
+                        if (n == 0) emptyMap() else mapOf(fieldId to (1..n).map { "v$it" }),
+                    ).first
+                    spy.state["parsed_min_selections"] = minSel
+                    // Untouched: no key at all, not an empty list. A gate that only checks list size
+                    // would pass this and let an unanswered step advance.
+                    spy.state["gate_blocks_when_untouched"] = !gateWith(0)
+                    spy.state["gate_blocks_below_minimum"] = !gateWith(minSel - 1)
+                    spy.state["gate_releases_at_minimum"] = gateWith(minSel)
+                    spy.state["gate_releases_above_minimum"] = gateWith(minSel + 1)
+                    // The block deliberately does NOT set field_required — setting a minimum IS the
+                    // requirement. If the gate only fired for required blocks, the two blocking
+                    // assertions above would already be false.
+                    spy.state["gate_needs_no_field_required"] = block.field_required != true
+                }
+
                 // SPEC-446 §3 — the gate, exercised in BOTH directions plus the deadlock case.
                 if (block.type == "summary_screen") {
                     val statFieldIds = (block.field_config?.get("summary_stats") as? List<*>)
