@@ -2625,15 +2625,30 @@ private fun ThreeZoneBlockLayout(
     ) {
         // ── TOP + CENTER (scrollable, keyboard-aware) ─────────────────────
         if (onlyCenterContent) {
-            // Only center content (e.g. loading spinner) — vertically center it.
-            // Mirrors iOS `ThreeZoneStepLayout.swift:30-37`.
-            Column(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(horizontal = horizontalPadding)
-                    .padding(bottom = if (bottom.isNotEmpty()) 80.dp else 0.dp),
-                verticalArrangement = Arrangement.Center,
-            ) {
+            // Only center content — vertically centre it WHEN IT FITS, and scroll from the top
+            // when it does not.
+            //
+            // 🔴 #598 — this was `fillMaxSize()` + `Arrangement.Center` with no scroll container.
+            // It is correct for the small case the comment named (a loading spinner), but a step
+            // whose blocks all sit in the CENTER zone takes this branch too — a cross-sell screen,
+            // for instance — and once that content is taller than the viewport, centring pushes its
+            // top off-screen with nothing to scroll.
+            //
+            // `verticalScroll` + `heightIn(min = maxHeight)` is the Compose shape for this: short
+            // content still centres exactly as before (the column is stretched to the viewport and
+            // Center splits the slack), and tall content grows past it and scrolls from the top.
+            // iOS parity: ThreeZoneStepLayout.swift `GeometryReader { ScrollView { … minHeight } }`.
+            BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
+                val viewportHeight = maxHeight
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .verticalScroll(rememberScrollState())
+                        .heightIn(min = viewportHeight)
+                        .padding(horizontal = horizontalPadding)
+                        .padding(bottom = if (bottom.isNotEmpty()) 80.dp else 0.dp),
+                    verticalArrangement = Arrangement.Center,
+                ) {
                 ContentBlockRendererView(
                     blocks = center,
                     onAction = onAction,
@@ -2647,6 +2662,7 @@ private fun ThreeZoneBlockLayout(
                     onInteract = onInteract,
                     fieldConfigOverrides = fieldConfigOverrides,
                 )
+                }
             }
         } else {
             // Normal: top scrolls with center; tap empty area dismisses
