@@ -3000,18 +3000,15 @@ private fun SummaryScreenBlock(
     // bg_color = card bg, text_color = headline + label, summary_align = headline align,
     // stats_layout = horizontal (2-col, default) | vertical (single full-width column). Parity w/ iOS.
     val cardBg = block.bg_color?.let { StyleEngine.parseColor(it) } ?: Color(0xFF1F2937)
-    // 🔴 #595 — "renders completely blank". `text_color` serves TWO surfaces and defaulted to white
-    // for both. Inside a stat card that is right: `cardBg` defaults to #1F2937. The HEADLINE sits on
-    // the step background, which is light by default — so white-on-white, and a summary screen with
-    // a headline and no stats was genuinely invisible. The text was laid out the whole time, which
-    // is why it read as "nothing renders" rather than as a colour bug.
+    // #595 was a CONSOLE defect (the preview's step surface is light by default, so a white headline
+    // was invisible there). On DEVICE the default stays #FFFFFF deliberately.
     //
-    // An authored `text_color` still wins for both. Only the DEFAULT splits: the headline falls back
-    // to the theme's onSurface, which adapts the way every other top-level text block here does, and
-    // card text keeps contrasting with the card. iOS parity.
+    // 🔴 `MaterialTheme.colorScheme.onSurface` was tried here and reverted: it follows the SYSTEM
+    // theme, not the step's painted background. An onboarding step paints its own background —
+    // usually dark — so on a light-themed device it renders the headline BLACK ON DARK: the same
+    // invisibility bug, inverted. iOS parity.
     val textColor = StyleEngine.parseColor(block.text_color ?: "#FFFFFF")
-    val headlineColor = block.text_color?.takeIf { it.isNotBlank() }
-        ?.let { StyleEngine.parseColor(it) } ?: MaterialTheme.colorScheme.onSurface
+    val headlineColor = textColor
     val headlineAlign = when ((block.field_config?.get("summary_align") as? String)) {
         "left" -> TextAlign.Start; "right" -> TextAlign.End; else -> TextAlign.Center
     }
