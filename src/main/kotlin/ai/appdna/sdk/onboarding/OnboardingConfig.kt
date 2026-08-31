@@ -494,6 +494,25 @@ data class StepConfigOverride(
      * breaking; here nothing ever read it, so no host can depend on its behaviour.
      */
     val fieldOptions: Map<String, List<InputOption>>? = null,
+    /**
+     * SPEC-452 — the host's data for THIS step, addressable from the console as `{{hook_data.…}}`.
+     *
+     * Not another override: nothing here replaces a field. It is a read-only namespace the
+     * renderer's existing resolver reads, so the AUTHOR decides what is dynamic (by typing
+     * `{{hook_data.tour.price}}` in the console, or pointing a block `binding` at `hook_data.…`)
+     * and the host only supplies values. That is what separates it from the `layoutOverrides`
+     * mistake above: the reachable surface is exactly the resolver's whitelist, and a path no
+     * author referenced does nothing at all.
+     *
+     * It exists because a screen that must show live data ON ARRIVAL — a recommendation card, a
+     * booking summary, an audio preview — has no interaction to trigger
+     * `ElementInteractionResult.fieldConfigPatches`, which only fires after a tap. `hook_data` is
+     * one of the six roots `resolveDotPath` accepts and had no producer: every `{{hook_data.x}}`
+     * in every flow resolved to nothing, on both platforms.
+     *
+     * Paths walk maps and index lists, so `hook_data.recommendations.0.imageUrl` resolves.
+     */
+    val dataContext: Map<String, Any>? = null,
 ) {
     companion object {
         /**

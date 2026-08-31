@@ -1237,7 +1237,13 @@ internal fun resolveBlockBindings(
         || (block.field_options?.any { o ->
             listOf(o.label, o.subtitle, o.leading_text).any { it?.contains("{{") == true }
         } == true)
-    if (!hasBindings && !hasTemplates) return block
+    // SPEC-452 — a CONTAINER whose own keys hold no tokens but whose CHILDREN do must not
+    // short-circuit here, or the recursion at the end of this function never runs. Same trap as the
+    // summary_stats note above: every key the resolver handles must be represented in this gate,
+    // and the resolver now handles children.
+    val hasTemplatedChildren = ((block.children ?: emptyList()) + (block.stack_children ?: emptyList()))
+        .any { child -> !child.bindings.isNullOrEmpty() || childNeedsResolution(child) }
+    if (!hasBindings && !hasTemplates && !hasTemplatedChildren) return block
 
     var resolved = block
 
@@ -1346,8 +1352,63 @@ internal fun resolveBlockBindings(
         }
     }
 
+    // SPEC-452 — RECURSE into container children.
+    //
+    // 🔴 Children never reached this resolver. `ContentBlockRendererView` resolves each top-level
+    // block and then hands it to `RenderBlock`, but a container's children are rendered by
+    // `RenderBlock(block = child, …)` straight off `block.children`/`block.stack_children`, which
+    // neither resolves nor even receives `hookData`/`responses`. Resolving the container did not
+    // help: everything above rewrites the container's OWN fields and never descended.
+    //
+    // So a `{{…}}` token or a `bindings` entry on a card INSIDE a row rendered unresolved while the
+    // identical block one level up resolved fine — the ordinary recommendation-card shape, i.e.
+    // exactly where per-item host data lives. iOS had the same gap, which is why no symmetric
+    // fixture could ever see it.
+    //
+    // Done here, not at each container's child-render site, because this is the one place every
+    // container passes through: row, stack, carousel, section_background and anything added later
+    // all get it, and iOS/Android keep an identical reachable surface.
+    block.children?.let { kids ->
+        resolved = resolved.copy(
+            children = kids.map { resolveBlockBindings(it, hookData, responses, stepInputs) }
+                .toImmutableList(),
+        )
+    }
+    block.stack_children?.let { kids ->
+        resolved = resolved.copy(
+            stack_children = kids.map { resolveBlockBindings(it, hookData, responses, stepInputs) }
+                .toImmutableList(),
+        )
+    }
+
     return resolved
 }
+
+/**
+ * SPEC-452 — does this block hold a `{{token}}` in any slot the resolver rewrites?
+ *
+ * Extracted from `resolveBlockBindings`' own gate so the child check can reuse the exact same
+ * whitelist. Two copies of that list would drift, and a slot missing from the copy would make a
+ * templated child short-circuit its parent — the failure this whole gate exists to prevent.
+ */
+internal fun childNeedsResolution(block: ContentBlock): Boolean =
+    (block.text?.contains("{{") == true)
+        || (block.field_label?.contains("{{") == true)
+        || (block.field_placeholder?.contains("{{") == true)
+        || (block.badge_text?.contains("{{") == true)
+        || (block.toggle_label?.contains("{{") == true)
+        || (block.label?.contains("{{") == true)
+        || (block.markdown_content?.contains("{{") == true)
+        || ((block.field_config?.get("summary_stats") as? List<*>)?.any { s ->
+            val m = s as? Map<*, *> ?: return@any false
+            listOf("value", "label").any { k -> (m[k] as? String)?.contains("{{") == true }
+        } == true)
+        || (block.field_options?.any { o ->
+            listOf(o.label, o.subtitle, o.leading_text).any { it?.contains("{{") == true }
+        } == true)
+        // A container nested inside a container: recurse so depth is not capped at one level.
+        || ((block.children ?: emptyList()) + (block.stack_children ?: emptyList()))
+            .any { child -> !child.bindings.isNullOrEmpty() || childNeedsResolution(child) }
 
 /** Apply a single binding property override to a ContentBlock. */
 private fun applyBindingProperty(block: ContentBlock, property: String, value: Any): ContentBlock {

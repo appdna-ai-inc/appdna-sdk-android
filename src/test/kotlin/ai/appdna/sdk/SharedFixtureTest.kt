@@ -1165,6 +1165,14 @@ class SharedFixtureTest(
                     respJson.keys().asSequence().associateWith { respJson.get(it) }
                 val fixtureStepInputs: Map<String, Any> =
                     stepJson.keys().asSequence().associateWith { stepJson.get(it) }
+                // SPEC-452 — the host's `{{hook_data.…}}` payload. This runner hardcoded
+                // `hookData = null`, so no fixture could exercise the `hook_data` root at all.
+                // `jsonValueToKotlin` (not a raw `get`) because the payload is nested by definition —
+                // objects and arrays of objects — and a JSONObject left unconverted resolves to
+                // nothing when `resolveDotPath` tries to walk into it.
+                val hookJson = sessionData.optJSONObject("hook_data") ?: org.json.JSONObject()
+                val fixtureHookData: Map<String, Any> =
+                    hookJson.keys().asSequence().associateWith { jsonValueToKotlin(hookJson.get(it)) }
                 // SPEC-448 — seed the selected-option store so `{{selected.…}}` has something to
                 // resolve. It is a process-lifetime object, so it is reset first: a value left over
                 // from an earlier fixture would make this one pass for the wrong reason.
@@ -1176,13 +1184,18 @@ class SharedFixtureTest(
                     }
                 }
 
-                if (fixtureResponses.isNotEmpty() || fixtureStepInputs.isNotEmpty() || selectedJson != null) {
+                if (fixtureResponses.isNotEmpty() || fixtureStepInputs.isNotEmpty() || selectedJson != null ||
+                    fixtureHookData.isNotEmpty()
+                ) {
                     // Drive the REAL whitelist, not resolveTemplateString directly. Calling the
                     // resolver by hand proves only that it can expand a token; it says nothing about
                     // whether the block pass applies it to a given key — round-4 bug injection deleted
                     // the `label` line from the whitelist and this file stayed green.
                     val r = resolveBlockBindings(
-                        block, hookData = null, responses = fixtureResponses, stepInputs = fixtureStepInputs,
+                        block,
+                        hookData = fixtureHookData.ifEmpty { null },
+                        responses = fixtureResponses,
+                        stepInputs = fixtureStepInputs,
                     )
                     spy.state["resolved_text"] = r.text ?: ""
                     spy.state["resolved_option_label"] = r.field_options?.firstOrNull()?.label ?: ""
@@ -1193,6 +1206,15 @@ class SharedFixtureTest(
                     // is what proves the raw token never reaches a renderer.
                     spy.state["resolved_stat_count"] = rawStats?.size ?: 0
                     spy.state["resolved_stat0_label"] = (firstStat?.get("label") as? String) ?: ""
+                    // SPEC-452 — the resolved CHILD of a container. Children bypassed resolution
+                    // entirely, and a fixture reading only the container's own keys cannot see that:
+                    // it stays green whether or not the recursion exists.
+                    val resolvedKids = (r.children ?: emptyList()) + (r.stack_children ?: emptyList())
+                    spy.state["resolved_child0_text"] = resolvedKids.getOrNull(0)?.text ?: ""
+                    spy.state["resolved_child0_image_url"] = resolvedKids.getOrNull(0)?.image_url ?: ""
+                    if (resolvedKids.size > 1) {
+                        spy.state["resolved_child1_text"] = resolvedKids[1].text ?: ""
+                    }
                     // #558 — a stat BOUND to an earlier answer that also hosts a control must open on
                     // the RESOLVED value, not the authored default. Read off `r`, not the raw block:
                     // the first version of this read the unresolved `{{responses.group_size}}`, found

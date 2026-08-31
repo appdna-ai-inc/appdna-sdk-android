@@ -1506,6 +1506,12 @@ internal fun OnboardingFlowHost(
                     // `visibility_condition` operators evaluate against real
                     // user answers, not an empty map.
                     accumulatedResponses = responses.toMap(),
+                    // SPEC-452 — the host's `{{hook_data.…}}` payload for this step. `hookData` has
+                    // been threaded through OnboardingStepView → BlockBasedStepView →
+                    // ThreeZoneBlockLayout → ContentBlockRendererView since SPEC-401-A R11, but NO
+                    // caller ever supplied it, so it was `null` on every render and every
+                    // `hook_data` binding and `{{hook_data.x}}` token resolved to nothing.
+                    hookData = configOverrides[step.id]?.dataContext,
                     // SPEC-070-A finalization B4 P1 — when revisiting a step
                     // via back navigation, restore previously-entered field
                     // values. Mirrors iOS OnboardingStepRouter savedResponses
