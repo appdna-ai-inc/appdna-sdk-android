@@ -2429,7 +2429,18 @@ private fun ButtonBlock(
     // SPEC-401-A R54 (Lens A R54 #4, P2) — 16→17sp matching iOS
     // .body.weight(.semibold) at ContentBlockRendererView.swift:395-396.
     val baseStyle = TextStyle(fontWeight = FontWeight.SemiBold, fontSize = 17.sp)
-    val effectiveStyle = if (block.style != null) StyleEngine.applyTextStyle(baseStyle, block.style) else baseStyle
+    // #594 — the button-specific `text_color` beats the generic Typography colour.
+    //
+    // It was the other way round: `applyTextStyle` folds `block.style.color` into the style and it
+    // silently won, so the "Text" picker sitting right beside "Background" did nothing whenever a
+    // Typography colour was also set — "only the separate Color setting works", as reported.
+    //
+    // Specificity decides, the same rule used everywhere else here. Only an EXPLICITLY set
+    // `text_color` wins; unset leaves Typography in charge, so a flow styled through Typography
+    // alone is untouched. iOS parity.
+    val styledBase = if (block.style != null) StyleEngine.applyTextStyle(baseStyle, block.style) else baseStyle
+    val effectiveStyle = block.text_color?.takeIf { it.isNotBlank() }
+        ?.let { styledBase.copy(color = StyleEngine.parseColor(it)) } ?: styledBase
     val context = LocalContext.current
     val btnVariant = block.variant ?: "primary"
     // Mrozu QA (2026-08-04) — Flo consent CTA: `cta_enabled_bg_color` / `cta_disabled_bg_color` drive the
@@ -2989,7 +3000,18 @@ private fun SummaryScreenBlock(
     // bg_color = card bg, text_color = headline + label, summary_align = headline align,
     // stats_layout = horizontal (2-col, default) | vertical (single full-width column). Parity w/ iOS.
     val cardBg = block.bg_color?.let { StyleEngine.parseColor(it) } ?: Color(0xFF1F2937)
+    // 🔴 #595 — "renders completely blank". `text_color` serves TWO surfaces and defaulted to white
+    // for both. Inside a stat card that is right: `cardBg` defaults to #1F2937. The HEADLINE sits on
+    // the step background, which is light by default — so white-on-white, and a summary screen with
+    // a headline and no stats was genuinely invisible. The text was laid out the whole time, which
+    // is why it read as "nothing renders" rather than as a colour bug.
+    //
+    // An authored `text_color` still wins for both. Only the DEFAULT splits: the headline falls back
+    // to the theme's onSurface, which adapts the way every other top-level text block here does, and
+    // card text keeps contrasting with the card. iOS parity.
     val textColor = StyleEngine.parseColor(block.text_color ?: "#FFFFFF")
+    val headlineColor = block.text_color?.takeIf { it.isNotBlank() }
+        ?.let { StyleEngine.parseColor(it) } ?: MaterialTheme.colorScheme.onSurface
     val headlineAlign = when ((block.field_config?.get("summary_align") as? String)) {
         "left" -> TextAlign.Start; "right" -> TextAlign.End; else -> TextAlign.Center
     }
@@ -3000,7 +3022,7 @@ private fun SummaryScreenBlock(
                 headline,
                 fontSize = 22.sp,
                 fontWeight = FontWeight.Bold,
-                color = textColor,
+                color = headlineColor,
                 textAlign = headlineAlign,
                 modifier = Modifier.fillMaxWidth(),
             )
@@ -9184,6 +9206,51 @@ private fun SelectRadioIndicator(
             }
         }
     }
+}
+
+/**
+ * #596 — the form-step Select's door into this engine.
+ *
+ * `FormInputSelectBlock` is private, and a form Select must render through THE SAME code as the
+ * `input_select` content block rather than a second implementation of six layouts. This wrapper is
+ * the whole of the public surface that requires.
+ */
+@Composable
+internal fun FormInputSelectBlockPublic(
+    block: ContentBlock,
+    inputValues: MutableMap<String, Any>,
+) {
+    FormInputSelectBlock(block, inputValues)
+}
+
+/**
+ * #596 — a synthetic `input_select` ContentBlock carrying a form field's options and RAW config.
+ *
+ * Built through the real option parser rather than by hand, so the options a form Select renders
+ * are parsed by the same code that parses a content block's. Returns null when the field carries
+ * nothing renderable, and the caller falls back to the native menu.
+ */
+internal fun selectBlockFrom(field: FormField): ContentBlock? {
+    val raw = field.config_raw ?: return null
+    return ContentBlock(
+        id = field.id,
+        type = "input_select",
+        field_id = field.id,
+        field_label = field.label,
+        field_placeholder = field.placeholder,
+        field_required = field.required,
+        field_config = raw,
+        field_options = field.options
+            ?.map { opt ->
+                InputOption(
+                    value = (opt.value as? String) ?: opt.id ?: opt.label.orEmpty(),
+                    label = opt.label.orEmpty(),
+                    id = opt.id,
+                    icon = opt.icon,
+                )
+            }
+            ?.toImmutableList(),
+    )
 }
 
 @Composable

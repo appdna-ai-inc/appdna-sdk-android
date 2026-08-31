@@ -436,6 +436,19 @@ data class FormField(
     val validation: FormFieldValidation? = null,
     val options: ImmutableList<FormFieldOption>? = null,
     val config: FormFieldConfig? = null,
+    /**
+     * #596 — the SAME `config` object, kept raw.
+     *
+     * `FormFieldConfig` is a typed class, so every key it does not declare is dropped at parse. The
+     * console's Select field offers six display styles and roughly twenty option-styling keys; none
+     * are declared there, so `display_style: "image_tiles"` never survived parsing and the field
+     * always fell through to an ExposedDropdownMenu.
+     *
+     * Keeping the raw map lets a form Select render through the same engine the `input_select`
+     * CONTENT block uses, rather than growing a second implementation of six layouts. iOS parity:
+     * `FormField.config_raw`.
+     */
+    val config_raw: Map<String, Any>? = null,
     val depends_on: FormFieldDependency? = null,
     val style: FormFieldStyle? = null,
 )
@@ -994,6 +1007,8 @@ internal object OnboardingConfigParser {
                     validation = fieldValidation,
                     options = fieldOptions,
                     config = fieldConfig,
+                    // #596 — the same map, unfiltered, so the select styling keys survive.
+                    config_raw = fieldConfigMap,
                     depends_on = dependency,
                     style = fieldStyle,
                 )

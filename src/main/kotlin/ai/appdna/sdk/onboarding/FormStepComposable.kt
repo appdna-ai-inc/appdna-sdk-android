@@ -926,6 +926,41 @@ private fun SelectField(
     val multiSelect = field.config?.multi_select == true
     val maxSelections = field.config?.max_selections
 
+    // #596 — a form Select renders through the SAME engine the `input_select` CONTENT block uses
+    // whenever the author picked a layout other than the dropdown.
+    //
+    // The console offers six display styles on a form Select and this composable honoured NONE of
+    // them: it always produced an ExposedDropdownMenu, while the console preview drew the tiles it
+    // promised. iOS had the identical gap (a `.menu` Picker), so the control was dead on both
+    // platforms.
+    //
+    // Delegating rather than reimplementing is the point. Six layouts, category chips, option sets
+    // and twenty styling keys already exist in `FormInputSelectBlock`; a second copy here would
+    // diverge from it by the next release.
+    //
+    // `dropdown` (the default, and every flow that never touched the setting) keeps the native
+    // menu, so nothing that renders correctly today changes. iOS parity: FormStepView.selectField.
+    val displayStyle = field.config_raw?.get("display_style") as? String ?: "dropdown"
+    if (displayStyle != "dropdown") {
+        val block = selectBlockFrom(field)
+        if (block != null) {
+            // `values` is `MutableMap<String, Any?>`; the block engine writes non-null values only,
+            // so the bridge below copies results back rather than casting the map.
+            val bridge = remember(field.id) { mutableStateMapOf<String, Any>() }
+            LaunchedEffect(values[field.id]) {
+                values[field.id]?.let { bridge[field.id] = it }
+            }
+            FormInputSelectBlockPublic(block, bridge)
+            LaunchedEffect(bridge[field.id]) {
+                bridge[field.id]?.let {
+                    values[field.id] = it
+                    errors.remove(field.id)
+                }
+            }
+            return
+        }
+    }
+
     if (multiSelect) {
         @Suppress("UNCHECKED_CAST")
         val selected: List<String> = (values[field.id] as? List<String>)
