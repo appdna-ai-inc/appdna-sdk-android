@@ -1671,6 +1671,33 @@ internal fun PaywallSectionView(
             @Composable
             fun PlanCard(plan: PaywallPlan, planIdx: Int, modifier: Modifier = Modifier) {
                 val isSelected = selectedPlanId == plan.id
+                // #589 — everything the card gives a plan, deliberately absent: no border, no
+                // background, no badge, no subtitle, no selection control. Just the name and price
+                // on one centred line.
+                //
+                // Still clickable and still calls `onPlanSelect` — the layout this exists for is one
+                // prominent card with "or £4.99/month, cancel anytime" beneath it, and a caption you
+                // cannot pick would be a different thing entirely. Selection shows as weight rather
+                // than a control, because a radio circle is the card treatment this mode removes.
+                // iOS parity: PlanCard.swift `textOnlyBody`.
+                if ((plan.display_mode ?: "card") == "text_only") {
+                    Text(
+                        text = "${loc("plan.$planIdx.name", plan.displayName)} · ${loc("plan.$planIdx.price", plan.displayPrice)}",
+                        fontSize = (plan.text_only_font_size ?: 13f).sp,
+                        fontWeight = if (isSelected) FontWeight.SemiBold else FontWeight.Normal,
+                        color = plan.text_only_color?.let { StyleEngine.parseColor(it) } ?: Color(0xFF9CA3AF),
+                        textAlign = TextAlign.Center,
+                        modifier = modifier
+                            .fillMaxWidth()
+                            .semantics(mergeDescendants = true) {
+                                role = Role.RadioButton
+                                selected = isSelected
+                            }
+                            .clickable { onPlanSelect(plan.id) }
+                            .padding(vertical = 6.dp),
+                    )
+                    return
+                }
                 val elevation = cardShadowElevation
                 // PW-9: honor authored selected/unselected border + bg colors.
                 val selectedBorderColor = customSelectedBorder ?: ai.appdna.sdk.AppDNA.brandAccentColor()
@@ -1780,10 +1807,23 @@ internal fun PaywallSectionView(
                                             .padding(horizontal = 6.dp, vertical = 2.dp),
                                     )
                                 } else {
+                                    // #587 — the plan's own subtitle type wins over the section
+                                    // style, for the same reason the price colour does. Alignment
+                                    // needs `fillMaxWidth` as well as `textAlign`: without a width
+                                    // to align WITHIN, a centred subtitle stays left-hugging and
+                                    // only its wrapped second line moves, which reads as a bug.
+                                    // iOS parity: PlanCard.swift `planSubtitleView`.
                                     Text(
                                         text = loc("plan.$planIdx.description", plan.description),
-                                        fontSize = 12.sp,
-                                        color = resolvedTextColor.takeIf { it != Color.Unspecified } ?: Color.Gray,
+                                        fontSize = (plan.subtitle_font_size ?: 12f).sp,
+                                        color = plan.subtitle_color?.takeIf { it.isNotBlank() }?.let { StyleEngine.parseColor(it) }
+                                            ?: resolvedTextColor.takeIf { it != Color.Unspecified } ?: Color.Gray,
+                                        textAlign = when (plan.subtitle_align) {
+                                            "center" -> TextAlign.Center
+                                            "right" -> TextAlign.End
+                                            else -> TextAlign.Start
+                                        },
+                                        modifier = Modifier.fillMaxWidth(),
                                     )
                                 }
                             }
@@ -1801,13 +1841,20 @@ internal fun PaywallSectionView(
                             val strikeGap = (section.data?.strikethrough_gap ?: 4f).dp
                             val struck = plan.original_price_display?.takeIf { it.isNotBlank() }
                             val chargedTotal = plan.price_total_display?.takeIf { it.isNotBlank() }
+                            // #588 — this plan's own price colour beats BOTH the section's price
+                            // style and the selected/unselected text colour. Section styling paints
+                            // every plan the same; the point of the field is to make one tier's
+                            // price stand out, so anything that could override it would defeat it.
+                            // iOS parity: PlanCard.swift `planPriceColor`.
+                            val planPriceColor = plan.price_color?.takeIf { it.isNotBlank() }
+                                ?.let { StyleEngine.parseColor(it) } ?: resolvedTextColor
 
                             if ((section.data?.price_layout ?: "inline") == "headline_stacked") {
                                 Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
                                     Text(
                                         text = loc("plan.$planIdx.price", plan.displayPrice),
                                         style = priceStyle,
-                                        color = resolvedTextColor,
+                                        color = planPriceColor,
                                     )
                                     if (struck != null || chargedTotal != null) {
                                         Row(
@@ -1846,7 +1893,7 @@ internal fun PaywallSectionView(
                                     Text(
                                         text = loc("plan.$planIdx.price", plan.displayPrice),
                                         style = priceStyle,
-                                        color = resolvedTextColor,
+                                        color = planPriceColor,
                                     )
                                 }
                             }
@@ -1899,10 +1946,23 @@ internal fun PaywallSectionView(
                                             .padding(horizontal = 6.dp, vertical = 2.dp),
                                     )
                                 } else {
+                                    // #587 — the plan's own subtitle type wins over the section
+                                    // style, for the same reason the price colour does. Alignment
+                                    // needs `fillMaxWidth` as well as `textAlign`: without a width
+                                    // to align WITHIN, a centred subtitle stays left-hugging and
+                                    // only its wrapped second line moves, which reads as a bug.
+                                    // iOS parity: PlanCard.swift `planSubtitleView`.
                                     Text(
                                         text = loc("plan.$planIdx.description", plan.description),
-                                        fontSize = 12.sp,
-                                        color = resolvedTextColor.takeIf { it != Color.Unspecified } ?: Color.Gray,
+                                        fontSize = (plan.subtitle_font_size ?: 12f).sp,
+                                        color = plan.subtitle_color?.takeIf { it.isNotBlank() }?.let { StyleEngine.parseColor(it) }
+                                            ?: resolvedTextColor.takeIf { it != Color.Unspecified } ?: Color.Gray,
+                                        textAlign = when (plan.subtitle_align) {
+                                            "center" -> TextAlign.Center
+                                            "right" -> TextAlign.End
+                                            else -> TextAlign.Start
+                                        },
+                                        modifier = Modifier.fillMaxWidth(),
                                     )
                                 }
                             }
