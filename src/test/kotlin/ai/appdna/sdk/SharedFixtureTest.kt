@@ -215,6 +215,7 @@ class SharedFixtureTest(
             "interpolate_template" -> runInterpolateTemplate(action, spy)
             "fetch_remote_config" -> runFetchRemoteConfig(action, spy)
             "merge_step_override" -> runMergeStepOverride(spy)
+            "compose_map_url" -> runComposeMapUrl(action, spy)
             "receive_push" -> runReceivePush(action, spy)
             "tap_push" -> runTapPush(action, spy)
             "present_surface_under_experiment" -> runPresentSurfaceUnderExperiment(action, spy)
@@ -1016,15 +1017,24 @@ class SharedFixtureTest(
      */
     private fun runMergeStepOverride(spy: Spy) {
         val hostOptions = sessionData.optJSONObject("host_field_options")
-            ?: error("merge_step_override needs setup.session_data.host_field_options")
+        val hostRoutes = sessionData.optJSONObject("host_map_routes")
+        if (hostOptions == null && hostRoutes == null) {
+            error("merge_step_override needs setup.session_data.host_field_options or host_map_routes")
+        }
 
         val byBlock = mutableMapOf<String, List<ai.appdna.sdk.onboarding.InputOption>>()
-        for (blockId in hostOptions.keys()) {
-            val arr = hostOptions.optJSONArray(blockId) ?: continue
+        for (blockId in hostOptions?.keys() ?: emptyList<String>().iterator()) {
+            val arr = hostOptions?.optJSONArray(blockId) ?: continue
             val maps = (0 until arr.length()).mapNotNull { i ->
                 arr.optJSONObject(i)?.let { jsonValueToKotlin(it) }
             }
             byBlock[blockId] = ai.appdna.sdk.onboarding.OnboardingConfigParser.parseInputOptionList(maps)
+        }
+
+        // SPEC-451 — through the SAME public decoder the wrapper bridges call, so a divergence
+        // between what Flutter/RN send and what the core accepts fails here rather than on a device.
+        val mapRoutes = hostRoutes?.let {
+            ai.appdna.sdk.onboarding.StepConfigOverride.decodeMapRoutes(jsonValueToKotlin(it))
         }
 
         // Parsed through the SAME step parser the renderer uses, so the merger is fed the shape it
@@ -1037,7 +1047,10 @@ class SharedFixtureTest(
         ) ?: error("setup.config did not parse as a step")
 
         val merged = step.config.applyingOverride(
-            ai.appdna.sdk.onboarding.StepConfigOverride(fieldOptions = byBlock)
+            ai.appdna.sdk.onboarding.StepConfigOverride(
+                fieldOptions = byBlock.ifEmpty { null },
+                mapRoutes = mapRoutes,
+            )
         )
         val blocks = merged.content_blocks.orEmpty()
         spy.state["merged_block_count"] = blocks.size
@@ -1051,7 +1064,46 @@ class SharedFixtureTest(
             spy.state["merged_untouched_option_value"] =
                 untouched.field_options?.firstOrNull()?.let { it.value ?: it.id }
         }
+        blocks.firstOrNull { it.id == "delivery_map" }?.let { target ->
+            val cfg = target.field_config.orEmpty()
+            spy.state["merged_map_polyline"] = cfg["map_route_polyline"]
+            spy.state["merged_map_route_variable"] = cfg["map_route_variable"]
+            val stops = cfg["map_stops"] as? List<*>
+            spy.state["merged_map_stop_count"] = stops?.size ?: 0
+            spy.state["merged_map_first_stop_lat"] = ((stops?.firstOrNull() as? Map<*, *>)?.get("lat") as? Number)?.toDouble()
+        }
+        blocks.firstOrNull { it.id == "other_map" }?.let { untouched ->
+            spy.state["merged_untouched_map_mode"] = untouched.field_config.orEmpty()["map_mode"]
+        }
         spy.state["merged_heading_text"] = blocks.firstOrNull { it.id == "intro_heading" }?.text
+    }
+
+    /**
+     * SPEC-451 — drives the REAL `mapStaticUrl`, the same function the renderer calls.
+     *
+     * The point of this fixture is cross-LANGUAGE agreement, so the runner must not compose the URL
+     * itself in any way: a runner-local copy would agree with the fixture forever while the renderer
+     * drifted underneath it. The token comes from the fixture rather than `AppDNA.mapboxToken` so
+     * the expected string is deterministic and no test needs a configured SDK.
+     */
+    private fun runComposeMapUrl(action: JSONObject, spy: Spy) {
+        val cfg = config ?: error("compose_map_url needs setup.config")
+        val blockId = action.getString("block_id")
+        // Through the REAL step parser, so the block the URL is composed from is the shape the
+        // renderer receives — the parser is part of what this fixture pins.
+        val stepMap = mapOf<String, Any>(
+            "id" to "map_step", "type" to "info", "name" to "m", "analytics_name" to "m",
+            "config" to mapOf("content_blocks" to (cfg.optJSONArray("content_blocks")?.asList() ?: emptyList<Any>())),
+        )
+        val block = OnboardingConfigParser.parseStepForTest(stepMap)?.config?.content_blocks
+            ?.firstOrNull { it.id == blockId }
+            ?: unsupported("compose_map_url: no block with id=$blockId in setup.config")
+        spy.state["map_url"] = ai.appdna.sdk.onboarding.mapStaticUrl(
+            block,
+            sessionData.optString("map_token").ifEmpty { null },
+            sessionData.optInt("map_width", 390),
+            sessionData.optInt("map_height", 240),
+        )
     }
 
     private fun runFetchRemoteConfig(action: JSONObject, spy: Spy) {
@@ -1108,6 +1160,10 @@ class SharedFixtureTest(
                 spy.state["parsed_sound_icon"] = block.field_config?.get("sound_icon") as? String
                 spy.state["parsed_sound_icon_color"] = block.field_config?.get("sound_icon_color") as? String
                 spy.state["parsed_sound_icon_size"] = (block.field_config?.get("sound_icon_size") as? Number)?.toDouble()
+                // #578 — the divider slot. Android folds `divider_position` into field_config
+                // (JVM arg ceiling), so it is read from there, not top-level.
+                spy.state["parsed_divider_position"] = block.field_config?.get("divider_position") as? String
+                spy.state["parsed_divider_after_index"] = (block.field_config?.get("divider_after_index") as? Number)?.toDouble()
                 spy.state["parsed_sound_icon_gap"] = (block.field_config?.get("sound_icon_gap") as? Number)?.toDouble()
                 spy.state["parsed_frame_corner_radius"] = (block.field_config?.get("frame_corner_radius") as? Number)?.toDouble()
                 // SPEC-444 (#540, #542) — the option's nested sheet blocks.
@@ -1116,6 +1172,31 @@ class SharedFixtureTest(
                 spy.state["parsed_opt0_sheet_first_type"] = fopts.getOrNull(0)?.sheet_blocks?.firstOrNull()?.type
                 spy.state["parsed_opt0_sheet_last_type"] = fopts.getOrNull(0)?.sheet_blocks?.lastOrNull()?.type
                 spy.state["parsed_opt1_sheet_block_count"] = fopts.getOrNull(1)?.sheet_blocks?.size ?: 0
+                // #585 — the min-selection gate, in BOTH directions plus the untouched state.
+                //
+                // Driven through the REAL `RequiredFieldGate`, the same object the CTA consults, so
+                // a gate that stops reading `min_selections` fails here rather than shipping a
+                // control that silently does nothing again.
+                val minSel = (block.field_config?.get("min_selections") as? Number)?.toInt()
+                if (minSel != null && minSel > 0) {
+                    val fieldId = block.field_id ?: block.id
+                    fun gateWith(n: Int) = RequiredFieldGate.evaluate(
+                        listOf(block),
+                        if (n == 0) emptyMap() else mapOf(fieldId to (1..n).map { "v$it" }),
+                    ).first
+                    spy.state["parsed_min_selections"] = minSel
+                    // Untouched: no key at all, not an empty list. A gate that only checks list size
+                    // would pass this and let an unanswered step advance.
+                    spy.state["gate_blocks_when_untouched"] = !gateWith(0)
+                    spy.state["gate_blocks_below_minimum"] = !gateWith(minSel - 1)
+                    spy.state["gate_releases_at_minimum"] = gateWith(minSel)
+                    spy.state["gate_releases_above_minimum"] = gateWith(minSel + 1)
+                    // The block deliberately does NOT set field_required — setting a minimum IS the
+                    // requirement. If the gate only fired for required blocks, the two blocking
+                    // assertions above would already be false.
+                    spy.state["gate_needs_no_field_required"] = block.field_required != true
+                }
+
                 // SPEC-446 §3 — the gate, exercised in BOTH directions plus the deadlock case.
                 if (block.type == "summary_screen") {
                     val statFieldIds = (block.field_config?.get("summary_stats") as? List<*>)

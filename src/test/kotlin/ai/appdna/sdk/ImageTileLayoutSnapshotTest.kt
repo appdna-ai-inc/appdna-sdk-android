@@ -193,6 +193,109 @@ class ImageTileLayoutSnapshotTest {
         )))
     }
 
+    /**
+     * #578 — the divider between two SPECIFIC providers, and the end slot beside it.
+     *
+     * A decode test cannot catch this: a renderer that reads the slot and then places the divider
+     * at the end parses everything correctly. And the end case matters on its own — guarding it on
+     * "not top" draws TWO dividers whenever an interior one is set, which only a picture shows.
+     * Deliberately the same two cases iOS records, so the pair can be compared.
+     */
+    @Test
+    fun socialLogin_dividerBetweenProviders() {
+        capture("social_divider_between", blocksOf(mapOf(
+            "id" to "social_div", "type" to "social_login",
+            "show_divider" to true, "divider_text" to "or", "divider_position" to "after",
+            "field_config" to mapOf("divider_after_index" to 1),
+            "providers" to listOf(
+                mapOf("type" to "apple", "label" to "Continue with Apple"),
+                mapOf("type" to "google", "label" to "Continue with Google"),
+                mapOf("type" to "email", "label" to "Continue with Email"),
+            ),
+        )))
+    }
+
+    @Test
+    fun socialLogin_dividerAtBottom() {
+        capture("social_divider_bottom", blocksOf(mapOf(
+            "id" to "social_div_b", "type" to "social_login",
+            "show_divider" to true, "divider_text" to "or", "divider_position" to "bottom",
+            "providers" to listOf(
+                mapOf("type" to "apple", "label" to "Continue with Apple"),
+                mapOf("type" to "google", "label" to "Continue with Google"),
+            ),
+        )))
+    }
+
+    /**
+     * SPEC-451 — the map's fallback state, at an aspect-ratio height.
+     *
+     * The state most authors see first (no Mapbox token yet), and the one no decode test can judge.
+     * What the picture pins: the surface is the AUTHORED colour, the corner radius is honoured, the
+     * label is centred, and 16:9 resolves against the same 390dp reference width iOS uses. Each
+     * platform computes that height in its own code; only the paired goldens show them agreeing.
+     */
+    @Test
+    fun map_fallbackAtAspectRatio() {
+        capture("map_fallback_aspect", blocksOf(mapOf(
+            "id" to "map_fallback", "type" to "map",
+            "field_config" to mapOf(
+                "map_mode" to "route",
+                "map_height_mode" to "aspect", "map_aspect" to "16:9",
+                "map_corner_radius" to 20,
+                "map_surface_color" to "#1F2937",
+                "map_fallback_text" to "Route unavailable offline",
+                "map_stops" to listOf(
+                    mapOf("title" to "A", "lat" to 52.2297, "lng" to 21.0122),
+                    mapOf("title" to "B", "lat" to 54.352, "lng" to 18.6466),
+                ),
+            ),
+        )))
+    }
+
+    /**
+     * The place info card overlaid on the map.
+     *
+     * Position is purely visual: a renderer that reads `place_info_position` and then always draws
+     * the card below parses every field correctly and looks right in no screenshot.
+     */
+    @Test
+    fun map_placeInfoCardOverlaid() {
+        capture("map_place_overlay", blocksOf(mapOf(
+            "id" to "map_place", "type" to "map",
+            "field_config" to mapOf(
+                "map_mode" to "place",
+                "map_height" to 200, "map_corner_radius" to 14,
+                "map_surface_color" to "#111827",
+                "map_fallback_text" to "Map unavailable",
+                "place_lat" to 51.5072, "place_lng" to -0.1276,
+                "place_title" to "Our Shoreditch studio",
+                "place_subtitle" to "Open daily 11-6 · tastings from £15",
+                "place_info_position" to "overlay_bottom",
+                "place_info_bg" to "#FFFFFF", "place_info_text" to "#111827", "place_info_radius" to 12,
+            ),
+        )))
+    }
+
+    /** The same card BELOW the map — the case that separates honouring the position from one layout. */
+    @Test
+    fun map_placeInfoCardBelow() {
+        capture("map_place_below", blocksOf(mapOf(
+            "id" to "map_place_below", "type" to "map",
+            "field_config" to mapOf(
+                "map_mode" to "place",
+                "map_height" to 200, "map_corner_radius" to 14,
+                "map_surface_color" to "#111827",
+                "map_fallback_text" to "Map unavailable",
+                "place_lat" to 51.5072, "place_lng" to -0.1276,
+                "place_title" to "Our Shoreditch studio",
+                "place_subtitle" to "Open daily 11-6",
+                "place_info_position" to "below",
+                "place_info_bg" to "#0F172A", "place_info_text" to "#F9FAFB", "place_info_radius" to 8,
+            ),
+        )))
+    }
+
     @Test
     fun summaryStat_rendersItsSliderControl() {
         val step = mapOf<String, Any>(

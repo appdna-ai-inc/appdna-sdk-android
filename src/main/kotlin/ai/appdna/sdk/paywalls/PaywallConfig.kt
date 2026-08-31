@@ -112,6 +112,17 @@ data class PaywallSectionData(
     // Features
     // SPEC-070-A J.22 — features list iterated by PaywallActivity FeaturesSection.
     val features: ImmutableList<String>? = null,
+    /**
+     * #591 — the feature subtitle's own type, and the shape an item image is clipped to.
+     * Section-level for the same reason `item_text_color` is: one setting keeps every subtitle in
+     * a paywall looking alike, which is the concern that got subtitles removed from these items in
+     * April. iOS parity: `itemSubtitleColor` / `itemSubtitleFontSize` / `itemImageShape`.
+     */
+    val item_subtitle_color: String? = null,
+    val item_subtitle_font_size: Float? = null,
+    val item_image_shape: String? = null,
+    /** The cross drawn on an EXCLUDED feature item. Authorable — a fixed red is unreadable on a red paywall. */
+    val item_excluded_color: String? = null,
 
     // Plans
     // SPEC-070-A J.22 — plans list iterated by PaywallActivity / LazyColumn.
@@ -446,6 +457,27 @@ data class PaywallPlan(
     val price_total_display: String? = null,
     /** SPEC-438 (#544) — render `description` as a coloured pill instead of plain text. */
     val description_badge: PaywallDescriptionBadge? = null,
+    /**
+     * #588 — this plan's price colour. Beats the section's `elements.price` style and the
+     * selected/unselected text colour, because the whole point is to make ONE tier's price stand
+     * out from the others; anything that could override it would defeat it. iOS parity.
+     */
+    val price_color: String? = null,
+    /**
+     * #587 — this plan's subtitle type. Section-level `elements.description` styles every plan
+     * identically, which is the opposite of what an author wants when one tier should read
+     * differently.
+     */
+    val subtitle_color: String? = null,
+    val subtitle_font_size: Float? = null,
+    val subtitle_align: String? = null,
+    /**
+     * #589 — `card` (default) or `text_only`: name and price on one centred line, with no border,
+     * background, badge, subtitle or selection control. Still selectable — it is a plan.
+     */
+    val display_mode: String? = null,
+    val text_only_font_size: Float? = null,
+    val text_only_color: String? = null,
 ) {
     // SPEC-070-A finalization PW-12 — computed accessors mirroring iOS:
     // `displayName: label ?? name`, `displayPrice: price_display ?? price`,
@@ -971,6 +1003,10 @@ internal object PaywallConfigParser {
                 subtitle_style = parseDataTextStyle(d["subtitle_style"]),
                 // SPEC-070-A J.22 — wrap features/plans as ImmutableList.
                 features = (d["features"] as? List<*>)?.filterIsInstance<String>()?.toImmutableList(),
+                item_subtitle_color = d["item_subtitle_color"] as? String,
+                item_subtitle_font_size = (d["item_subtitle_font_size"] as? Number)?.toFloat(),
+                item_image_shape = d["item_image_shape"] as? String,
+                item_excluded_color = d["item_excluded_color"] as? String,
                 plans = (d["plans"] as? List<*>)?.mapIndexedNotNull { idx, planData ->
                     if (planData is Map<*, *>) {
                         @Suppress("UNCHECKED_CAST")
@@ -1396,6 +1432,30 @@ internal object PaywallConfigParser {
                     corner_radius = (b["corner_radius"] as? Number)?.toFloat(),
                 )
             },
+            // #587 / #588 / #589 — per-plan presentation. Sizes read loosely (`Number`, or a
+            // numeric string) for the same reason the prices above do: the console writes them
+            // through a slider, but an imported or AI-generated paywall can carry "13".
+            price_color = map["price_color"] as? String,
+            subtitle_color = map["subtitle_color"] as? String,
+            subtitle_font_size = looseFloat(map["subtitle_font_size"]),
+            subtitle_align = map["subtitle_align"] as? String,
+            display_mode = map["display_mode"] as? String,
+            text_only_font_size = looseFloat(map["text_only_font_size"]),
+            text_only_color = map["text_only_color"] as? String,
         )
+    }
+
+    /**
+     * A JSON number, or a numeric string rendered as one.
+     *
+     * Mirrors iOS `PaywallPlan.looseDouble`. A paywall document is not always written by the
+     * console — experiment variant payloads, older documents and AI-generated ones can carry
+     * `"13"` where a slider wrote `13`. Returning null on anything unparseable costs the author
+     * that one override, never the plan.
+     */
+    private fun looseFloat(raw: Any?): Float? = when (raw) {
+        is Number -> raw.toFloat()
+        is String -> raw.toFloatOrNull()
+        else -> null
     }
 }
