@@ -36,6 +36,8 @@ internal object NextStepRuleEvaluator {
         responses: Map<String, Any?>,
         step: OnboardingStep? = null,
         previousStepId: String? = null,
+        /** Every step in the flow — required to resolve a cross-step `answer_key`. */
+        allSteps: List<OnboardingStep>? = null,
     ): Boolean {
         val conditionList: List<Any?> = when {
             !rule.conditions.isNullOrEmpty() -> rule.conditions
@@ -54,7 +56,10 @@ internal object NextStepRuleEvaluator {
                 is String -> cond == "always"
                 is Map<*, *> -> {
                     @Suppress("UNCHECKED_CAST")
-                    evaluateCondition(cond as Map<String, Any?>, stepResponses, step, previousStepId)
+                    evaluateCondition(
+                        cond as Map<String, Any?>, stepResponses, step, previousStepId,
+                        responses, allSteps,
+                    )
                 }
                 null -> true
                 else -> true
@@ -77,15 +82,74 @@ internal object NextStepRuleEvaluator {
      *   `not_empty`, `empty`, `previous_step_equals`, `previous_step_in`.
      */
     @Suppress("UNCHECKED_CAST")
+    /**
+     * Where a condition reads its answer from: the leaf field id, that step's response map, and the
+     * step whose options define the id↔value aliases.
+     */
+    private data class ConditionScope(
+        val field: String,
+        val responses: Map<String, Any?>,
+        val step: OnboardingStep?,
+    )
+
+    /**
+     * Resolve a possibly cross-step `answer_key` ("Screen path 1.select_path", "step1.select_path")
+     * to the step that actually owns the answer.
+     *
+     * Conditions used to read only the CURRENT step's answers, so a rule branching on an earlier
+     * screen's choice could never match — and it failed silently: every rule returned false and
+     * advance fell through to sequential order, which routinely IS the first rule's target, so a
+     * dead branch looked exactly like "it always picks the first option".
+     *
+     * Resolves by authored name as well as by step id, because the console writes
+     * "<StepLabel>.<field_id>" and flows already in production are keyed that way.
+     *
+     * Mirrors iOS `OnboardingAdvance.resolveConditionScope`.
+     */
+    private fun resolveConditionScope(
+        rawField: String,
+        stepResponses: Map<String, Any?>,
+        allResponses: Map<String, Any?>,
+        currentStep: OnboardingStep?,
+        allSteps: List<OnboardingStep>?,
+    ): ConditionScope {
+        val own = ConditionScope(rawField, stepResponses, currentStep)
+        // A key the current step actually answered always wins: a field_id may legitimately contain
+        // a dot, and this keeps every pre-existing rule byte-identical.
+        if (stepResponses[rawField] != null) return own
+        if (allSteps == null) return own
+        val dot = rawField.lastIndexOf('.')
+        if (dot <= 0 || dot == rawField.length - 1) return own
+        val stepRef = rawField.substring(0, dot)
+        val leaf = rawField.substring(dot + 1)
+        // Id first, then authored name — an id is unambiguous, a name is what the console writes.
+        val source = allSteps.firstOrNull { it.id == stepRef }
+            ?: allSteps.firstOrNull { it.name == stepRef }
+            ?: return own
+        @Suppress("UNCHECKED_CAST")
+        val sourceResponses = (allResponses[source.id] as? Map<String, Any?>) ?: emptyMap()
+        return ConditionScope(leaf, sourceResponses, source)
+    }
+
     private fun evaluateCondition(
         cond: Map<String, Any?>,
-        responses: Map<String, Any?>,
-        step: OnboardingStep?,
+        stepResponses: Map<String, Any?>,
+        currentStep: OnboardingStep?,
         previousStepId: String? = null,
+        allResponses: Map<String, Any?> = emptyMap(),
+        allSteps: List<OnboardingStep>? = null,
     ): Boolean {
         val type = cond["type"] as? String ?: return true
         // Console writes `answer_key`; SDK also accepts `field` for back-compat.
-        val field = cond["answer_key"] as? String ?: cond["field"] as? String ?: ""
+        val rawField = cond["answer_key"] as? String ?: cond["field"] as? String ?: ""
+
+        // Re-bound to the original local names so every operator below is unchanged. `step` matters
+        // as much as `responses`: the aliases that map an authored "opt_1" onto the stored
+        // "wine_tasting" come from the SOURCE step's options, not the step being left.
+        val scope = resolveConditionScope(rawField, stepResponses, allResponses, currentStep, allSteps)
+        val field = scope.field
+        val responses = scope.responses
+        val step = scope.step
 
         // Resolve id↔value aliases lazily (input_select options).
         val (idToVal, valToId) = optionAliases(field, step)

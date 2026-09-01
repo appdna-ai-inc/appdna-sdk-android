@@ -143,7 +143,15 @@ data class OnboardingStep(
     val hide_progress: Boolean? = null,
     /** When true, the back button is hidden on this step (the step still counts toward total progress). */
     val hide_back: Boolean? = null,
-    val next_step_rules: ImmutableList<NextStepRule>? = null
+    val next_step_rules: ImmutableList<NextStepRule>? = null,
+    /**
+     * The step's authored name ("Screen path 1").
+     *
+     * Decoded solely so a cross-step `answer_key` can name its source step the way the console
+     * writes it. The console publishes the whole step, so this has always been on the wire — it
+     * was simply never parsed, and every name-keyed navigation rule silently resolved to null.
+     */
+    val name: String? = null
 ) {
     enum class StepType(val value: String) {
         WELCOME("welcome"),
@@ -1195,7 +1203,8 @@ internal object OnboardingConfigParser {
             // (mirrors iOS OnboardingConfig.swift LayoutFlagKeys decode).
             hide_progress = map["hide_progress"] as? Boolean ?: configMap["hide_progress"] as? Boolean,
             hide_back = map["hide_back"] as? Boolean ?: configMap["hide_back"] as? Boolean,
-            next_step_rules = nextStepRules
+            next_step_rules = nextStepRules,
+            name = map["name"] as? String
         )
     }
 

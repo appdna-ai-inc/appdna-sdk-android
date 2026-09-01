@@ -235,6 +235,9 @@ internal object OnboardingAdvance {
                     // SPEC-401-A R50 (Lens B P0) — the just-pushed current step sits at the top
                     // of `history`, so the entry-prior step is `size - 2`.
                     previousStepId = history.elementAtOrNull(history.size - 2),
+                    // A condition may name an earlier step's field; without the step list it cannot
+                    // resolve which step that is.
+                    allSteps = flow.steps,
                 )
                 if (!matches) continue
 
