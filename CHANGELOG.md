@@ -4,6 +4,18 @@ All notable changes to the AppDNA Android SDK are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and
 the project uses [Semantic Versioning](https://semver.org/).
 
+## [1.0.49] — 2026-09-01
+
+### Fixed
+- A navigation rule whose condition read an **earlier step's** answer never matched. Conditions
+  were evaluated against the current step's own responses only, so a cross-step `answer_key`
+  resolved to nothing, every rule returned false, and advance fell back to sequential order —
+  which is frequently the first rule's own target, making a dead branch look like a working one.
+  Keys resolve by step id and by authored step name, so existing flows need no re-authoring.
+- Option id↔value aliases are now read from the step that owns the field rather than the step
+  being left, so a rule written against an option's id matches an answer stored as its value.
+- `sdkVersion` was a release behind the published artifact, so events under-reported the version.
+
 ## [1.0.45] — 2026-08-27
 
 ### Added
