@@ -42,6 +42,7 @@ import ai.appdna.sdk.billing.billingErrorType
 import ai.appdna.sdk.config.ExperimentManager
 import ai.appdna.sdk.config.RemoteConfigManager
 import ai.appdna.sdk.onboarding.RequiredFieldGate
+import ai.appdna.sdk.onboarding.summaryStatFieldId
 import ai.appdna.sdk.onboarding.resolveTemplateString
 import ai.appdna.sdk.core.AudienceRuleEvaluator
 import ai.appdna.sdk.core.AudienceRuleSet
@@ -60,6 +61,7 @@ import ai.appdna.sdk.network.ApiClient
 import ai.appdna.sdk.onboarding.AppDNAOnboardingDelegate
 import ai.appdna.sdk.onboarding.ONBOARDING_HOOK_COMPLETED_EVENT
 import ai.appdna.sdk.onboarding.OnboardingAdvance
+import ai.appdna.sdk.onboarding.OnboardingCTAFlag
 import ai.appdna.sdk.onboarding.OnboardingCompletion
 import ai.appdna.sdk.onboarding.PERMISSION_ACTION
 import ai.appdna.sdk.onboarding.PERMISSION_ACTION_VALUE_KEY
@@ -454,9 +456,13 @@ class SharedFixtureTest(
         val buttonAction = action.optString("action", "").ifEmpty {
             cfg.optJSONObject("primary_button")?.optString("action", "") ?: ""
         }
-        val buttonValue = cfg.optJSONObject("primary_button")?.let {
-            if (it.isNull("value")) null else it.optString("value")
-        }
+        // The action's own `value` first: a CTA authored as a CONTENT BLOCK (which is how a flag CTA
+        // is authored — `applyTo` scans `content_blocks`) has no `primary_button` to read from.
+        // Absent, this is null and every existing fixture keeps reading `primary_button` as before.
+        val buttonValue = action.optStringOrNull("value")
+            ?: cfg.optJSONObject("primary_button")?.let {
+                if (it.isNull("value")) null else it.optString("value")
+            }
         val formData = (action.optJSONObject("form_data") ?: JSONObject()).asMap()
             .filterValues { it != null }.mapValues { it.value!! }
 
@@ -524,6 +530,22 @@ class SharedFixtureTest(
                 flow, currentIndex, responsesFromSetup(), StepAdvanceResult.Proceed, spy, p.tracker,
                 hookRan = false,
             )
+
+            // (c2) flag CTA — records one key and advances. Drives the REAL `OnboardingCTAFlag`
+            // (parse + the config-scanned `applyTo` fold) and then the REAL advance machine, which
+            // is what proves the two halves the feature actually promises: the flag reaches the
+            // host's completion responses, AND the flow goes exactly where it would have gone
+            // without it. Reimplementing either half here would let the fixture pass with the SDK's
+            // copy deleted.
+            OnboardingCTAFlag.ACTION_NAME -> {
+                val merged = formData.toMutableMap()
+                OnboardingCTAFlag.parse(buttonValue)?.let { merged[it.key] = it.value }
+                val responses = responsesFromSetup().toMutableMap()
+                responses[step.id] = merged
+                responses.putAll(OnboardingCTAFlag.applyTo(responses, step, merged))
+                applyAdvance(flow, currentIndex, responses, StepAdvanceResult.Proceed, spy, p.tracker,
+                    hookRan = false)
+            }
 
             "permission" -> unsupported(
                 "button action=permission. iOS emits onAction(permission, <value>) then advances " +
@@ -1199,8 +1221,18 @@ class SharedFixtureTest(
 
                 // SPEC-446 §3 — the gate, exercised in BOTH directions plus the deadlock case.
                 if (block.type == "summary_screen") {
-                    val statFieldIds = (block.field_config?.get("summary_stats") as? List<*>)
-                        ?.mapNotNull { (it as? Map<*, *>)?.get("field_id") as? String }.orEmpty()
+                    // #595 — derived through the SDK's OWN `summaryStatFieldId`, not by reading
+                    // `field_id` directly. A stat that carries an `input` but no `field_id` used to
+                    // be invisible here exactly as it was invisible to the renderer and the gate, so
+                    // the empty-card bug could never have been caught by this driver. The exact
+                    // derived string is exposed below so a fixture pins the FORMULA: if the renderer
+                    // and the gate ever derive it differently, the gate blocks on a key nothing writes.
+                    val statMaps = (block.field_config?.get("summary_stats") as? List<*>)
+                        ?.mapNotNull { it as? Map<*, *> }.orEmpty()
+                    val statFieldIds = statMaps.mapIndexed { index, stat ->
+                        summaryStatFieldId(block.id, index, stat)
+                    }
+                    spy.state["parsed_stat_field_ids"] = statFieldIds
                     val unanswered = RequiredFieldGate.evaluate(listOf(block), emptyMap())
                     val answered = statFieldIds.associateWith { "5" as Any }
                     val satisfied = RequiredFieldGate.evaluate(listOf(block), answered)
