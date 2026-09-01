@@ -3114,6 +3114,7 @@ private fun BlockBasedStepView(
         // out would let a CTA skip an unanswered required field purely because it also set a flag.
         val requiresValidation = rawAction == "next" ||
             rawAction == OnboardingCTAFlag.ACTION_NAME ||
+            rawAction == PendingCompletionRoute.ACTION_NAME ||
             rawAction in AUTH_ACTIONS_REQUIRING_VALIDATION
         if (requiresValidation) {
             val (ok, fieldLabel) = canAdvance()
@@ -3140,6 +3141,29 @@ private fun BlockBasedStepView(
                 // and any NextStepRule JSON authored against `toggle_<id>`.
                 // Order: inputs first, then toggle_<key> entries — matches iOS
                 // line ordering at 1519-1526.
+                val merged = mutableMapOf<String, Any>()
+                merged.putAll(inputValues)
+                for ((key, value) in toggleValues) {
+                    merged["toggle_$key"] = value
+                }
+                onNext(if (merged.isEmpty()) null else merged)
+            }
+            // A CTA that records WHERE TO GO when the flow finishes and continues — see
+            // `PendingCompletionRoute`. Advances exactly like "next": this exists for a cross-sell
+            // the user meets BEFORE the end ("book a tasting"), and opening on tap would abandon the
+            // rest of the flow. `link` already covers "open it now".
+            PendingCompletionRoute.ACTION_NAME -> {
+                val raw = actionValue?.trim()
+                if (raw.isNullOrEmpty()) {
+                    // Authored without a URL. Advancing is the honest behaviour — a button that does
+                    // nothing reads as broken. Same line, same point, as iOS.
+                    Log.warning(
+                        "A CTA is configured to open a link after onboarding but has no URL; " +
+                            "it will advance without recording a destination."
+                    )
+                } else {
+                    PendingCompletionRoute.record(raw)
+                }
                 val merged = mutableMapOf<String, Any>()
                 merged.putAll(inputValues)
                 for ((key, value) in toggleValues) {

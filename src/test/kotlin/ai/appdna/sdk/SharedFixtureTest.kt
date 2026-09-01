@@ -62,6 +62,7 @@ import ai.appdna.sdk.onboarding.AppDNAOnboardingDelegate
 import ai.appdna.sdk.onboarding.ONBOARDING_HOOK_COMPLETED_EVENT
 import ai.appdna.sdk.onboarding.OnboardingAdvance
 import ai.appdna.sdk.onboarding.OnboardingCTAFlag
+import ai.appdna.sdk.onboarding.PendingCompletionRoute
 import ai.appdna.sdk.onboarding.OnboardingCompletion
 import ai.appdna.sdk.onboarding.PERMISSION_ACTION
 import ai.appdna.sdk.onboarding.PERMISSION_ACTION_VALUE_KEY
@@ -545,6 +546,21 @@ class SharedFixtureTest(
                 responses.putAll(OnboardingCTAFlag.applyTo(responses, step, merged))
                 applyAdvance(flow, currentIndex, responses, StepAdvanceResult.Proceed, spy, p.tracker,
                     hookRan = false)
+            }
+
+            // Records where to go and advances. Drives the REAL `PendingCompletionRoute` and the
+            // REAL advance machine: the destination must survive AND the flow must still go where it
+            // would have gone, because a CTA that opened on tap would leave every step behind it
+            // unvisited.
+            //
+            // `take()` rather than a peek, deliberately: this is the same single-shot read the
+            // completion performs, so the fixture also proves the route is CONSUMED. A peek would let
+            // a route leak into the next flow and still pass.
+            PendingCompletionRoute.ACTION_NAME -> {
+                PendingCompletionRoute.record(buttonValue)
+                applyAdvance(flow, currentIndex, responsesFromSetup(), StepAdvanceResult.Proceed, spy,
+                    p.tracker, hookRan = false)
+                spy.state["pending_completion_route"] = PendingCompletionRoute.take()
             }
 
             "permission" -> unsupported(

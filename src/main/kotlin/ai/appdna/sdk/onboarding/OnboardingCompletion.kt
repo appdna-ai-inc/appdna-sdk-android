@@ -70,6 +70,13 @@ internal object OnboardingCompletion {
         responses: Map<String, Any>,
         track: (String, Map<String, Any>) -> Unit,
         delegate: AppDNAOnboardingDelegate?,
+        /**
+         * How to open a `link_on_complete` destination. Injected rather than taken as a Context for
+         * the same reason [track] is: this function stays provable without presenting an Activity.
+         * Null means "no opener wired", which is legal — the route is still consumed so it cannot
+         * fire later against a different flow.
+         */
+        openRoute: ((String) -> Boolean)? = null,
     ) {
         val event = completionEvent(flowId, totalSteps, durationMs, responses)
         track(event.name, event.props)
@@ -80,6 +87,24 @@ internal object OnboardingCompletion {
         } catch (e: Throwable) {
             // A throwing host delegate must not take the SDK (or the flow's dismissal) down with it.
             ai.appdna.sdk.Log.warning("AppDNAOnboardingDelegate.onOnboardingCompleted threw: ${e.message}")
+        }
+        // A `link_on_complete` CTA asked to go somewhere once the flow finished. Taken AFTER the
+        // delegate so the host's own completion work — dismissing, persisting, its own navigation —
+        // runs first; opening before it would race our navigation against theirs.
+        //
+        // `take()` unconditionally, even with no opener wired: consuming it is what stops a stale
+        // destination firing at the end of some later flow.
+        val route = PendingCompletionRoute.take()
+        if (route != null) {
+            val opened = try {
+                openRoute?.invoke(route) ?: false
+            } catch (e: Throwable) {
+                ai.appdna.sdk.Log.warning("Opening a CTA's after-onboarding link threw: ${e.message}")
+                false
+            }
+            if (!opened) {
+                ai.appdna.sdk.Log.warning("A CTA's after-onboarding link was not opened: '$route'")
+            }
         }
     }
 }

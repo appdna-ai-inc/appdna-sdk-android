@@ -53,6 +53,10 @@ internal class OnboardingFlowManager(
         }
 
         // Track flow started
+        // Drop any after-onboarding destination left by a flow the user ABANDONED, so it cannot
+        // fire when THIS one completes.
+        PendingCompletionRoute.clear()
+
         eventTracker.track("onboarding_flow_started", mapOf(
             "flow_id" to flow.id,
             "flow_version" to flow.version
@@ -111,6 +115,15 @@ internal class OnboardingFlowManager(
                     responses = responses,
                     track = { name, props -> eventTracker.track(name, props) },
                     delegate = listener,
+                    // Scheme-checked before the OS sees it — the URL comes from remote config.
+                    openRoute = { raw ->
+                        ai.appdna.sdk.core.URLSafety.sanitized(raw, activity)?.let { uri ->
+                            try {
+                                activity.startActivity(android.content.Intent(android.content.Intent.ACTION_VIEW, uri))
+                                true
+                            } catch (_: Exception) { false }
+                        } ?: false
+                    },
                 )
             },
             onFlowDismissed = { lastStepId, lastStepIndex ->

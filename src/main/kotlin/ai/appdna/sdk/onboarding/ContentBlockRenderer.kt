@@ -2584,6 +2584,12 @@ private fun ButtonBlock(
             // handleAction splits on the FIRST ':' only, so a flag value may itself contain one.
             OnboardingCTAFlag.ACTION_NAME ->
                 onAction(OnboardingActionPair.encode(OnboardingCTAFlag.ACTION_NAME, block.action_value))
+            // Same reason as `flag` and `permission` above: `onAction` is `(String) -> Unit`, so a
+            // CTA's own `action_value` reaches handleAction ONLY through this pair encoding. Falling
+            // through to `else -> onAction(action)` would deliver the action with a NULL url and the
+            // destination would be silently dropped — the exact shape of the `permission` bug.
+            PendingCompletionRoute.ACTION_NAME ->
+                onAction(OnboardingActionPair.encode(PendingCompletionRoute.ACTION_NAME, block.action_value))
             else -> onAction(action)
         }
     }
