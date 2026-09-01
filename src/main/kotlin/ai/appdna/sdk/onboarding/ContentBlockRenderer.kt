@@ -1544,12 +1544,16 @@ object RequiredFieldGate {
         for (block in blocks) {
             if (block.type != "summary_screen") continue
             val stats = block.field_config?.get("summary_stats") as? List<*> ?: continue
-            for (entry in stats) {
+            for ((statIndex, entry) in stats.withIndex()) {
                 val stat = entry as? Map<*, *> ?: continue
                 val input = stat["input"] as? String ?: continue
                 if (input == "none") continue
                 if (stat["required"]?.toString() != "true") continue
-                val fieldId = (stat["field_id"] as? String)?.takeIf { it.isNotEmpty() } ?: continue
+                // #595 — a stat with no authored `field_id` used to be skipped here, so `required`
+                // was silently dropped. It now falls back to the same derived key the renderer's
+                // control writes; deriving it anywhere but `summaryStatFieldId` would gate on a key
+                // nothing writes.
+                val fieldId = summaryStatFieldId(block.id, statIndex, stat)
                 // An authored `default` SATISFIES the requirement, checked here rather than relying
                 // on the control having seeded it. The control seeds on first composition, so a
                 // summary block below the fold has not run that code yet — the CTA would stay
@@ -1864,11 +1868,18 @@ private fun RenderBlockContent(
         "input_location" -> FormInputLocationPlaceholder(block, inputValues)
         "input_image_picker" -> FormInputImagePickerPlaceholder(block, inputValues)
         "input_signature" -> FormInputSignatureBlock(block, inputValues)
-        // SPEC-089d AC-002: Backward compatibility — unknown types render as empty
+        // SPEC-089d AC-002: Backward compatibility — unknown types render as empty.
         else -> {
-            // Unknown block types silently render nothing.
-            // This prevents crashes when the backend sends new block types
-            // that this SDK version does not yet implement.
+            // Still nothing in a RELEASE build — one block this SDK version has never heard of must
+            // not take the whole step down, and a customer must never see SDK diagnostics on their
+            // onboarding. But no longer in SILENCE: the type is reported once through
+            // `reportInitDegraded`, and a debug build draws a marker, because "the console preview
+            // shows a card stack and the device shows a gap" is otherwise indistinguishable from a
+            // layout bug. iOS does the same, at the same point.
+            UnsupportedBlockTypes.note(block.type)
+            if (ai.appdna.sdk.BuildConfig.DEBUG) {
+                UnsupportedBlockPlaceholder(block.type, block.id)
+            }
         }
     }
 }
@@ -2566,6 +2577,18 @@ private fun ButtonBlock(
             "permission" -> onAction(
                 block.action_value?.takeIf { it.isNotBlank() }?.let { "permission:$it" } ?: "permission",
             )
+            // Same colon-encoding as `permission` directly above, and for the same reason: Android's
+            // `onAction` is `(String) -> Unit`, so a CTA's own `action_value` reaches handleAction
+            // ONLY through this pair encoding. Without it a flag CTA would arrive with a null value
+            // and record nothing — the permission bug one branch up, repeated. iOS has a real second
+            // parameter and forwards `block.action_value` directly.
+            //
+            // handleAction splits on the FIRST ':' only, so a flag value may itself contain one.
+            OnboardingCTAFlag.ACTION_NAME -> onAction(
+                block.action_value?.takeIf { it.isNotBlank() }
+                    ?.let { "${OnboardingCTAFlag.ACTION_NAME}:$it" }
+                    ?: OnboardingCTAFlag.ACTION_NAME,
+            )
             else -> onAction(action)
         }
     }
@@ -3085,9 +3108,13 @@ private fun SummaryScreenBlock(
                 modifier = Modifier.fillMaxWidth(),
             )
         }
-        stats.chunked(perRow).forEach { rowStats ->
+        // Chunked WITH each stat's position in the block, because a stat's fallback input key is
+        // derived from that position (`summaryStatFieldId`). Chunking the bare maps loses it: the
+        // index inside a ROW is not the index inside the block, so a stat in the second column would
+        // derive a key that collides with the first column of the next row.
+        stats.withIndex().chunked(perRow).forEach { rowStats ->
             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                rowStats.forEach { m ->
+                rowStats.forEach { (statIndex, m) ->
                     // Coerce — a numeric stat value (Int/Double) cast `as? String` would blank the card.
                     val value = m["value"]?.toString() ?: ""
                     val label = m["label"]?.toString() ?: ""
@@ -3116,8 +3143,12 @@ private fun SummaryScreenBlock(
                         horizontalAlignment = statAlign,
                     ) {
                         val statInput = (m["input"] as? String) ?: "none"
-                        val statFieldId = (m["field_id"] as? String) ?: ""
-                        if (statInput != "none" && statFieldId.isNotEmpty()) {
+                        // #595 — an author who set an `input` but no `field_id` got an EMPTY CARD:
+                        // the control was skipped on the blank id and the else-branch drew this
+                        // stat's (also blank) value and label. Fall back to a stable derived key so
+                        // the control renders. The required gate derives the SAME key.
+                        val statFieldId = summaryStatFieldId(block.id, statIndex, m)
+                        if (statInput != "none") {
                             SummaryStatInput(
                                 stat = m,
                                 fieldId = statFieldId,
@@ -12061,5 +12092,30 @@ private fun SummaryStatInput(
             colors = SliderDefaults.colors(thumbColor = valueColor, activeTrackColor = valueColor),
             modifier = Modifier.semantics { contentDescription = label },
         )
+    }
+}
+
+/**
+ * Debug-build marker for a block this SDK version cannot render. Guarded by `BuildConfig.DEBUG` at
+ * the call site — the same guard the rest of the SDK uses for developer-only surfaces — so it cannot
+ * reach a customer. iOS `UnsupportedBlockPlaceholder` is the same marker.
+ */
+@Composable
+private fun UnsupportedBlockPlaceholder(type: String, blockId: String) {
+    val orange = androidx.compose.ui.graphics.Color(0xFFFF9800)
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .border(
+                width = 1.dp,
+                color = orange.copy(alpha = 0.6f),
+                shape = RoundedCornerShape(8.dp),
+            )
+            .padding(12.dp),
+        verticalArrangement = Arrangement.spacedBy(4.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+    ) {
+        Text("Unsupported block: $type", fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = orange)
+        Text("$blockId — update the AppDNA SDK", fontSize = 11.sp, color = orange)
     }
 }

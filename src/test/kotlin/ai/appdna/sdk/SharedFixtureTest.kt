@@ -60,6 +60,7 @@ import ai.appdna.sdk.network.ApiClient
 import ai.appdna.sdk.onboarding.AppDNAOnboardingDelegate
 import ai.appdna.sdk.onboarding.ONBOARDING_HOOK_COMPLETED_EVENT
 import ai.appdna.sdk.onboarding.OnboardingAdvance
+import ai.appdna.sdk.onboarding.OnboardingCTAFlag
 import ai.appdna.sdk.onboarding.OnboardingCompletion
 import ai.appdna.sdk.onboarding.PERMISSION_ACTION
 import ai.appdna.sdk.onboarding.PERMISSION_ACTION_VALUE_KEY
@@ -454,9 +455,13 @@ class SharedFixtureTest(
         val buttonAction = action.optString("action", "").ifEmpty {
             cfg.optJSONObject("primary_button")?.optString("action", "") ?: ""
         }
-        val buttonValue = cfg.optJSONObject("primary_button")?.let {
-            if (it.isNull("value")) null else it.optString("value")
-        }
+        // The action's own `value` first: a CTA authored as a CONTENT BLOCK (which is how a flag CTA
+        // is authored — `applyTo` scans `content_blocks`) has no `primary_button` to read from.
+        // Absent, this is null and every existing fixture keeps reading `primary_button` as before.
+        val buttonValue = action.optStringOrNull("value")
+            ?: cfg.optJSONObject("primary_button")?.let {
+                if (it.isNull("value")) null else it.optString("value")
+            }
         val formData = (action.optJSONObject("form_data") ?: JSONObject()).asMap()
             .filterValues { it != null }.mapValues { it.value!! }
 
@@ -524,6 +529,22 @@ class SharedFixtureTest(
                 flow, currentIndex, responsesFromSetup(), StepAdvanceResult.Proceed, spy, p.tracker,
                 hookRan = false,
             )
+
+            // (c2) flag CTA — records one key and advances. Drives the REAL `OnboardingCTAFlag`
+            // (parse + the config-scanned `applyTo` fold) and then the REAL advance machine, which
+            // is what proves the two halves the feature actually promises: the flag reaches the
+            // host's completion responses, AND the flow goes exactly where it would have gone
+            // without it. Reimplementing either half here would let the fixture pass with the SDK's
+            // copy deleted.
+            OnboardingCTAFlag.ACTION_NAME -> {
+                val merged = formData.toMutableMap()
+                OnboardingCTAFlag.parse(buttonValue)?.let { merged[it.key] = it.value }
+                val responses = responsesFromSetup().toMutableMap()
+                responses[step.id] = merged
+                responses.putAll(OnboardingCTAFlag.applyTo(responses, step, merged))
+                applyAdvance(flow, currentIndex, responses, StepAdvanceResult.Proceed, spy, p.tracker,
+                    hookRan = false)
+            }
 
             "permission" -> unsupported(
                 "button action=permission. iOS emits onAction(permission, <value>) then advances " +

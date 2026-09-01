@@ -1539,6 +1539,18 @@ internal fun OnboardingFlowHost(
                         val safeData = AuthSecretRedactor.redact(data, step)
                         if (safeData != null) {
                             responses[step.id] = safeData
+                            // A flag CTA's key is ALSO collected flat under `responses["flags"]`, so a
+                            // host routing after `onOnboardingCompleted` reads one bucket instead of
+                            // walking every step of the flow. The step's own copy above is untouched —
+                            // next-step rules and `{{responses.*}}` still find the flag where they find
+                            // every other answer. iOS does the same, at the same point.
+                            //
+                            // Which keys count as flags comes from the step's own CTA CONFIG, not from
+                            // the data map. Reading the map would let a form field named `flags` — or a
+                            // field whose id happened to match a flag key — write into the bucket the
+                            // host makes routing decisions on. Same structural discipline as
+                            // `AuthSecretRedactor` above, and for the same reason.
+                            responses.putAll(OnboardingCTAFlag.applyTo(responses, step, safeData))
                         }
                         // SPEC-087: Persist responses incrementally so TemplateEngine has fresh data for next step.
                         // SPEC-070-A finalization spec audit-4 — was unsafe
@@ -3101,7 +3113,11 @@ private fun BlockBasedStepView(
         // Auth-class actions (login, register, request_otp, email_login, ...)
         // also gate on required fields because the host can't authenticate
         // with empty credentials.
-        val requiresValidation = rawAction == "next" || rawAction in AUTH_ACTIONS_REQUIRING_VALIDATION
+        // `flag` advances the step, so it gates on required fields exactly like `next`. Leaving it
+        // out would let a CTA skip an unanswered required field purely because it also set a flag.
+        val requiresValidation = rawAction == "next" ||
+            rawAction == OnboardingCTAFlag.ACTION_NAME ||
+            rawAction in AUTH_ACTIONS_REQUIRING_VALIDATION
         if (requiresValidation) {
             val (ok, fieldLabel) = canAdvance()
             if (!ok) {
@@ -3131,6 +3147,31 @@ private fun BlockBasedStepView(
                 merged.putAll(inputValues)
                 for ((key, value) in toggleValues) {
                     merged["toggle_$key"] = value
+                }
+                onNext(if (merged.isEmpty()) null else merged)
+            }
+            // A CTA that RECORDS A CHOICE and continues — see `OnboardingCTAFlag`. Identical to
+            // "next" above plus one key, and deliberately NOT a branch: a flag must not change which
+            // step comes next. An author who wants the flow itself to fork already has
+            // `next_step_rules`, which can read the very key this writes.
+            OnboardingCTAFlag.ACTION_NAME -> {
+                val merged = mutableMapOf<String, Any>()
+                merged.putAll(inputValues)
+                for ((key, value) in toggleValues) {
+                    merged["toggle_$key"] = value
+                }
+                // Merged LAST so a form field cannot silently overwrite the flag.
+                val flag = OnboardingCTAFlag.parse(actionValue)
+                if (flag != null) {
+                    merged[flag.key] = flag.value
+                } else {
+                    // An author selected "Flag & continue" and left the key blank. Advancing without
+                    // recording anything is the honest behaviour — doing nothing at all would look
+                    // like a dead button.
+                    ai.appdna.sdk.Log.warning(
+                        "A CTA is configured to set a flag but has no flag key; " +
+                            "it will advance without recording one."
+                    )
                 }
                 onNext(if (merged.isEmpty()) null else merged)
             }
