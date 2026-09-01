@@ -3078,13 +3078,10 @@ private fun BlockBasedStepView(
         // ContentBlockRenderer call sites. The recipient/value half — when
         // present — is forwarded to the host via `data["action_value"]` so
         // `onBeforeStepAdvance` can branch on it.
-        val (rawAction, actionValue) = when {
-            action.contains(":") -> {
-                val idx = action.indexOf(':')
-                action.substring(0, idx) to action.substring(idx + 1)
-            }
-            else -> action to null
-        }
+        // The split lives in `OnboardingActionPair` so a JVM test can call the REAL decode — inside
+        // this `@Composable`-scoped method nothing could reach it, which is why the existing
+        // passthrough test mirrors the dispatch table instead of driving it.
+        val (rawAction, actionValue) = OnboardingActionPair.decode(action)
 
         // SPEC-421 — a permission step whose CTA is authored as plain `action:"next"` runs the
         // permission pipeline (prompt) BEFORE the required-field validation gate below, matching

@@ -122,3 +122,34 @@ internal fun summaryStatFieldId(blockId: String, index: Int, stat: Map<*, *>): S
     if (!authored.isNullOrEmpty()) return authored
     return "${blockId}_stat_${index}"
 }
+
+/**
+ * The colon-encoded `action[:value]` pair Android's onboarding CTAs travel as.
+ *
+ * WHY IT EXISTS AS A PAIR AT ALL: Android's `onAction` is `(String) -> Unit` — there is no second
+ * parameter, unlike iOS which forwards `block.action_value` directly. So a CTA that carries a value
+ * (a permission type, a flag's key=value) has to ride along inside the one string.
+ *
+ * WHY IT IS A FUNCTION AND NOT TWO INLINE SNIPPETS: the encode lived in `ContentBlockRenderer`'s
+ * onClick lambda and the decode inside `@Composable`-scoped `handleAction`, so NEITHER was reachable
+ * from a JVM test — the existing passthrough test says as much and mirrors the table instead, which
+ * is exactly how a mirror drifts from the thing it mirrors. `permission` had already shipped with
+ * the encode missing, so a per-CTA permission type resolved to null and only the step-level one
+ * worked. Both halves are now one pure pair a test can actually call.
+ */
+internal object OnboardingActionPair {
+
+    /** `("flag", "k=v")` -> `"flag:k=v"`; a blank or absent value -> the bare action. */
+    fun encode(action: String, actionValue: String?): String =
+        actionValue?.takeIf { it.isNotBlank() }?.let { "$action:$it" } ?: action
+
+    /**
+     * The inverse. Splits on the FIRST ':' only, so a value may itself contain one
+     * (`"flag:utm=a:b"` -> value `"utm=a:b"`).
+     */
+    fun decode(encoded: String): Pair<String, String?> {
+        val idx = encoded.indexOf(':')
+        if (idx < 0) return encoded to null
+        return encoded.substring(0, idx) to encoded.substring(idx + 1)
+    }
+}

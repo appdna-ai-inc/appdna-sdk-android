@@ -2574,9 +2574,7 @@ private fun ButtonBlock(
             // (ContentBlockRendererView.swift `onAction(block.action ?? "next", block.action_value)`);
             // Android dropped it here, so a per-CTA permission type resolved to null and only the
             // step-level permission_type worked. Blank/absent → bare "permission" (unchanged).
-            "permission" -> onAction(
-                block.action_value?.takeIf { it.isNotBlank() }?.let { "permission:$it" } ?: "permission",
-            )
+            "permission" -> onAction(OnboardingActionPair.encode("permission", block.action_value))
             // Same colon-encoding as `permission` directly above, and for the same reason: Android's
             // `onAction` is `(String) -> Unit`, so a CTA's own `action_value` reaches handleAction
             // ONLY through this pair encoding. Without it a flag CTA would arrive with a null value
@@ -2584,11 +2582,8 @@ private fun ButtonBlock(
             // parameter and forwards `block.action_value` directly.
             //
             // handleAction splits on the FIRST ':' only, so a flag value may itself contain one.
-            OnboardingCTAFlag.ACTION_NAME -> onAction(
-                block.action_value?.takeIf { it.isNotBlank() }
-                    ?.let { "${OnboardingCTAFlag.ACTION_NAME}:$it" }
-                    ?: OnboardingCTAFlag.ACTION_NAME,
-            )
+            OnboardingCTAFlag.ACTION_NAME ->
+                onAction(OnboardingActionPair.encode(OnboardingCTAFlag.ACTION_NAME, block.action_value))
             else -> onAction(action)
         }
     }

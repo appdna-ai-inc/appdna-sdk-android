@@ -42,6 +42,7 @@ import ai.appdna.sdk.billing.billingErrorType
 import ai.appdna.sdk.config.ExperimentManager
 import ai.appdna.sdk.config.RemoteConfigManager
 import ai.appdna.sdk.onboarding.RequiredFieldGate
+import ai.appdna.sdk.onboarding.summaryStatFieldId
 import ai.appdna.sdk.onboarding.resolveTemplateString
 import ai.appdna.sdk.core.AudienceRuleEvaluator
 import ai.appdna.sdk.core.AudienceRuleSet
@@ -1220,8 +1221,18 @@ class SharedFixtureTest(
 
                 // SPEC-446 §3 — the gate, exercised in BOTH directions plus the deadlock case.
                 if (block.type == "summary_screen") {
-                    val statFieldIds = (block.field_config?.get("summary_stats") as? List<*>)
-                        ?.mapNotNull { (it as? Map<*, *>)?.get("field_id") as? String }.orEmpty()
+                    // #595 — derived through the SDK's OWN `summaryStatFieldId`, not by reading
+                    // `field_id` directly. A stat that carries an `input` but no `field_id` used to
+                    // be invisible here exactly as it was invisible to the renderer and the gate, so
+                    // the empty-card bug could never have been caught by this driver. The exact
+                    // derived string is exposed below so a fixture pins the FORMULA: if the renderer
+                    // and the gate ever derive it differently, the gate blocks on a key nothing writes.
+                    val statMaps = (block.field_config?.get("summary_stats") as? List<*>)
+                        ?.mapNotNull { it as? Map<*, *> }.orEmpty()
+                    val statFieldIds = statMaps.mapIndexed { index, stat ->
+                        summaryStatFieldId(block.id, index, stat)
+                    }
+                    spy.state["parsed_stat_field_ids"] = statFieldIds
                     val unanswered = RequiredFieldGate.evaluate(listOf(block), emptyMap())
                     val answered = statFieldIds.associateWith { "5" as Any }
                     val satisfied = RequiredFieldGate.evaluate(listOf(block), answered)
