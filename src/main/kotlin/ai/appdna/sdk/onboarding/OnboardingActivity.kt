@@ -1210,7 +1210,7 @@ internal fun OnboardingFlowHost(
                 val progressHeight = (flow.settings.progress_height ?: 4.0).dp
                 val gradientCols = flow.settings.progress_gradient_colors?.takeIf { it.size >= 2 }
                     ?.map { ai.appdna.sdk.core.StyleEngine.parseColor(it) }
-                // EPIC-2 — optional "Skip" link beside the progress (Flo). When set the bar shrinks to make
+                // EPIC-2 — optional "Skip" link beside the progress. When set the bar shrinks to make
                 // room for the Skip on the trailing side; when null the Box fills the row (no visual change).
                 val progressSkipLabel = flow.settings.progress_skip_label
                 Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
@@ -1337,7 +1337,7 @@ internal fun OnboardingFlowHost(
                 currentStep?.hide_back != true
             val navDismissAllowed = flow.settings.dismiss_allowed ?: true
             // EPIC-2 — back-arrow⇄X switch: on the first/no-history step show the dismiss "✕" in the
-            // LEADING slot (Duolingo pattern) instead of an empty spacer; the trailing X is then hidden.
+            // LEADING slot (leading-back pattern) instead of an empty spacer; the trailing X is then hidden.
             val leadingIsClose = !navBackVisible && navDismissAllowed &&
                 (flow.settings.back_button_style?.close_on_first == true)
             if (navBackVisible || navDismissAllowed) {
@@ -2217,7 +2217,7 @@ fun OnboardingStepView(
             //
             // This used to read `if (step.config.skip_enabled == true) onSkip else null`, which made a CTA with
             // `action: "skip"` a silent dead button: the dispatch below is `onSkip?.invoke()`, so a null handler
-            // does nothing at all. WineTrails' Location step is exactly that — {"text":"Confirm","action":"skip"}
+            // does nothing at all. A live customer flow's Location step is exactly that — {"text":"Confirm","action":"skip"}
             // on a step where `skip_enabled` is undefined — and their users could not get past it on Android while
             // iOS advanced fine.
             //
@@ -2948,7 +2948,7 @@ private fun BlockBasedStepView(
     ) { granted -> permissionManager.completePending(granted) }
     // Wire the launcher bridge (the launcher is stable across recompositions).
     permissionManager.requestLauncher = { perm -> permLauncher.launch(perm) }
-    // Mrozu (alarmy s4.1) — SCHEDULE_EXACT_ALARM has no runtime-permission dialog; it's a Settings
+    // Device QA (s4.1) — SCHEDULE_EXACT_ALARM has no runtime-permission dialog; it's a Settings
     // screen opened via ACTION_REQUEST_SCHEDULE_EXACT_ALARM. StartActivityForResult fires its callback
     // when the user returns, at which point completePendingExactAlarm() re-reads canScheduleExactAlarms().
     val exactAlarmLauncher = rememberLauncherForActivityResult(
@@ -3447,7 +3447,7 @@ private fun BlockBasedStepView(
             "image_fullscreen" -> {
                 Box(Modifier.fillMaxSize()) {
                     // SPEC-419 — only render the variant image + its darkening overlay when an image
-                    // is ACTUALLY authored. The nurrai steps all use layout_variant=image_fullscreen
+                    // is ACTUALLY authored. Some authored steps use layout_variant=image_fullscreen
                     // but have NO image_url (the bg is a gradient painted full-bleed by
                     // StepFullScreenBackground). The Transparent→Black0.7 overlay was firing anyway,
                     // darkening the BOTTOM of the CONTENT area (it's bounded to the safe-area content)

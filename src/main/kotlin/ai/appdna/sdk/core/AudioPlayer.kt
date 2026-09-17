@@ -6,8 +6,8 @@ import android.media.MediaPlayer
 import android.net.Uri
 
 /**
- * Shared audio player for the `sound_button` content block (Mrozu Duolingo
- * s20/s22). Streams a remote audio clip (mp3/wav/aac) from a URL and plays it on
+ * Shared audio player for the `sound_button` content block (Device QA
+ * scenario s20/s22). Streams a remote audio clip (mp3/wav/aac) from a URL and plays it on
  * tap / autoplay. Uses [MediaPlayer] with `prepareAsync()` so remote http(s)
  * URLs stream without a manual download step. A single retained player is
  * replaced on each new play, so tapping repeatedly restarts the clip rather than

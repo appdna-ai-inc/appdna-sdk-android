@@ -1721,7 +1721,7 @@ internal fun PaywallSectionView(
             )
 
             // Badge styling
-            // Mrozu QA — default badge bg is the brand accent (matches iOS + the console editor
+            // Device QA — default badge bg is the brand accent (matches iOS + the console editor
             // default), not the hardcoded green. Other accent defaults in this file use the same
             // accessor (e.g. selected-border/bg at :1595/:1597).
             val badgeBg = section.data?.badge_bg_color?.let { parseHexColor(it) } ?: ai.appdna.sdk.AppDNA.brandAccentColor()
@@ -1736,7 +1736,7 @@ internal fun PaywallSectionView(
                 TextStyle(fontWeight = FontWeight.SemiBold, color = badgeTxt, fontSize = badgeFontSize),
                 section.style?.elements?.get("badge")?.text_style,
             )
-            // Mrozu QA — badge border + leading icon were decoded (PaywallConfig.kt:312-314) but
+            // Device QA — badge border + leading icon were decoded (PaywallConfig.kt:312-314) but
             // dropped by BadgeView; iOS PlanCard.badgeView (:298-311/:332-335) renders both.
             val badgeBorderColor = section.data?.badge_border_color?.let { parseHexColor(it) }
             val badgeBorderWidth = section.data?.badge_border_width ?: 0f
@@ -2421,7 +2421,7 @@ internal fun PaywallSectionView(
                                 shape = cardShape,
                                 colors = CardDefaults.cardColors(
                                     // SPEC-419 — selected card BACKGROUND must use the authored
-                                    // selected_bg_color (e.g. nurrai #2c374c) so it's visually DISTINCT
+                                    // selected_bg_color (e.g. #2c374c) so it's visually DISTINCT
                                     // from the unselected card. Do NOT default it to the brand accent:
                                     // a light brand (e.g. white) collapses onto the white-10% unselected
                                     // fill and the selection becomes invisible. Brand drives foreground
@@ -2717,7 +2717,7 @@ internal fun PaywallSectionView(
                                     shape = cardShape,
                                     elevation = CardDefaults.cardElevation(defaultElevation = if (cardShadowEnabled) 4.dp else 0.dp),
                                     colors = CardDefaults.cardColors(
-                                        // SPEC-419 — authored selected_bg_color (nurrai #2c374c) wins;
+                                        // SPEC-419 — authored selected_bg_color (e.g. #2c374c) wins;
                                         // SPEC-419 — unselected card must be OPAQUE + uniform. A
                                         // translucent white-10% let the navy PAGE GRADIENT bleed
                                         // through, giving a "strange gradient inside the card". Derive
@@ -2969,7 +2969,7 @@ internal fun PaywallSectionView(
             // SPEC-419 — iOS PaywallConfig.swift:511 reads `styleObj?.bg_color` FIRST:
             // the console writes `cta: { style: { bg_color, text_color, corner_radius } }`,
             // a NESTED object. Android's PaywallCTA.style is a raw `Any?` that was never
-            // read, so nurrai's `cta.style.bg_color = #ffffff` (white button) was dropped
+            // read, so an authored `cta.style.bg_color = #ffffff` (white button) was dropped
             // and the CTA fell through to the brand accent / transparent = "plain black".
             // SPEC-419 — resolve to null (NOT Transparent) for blank/invalid/
             // "transparent"/shorthand values so the ?: chain CONTINUES to the
@@ -4005,7 +4005,7 @@ private fun PaywallTimelineSection(
     //     right = chain of (title + subtitle) labels with no inter-row gap
     //   \u2022 5dp top inset on the left chain so the first dot aligns to text
     //     baseline
-    // The 30/60/90 "misalignment" reported by Mrozu is the proportion
+    // The 30/60/90 "misalignment" reported in device QA is the proportion
     // mismatch \u2014 Android's 24dp circles dominated the layout, while iOS's
     // tiny accent dots act as a subtle visual rail.
     val connectorColor = section.data.line_color?.let { parseHexColor(it) }

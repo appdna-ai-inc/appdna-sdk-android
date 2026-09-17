@@ -65,24 +65,24 @@ class CompletionRouteCtaDispatchTest {
     @Test
     fun `the CTA hands the host the colon-encoded destination`() {
         val received = tap("Book a wine tasting", listOf(
-            button("Book a wine tasting", "link_on_complete", "winetrails://booking/tasting"),
+            button("Book a wine tasting", "link_on_complete", "hostapp://booking/tasting"),
         ))
-        assertEquals(listOf("link_on_complete:winetrails://booking/tasting"), received)
+        assertEquals(listOf("link_on_complete:hostapp://booking/tasting"), received)
 
         // And the dispatcher's own decode returns the authored URL — the round trip that matters.
         // Decoding splits on the FIRST ':' only, which a URL scheme depends on: a naive split would
-        // hand back "winetrails" and lose the rest.
+        // hand back "hostapp" and lose the rest.
         val (rawAction, value) = OnboardingActionPair.decode(received.single())
         assertEquals(PendingCompletionRoute.ACTION_NAME, rawAction)
-        assertEquals("winetrails://booking/tasting", value)
+        assertEquals("hostapp://booking/tasting", value)
     }
 
     @Test
     fun `an https destination survives too`() {
         val received = tap("See tastings", listOf(
-            button("See tastings", "link_on_complete", "https://winetrails.example/book?ref=onboarding"),
+            button("See tastings", "link_on_complete", "https://hostapp.example/book?ref=onboarding"),
         ))
-        assertEquals("https://winetrails.example/book?ref=onboarding",
+        assertEquals("https://hostapp.example/book?ref=onboarding",
             OnboardingActionPair.decode(received.single()).second)
     }
 
@@ -103,17 +103,17 @@ class CompletionRouteCtaDispatchTest {
 
     @Test
     fun `the store is single-shot so a destination cannot fire twice`() {
-        PendingCompletionRoute.record("winetrails://booking/tasting")
-        assertEquals("winetrails://booking/tasting", PendingCompletionRoute.take())
+        PendingCompletionRoute.record("hostapp://booking/tasting")
+        assertEquals("hostapp://booking/tasting", PendingCompletionRoute.take())
         // A second completion — a later flow, say — must not navigate anywhere.
         assertNull(PendingCompletionRoute.take())
     }
 
     @Test
     fun `a later tap replaces an earlier destination`() {
-        PendingCompletionRoute.record("winetrails://booking/tasting")
-        PendingCompletionRoute.record("winetrails://audio/pass")
-        assertEquals("winetrails://audio/pass", PendingCompletionRoute.take())
+        PendingCompletionRoute.record("hostapp://booking/tasting")
+        PendingCompletionRoute.record("hostapp://audio/pass")
+        assertEquals("hostapp://audio/pass", PendingCompletionRoute.take())
     }
 
     // ── the last link in the chain: completion actually OPENS it ───────────────────────────────
@@ -138,8 +138,8 @@ class CompletionRouteCtaDispatchTest {
 
     @Test
     fun `completion opens the destination the CTA recorded`() {
-        PendingCompletionRoute.record("winetrails://booking/tasting")
-        assertEquals(listOf("winetrails://booking/tasting"), complete())
+        PendingCompletionRoute.record("hostapp://booking/tasting")
+        assertEquals(listOf("hostapp://booking/tasting"), complete())
     }
 
     @Test
@@ -151,7 +151,7 @@ class CompletionRouteCtaDispatchTest {
     fun `the destination is consumed, so a SECOND completion opens nothing`() {
         // The abandoned-flow bug: without consuming, finishing any later flow would navigate the
         // user somewhere they never asked to go.
-        PendingCompletionRoute.record("winetrails://booking/tasting")
+        PendingCompletionRoute.record("hostapp://booking/tasting")
         assertEquals(1, complete().size)
         assertEquals(emptyList<String>(), complete())
     }
@@ -161,7 +161,7 @@ class CompletionRouteCtaDispatchTest {
         // The host dismisses the flow and does its own navigation in onOnboardingCompleted. Opening
         // first would race our navigation against theirs.
         val order = mutableListOf<String>()
-        PendingCompletionRoute.record("winetrails://booking/tasting")
+        PendingCompletionRoute.record("hostapp://booking/tasting")
         val delegate = object : AppDNAOnboardingDelegate {
             override fun onOnboardingCompleted(flowId: String, responses: Map<String, Any>) {
                 order += "delegate"
@@ -177,7 +177,7 @@ class CompletionRouteCtaDispatchTest {
 
     @Test
     fun `a throwing host delegate does not stop the link opening`() {
-        PendingCompletionRoute.record("winetrails://booking/tasting")
+        PendingCompletionRoute.record("hostapp://booking/tasting")
         val delegate = object : AppDNAOnboardingDelegate {
             override fun onOnboardingCompleted(flowId: String, responses: Map<String, Any>) {
                 throw IllegalStateException("host blew up")
@@ -189,7 +189,7 @@ class CompletionRouteCtaDispatchTest {
             track = { _, _ -> }, delegate = delegate,
             openRoute = { url -> opened += url; true },
         )
-        assertEquals(listOf("winetrails://booking/tasting"), opened)
+        assertEquals(listOf("hostapp://booking/tasting"), opened)
     }
 
     @Test

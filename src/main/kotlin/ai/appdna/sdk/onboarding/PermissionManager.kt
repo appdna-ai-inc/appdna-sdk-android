@@ -68,7 +68,7 @@ class PermissionManager(private val context: Context) {
     private var pending: CompletableDeferred<Boolean>? = null
 
     /**
-     * Mrozu (alarmy s4.1) — bridge to a composition-registered `StartActivityForResult` launcher that
+     * Device QA (s4.1) — bridge to a composition-registered `StartActivityForResult` launcher that
      * opens the ACTION_REQUEST_SCHEDULE_EXACT_ALARM Settings screen (SCHEDULE_EXACT_ALARM has no
      * runtime-permission dialog). The result arrives via [completePendingExactAlarm], which re-reads
      * [canScheduleExactAlarms] once the user returns. When null (no launcher wired) an `alarm` request
@@ -83,12 +83,12 @@ class PermissionManager(private val context: Context) {
         fun isSupported(type: String): Boolean = when (type) {
             "notification", "att", "location", "camera",
             "microphone", "photos", "contacts", "calendar",
-            // Mrozu (alarmy s4.1) — `alarm` = the SCHEDULE_EXACT_ALARM capability. Not a dangerous
+            // Device QA (s4.1) — `alarm` = the SCHEDULE_EXACT_ALARM capability. Not a dangerous
             // runtime permission (no RequestPermission dialog); it's a Settings toggle reached via
             // ACTION_REQUEST_SCHEDULE_EXACT_ALARM on API 31+ and auto-granted below API 31. Routed
             // through [status]/[request] special-cases below. Parity with iOS PermissionManager.isSupported.
             "alarm" -> true
-            // Mrozu QA (2026-08-04, Flo s26) — `health` (Health Connect) is a console-authorable
+            // Device QA (2026-08-04, s26) — `health` (Health Connect) is a console-authorable
             // permission_type that already ROUTES through this manager (resolvePermissionType → here),
             // but the native Health Connect authorization request is DEFERRED (needs the
             // androidx.health.connect client dep + per-app read/write record-type set + the Health
@@ -116,7 +116,7 @@ class PermissionManager(private val context: Context) {
             "att" -> null // no Android equivalent
             // `alarm` (SCHEDULE_EXACT_ALARM) is NOT a dangerous runtime permission — it can't be
             // requested through RequestPermission. Returns null (no manifest gate); [status]/[request]
-            // handle it via AlarmManager.canScheduleExactAlarms + the settings intent. Mrozu alarmy s4.1.
+            // handle it via AlarmManager.canScheduleExactAlarms + the settings intent. Device QA — s4.1.
             "alarm" -> null
             else -> null
         }
@@ -182,7 +182,7 @@ class PermissionManager(private val context: Context) {
             // fires and `permission_granted` is emitted (parity with iOS ATT<14.5).
             "att" -> return PermissionStatus.UNDETERMINED
             "notification" -> if (notificationGrantedWithoutPrompt(sdk)) return PermissionStatus.GRANTED
-            // Mrozu (alarmy s4.1) — SCHEDULE_EXACT_ALARM. Already granted → GRANTED (no prompt); else
+            // Device QA (s4.1) — SCHEDULE_EXACT_ALARM. Already granted → GRANTED (no prompt); else
             // UNDETERMINED so request() opens the exact-alarm Settings screen. Below API 31 exact
             // alarms are always allowed → GRANTED.
             "alarm" -> return if (canScheduleExactAlarms()) {
@@ -230,7 +230,7 @@ class PermissionManager(private val context: Context) {
         pending = null
     }
 
-    // MARK: Exact-alarm (SCHEDULE_EXACT_ALARM) — Mrozu alarmy s4.1
+    // MARK: Exact-alarm (SCHEDULE_EXACT_ALARM) — Device QA — s4.1
 
     /**
      * Whether this app can schedule exact alarms right now. Below API 31 exact alarms are always

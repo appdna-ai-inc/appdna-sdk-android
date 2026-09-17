@@ -92,9 +92,9 @@ data class OnboardingSettings(
     // EPIC-2 — thin sizing (custom height; the Material bar floored ~4dp) + multiple colors at once.
     val progress_height: Double? = null,
     val progress_gradient_colors: List<String>? = null,
-    // EPIC-2 — optional "Skip" link rendered beside the progress bar (Flo).
+    // EPIC-2 — optional "Skip" link rendered beside the progress bar.
     val progress_skip_label: String? = null,
-    // EPIC-2 — dynamic color flash on step-advance (Duolingo "success" pulse): the progress fill briefly
+    // EPIC-2 — dynamic color flash on step-advance ("success" pulse): the progress fill briefly
     // animates to this color on each advance, then back to the normal fill.
     val progress_flash_color: String? = null,
     // SPEC-070-A F.1: progress style + back button + content padding (iOS parity)
@@ -1413,7 +1413,7 @@ internal object OnboardingConfigParser {
             bg_color = bm["bg_color"] as? String,
             text_color = bm["text_color"] as? String,
             button_corner_radius = (bm["button_corner_radius"] as? Number)?.toDouble(),
-            // Mrozu (Duolingo s20/s22) — sound_button remote audio clip.
+            // Device QA (s20/s22) — sound_button remote audio clip.
             spacer_height = (bm["spacer_height"] as? Number)?.toDouble(),
             items = (bm["items"] as? List<*>)?.filterIsInstance<String>()?.toImmutableList(),
             list_style = bm["list_style"] as? String,
@@ -1973,7 +1973,7 @@ internal object OnboardingConfigParser {
                     height = fs["height"] as? String,
                     font_weight = fs["font_weight"] as? String,
                     focused_background_color = fs["focused_background_color"] as? String,
-                    // Select v2 (Mrozu QA) — per-option styling extras.
+                    // Select v2 (Device QA) — per-option styling extras.
                     option_font_family = fs["option_font_family"] as? String,
                     option_corner_radius = (fs["option_corner_radius"] as? Number)?.toDouble(),
                     option_text_wrap = fs["option_text_wrap"] as? Boolean,

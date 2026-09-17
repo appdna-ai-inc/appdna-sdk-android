@@ -444,7 +444,7 @@ data class ContentBlock(
     val bg_color: String? = null,
     val text_color: String? = null,
     val button_corner_radius: Double? = null,
-    // Mrozu (Duolingo s20/s22) — sound_button: remote audio clip (mp3/wav/aac)
+    // Device QA (s20/s22) — sound_button: remote audio clip (mp3/wav/aac)
     // played on tap; `autoplay` (declared below with the video fields) plays it
     // when the block appears. Reuses all button styling fields.
     val spacer_height: Double? = null,
@@ -653,7 +653,7 @@ data class ContentBlock(
     val gallery_corner_radius: Double? = null,
     val gallery_spacing: Double? = null,
     val gallery_align: String? = null,  // "start" | "center" | "end" (default "center")
-    // Media-gallery v2 (Mrozu QA): gallery_fill = full-width edge-to-edge cover tiles; gallery_autoscroll =
+    // Media-gallery v2 (Device QA): gallery_fill = full-width edge-to-edge cover tiles; gallery_autoscroll =
     // continuous loop; gallery_autoscroll_speed = seconds per full cycle (default 20). All default off.
     // EPIC-4b — section_background reads background_zones + content_arrangement from field_config
     // (ContentBlock has hit the JVM 255-constructor-arg limit; new fields go through field_config).
@@ -723,7 +723,7 @@ data class ContentBlock(
     val density: String? = null,
     val speed: String? = null,
     val secondary_color: String? = null,
-    // Mrozu QA (2026-08-04): confetti multicolor — cycle a fixed palette instead of primary/secondary.
+    // Device QA (2026-08-04): confetti multicolor — cycle a fixed palette instead of primary/secondary.
     // Defaults on when particle_type == "confetti", explicit override otherwise.
     // SPEC-070-A J.22 — ImmutableList for Compose stability.
     val size_range: kotlinx.collections.immutable.ImmutableList<Double>? = null,
@@ -940,7 +940,7 @@ data class FormFieldBlockStyle(
     val height: String? = null,
     val font_weight: String? = null,
     val focused_background_color: String? = null,
-    // Select v2 (Mrozu QA) — per-option styling extras applied by the select renderers.
+    // Select v2 (Device QA) — per-option styling extras applied by the select renderers.
     val option_font_family: String? = null,     // font family for option title/subtitle/labels
     val option_corner_radius: Double? = null,    // option card corner radius (falls back to corner_radius ?? 10)
     val option_text_wrap: Boolean? = null,       // true → option text wraps fully; false → single-line truncate
@@ -1057,7 +1057,7 @@ data class EntranceAnimationConfig(
     // different curve than iOS. (Preview '|| ease' → '|| linear' is a sibling change.)
     val easing: String = "linear",
     val spring_damping: Double? = null,
-    // Sequenced animation (Mrozu Duolingo s14 / Asana): per-block stagger + ordering.
+    // Sequenced animation (Device QA — s14): per-block stagger + ordering.
     // animation_delay_ms is ADDED to delay_ms to sequence blocks; animation_order is
     // authored ordering metadata (lower plays first, full timeline engine deferred).
     val animation_delay_ms: Int = 0,
@@ -1597,7 +1597,7 @@ object RequiredFieldGate {
                 is String -> v.isEmpty()
                 is Map<*, *> -> v.isEmpty()
                 is List<*> -> v.isEmpty()
-                // Mrozu QA (2026-08-04, Flo s1) — a required `agreement`/consent checkbox is satisfied
+                // Device QA (2026-08-04, s1) — a required `agreement`/consent checkbox is satisfied
                 // ONLY when checked; unchecked reports non-null `false` that would otherwise slip past.
                 // Scoped to `agreement` so pre-existing required `input_toggle`/`toggle` keep their
                 // behavior. Parity with iOS `block.type == .agreement`.
@@ -1727,7 +1727,7 @@ internal fun RenderBlock(
     // SPEC-419 STEP-2 — interactive-element fire closure; default no-op so container recursions
     // (carousel/section/stack/row) that don't thread it still compile.
     onInteract: (String, String, String?) -> Unit = { _, _, _ -> },
-    // Mrozu QA (2026-08-04) — the step's sibling blocks, so a consent-reactive CTA button can run the
+    // Device QA (2026-08-04) — the step's sibling blocks, so a consent-reactive CTA button can run the
     // step-level RequiredFieldGate. Default empty (nested container recursions pass none → gate satisfied).
     stepBlocks: List<ContentBlock> = emptyList(),
 ) {
@@ -1786,7 +1786,7 @@ private fun RenderBlockContent(
     totalSteps: Int = 1,
     // SPEC-419 STEP-2 — interactive-element fire closure threaded to the 7 interactive elements.
     onInteract: (String, String, String?) -> Unit = { _, _, _ -> },
-    // Mrozu QA (2026-08-04) — step sibling blocks for the consent-reactive CTA gate (see RenderBlock).
+    // Device QA (2026-08-04) — step sibling blocks for the consent-reactive CTA gate (see RenderBlock).
     stepBlocks: List<ContentBlock> = emptyList(),
 ) {
     when (block.type) {
@@ -1808,7 +1808,7 @@ private fun RenderBlockContent(
         "memory_match" -> MemoryMatchBlock(block, onInteract)
         "calendar_month" -> CalendarMonthBlock(block, inputValues, onInteract)
         "button" -> ButtonBlock(block, onAction, loc, stepBlocks, inputValues)
-        // Mrozu (Duolingo s20/s22) — CTA-style button that plays `audio_url` on tap.
+        // Device QA (s20/s22) — CTA-style button that plays `audio_url` on tap.
         "sound_button" -> SoundButtonBlock(block, onAction, loc, stepBlocks, inputValues)
         "spacer" -> Spacer(modifier = Modifier.height((block.spacer_height ?: 24.0).dp)) // SPEC-419 pass-14 #11 — unset default 24 to match editor+preview (was 16)
         "list" -> ListBlock(block, loc)
@@ -1857,7 +1857,7 @@ private fun RenderBlockContent(
         "input_select" -> FormInputSelectBlock(block, inputValues)
         "input_slider" -> FormInputSliderBlock(block, inputValues)
         "input_toggle" -> FormInputToggleBlock(block, inputValues)
-        // Mrozu QA (2026-08-04, Flo s1) — standalone consent/agreement (checkbox + rich links → Bool).
+        // Device QA (2026-08-04, s1) — standalone consent/agreement (checkbox + rich links → Bool).
         "agreement" -> AgreementBlock(block, inputValues)
         "input_stepper" -> FormInputStepperBlock(block, inputValues)
         "input_segmented" -> FormInputSegmentedBlock(block, inputValues)
@@ -1954,7 +1954,7 @@ private fun TextBlock(block: ContentBlock, loc: ((String, String) -> String)? = 
     val maxLines = block.max_lines ?: Int.MAX_VALUE
     val showTrailingDots = (block.field_config?.get("show_trailing_dots") as? Boolean) ?: false
     if (showTrailingDots) {
-        // Mrozu QA — trailing animated ellipsis ("", ".", "..", "...") for loading-style text.
+        // Device QA — trailing animated ellipsis ("", ".", "..", "...") for loading-style text.
         // Parity w/ iOS AnimatedTrailingDots + console preview's pulsing-dots span.
         val boxAlign = when (alignSource) {
             "center" -> Alignment.Center
@@ -1986,7 +1986,7 @@ private fun TextBlock(block: ContentBlock, loc: ((String, String) -> String)? = 
     }
 }
 
-/** Mrozu QA — a trailing animated ellipsis that cycles "" → "." → ".." → "..." every 400ms,
+/** Device QA — a trailing animated ellipsis that cycles "" → "." → ".." → "..." every 400ms,
  * reserving the full "..." width so the preceding text does not shift. Used by [TextBlock] when
  * `field_config.show_trailing_dots` is true. Parity w/ iOS `AnimatedTrailingDots`. */
 @Composable
@@ -2012,7 +2012,7 @@ private fun CarouselBlock(
     toggleValues: MutableMap<String, Boolean>,
     inputValues: MutableMap<String, Any>,
     loc: ((String, String) -> String)?,
-    // Mrozu QA (2026-08-04) — thread the step's blocks so a nested consent-reactive CTA
+    // Device QA (2026-08-04) — thread the step's blocks so a nested consent-reactive CTA
     // evaluates the full step's RequiredFieldGate (parity with iOS, which recurses on the
     // same ContentBlockRendererView instance holding `self.blocks`).
     stepBlocks: List<ContentBlock> = emptyList(),
@@ -2059,7 +2059,7 @@ private fun SectionBackgroundBlock(
     toggleValues: MutableMap<String, Boolean>,
     inputValues: MutableMap<String, Any>,
     loc: ((String, String) -> String)?,
-    // Mrozu QA (2026-08-04) — thread step blocks so a nested consent-CTA gates on the full step (iOS parity).
+    // Device QA (2026-08-04) — thread step blocks so a nested consent-CTA gates on the full step (iOS parity).
     stepBlocks: List<ContentBlock> = emptyList(),
 ) {
     // EPIC-4b — paint vertical proportional color zones, overlay the children content on top.
@@ -2079,7 +2079,7 @@ private fun SectionBackgroundBlock(
     // No early-return on empty zones — render the foreground children on a bare background, matching
     // iOS (ContentBlockRendererView) + the console preview (was: rendered nothing when zones absent).
     val children = block.children ?: block.stack_children ?: emptyList()
-    // Mrozu parity — iOS overlays children in a `VStack(spacing: 12)` (a fixed 12pt
+    // Cross-platform parity — iOS overlays children in a `VStack(spacing: 12)` (a fixed 12pt
     // inter-child gap) and positions them with Spacers per content_arrangement
     // (ContentBlockRendererView.swift:438-445). Android previously used a bare
     // positional Arrangement with NO gap between children, diverging from the iOS
@@ -2145,7 +2145,7 @@ private fun SectionBackgroundBlock(
 @Composable
 private fun MediaGalleryBlock(block: ContentBlock) {
     // EPIC-3 — horizontal scrollable gallery of image tiles (rounded, fixed size, placeholder bg).
-    // Media-gallery v2 (Mrozu QA): gallery_fill = full-width edge-to-edge cover tiles; gallery_autoscroll =
+    // Media-gallery v2 (Device QA): gallery_fill = full-width edge-to-edge cover tiles; gallery_autoscroll =
     // seamless marquee loop (gallery_autoscroll_speed = seconds per full cycle, default 20). Both default off
     // → existing static LazyRow (no infinite animation started when off — non-breaking, zero battery cost).
     val images = block.gallery_images ?: return
@@ -2161,7 +2161,7 @@ private fun MediaGalleryBlock(block: ContentBlock) {
         return
     }
 
-    // Mrozu QA (2026-08-04) — alarmy selectable gallery: gallery_preview_on_select opens a full-screen
+    // Device QA (2026-08-04) — selectable gallery: gallery_preview_on_select opens a full-screen
     // enlarged overlay of the tapped image. Default off → the existing static row (non-breaking). Image
     // preview only — video/gif/sound preview playback is net-new host media infra (deferred). Parity w/ iOS.
     val previewOnSelect = (block.field_config?.get("gallery_preview_on_select") as? Boolean) ?: false
@@ -2226,7 +2226,7 @@ private fun MediaGalleryBlock(block: ContentBlock) {
 }
 
 // Media-gallery v2 — shared tile (placeholder bg + cover image, rounded/clipped).
-// Mrozu QA (2026-08-04) — optional onClick opens the selectable-gallery preview overlay (default null = inert).
+// Device QA (2026-08-04) — optional onClick opens the selectable-gallery preview overlay (default null = inert).
 @Composable
 private fun GalleryTile(
     url: String,
@@ -2500,10 +2500,10 @@ private fun ButtonBlock(
     block: ContentBlock,
     onAction: (String) -> Unit,
     loc: ((String, String) -> String)? = null,
-    // Mrozu QA (2026-08-04) — Flo consent CTA: step siblings + live inputs drive the consent-reactive bg.
+    // Device QA (2026-08-04) — consent CTA: step siblings + live inputs drive the consent-reactive bg.
     stepBlocks: List<ContentBlock> = emptyList(),
     inputValues: Map<String, Any> = emptyMap(),
-    // Mrozu (Duolingo s20/s22) — when set (sound_button), tap runs this instead of
+    // Device QA (s20/s22) — when set (sound_button), tap runs this instead of
     // the flow-action routing below (e.g. play an audio clip).
     onClickOverride: (() -> Unit)? = null,
 ) {
@@ -2525,7 +2525,7 @@ private fun ButtonBlock(
         ?.let { styledBase.copy(color = StyleEngine.parseColor(it)) } ?: styledBase
     val context = LocalContext.current
     val btnVariant = block.variant ?: "primary"
-    // Mrozu QA (2026-08-04) — Flo consent CTA: `cta_enabled_bg_color` / `cta_disabled_bg_color` drive the
+    // Device QA (2026-08-04) — consent CTA: `cta_enabled_bg_color` / `cta_disabled_bg_color` drive the
     // button background off whether the step's required fields (incl. a consent checkbox) are satisfied.
     // Reuses the SAME RequiredFieldGate the advance gate uses, so the CTA recolors reactively as the user
     // toggles consent. Both nil → plain `bg_color` (non-breaking). Parity with iOS.
@@ -2578,7 +2578,7 @@ private fun ButtonBlock(
             // because of this rewrite. Forwarding the original action
             // keeps the iOS-canonical behavior as the single source.
             //
-            // Mrozu (alarmy s4.1) — forward the button's OWN `action_value` (the per-CTA permission
+            // Device QA (s4.1) — forward the button's OWN `action_value` (the per-CTA permission
             // type, e.g. "alarm") colon-encoded so handleAction's pair-parser routes it to
             // emitPermissionAction's `actionValue`. iOS already forwards block.action_value directly
             // (ContentBlockRendererView.swift `onAction(block.action ?? "next", block.action_value)`);
@@ -2802,7 +2802,7 @@ private fun ButtonBlock(
 }
 
 /**
- * Mrozu (Duolingo s20/s22) — sound_button: a CTA-style button (reuses ALL of
+ * Device QA (s20/s22) — sound_button: a CTA-style button (reuses ALL of
  * ButtonBlock's styling) that plays a remote audio clip (mp3/wav/aac) from
  * `(block.field_config?.get("audio_url") as? String)` on tap. When `block.autoplay == true` the clip plays as the
  * block first appears. Playback is routed through the shared AudioPlayer helper.
@@ -2846,7 +2846,7 @@ private fun OtpInputBlock(
     val fieldId = block.field_id ?: block.id
     val accent = StyleEngine.parseColor(block.active_color ?: (ai.appdna.sdk.AppDNA.brandAccentHex ?: "#6366F1"))
     val boxBg = StyleEngine.parseColor(block.bg_color ?: "#1F2937")
-    // Mrozu QA (2026-08-04): box border/text were hardcoded (accent/gray + white). When set, border_color
+    // Device QA (2026-08-04): box border/text were hardcoded (accent/gray + white). When set, border_color
     // overrides the resting border (active box keeps the accent focus ring); text_color overrides the digit.
     val borderOverride = block.border_color?.let { StyleEngine.parseColor(it) }
     val digitColor = StyleEngine.parseColor(block.text_color ?: "#FFFFFF")
@@ -2925,7 +2925,7 @@ private fun WarningBannerBlock(block: ContentBlock, loc: ((String, String) -> St
     val accent = StyleEngine.parseColor(block.active_color ?: accentHex)
     val icon = (block.field_config?.get("banner_icon") as? String) ?: defaultIcon
     val text = loc?.invoke("block.${block.id}.text", block.text ?: "") ?: (block.text ?: "")
-    // Mrozu QA (2026-08-04): bg_color/text_color were uneditable. When set they override the
+    // Device QA (2026-08-04): bg_color/text_color were uneditable. When set they override the
     // accent-tinted background / white message text; unset keeps the variant defaults (parity w/ iOS).
     val bgOverride = block.bg_color?.let { StyleEngine.parseColor(it) }
     val textColor = StyleEngine.parseColor(block.text_color ?: "#FFFFFF")
@@ -3035,7 +3035,7 @@ private fun SpeechBubbleBlock(block: ContentBlock, loc: ((String, String) -> Str
     val bubbleColor = StyleEngine.parseColor(block.bg_color ?: "#FFFFFF")
     val textColor = StyleEngine.parseColor(block.text_color ?: "#111827")
     val tailPos = (block.field_config?.get("bubble_tail") as? String) ?: "left"
-    // Mrozu QA — bubble interior font family (bubble_font_family; null → system) + tail geometry
+    // Device QA — bubble interior font family (bubble_font_family; null → system) + tail geometry
     // (tail_width/tail_length; default 18×9). Parity w/ iOS speechBubbleBlock + console preview.
     val bubbleFontFamily = ai.appdna.sdk.core.FontResolver.resolve(block.field_config?.get("bubble_font_family") as? String)
     val tailWidth = ((block.field_config?.get("tail_width") as? Number)?.toFloat() ?: 18f)
@@ -3073,7 +3073,7 @@ private fun SpeechBubbleBlock(block: ContentBlock, loc: ((String, String) -> Str
     }
 }
 
-/** EPIC-11 — quiz feedback panel (Duolingo correct/wrong): tinted panel + circled icon + headline + detail.
+/** EPIC-11 — quiz feedback panel (correct/wrong): tinted panel + circled icon + headline + detail.
  * `field_config.feedback_state` (correct|wrong|info) picks accent+icon+default headline; `feedback_detail`
  * is the secondary line; the `text` is the headline. */
 @Composable
@@ -3085,7 +3085,7 @@ private fun FeedbackPanelBlock(block: ContentBlock, loc: ((String, String) -> St
         else -> Triple("#10B981", "✓", "Great job!")
     }
     val accent = StyleEngine.parseColor(block.active_color ?: accentHex)
-    // Mrozu QA (2026-08-04) — duolingo above-CTA feedback: `feedback_bg_color` overrides the tinted panel
+    // Device QA (2026-08-04) — above-CTA feedback: `feedback_bg_color` overrides the tinted panel
     // background; `feedback_graphic_url` swaps the built-in ✓/✗ glyph for a custom image. Both default nil →
     // identical to the existing accent-tinted glyph panel (non-breaking). The runtime correct/wrong EVENT that
     // flips `feedback_state` is host-driven behavioral (deferred); this is the static/config render + styling.
@@ -3126,7 +3126,7 @@ private fun FeedbackPanelBlock(block: ContentBlock, loc: ((String, String) -> St
     }
 }
 
-/** EPIC-11 — session summary screen (Duolingo end-of-lesson stats): optional headline + a 2-column grid of
+/** EPIC-11 — session summary screen (end-of-lesson stats): optional headline + a 2-column grid of
  * stat cards. `field_config.summary_stats` = [{value, label, color?}]; each card shows a big colored value +
  * a muted label. */
 @Composable
@@ -3143,7 +3143,7 @@ private fun SummaryScreenBlock(
     val stats = statsRaw.mapNotNull { it as? Map<*, *> }
     val headline = loc?.invoke("block.${block.id}.text", block.text ?: "") ?: (block.text ?: "")
     val defaultAccent = ai.appdna.sdk.AppDNA.brandAccentHex ?: "#6366F1"
-    // Mrozu QA (2026-08-04): cards/headline were hardcoded (#1F2937 bg, white text, center, 2-col).
+    // Device QA (2026-08-04): cards/headline were hardcoded (#1F2937 bg, white text, center, 2-col).
     // bg_color = card bg, text_color = headline + label, summary_align = headline align,
     // stats_layout = horizontal (2-col, default) | vertical (single full-width column). Parity w/ iOS.
     val cardBg = block.bg_color?.let { StyleEngine.parseColor(it) } ?: Color(0xFF1F2937)
@@ -3244,7 +3244,7 @@ private fun PressHoldConfirmBlock(
     onInteract: (String, String, String?) -> Unit = { _, _, _ -> },
 ) {
     val accent = StyleEngine.parseColor(block.active_color ?: (ai.appdna.sdk.AppDNA.brandAccentHex ?: "#6366F1"))
-    // Mrozu QA — track background (bg_color; default #1F2937), filled-state label (confirm_text; default
+    // Device QA — track background (bg_color; default #1F2937), filled-state label (confirm_text; default
     // "✓"), optional above/below labels (label_above/label_below) in text_color (default #111827).
     // Parity w/ iOS PressHoldConfirmBlockView + console preview.
     val track = StyleEngine.parseColor(block.bg_color ?: "#1F2937")
@@ -3426,7 +3426,7 @@ private fun SettingsFooterBlock(
     }
 }
 
-/** EPIC-11 — memory / pair-match grid (Duolingo): square cards in N columns, each face-down (accent "?"),
+/** EPIC-11 — memory / pair-match grid: square cards in N columns, each face-down (accent "?"),
  * face-up (white + symbol), or matched (green + symbol). `field_config.match_columns` + `match_cards`=
  * [{symbol, state: down|up|matched}]. */
 @Composable
@@ -3561,7 +3561,7 @@ private fun calParseBaseMonth(label: String): Pair<Int, Int> {
 
 private fun calIso(y: Int, m: Int, d: Int): String = "%04d-%02d-%02d".format(y, m, d)
 
-/** Month calendar (Flo). Renders `months_shown` (default 1) consecutive month grids stacked vertically.
+/** Month calendar. Renders `months_shown` (default 1) consecutive month grids stacked vertically.
  * SINGLE mode (`range_selectable` false): tapping an in-month day highlights it. For a single displayed month this
  * preserves the legacy contract — inputValues[fid]=day (Int) and ("day_selected", String(day)) — and
  * `selected_days`/`today` seed the first month. For multi-month single-select it writes the ISO date.
@@ -3609,7 +3609,7 @@ private fun CalendarMonthBlock(
         list
     }
 
-    // SPEC-419 STEP-2 / Mrozu Flo s16 — selection state.
+    // SPEC-419 STEP-2 / Device QA — s16 — selection state.
     var selectedDay by remember(fieldId) { mutableStateOf<Int?>(null) }   // legacy single-month day number
     var selectedIso by remember(fieldId) { mutableStateOf<String?>(null) } // multi-month single-select ISO
     var rangeStart by remember(fieldId) { mutableStateOf<String?>(null) }
@@ -5152,7 +5152,7 @@ private fun ProgressBarBlock(block: ContentBlock, loc: ((String, String) -> Stri
     val gradColors = block.bar_gradient_colors?.takeIf { it.size >= 2 }?.map { StyleEngine.parseColor(it) }
     val trackColor = StyleEngine.parseColor(block.track_color ?: "#E5E7EB")
     // Progress/Loading v2 — clamp to the console slider max (24) so an out-of-range
-    // published value can't render a giant bar the editor can't reproduce (duolingo s7).
+    // published value can't render a giant bar the editor can't reproduce (s7).
     val barHeight = minOf(block.bar_height ?: block.height ?: 8.0, 24.0).dp // SPEC-419 pass-14 #14 — unset default 8 to match editor+preview (was 6)
     val cornerRadius = (block.corner_radius ?: 3.0).dp
     val segmentGap = (block.segment_gap ?: 4.0).dp
@@ -5190,7 +5190,7 @@ private fun ProgressBarBlock(block: ContentBlock, loc: ((String, String) -> Stri
                 "${((activeSegments.toFloat() / maxOf(segmentCount, 1)) * 100).toInt()}%"
             else "$pvPercent%"
         }
-        // Mrozu parity — iOS renders the progress label PLAIN (`.font(.caption)
+        // Cross-platform parity — iOS renders the progress label PLAIN (`.font(.caption)
         // .foregroundColor(.secondary)`, ContentBlockRendererView.swift:1801-1805)
         // and does NOT apply `label_style`. Android previously ran the authored
         // label_style through StyleEngine.applyTextStyle, diverging from the iOS
@@ -5640,7 +5640,7 @@ private fun AnimatedLoadingBlock(block: ContentBlock, onAction: (String) -> Unit
                 }
             }
             "ring" -> {
-                // EPIC-3 — large radial % ring (Duolingo/Flo "loading N%"): big circular ring + prominent %.
+                // EPIC-3 — large radial % ring ("loading N%"): big circular ring + prominent %.
                 Box(contentAlignment = Alignment.Center) {
                     CircularProgressIndicator(
                         progress = overallProgress.coerceIn(0f, 1f),
@@ -5658,7 +5658,7 @@ private fun AnimatedLoadingBlock(block: ContentBlock, onAction: (String) -> Unit
                 }
             }
             "cog" -> {
-                // EPIC-3 — cog/gear spinner (Asana settings-style loader): thick ring + 8 flat teeth, rotating.
+                // EPIC-3 — cog/gear spinner (settings-style loader): thick ring + 8 flat teeth, rotating.
                 val cogTransition = androidx.compose.animation.core.rememberInfiniteTransition(label = "cog_spin")
                 val cogAngle by cogTransition.animateFloat(
                     initialValue = 0f,
@@ -6978,7 +6978,7 @@ private fun StackBlock(
     toggleValues: MutableMap<String, Boolean>,
     inputValues: MutableMap<String, Any>,
     loc: ((String, String) -> String)?,
-    // Mrozu QA (2026-08-04) — thread step blocks so a nested consent-CTA gates on the full step (iOS parity).
+    // Device QA (2026-08-04) — thread step blocks so a nested consent-CTA gates on the full step (iOS parity).
     stepBlocks: List<ContentBlock> = emptyList(),
 ) {
     // SPEC-401-A R61 (Lens A N1, P1) — accept iOS canonical `stack_children`
@@ -7029,7 +7029,7 @@ private fun RowBlock(
     toggleValues: MutableMap<String, Boolean>,
     inputValues: MutableMap<String, Any>,
     loc: ((String, String) -> String)?,
-    // Mrozu QA (2026-08-04) — thread step blocks so a nested consent-CTA gates on the full step (iOS parity).
+    // Device QA (2026-08-04) — thread step blocks so a nested consent-CTA gates on the full step (iOS parity).
     stepBlocks: List<ContentBlock> = emptyList(),
 ) {
     // SPEC-401-A R61 (Lens A N1, P1) — accept iOS canonical `stack_children`
@@ -7169,7 +7169,7 @@ private fun RowBlock(
                 Modifier.fillMaxWidth()
             }
             if (block.wrap == true && ratios.isEmpty()) {
-                // Mrozu QA: row.wrap flows children onto multiple lines (chips/badges)
+                // Device QA: row.wrap flows children onto multiple lines (chips/badges)
                 // instead of a single clipped Row. Parity with iOS WrapLayout. FlowRow
                 // takes no weight(), so wrapped children are wrap-content (fractional
                 // widths still honored via applyRelativeSizing).
@@ -7718,10 +7718,10 @@ private fun StarBackgroundBlock(block: ContentBlock) {
     val particleColor = StyleEngine.parseColor(fcParticleColor ?: block.active_color ?: block.text_color ?: "#FFFFFF")
     // SPEC-419 pass-15 #27 — secondary_color tints 1/3 of particles (matches editor + preview)
     val secondaryColor = block.secondary_color?.let { StyleEngine.parseColor(it) } ?: particleColor
-    // Mrozu QA (2026-08-03): particle_type was decoded but the Canvas always drew a
+    // Device QA (2026-08-03): particle_type was decoded but the Canvas always drew a
     // circle, so stars/sparkles/snow all looked identical. Render the actual shape (parity with iOS).
     val particleType = block.particle_type ?: "stars"  // match console/preview default (element is star_background)
-    // Mrozu QA (2026-08-04): confetti = falling multicolor rounded rects. `particle_multicolor` cycles
+    // Device QA (2026-08-04): confetti = falling multicolor rounded rects. `particle_multicolor` cycles
     // a fixed palette per-particle (defaults ON for confetti). Parity with iOS confettiPalette.
     val useMulticolor = (block.field_config?.get("particle_multicolor") as? Boolean) ?: (particleType == "confetti")
     val confettiPalette = remember {
@@ -7790,13 +7790,13 @@ private fun StarBackgroundBlock(block: ContentBlock) {
         // by scaleX shrank particles to invisibility on narrow widths and
         // ballooned them into giant blobs in fullscreen mode.
         particles.value.forEachIndexed { i, p ->
-            // Mrozu QA (2026-08-04): multicolor confetti cycles the palette; otherwise every 3rd
+            // Device QA (2026-08-04): multicolor confetti cycles the palette; otherwise every 3rd
             // particle uses secondary_color (SPEC-419 pass-15 #27).
             val baseColor = if (useMulticolor) confettiPalette[i % confettiPalette.size]
                 else if (i % 3 == 0) secondaryColor else particleColor
             val pColor = baseColor.copy(alpha = p.opacity * baseOpacity)
             val center = Offset(p.x * scaleX, p.y * scaleY)
-            // Mrozu QA (2026-08-04): iOS treats p.size as a BOX/diameter (particle
+            // Device QA (2026-08-04): iOS treats p.size as a BOX/diameter (particle
             // drawn inside a size×size CGRect — StarBackgroundBlockView), so the
             // effective radius is p.size/2. Android previously used p.size as the
             // RADIUS, rendering every particle ~2× larger than iOS. Halve the geometry
@@ -7817,7 +7817,7 @@ private fun StarBackgroundBlock(block: ContentBlock) {
     }
 }
 
-// Mrozu QA (2026-08-03): build an N-point star polygon for star_background particle_type
+// Device QA (2026-08-03): build an N-point star polygon for star_background particle_type
 // (parity with iOS ContentBlockStandaloneViews.starPath). dots/bokeh keep drawCircle.
 private fun starParticlePath(points: Int, innerRatio: Float, center: Offset, radius: Float): androidx.compose.ui.graphics.Path {
     val path = androidx.compose.ui.graphics.Path()
@@ -8149,7 +8149,7 @@ private fun PulsingAvatarBlock(block: ContentBlock) {
             // clipped the ring to its own square graphicsLayer bounds at peak scale —
             // a circle clipped by a square smaller than its radius reads as a
             // rounded-square "cut" (flat axis edges + arc corners). That was the
-            // Mrozu-reported pulse clip; it is a layer-bounds clip, NOT a frame-size
+            // QA-reported pulse clip; it is a layer-bounds clip, NOT a frame-size
             // issue (frame stays at the iOS 1.3× reservation).
             for (i in 0 until ringCount) {
                 val baseRadiusDp = (avatarSize.value + (i + 1) * 20f) / 2f
@@ -8247,7 +8247,7 @@ private fun PulsingAvatarBlock(block: ContentBlock) {
                 // outward offset signs iOS uses. Net effect: badge anchored
                 // to frame corner THEN pushed FURTHER outward, ending up
                 // far above-right of the avatar instead of overlapping into
-                // its NE corner. Mrozu's "LIVE badge clipped in half"
+                // its NE corner. The QA report's "LIVE badge clipped in half"
                 // screenshot is exactly this: the badge drew above the
                 // frame top edge and got cropped by the parent column.
                 //
@@ -9066,7 +9066,7 @@ private fun FormInputDateBlock(
     // SPEC-419 pass-16 #12 — honor wheel_text_color on the inline graphical picker
     // (day/weekday/year content), mirroring iOS colorMultiply + preview wheelText.
     val wheelTextColor = (block.field_config?.get("wheel_text_color") as? String)?.let { StyleEngine.parseColor(it) }
-    // Mrozu QA — parity with iOS FormInputDateBlock (FormInputBlockViews.swift:276-285):
+    // Device QA — parity with iOS FormInputDateBlock (FormInputBlockViews.swift:276-285):
     // honor field_config.color_scheme (light/dark) as an explicit picker-theme override,
     // else auto-detect dark when field_style.text_color is a light hex (dark-background
     // flows set white text, so the native date/time popover must render dark or it's
@@ -9561,9 +9561,9 @@ private fun FormInputSelectBlock(
     val cornerR = (block.field_style?.corner_radius ?: 10.0).dp
     // Select v2 — STACKED option card corner: option_corner_radius wins, else legacy, else 10.
     val optionCornerR = (block.field_style?.option_corner_radius ?: block.field_style?.corner_radius ?: 10.0).dp
-    // Select v2 — per-option styling extras (Mrozu QA).
+    // Select v2 — per-option styling extras (Device QA).
     val optionFontFamily = block.field_style?.option_font_family?.let { ai.appdna.sdk.core.FontResolver.resolve(it) }
-    // Default TRUE = full wrap (preserves prior native behavior + the Mrozu ask that
+    // Default TRUE = full wrap (preserves prior native behavior + the QA ask that
     // long option text stays fully visible). option_text_wrap=false opts into truncation.
     val optionTextWrap = block.field_style?.option_text_wrap ?: true
     val optionImageScale = block.field_style?.option_image_scale ?: "contain"
@@ -10680,7 +10680,7 @@ private fun FormInputSliderBlock(
             valueRange = minVal..maxVal,
             steps = stepCount,
             colors = SliderDefaults.colors(
-                // Mrozu QA: honor authored thumb_color; else default to a WHITE thumb
+                // Device QA: honor authored thumb_color; else default to a WHITE thumb
                 // to match iOS FormInputSliderBlock + the console preview (previously
                 // fell back to the accent fillCol, diverging from both).
                 thumbColor = block.field_style?.thumb_color?.let { StyleEngine.parseColor(it) } ?: StyleEngine.parseColor("#FFFFFF"),
@@ -10704,7 +10704,7 @@ private fun FormInputToggleBlock(
 ) {
     val fieldId = block.field_id ?: block.id
     val onColor = StyleEngine.parseColor(block.field_style?.toggle_on_color ?: (ai.appdna.sdk.AppDNA.brandAccentHex ?: "#6366F1"))
-    // Mrozu QA (2026-08-03): toggle_off_color + thumb_color were decoded but only on-color applied.
+    // Device QA (2026-08-03): toggle_off_color + thumb_color were decoded but only on-color applied.
     // Honor all four Switch colors (parity with iOS custom toggle).
     val offColor = StyleEngine.parseColor(block.field_style?.toggle_off_color ?: "#E5E5EA")
     val thumbColor = StyleEngine.parseColor(block.field_style?.thumb_color ?: "#FFFFFF")
@@ -10766,7 +10766,7 @@ private fun FormInputToggleBlock(
 }
 
 /**
- * Mrozu QA (2026-08-04, Flo s1) — standalone consent / agreement element: a tappable checkbox + a
+ * Device QA (2026-08-04, s1) — standalone consent / agreement element: a tappable checkbox + a
  * rich label whose `[terms](url)` / `[privacy](url)` markdown links open a browser via [URLSafety].
  * Persists a Boolean to `inputValues[field_id]`; when `field_required` is set, [RequiredFieldGate]
  * gates the CTA until checked. All authoring config travels through `field_config` (byte-identical

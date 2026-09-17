@@ -8,7 +8,7 @@ import java.util.UUID
 /**
  * Pure unit tests for the cross-account-leak ownership filter — the single
  * source of truth for the decision matrix that defends every site reading
- * `BillingClient.queryPurchasesAsync`. Bogdan's reproducer (User A buys →
+ * `BillingClient.queryPurchasesAsync`. The QA reproducer (User A buys →
  * User B signs in → B sees A's subscription) lives or dies on this decision
  * table being correct; if any case here flips wrong, the whole defence
  * silently breaks.
@@ -94,7 +94,7 @@ class EntitlementOwnerFilterTest {
     }
 
     @Test fun `untagged historical purchase denied to later identifier`() {
-        // THE FIX — Bogdan's repro. User B identifies on a device where
+        // THE FIX — the QA repro. User B identifies on a device where
         // user A is the first-identifier. An untagged purchase (most
         // commonly the SDK-paywall onboarding purchase made BEFORE A
         // identified) MUST NOT be inherited by B.
@@ -114,7 +114,7 @@ class EntitlementOwnerFilterTest {
         )
     }
 
-    @Test fun `Bogdan reproducer at decision-table level`() {
+    @Test fun `QA reproducer at decision-table level`() {
         // End-to-end repro encoded against the filter only. Simulates the
         // SDK-paywall onboarding flow (anonymous purchase) → user A
         // identifies → user B identifies → B taps Restore. Pins that B

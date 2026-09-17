@@ -4,6 +4,45 @@ All notable changes to the AppDNA Android SDK are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and
 the project uses [Semantic Versioning](https://semver.org/).
 
+## [1.0.50] — 2026-09-17
+
+Wraps iOS 1.0.78. Publishable version and feature-parity marker move independently — see
+`gradle.properties`.
+
+### Fixed
+- A CTA whose `action` was `"skip"` was a **dead button**: the block-based step view received a
+  `null` skip handler whenever `config.skip_enabled` was not `true`, so `onSkip?.invoke()` silently
+  did nothing. iOS never had that gate, so identical config advanced on iOS and died here. Measured
+  on a live flow where `skip_enabled` was undefined on all 18 steps — every skip CTA in it was dead.
+- The **social-login divider** ignored its authored position: it was read from `field_config`, while
+  the console writes the top-level field. The console now mirrors it at the sync boundary, so
+  already-published flows are fixed on their next sync with no SDK release needed.
+- The **device mockup** was the authored height tall by a hardcoded 260dp wide, so at the default
+  height of 200 the "phone" was a landscape box and raising Height only made it taller. The screen
+  now takes a fixed 9:19.5 aspect and the height scales the whole device. `image_fit` is honoured
+  inside the frame too — it was hardcoded to `Crop`.
+- A **legal section embedded in a Screen** showed `[label](url)` markdown as literal brackets and
+  ignored its alignment setting. Both Android legal renderers now share one parser.
+- The paywall **legal link colour** never reached the device: the console writes `link_color` and
+  this SDK reads `accent_color`, with nothing mapping between them. Mapped at the wire boundary, so
+  every published paywall is fixed on its next sync.
+
+### Added
+- **Warning banner**: `banner_subtitle`, `banner_text_align`, `banner_border_width`,
+  `banner_border_color`, `banner_corner_radius`, `banner_title_size`, `banner_subtitle_size` and
+  `banner_font_family`, all in `field_config` because `ContentBlock` sits at 245 of the JVM's
+  255-parameter ceiling. Every default reproduces the previous render.
+- **Sticky-footer subtitle**: `legal_font_size` and `legal_text_color`. It was pinned at 10sp and
+  honoured no authored size, which is why a 13pt legal section could render larger than a "16px"
+  footer line.
+- **Paywall CTA section**: `restore_gap` (the CTA↔Restore spacing, previously a hardcoded 8dp),
+  `extra_buttons` (up to six, each with its own action and styling), and `cta_action` /
+  `restore_action`. Actions are `purchase | restore | dismiss | link`; `dismiss` leaves the paywall,
+  returning the user to the previous screen.
+- **Paywall back button**: `dismiss.style = "back_button"` draws a chevron that leaves the paywall,
+  plus `dismiss.position`, `dismiss.color` and `dismiss.size` for the ✕ and the chevron alike.
+- **Paywall divider**: `margin_horizontal` is now authorable (it was already read here).
+
 ## [1.0.49] — 2026-09-01
 
 ### Fixed
@@ -110,7 +149,7 @@ purchase fires BEFORE the host has called `AppDNA.identify(userId)`,
 so the resulting Play purchase is **untagged** (no
 `obfuscatedAccountId`). 1.0.34's `EntitlementOwnerFilter` granted any
 untagged purchase to whoever happened to be identified at read time
-(migration-tolerant policy intended for legacy upgrades). Bogdan
+(migration-tolerant policy intended for legacy upgrades). Device QA
 reproduced the resulting leak on iOS: user A buys via onboarding, user
 B signs in on the same device, B taps Restore, B inherits A's purchase
 under the migration policy. Android shipped the same logic and the
@@ -160,7 +199,7 @@ firstIdentifier into the filter across all 3 active call sites:
 ## [1.0.34] — 2026-05-15
 
 Cross-platform hotfix mirroring iOS 1.0.62. Closes the cross-account
-entitlement leak — same shape as the bug Bogdan reproduced on iOS: User A
+entitlement leak — same shape as the bug reproduced on iOS: User A
 purchases on the device, User B signs in to the host app on the same
 device, B taps Restore (or just identifies), and `queryPurchasesAsync`
 returns A's purchase unfiltered, granting B a fake-premium state. The
@@ -226,7 +265,7 @@ auth-action validation.
   `radio_position` (left/right), `selected_border_width`, `unselected_border_width`,
   `option_spacing`, `bg_opacity`, and `grid_columns`. Previously every option
   rendered with the same default colors regardless of console config, so
-  flows like Nurrai's stacked select showed one uniform tile instead of
+  flows with a stacked select showed one uniform tile instead of
   four differently colored answers.
 - Grid display now renders `selected_icon` / `unselected_icon` toggle badges
   in the top-end corner and supports configurable `grid_columns` (default 2)
