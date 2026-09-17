@@ -3553,7 +3553,10 @@ private fun PaywallLegalSection(
     ) {
         section.data?.text?.let { text ->
             // Parse markdown links [text](url)
-            val annotated = buildAnnotatedStringWithLinks(text)
+            // SPEC-485 (#649) — pass the authored link colour through (accent_color, which the
+            // console's Link Color now maps onto at the sync boundary).
+            val legalLinkColor = section.data?.accent_color?.let { parseHexColor(it) }
+            val annotated = buildAnnotatedStringWithLinks(text, legalLinkColor)
             androidx.compose.foundation.text.ClickableText(
                 text = annotated,
                 style = TextStyle(color = textColor, fontSize = fontSize.sp, textAlign = textAlignment),
@@ -3605,7 +3608,20 @@ private fun PaywallLegalSection(
     }
 }
 
-private fun buildAnnotatedStringWithLinks(text: String): androidx.compose.ui.text.AnnotatedString {
+/**
+ * SPEC-485 (#649) — inline `[label](url)` links in paywall legal text.
+ *
+ * Was `private`, i.e. file-private, so the OTHER legal renderer
+ * (`screens/sections/ModuleSectionWrappers.PaywallLegalSection`, used when a paywall section is
+ * embedded in a Screen module) could not reach it and drew a plain `Text` with the brackets
+ * visible. `internal` makes it reachable across the module, so there is ONE parser rather than a
+ * second copy — a duplicate is how the split happened in the first place. iOS had the mirror of
+ * exactly this split and is fixed the same way.
+ */
+internal fun buildAnnotatedStringWithLinks(
+    text: String,
+    linkColor: Color? = null,
+): androidx.compose.ui.text.AnnotatedString {
     val builder = androidx.compose.ui.text.AnnotatedString.Builder()
     val pattern = Regex("\\[([^]]+)]\\(([^)]+)\\)")
     var lastIndex = 0
@@ -3618,7 +3634,10 @@ private fun buildAnnotatedStringWithLinks(text: String): androidx.compose.ui.tex
         builder.pushStringAnnotation(tag = "URL", annotation = url)
         builder.pushStyle(
             androidx.compose.ui.text.SpanStyle(
-                color = ai.appdna.sdk.AppDNA.brandAccentColor(),
+                // SPEC-485 (#649) — the AUTHORED link colour when there is one. This was
+                // unconditionally the brand accent, so the console's "Link Color" was ignored even
+                // once its value finally reached the device. iOS honours it via `.tint(linkColor)`.
+                color = linkColor ?: ai.appdna.sdk.AppDNA.brandAccentColor(),
                 textDecoration = androidx.compose.ui.text.style.TextDecoration.Underline,
             )
         )

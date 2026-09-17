@@ -346,8 +346,30 @@ private fun PaywallLegalSection(section: ScreenSection, context: SectionContext)
         modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 4.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
-        (section.data["text"] as? String)?.let {
-            Text(it, fontSize = size.sp, color = color, textAlign = TextAlign.Center)
+        // SPEC-485 (#649) — inline `[label](url)` links, via the SAME parser PaywallActivity uses,
+        // and the AUTHORED alignment. This was a plain Text with TextAlign.Center hardcoded, so a
+        // legal line reading "see our [Terms](https://…)" showed the literal brackets here while
+        // rendering correctly on the other Android path, and the alignment setting did nothing.
+        val legalAlign = when (section.data["alignment"] as? String) {
+            "left" -> TextAlign.Start
+            "right" -> TextAlign.End
+            else -> TextAlign.Center
+        }
+        (section.data["text"] as? String)?.let { legalText ->
+            val annotated = ai.appdna.sdk.paywalls.buildAnnotatedStringWithLinks(legalText, accent)
+            androidx.compose.foundation.text.ClickableText(
+                text = annotated,
+                style = androidx.compose.ui.text.TextStyle(
+                    color = color,
+                    fontSize = size.sp,
+                    textAlign = legalAlign,
+                ),
+                modifier = Modifier.fillMaxWidth(),
+                onClick = { offset ->
+                    annotated.getStringAnnotations(tag = "URL", start = offset, end = offset)
+                        .firstOrNull()?.let { context.onAction(SectionAction.OpenWebview(it.item)) }
+                },
+            )
         }
         @Suppress("UNCHECKED_CAST")
         val links = (section.data["links"] as? List<*>)?.mapNotNull { it as? Map<String, Any?> }
