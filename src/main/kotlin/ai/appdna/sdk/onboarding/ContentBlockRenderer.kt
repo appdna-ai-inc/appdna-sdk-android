@@ -4477,7 +4477,9 @@ private fun SocialLoginBlock(
 
         // The end slot. Guarded on the slot rather than "not top", so an interior slot does not
         // also draw one down here — which is exactly what a `!= top` test would do.
-        if (showDivider && dividerSlot >= topGroup.size) dividerRow()
+        // SPEC-478 — `topGroup.isNotEmpty()` closes the head/end overlap: with no providers "bottom" also
+        // resolves to slot 0, so the head slot above and this one both drew. Head owns the empty case.
+        if (showDivider && dividerSlot >= topGroup.size && topGroup.isNotEmpty()) dividerRow()
     }
 }
 
