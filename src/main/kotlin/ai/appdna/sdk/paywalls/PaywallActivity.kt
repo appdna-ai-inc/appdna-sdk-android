@@ -1153,7 +1153,7 @@ fun PaywallScreen(
                 }
                 // SPEC-491 (#652) — a chevron that LEAVES the paywall, which returns the user to
                 // whatever was presented before it. Same operation as close on a single-view
-                // paywall; a different glyph and a different reason for the host. Shares the
+                // paywall; only the glyph differs. Shares the
                 // x_button branch so an authored size/colour/position cannot apply to one and be
                 // forgotten on the other. Navigation between views INSIDE one paywall is a
                 // separate feature ("FR · Console · Multi-view paywalls"), not built here.
