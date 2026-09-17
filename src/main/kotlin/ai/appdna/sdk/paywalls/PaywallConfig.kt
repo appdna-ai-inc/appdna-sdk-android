@@ -357,6 +357,14 @@ data class PaywallSectionData(
      * to author it. Unset keeps 8 on every surface.
      */
     val restore_gap: Float? = null,
+    /**
+     * SPEC-492 (#651 item 4) — what the CTA and the restore link DO. Unset keeps today's behaviour
+     * exactly: the CTA purchases, the restore link restores.
+     */
+    val cta_action: String? = null,
+    val restore_action: String? = null,
+    /** SPEC-492 (#651 item 2) — additional buttons, rendered under the CTA in authored order. */
+    val extra_buttons: List<PaywallExtraButton>? = null,
 
     // SPEC-070-A finalization — CTA gradient (iOS `ctaGradient: PaywallGradient?`).
     // Console-authored CTA gradients silently rendered as solid before this.
@@ -518,6 +526,22 @@ data class PaywallCTA(
     val height: Double? = null,
     val font_size: Double? = null,
     val padding_vertical: Double? = null,
+)
+
+/**
+ * SPEC-492 (#651 item 2) — an extra button in the CTA section, beyond the CTA and the restore link.
+ * `action` is purchase | restore | dismiss | link; `dismiss` LEAVES the paywall, which returns the
+ * user to the previous screen, so there is deliberately no separate `back`.
+ */
+data class PaywallExtraButton(
+    val text: String? = null,
+    val action: String? = null,
+    val url: String? = null,
+    val bg_color: String? = null,
+    val text_color: String? = null,
+    val font_size: Float? = null,
+    /** `filled` (default) draws a button; `text` draws a tappable label like the restore link. */
+    val style: String? = null,
 )
 
 data class PaywallDismiss(
@@ -1286,6 +1310,22 @@ internal object PaywallConfigParser {
                 restore_text_color = d["restore_text_color"] as? String,
                 restore_font_size = (d["restore_font_size"] as? Number)?.toFloat(),
                 restore_gap = (d["restore_gap"] as? Number)?.toFloat(),
+                // SPEC-492 (#651 items 2 + 4) — authored button actions and extra buttons.
+                cta_action = d["cta_action"] as? String,
+                restore_action = d["restore_action"] as? String,
+                extra_buttons = (d["extra_buttons"] as? List<*>)?.mapNotNull { raw ->
+                    @Suppress("UNCHECKED_CAST")
+                    val m = raw as? Map<String, Any?> ?: return@mapNotNull null
+                    PaywallExtraButton(
+                        text = m["text"] as? String,
+                        action = m["action"] as? String,
+                        url = m["url"] as? String,
+                        bg_color = m["bg_color"] as? String,
+                        text_color = m["text_color"] as? String,
+                        font_size = (m["font_size"] as? Number)?.toFloat(),
+                        style = m["style"] as? String,
+                    )
+                },
                 // CTA gradient + height/font_size (iOS PaywallConfig.swift extras).
                 cta_gradient = (d["cta_gradient"] as? Map<String, Any>)?.let { g ->
                     @Suppress("UNCHECKED_CAST")

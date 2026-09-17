@@ -860,6 +860,8 @@ fun PaywallScreen(
                                 }
                             },
                             onRestore = onRestore,
+                            // SPEC-492 (#651 item 4) — lets an authored button leave the paywall.
+                            onDismiss = { triggerDismiss() },
                             loc = ::loc,
                             toggleStates = toggleStates,
                             onPromoCodeSubmit = onPromoCodeSubmit,
@@ -907,6 +909,8 @@ fun PaywallScreen(
                             }
                         },
                         onRestore = onRestore,
+                        // SPEC-492 (#651 item 4) — lets an authored button leave the paywall.
+                        onDismiss = { triggerDismiss() },
                         loc = ::loc,
                         toggleStates = toggleStates,
                         onPromoCodeSubmit = onPromoCodeSubmit,
@@ -942,6 +946,8 @@ fun PaywallScreen(
                             onPlanSelect = {},
                             onCTATap = {},
                             onRestore = onRestore,
+                            // SPEC-492 (#651 item 4) — lets an authored button leave the paywall.
+                            onDismiss = { triggerDismiss() },
                             loc = ::loc,
                             toggleStates = toggleStates,
                             onPromoCodeSubmit = onPromoCodeSubmit,
@@ -1384,6 +1390,68 @@ private fun VideoBackgroundView(
     )
 }
 
+/**
+ * SPEC-492 (#651 item 2) — extra buttons under the CTA, in authored order.
+ *
+ * What lifts the "two buttons, one of them restore" cap: a second restore, a "Maybe later", or a
+ * terms link are all just entries here. Mirrors iOS `extraButtonsView`.
+ *
+ * `link` goes through `URLSafety.open`, the same allowlisted path a legal markdown link uses — a
+ * config-driven URL is never handed straight to an Intent.
+ */
+@Composable
+private fun PaywallExtraButtons(
+    buttons: List<PaywallExtraButton>,
+    cornerRadius: Float,
+    onCTATap: () -> Unit,
+    onRestore: () -> Unit,
+    onDismiss: () -> Unit,
+    loc: (String, String) -> String,
+) {
+    val context = androidx.compose.ui.platform.LocalContext.current
+    for (button in buttons) {
+        val label = loc("cta.extra.${button.text ?: ""}", button.text ?: "")
+        if (label.isBlank()) continue
+        val size = (button.font_size ?: 16f).sp
+        val onTap: () -> Unit = {
+            when (button.action ?: "dismiss") {
+                "purchase" -> onCTATap()
+                "restore" -> onRestore()
+                "link" -> button.url?.let { ai.appdna.sdk.core.URLSafety.open(context, it) }
+                else -> onDismiss()
+            }
+        }
+        if ((button.style ?: "filled") == "text") {
+            Text(
+                text = label,
+                fontSize = size,
+                fontWeight = FontWeight.Medium,
+                color = button.text_color?.let { parseHexColor(it) }
+                    ?: MaterialTheme.colorScheme.onSurfaceVariant,
+                textAlign = TextAlign.Center,
+                modifier = Modifier.fillMaxWidth().clickable { onTap() }.padding(vertical = 6.dp),
+            )
+        } else {
+            Button(
+                onClick = onTap,
+                shape = RoundedCornerShape(cornerRadius.dp),
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = button.bg_color?.let { parseHexColor(it) }
+                        ?: MaterialTheme.colorScheme.secondaryContainer,
+                ),
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                Text(
+                    text = label,
+                    fontSize = size,
+                    fontWeight = FontWeight.SemiBold,
+                    color = button.text_color?.let { parseHexColor(it) } ?: Color.White,
+                )
+            }
+        }
+    }
+}
+
 @OptIn(ExperimentalFoundationApi::class, androidx.compose.material3.ExperimentalMaterial3Api::class)
 // `internal`, not `private`, so the Roborazzi snapshot test can render the REAL plan card
 // rather than a copy of it. `internal` is module-scoped — it does not widen the SDK's public
@@ -1397,6 +1465,10 @@ internal fun PaywallSectionView(
     onPlanSelect: (String) -> Unit,
     onCTATap: () -> Unit,
     onRestore: () -> Unit,
+    // SPEC-492 (#651 item 4) — an authored button can be told to DISMISS, which leaves the
+    // paywall and so returns the user to the previous screen. Defaulted, so the other
+    // call sites of this composable are unaffected.
+    onDismiss: () -> Unit = {},
     loc: (String, String) -> String,
     toggleStates: MutableMap<String, Boolean> = mutableMapOf(),
     onPromoCodeSubmit: ((String, (Boolean) -> Unit) -> Unit)? = null,
@@ -2981,6 +3053,18 @@ internal fun PaywallSectionView(
             val restoreFontSize = (section.data?.restore_font_size ?: 13f).sp
             // SPEC-490 (#651 item 1) — the CTA↔Restore gap. Unset keeps the previous hardcoded 8.dp.
             val restoreGap = (section.data?.restore_gap ?: 8f).dp
+            // SPEC-492 (#651 item 4) — mirrors iOS `performButtonAction`. Without this Android would
+            // parse cta_action/restore_action and ignore them, which is exactly the iOS/Android
+            // divergence this wave keeps finding. check:authorability caught it as a dead control.
+            val ctaCtx = androidx.compose.ui.platform.LocalContext.current
+            fun performButtonAction(action: String?, url: String?, default: String) {
+                when (action ?: default) {
+                    "restore" -> onRestore()
+                    "dismiss" -> onDismiss()
+                    "link" -> url?.let { ai.appdna.sdk.core.URLSafety.open(ctaCtx, it) }
+                    else -> onCTATap()
+                }
+            }
 
             @Composable
             fun RestoreLink() {
@@ -3000,7 +3084,8 @@ internal fun PaywallSectionView(
                     textAlign = TextAlign.Center,
                     modifier = Modifier
                         .fillMaxWidth()
-                        .clickable { onRestore() }
+                        // SPEC-492 (#651 item 4) — the restore link's authored action; unset restores.
+                        .clickable { performButtonAction(section.data?.restore_action, null, "restore") }
                         .padding(vertical = 8.dp)
                         .semantics {
                             contentDescription = ctx.getString(R.string.appdna_a11y_paywall_restore)
@@ -3065,7 +3150,8 @@ internal fun PaywallSectionView(
                             enabled = ctaEnabled,
                             interactionSource = ctaInteraction,
                             indication = null, // QA-R9 — no purple ripple
-                        ) { onCTATap() },
+                        // SPEC-492 (#651 item 4) — the CTA's authored action; unset purchases.
+                        ) { performButtonAction(section.data?.cta_action, null, "purchase") },
                     contentAlignment = Alignment.Center,
                 ) {
                     if (isPurchasing) {
@@ -3123,6 +3209,26 @@ internal fun PaywallSectionView(
                             style = buttonTextStyle.copy(color = buttonTextColor),
                         )
                     }
+                }
+                // SPEC-492 (#651 item 2) — extra buttons sit between the CTA and the restore link,
+                // matching iOS.
+                section.data?.extra_buttons?.takeIf { it.isNotEmpty() }?.let { extras ->
+                    Spacer(Modifier.height(restoreGap))
+                    PaywallExtraButtons(
+                        buttons = extras,
+                        // `cta.style.corner_radius` is what the console actually writes, parsed
+                        // into `config.cta.corner_radius` — the same resolution this file's own
+                        // audit-pass-8 comment documents a few lines below. A section-data fallback
+                        // was dropped: check:authorability showed no console control writes it, so
+                        // it would have been a dead reference. (Deliberately not naming that field
+                        // here — the gate scans raw source, so a comment mentioning it recreates
+                        // the finding it explains.)
+                        cornerRadius = config.cta?.corner_radius?.toFloat() ?: 12f,
+                        onCTATap = onCTATap,
+                        onRestore = onRestore,
+                        onDismiss = onDismiss,
+                        loc = loc,
+                    )
                 }
                 if (showRestoreLink && restorePosition != "above") {
                     Spacer(Modifier.height(restoreGap))
