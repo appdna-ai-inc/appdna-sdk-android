@@ -2388,13 +2388,21 @@ private fun ImageBlock(block: ContentBlock) {
         val outerR = if (thin) 32.dp else 40.dp
         val innerR = if (thin) 28.dp else 30.dp
         // EPIC-3 — phone mockup: dark bezel + dynamic-island notch, image fills the "screen".
-        // SPEC-419 pass-13 — cap at 260dp wide + center, matching iOS phoneMockup
-        // `.frame(maxWidth: 260)` (+ preview). Without the cap the bezel stretched
-        // full device-width on Android.
+        // #610 — the screen was `imgHeightMax` tall by a HARDCODED 260dp wide, so Height changed
+        // only the height: at the default 200 the "phone" was LANDSCAPE (260×200) and every other
+        // height was some other arbitrary shape. A phone has a FIXED shape, so the screen takes a
+        // 9:19.5 aspect (modern iPhone) and the authored height scales the whole device
+        // proportionally. Parity with iOS phoneMockup + the console preview.
+        val mockAspect = 9f / 19.5f
+        val maxScreenW = 260.dp - bezelPad * 2
+        val screenW = if (explicitW != null) explicitW.dp - bezelPad * 2
+            else minOf(imgHeightMax * mockAspect, maxScreenW)
+        val screenH = screenW / mockAspect
+        // Proportional too: a fixed 96dp notch overflowed a narrow phone.
+        val notchW = minOf(96.dp, screenW * 0.42f)
         Box(modifier = Modifier.fillMaxWidth(), contentAlignment = androidx.compose.ui.Alignment.TopCenter) {
         Box(
             modifier = Modifier
-                .then(if (explicitW != null) imgWidthMod else Modifier.widthIn(max = 260.dp).fillMaxWidth())
                 .clip(RoundedCornerShape(outerR))
                 .background(androidx.compose.ui.graphics.Color(0xFF101012))
                 .padding(bezelPad),
@@ -2403,18 +2411,20 @@ private fun ImageBlock(block: ContentBlock) {
                 ai.appdna.sdk.core.NetworkImage(
                     url = block.image_url,
                     modifier = Modifier
-                        .fillMaxWidth()
-                        .height(imgHeightMax)
+                        .width(screenW)
+                        .height(screenH)
                         .clip(RoundedCornerShape(innerR))
                         .background(androidx.compose.ui.graphics.Color(0xFF2A2A2E)),
-                    contentScale = androidx.compose.ui.layout.ContentScale.Crop,
+                    // #610 — image_fit is honored INSIDE the mockup; it was hardcoded to Crop,
+                    // which is why the reporter's "Fit" attempt did nothing.
+                    contentScale = contentScale,
                     contentDescription = block.alt ?: "Image",
                 )
                 Box(
                     modifier = Modifier
                         .align(androidx.compose.ui.Alignment.TopCenter)
                         .padding(top = 8.dp)
-                        .width(96.dp)
+                        .width(notchW)
                         .height(26.dp)
                         .clip(RoundedCornerShape(13.dp))
                         .background(androidx.compose.ui.graphics.Color.Black),
