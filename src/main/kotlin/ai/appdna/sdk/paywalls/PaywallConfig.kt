@@ -526,6 +526,13 @@ data class PaywallDismiss(
     val allowed: Boolean = true,
     val delay_seconds: Int? = null,
     val text: String? = null,
+    /**
+     * SPEC-491 (#652) — placement, colour and size for the X / back chevron. Unset keeps the
+     * previous hardcoded top-right, white and 16sp.
+     */
+    val position: String? = null,
+    val color: String? = null,
+    val size: Float? = null,
 )
 
 data class PaywallBackground(
@@ -800,7 +807,11 @@ internal object PaywallConfigParser {
                 style = rawStyle,
                 allowed = it["allowed"] as? Boolean ?: true,
                 delay_seconds = (it["delay_seconds"] as? Number)?.toInt(),
-                text = it["text"] as? String
+                text = it["text"] as? String,
+                // SPEC-491 (#652) — placement, colour and size for the X / back chevron.
+                position = it["position"] as? String,
+                color = it["color"] as? String,
+                size = (it["size"] as? Number)?.toFloat()
             )
         }
 

@@ -1151,18 +1151,27 @@ fun PaywallScreen(
                             .background(Color.White.copy(alpha = 0.5f))
                     )
                 }
-                else -> { // x_button (default)
+                // SPEC-491 (#652) — a chevron that LEAVES the paywall, which returns the user to
+                // whatever was presented before it. Same operation as close on a single-view
+                // paywall; a different glyph and a different reason for the host. Shares the
+                // x_button branch so an authored size/colour/position cannot apply to one and be
+                // forgotten on the other. Navigation between views INSIDE one paywall is a
+                // separate feature ("FR · Console · Multi-view paywalls"), not built here.
+                else -> { // back_button chevron, or x_button (the default)
                     val closeCd = stringResource(R.string.appdna_a11y_paywall_close)
+                    val glyphSize = (config.dismiss?.size ?: 16f)
+                    val glyphColor = config.dismiss?.color?.let { parseHexColor(it) } ?: Color.White
+                    val onLeft = (config.dismiss?.position ?: "top_right") == "top_left"
                     IconButton(
                         onClick = { triggerDismiss() },
                         modifier = Modifier
-                            .align(Alignment.TopEnd)
+                            .align(if (onLeft) Alignment.TopStart else Alignment.TopEnd)
                             // SPEC-419 — sit BELOW the status bar (edge-to-edge Activity),
                             // matching iOS which places the X inside the safe area. Without
                             // this the X overlapped the clock/battery and was hard to tap.
                             .statusBarsPadding()
                             .padding(16.dp)
-                            .size(32.dp)
+                            .size((glyphSize * 2).dp)
                             .clip(CircleShape)
                             .background(Color.Black.copy(alpha = 0.3f))
                             // SPEC-070-A J.11 \u2014 close X has no semantic icon
@@ -1171,9 +1180,10 @@ fun PaywallScreen(
                             .semantics { contentDescription = closeCd },
                     ) {
                         Text(
-                            text = "\u2715",
-                            color = Color.White,
-                            fontSize = 16.sp,
+                            // ✕ for close, ‹ for back — the glyph is the only visual difference.
+                            text = if (dismissType == "back_button") "\u2039" else "\u2715",
+                            color = glyphColor,
+                            fontSize = glyphSize.sp,
                             fontWeight = FontWeight.SemiBold
                         )
                     }
