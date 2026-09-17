@@ -2213,7 +2213,19 @@ fun OnboardingStepView(
             toggleValues = toggleValues,
             inputValues = inputValues,
             onNext = onNext,
-            onSkip = if (step.config.skip_enabled == true) onSkip else null,
+            // SPEC-476 (#632) — pass this through UNCONDITIONALLY, as iOS does.
+            //
+            // This used to read `if (step.config.skip_enabled == true) onSkip else null`, which made a CTA with
+            // `action: "skip"` a silent dead button: the dispatch below is `onSkip?.invoke()`, so a null handler
+            // does nothing at all. WineTrails' Location step is exactly that — {"text":"Confirm","action":"skip"}
+            // on a step where `skip_enabled` is undefined — and their users could not get past it on Android while
+            // iOS advanced fine.
+            //
+            // `skip_enabled` means "render a Skip affordance", not "is skipping possible". iOS uses it in exactly
+            // two places and both are a Button("Skip") — ChatStepView.swift:405 and OnboardingRenderer.swift:1512 —
+            // while its CTA path (OnboardingRenderer.swift:1622) is an unconditional `case "skip": onSkip()`.
+            // The two affordance call sites below still consult the flag, because that IS what it means.
+            onSkip = onSkip,
             modifier = modifier,
             currentStepIndex = currentStepIndex,
             totalSteps = totalSteps,
