@@ -2919,18 +2919,70 @@ private fun WarningBannerBlock(block: ContentBlock, loc: ((String, String) -> St
     // accent-tinted background / white message text; unset keeps the variant defaults (parity w/ iOS).
     val bgOverride = block.bg_color?.let { StyleEngine.parseColor(it) }
     val textColor = StyleEngine.parseColor(block.text_color ?: "#FFFFFF")
+    // SPEC-481 (#601) — subtitle + alignment, own border/radius, per-role font size, font family.
+    // Parity with iOS warningBannerBlock; EVERY default reproduces the pre-SPEC-481 render
+    // (14/medium, radius 12, 1dp accent@0.45, leading) so published banners are unchanged.
+    // Chrome is deliberately NOT routed through block_style: applyBlockStyle clips at
+    // border_radius ?: 0 and strokes on top, which would square these corners and double the border.
+    val fc = block.field_config
+    val rawSubtitle = (fc?.get("banner_subtitle") as? String).orEmpty()
+    val subtitle = if (rawSubtitle.isEmpty()) ""
+        else (loc?.invoke("block.${block.id}.banner_subtitle", rawSubtitle) ?: rawSubtitle)
+    val align = (fc?.get("banner_text_align") as? String) ?: "leading"
+    val hAlign = when (align) {
+        "center" -> Alignment.CenterHorizontally
+        "trailing" -> Alignment.End
+        else -> Alignment.Start
+    }
+    val tAlign = when (align) {
+        "center" -> TextAlign.Center
+        "trailing" -> TextAlign.End
+        else -> TextAlign.Start
+    }
+    val radius = ((fc?.get("banner_corner_radius") as? Number)?.toFloat() ?: 12f).dp
+    val borderWidth = ((fc?.get("banner_border_width") as? Number)?.toFloat() ?: 1f).dp
+    val borderColor = (fc?.get("banner_border_color") as? String)?.let { StyleEngine.parseColor(it) }
+        ?: accent.copy(alpha = 0.45f)
+    val family = ai.appdna.sdk.core.FontResolver.resolve(fc?.get("banner_font_family") as? String)
+    val titleSize = ((fc?.get("banner_title_size") as? Number)?.toFloat() ?: 14f).sp
+    val subtitleSize = ((fc?.get("banner_subtitle_size") as? Number)?.toFloat() ?: 13f).sp
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(12.dp))
+            .clip(RoundedCornerShape(radius))
             .background(bgOverride ?: accent.copy(alpha = 0.14f))
-            .border(1.dp, accent.copy(alpha = 0.45f), RoundedCornerShape(12.dp))
+            .border(borderWidth, borderColor, RoundedCornerShape(radius))
             .padding(horizontal = 14.dp, vertical = 12.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(10.dp),
     ) {
         Text(icon, fontSize = 18.sp)
-        Text(text, fontSize = 14.sp, fontWeight = FontWeight.Medium, color = textColor)
+        Column(
+            modifier = Modifier.weight(1f),
+            horizontalAlignment = hAlign,
+            verticalArrangement = Arrangement.spacedBy(2.dp),
+        ) {
+            Text(
+                text,
+                fontSize = titleSize,
+                fontWeight = FontWeight.Medium,
+                color = textColor,
+                fontFamily = family,
+                textAlign = tAlign,
+                modifier = Modifier.fillMaxWidth(),
+            )
+            if (subtitle.isNotEmpty()) {
+                Text(
+                    subtitle,
+                    fontSize = subtitleSize,
+                    fontWeight = FontWeight.Normal,
+                    color = textColor,
+                    fontFamily = family,
+                    textAlign = tAlign,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+            }
+        }
     }
 }
 
