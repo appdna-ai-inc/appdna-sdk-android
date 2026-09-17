@@ -4587,8 +4587,14 @@ private fun PaywallStickyFooter(
                 text = loc("sticky_footer.legal", legalText),
                 // SPEC-401-A R86 (Lens A F5) — theme-adaptive legal matches iOS
                 // `.foregroundColor(.secondary)` at PaywallRenderer.swift:1103.
-                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
-                fontSize = 10.sp,
+                // SPEC-487 (#648) — now authorable. Unset keeps this exact colour and 10sp, so a
+                // published paywall is unchanged; what changes is that an author CAN size it. The
+                // hardcoded 10sp is why #648 read as a Legal-section bug: the Legal SECTION honoured
+                // its authored 13, this line did not honour the 16 set beside it, so the legal
+                // paragraph really did render larger.
+                color = section.data?.legal_text_color?.let { parseHexColor(it) }
+                    ?: MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
+                fontSize = (section.data?.legal_font_size ?: 10f).sp,
                 textAlign = TextAlign.Center,
                 modifier = Modifier.fillMaxWidth(),
             )

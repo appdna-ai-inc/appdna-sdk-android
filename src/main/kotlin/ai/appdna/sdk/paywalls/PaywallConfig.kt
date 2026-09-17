@@ -220,6 +220,14 @@ data class PaywallSectionData(
     val secondary_action: String? = null,    // restore | link
     val secondary_url: String? = null,
     val legal_text: String? = null,
+    /**
+     * SPEC-487 (#648) — the sticky footer's Subtitle was drawn at a HARDCODED 10sp here and 10pt on
+     * iOS, honouring no authored size or colour, while the Legal SECTION honoured its own. That is
+     * what made #648 read as a Legal bug: a 13pt legal paragraph really did render larger than this
+     * line, which the author had sized to 16. Unset keeps 10sp / the secondary colour.
+     */
+    val legal_font_size: Float? = null,
+    val legal_text_color: String? = null,
     val blur_background: Boolean? = null,
     val padding: Float? = null,
 
@@ -1108,6 +1116,8 @@ internal object PaywallConfigParser {
                 secondary_action = d["secondary_action"] as? String,
                 secondary_url = d["secondary_url"] as? String,
                 legal_text = d["legal_text"] as? String,
+                legal_font_size = (d["legal_font_size"] as? Number)?.toFloat(),
+                legal_text_color = d["legal_text_color"] as? String,
                 blur_background = d["blur_background"] as? Boolean,
                 padding = (d["padding"] as? Number)?.toFloat(),
                 // SPEC-089d: Carousel section
