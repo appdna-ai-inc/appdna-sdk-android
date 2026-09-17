@@ -1195,6 +1195,19 @@ class SharedFixtureTest(
                 spy.state["parsed_frame_color"] = block.field_config?.get("frame_color") as? String
                 spy.state["parsed_frame_glow_color"] = block.field_config?.get("frame_glow_color") as? String
                 // #580 — the Sound Button's authored icon.
+                // SPEC-481 (#601) — the warning banner's subtitle, alignment, own chrome and
+                // per-role typography. All in `field_config`: ContentBlock is at 245 of the JVM's
+                // 255-param ceiling, so these could not be top-level fields at any price.
+                spy.state["parsed_banner_variant"] = block.field_config?.get("banner_variant") as? String
+                spy.state["parsed_banner_icon"] = block.field_config?.get("banner_icon") as? String
+                spy.state["parsed_banner_subtitle"] = block.field_config?.get("banner_subtitle") as? String
+                spy.state["parsed_banner_text_align"] = block.field_config?.get("banner_text_align") as? String
+                spy.state["parsed_banner_border_color"] = block.field_config?.get("banner_border_color") as? String
+                spy.state["parsed_banner_font_family"] = block.field_config?.get("banner_font_family") as? String
+                spy.state["parsed_banner_border_width"] = (block.field_config?.get("banner_border_width") as? Number)?.toDouble()
+                spy.state["parsed_banner_corner_radius"] = (block.field_config?.get("banner_corner_radius") as? Number)?.toDouble()
+                spy.state["parsed_banner_title_size"] = (block.field_config?.get("banner_title_size") as? Number)?.toDouble()
+                spy.state["parsed_banner_subtitle_size"] = (block.field_config?.get("banner_subtitle_size") as? Number)?.toDouble()
                 spy.state["parsed_sound_icon"] = block.field_config?.get("sound_icon") as? String
                 spy.state["parsed_sound_icon_color"] = block.field_config?.get("sound_icon_color") as? String
                 spy.state["parsed_sound_icon_size"] = (block.field_config?.get("sound_icon_size") as? Number)?.toDouble()
@@ -1409,6 +1422,23 @@ class SharedFixtureTest(
                 // unauthored paywall rendering exactly as it did before.
                 spy.state["parsed_plan1_price_total_display"] = p1?.price_total_display
                 spy.state["parsed_plan1_badge_enabled"] = p1?.description_badge?.enabled
+                // SPEC-485 (#649) — the legal section. The text arrives with its markdown INTACT
+                // (parsing is the SDK's job), and the link colour arrives as `accent_color`, the key
+                // both natives read and the one the console's `link_color` is mapped onto at the
+                // wire boundary — nothing used to map them, so the authored colour never reached a
+                // device. Then the REAL parser both Android legal renderers call is run over it.
+                val legalSection = parsed.sections.firstOrNull { it.type == "legal" }
+                spy.state["parsed_legal_text"] = legalSection?.data?.text
+                spy.state["parsed_legal_accent_color"] = legalSection?.data?.accent_color
+                spy.state["parsed_legal_font_size"] = legalSection?.data?.font_size?.toDouble()
+                spy.state["parsed_legal_alignment"] = legalSection?.data?.alignment
+                legalSection?.data?.text?.let { legalText ->
+                    val annotated = ai.appdna.sdk.paywalls.buildAnnotatedStringWithLinks(legalText)
+                    spy.state["parsed_legal_rendered_text"] = annotated.text
+                    val urls = annotated.getStringAnnotations("URL", 0, annotated.text.length)
+                    spy.state["parsed_legal_link_count"] = urls.size
+                    spy.state["parsed_legal_first_link_url"] = urls.firstOrNull()?.item
+                }
             }
             "survey_themes" -> {
                 // The fixture's config IS the theme document; SurveyAppearance owns both the theme
