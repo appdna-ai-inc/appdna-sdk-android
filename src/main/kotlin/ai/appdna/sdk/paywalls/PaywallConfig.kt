@@ -351,6 +351,12 @@ data class PaywallSectionData(
     val restore_position: String? = null, // "above" | "below"
     val restore_text_color: String? = null,
     val restore_font_size: Float? = null,
+    /**
+     * SPEC-490 (#651 item 1) — the gap between the CTA button and the Restore link. Was a
+     * hardcoded Spacer(8.dp) here, VStack(spacing: 8) on iOS and mt-2 in the preview, with no way
+     * to author it. Unset keeps 8 on every surface.
+     */
+    val restore_gap: Float? = null,
 
     // SPEC-070-A finalization — CTA gradient (iOS `ctaGradient: PaywallGradient?`).
     // Console-authored CTA gradients silently rendered as solid before this.
@@ -1268,6 +1274,7 @@ internal object PaywallConfigParser {
                 restore_position = d["restore_position"] as? String,
                 restore_text_color = d["restore_text_color"] as? String,
                 restore_font_size = (d["restore_font_size"] as? Number)?.toFloat(),
+                restore_gap = (d["restore_gap"] as? Number)?.toFloat(),
                 // CTA gradient + height/font_size (iOS PaywallConfig.swift extras).
                 cta_gradient = (d["cta_gradient"] as? Map<String, Any>)?.let { g ->
                     @Suppress("UNCHECKED_CAST")

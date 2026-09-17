@@ -2969,6 +2969,8 @@ internal fun PaywallSectionView(
             val restoreColor = section.data?.restore_text_color?.let { parseHexColor(it) }
                 ?: Color.White.copy(alpha = 0.6f)
             val restoreFontSize = (section.data?.restore_font_size ?: 13f).sp
+            // SPEC-490 (#651 item 1) — the CTA↔Restore gap. Unset keeps the previous hardcoded 8.dp.
+            val restoreGap = (section.data?.restore_gap ?: 8f).dp
 
             @Composable
             fun RestoreLink() {
@@ -2999,7 +3001,7 @@ internal fun PaywallSectionView(
             Column(modifier = Modifier.fillMaxWidth().navigationBarsPadding()) {
                 if (showRestoreLink && restorePosition == "above") {
                     RestoreLink()
-                    Spacer(Modifier.height(8.dp))
+                    Spacer(Modifier.height(restoreGap))
                 }
                 // CTA Button — paints gradient if present, else solid color.
                 // SPEC-401-A R70 (Lens C P1) — gate enabled state by both
@@ -3113,7 +3115,7 @@ internal fun PaywallSectionView(
                     }
                 }
                 if (showRestoreLink && restorePosition != "above") {
-                    Spacer(Modifier.height(8.dp))
+                    Spacer(Modifier.height(restoreGap))
                     RestoreLink()
                 }
             }
