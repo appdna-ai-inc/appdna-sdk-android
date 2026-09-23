@@ -350,6 +350,9 @@ data class PaywallSectionData(
     val show_restore: Boolean? = null,
     val restore_position: String? = null, // "above" | "below"
     val restore_text_color: String? = null,
+    // #651 — Restore's own fill + radius, mirroring the pair the CTA already has.
+    val restore_bg_color: String? = null,
+    val restore_corner_radius: Float? = null,
     val restore_font_size: Float? = null,
     /**
      * SPEC-490 (#651 item 1) — the gap between the CTA button and the Restore link. Was a
@@ -542,6 +545,8 @@ data class PaywallExtraButton(
     val font_size: Float? = null,
     /** `filled` (default) draws a button; `text` draws a tappable label like the restore link. */
     val style: String? = null,
+    /** #651 — its own radius; unset inherits the CTA's so existing paywalls are untouched. */
+    val corner_radius: Float? = null,
 )
 
 data class PaywallDismiss(
@@ -557,6 +562,21 @@ data class PaywallDismiss(
     val position: String? = null,
     val color: String? = null,
     val size: Float? = null,
+    /** #652 (round 2) — the Back button is its OWN control, configured independently of Close. */
+    val back: PaywallBackButton? = null,
+)
+
+/** #652 (round 2) — the second dismissal affordance. iOS parity: `PaywallBackButton`. */
+data class PaywallBackButton(
+    val enabled: Boolean? = null,
+    /** `chevron` (default) | `arrow` | `text_link`. */
+    val style: String? = null,
+    /** Back defaults to the LEFT, the side Close is not, so both can show without overlapping. */
+    val position: String? = null,
+    val color: String? = null,
+    val size: Float? = null,
+    val delay_seconds: Int? = null,
+    val text: String? = null,
 )
 
 data class PaywallBackground(
@@ -835,7 +855,19 @@ internal object PaywallConfigParser {
                 // SPEC-491 (#652) — placement, colour and size for the X / back chevron.
                 position = it["position"] as? String,
                 color = it["color"] as? String,
-                size = (it["size"] as? Number)?.toFloat()
+                size = (it["size"] as? Number)?.toFloat(),
+                // #652 (round 2) — the Back button's own config.
+                back = (it["back"] as? Map<*, *>)?.let { b ->
+                    PaywallBackButton(
+                        enabled = b["enabled"] as? Boolean,
+                        style = b["style"] as? String,
+                        position = b["position"] as? String,
+                        color = b["color"] as? String,
+                        size = (b["size"] as? Number)?.toFloat(),
+                        delay_seconds = (b["delay_seconds"] as? Number)?.toInt(),
+                        text = b["text"] as? String,
+                    )
+                }
             )
         }
 
@@ -1308,6 +1340,8 @@ internal object PaywallConfigParser {
                 show_restore = d["show_restore"] as? Boolean,
                 restore_position = d["restore_position"] as? String,
                 restore_text_color = d["restore_text_color"] as? String,
+                restore_bg_color = d["restore_bg_color"] as? String,
+                restore_corner_radius = (d["restore_corner_radius"] as? Number)?.toFloat(),
                 restore_font_size = (d["restore_font_size"] as? Number)?.toFloat(),
                 restore_gap = (d["restore_gap"] as? Number)?.toFloat(),
                 // SPEC-492 (#651 items 2 + 4) — authored button actions and extra buttons.
@@ -1324,6 +1358,7 @@ internal object PaywallConfigParser {
                         text_color = m["text_color"] as? String,
                         font_size = (m["font_size"] as? Number)?.toFloat(),
                         style = m["style"] as? String,
+                        corner_radius = (m["corner_radius"] as? Number)?.toFloat(),
                     )
                 },
                 // CTA gradient + height/font_size (iOS PaywallConfig.swift extras).

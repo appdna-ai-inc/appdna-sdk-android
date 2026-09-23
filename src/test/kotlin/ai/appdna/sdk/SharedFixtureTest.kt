@@ -218,6 +218,8 @@ class SharedFixtureTest(
             "interpolate_template" -> runInterpolateTemplate(action, spy)
             "fetch_remote_config" -> runFetchRemoteConfig(action, spy)
             "merge_step_override" -> runMergeStepOverride(spy)
+            "refresh_step_interaction" -> runRefreshStepInteraction(action, spy)
+            "multi_buttons_layout" -> runMultiButtonsLayout(action, spy)
             "compose_map_url" -> runComposeMapUrl(action, spy)
             "receive_push" -> runReceivePush(action, spy)
             "tap_push" -> runTapPush(action, spy)
@@ -1053,6 +1055,93 @@ class SharedFixtureTest(
      * from only the named blocks would delete the heading and the button, and every assertion about
      * the named block would still pass.
      */
+    /**
+     * #657 — a refresh button's interaction, driven through the REAL public functions: the result
+     * type the bridges build, the pure applier, and the same read-time option override the renderer
+     * uses. Nothing here reimplements the behaviour, which is the only way this fixture can fail
+     * when the behaviour regresses.
+     */
+    /** #609 — the Multi-buttons arrangement, through the real parser and the real row-plan rule. */
+    private fun runMultiButtonsLayout(action: JSONObject, spy: Spy) {
+        val cfg = config ?: error("setup.config missing")
+        val stepMap = mapOf<String, Any>(
+            "id" to cfg.optString("id", "step"),
+            "type" to "custom",
+            "config" to mapOf("content_blocks" to (cfg.optJSONArray("content_blocks")?.asList() ?: emptyList<Any>())),
+        )
+        val blocks = OnboardingConfigParser.parseStepForTest(stepMap)?.config?.content_blocks
+            ?: error("multi_buttons_layout: setup.config has no parseable content_blocks")
+        val group = blocks.firstOrNull { it.id == action.optString("block_id") }
+            ?: error("multi_buttons_layout: no block ${action.optString("block_id")}")
+
+        val children = group.children ?: group.stack_children ?: emptyList()
+        val perRow = ((group.field_config?.get("buttons_per_row") as? Number)?.toInt() ?: 2).coerceIn(1, 3)
+        val plan = ai.appdna.sdk.onboarding.multiButtonRowPlan(children.size, perRow)
+
+        spy.state["child_count"] = children.size
+        spy.state["buttons_per_row"] = perRow
+        spy.state["row_plan"] = plan
+        spy.state["last_row_is_full"] = plan.isNotEmpty() && plan.last() == perRow
+        spy.state["last_row_centered"] =
+            (group.field_config?.get("last_row") as? String ?: "center") == "center" &&
+                plan.isNotEmpty() && plan.last() != perRow
+        spy.state["group_background"] = group.block_style?.background_color ?: ""
+    }
+
+    private fun runRefreshStepInteraction(action: JSONObject, spy: Spy) {
+        val cfg = config ?: error("setup.config missing")
+        val blockId = action.optString("block_id")
+        val targetId = action.optString("target_block_id")
+
+        // Parsed through the SAME step parser the renderer uses, so the driver is fed the shape the
+        // SDK actually gets at runtime rather than a convenient copy of it.
+        val stepMap = mapOf<String, Any>(
+            "id" to cfg.optString("id", "step"),
+            "type" to "custom",
+            "config" to mapOf("content_blocks" to (cfg.optJSONArray("content_blocks")?.asList() ?: emptyList<Any>())),
+        )
+        val parsed = OnboardingConfigParser.parseStepForTest(stepMap)?.config?.content_blocks
+            ?: error("refresh_step_interaction: setup.config has no parseable content_blocks")
+
+        val button = parsed.firstOrNull { it.id == blockId }
+            ?: error("refresh_step_interaction: no block $blockId in setup.config")
+        // The authored action is what routes the tap into the interaction hook at all.
+        assertEquals("refresh_step", button.action)
+        spy.state["interaction_action"] = "refresh"
+        spy.state["interaction_block_id"] = button.id
+
+        val hostOptions = sessionData.optJSONObject("host_field_options")
+            ?: error("refresh_step_interaction needs setup.session_data.host_field_options")
+        val byBlock = mutableMapOf<String, List<ai.appdna.sdk.onboarding.InputOption>>()
+        for (id in hostOptions.keys()) {
+            val arr = hostOptions.optJSONArray(id) ?: continue
+            val maps = (0 until arr.length()).mapNotNull { i -> arr.optJSONObject(i)?.let { jsonValueToKotlin(it) } }
+            byBlock[id] = OnboardingConfigParser.parseInputOptionList(maps)
+        }
+
+        // The real result type the bridges build, through the real pure applier.
+        val result = ai.appdna.sdk.onboarding.ElementInteractionResult(
+            fieldOptions = byBlock,
+            advance = sessionData.optBoolean("host_advance", false),
+        )
+        val applied = ai.appdna.sdk.onboarding.applyInteractionResult(result, emptyMap())
+        spy.state["advance"] = applied.advance
+
+        val refreshed = ai.appdna.sdk.onboarding.resolvedFieldOptions(
+            parsed.first { it.id == targetId }, applied.fieldOptionsOverrides,
+        )
+        spy.state["refreshed_option_count"] = refreshed.field_options?.size ?: 0
+        spy.state["refreshed_option0_value"] = refreshed.field_options?.firstOrNull()?.value ?: ""
+        spy.state["refreshed_option0_label"] = refreshed.field_options?.firstOrNull()?.label ?: ""
+
+        // A block the host did NOT name keeps every authored option — the override is targeted.
+        val untouched = ai.appdna.sdk.onboarding.resolvedFieldOptions(
+            parsed.first { it.id != targetId && it.type == "input_select" }, applied.fieldOptionsOverrides,
+        )
+        spy.state["untouched_option_count"] = untouched.field_options?.size ?: 0
+        spy.state["untouched_option0_label"] = untouched.field_options?.firstOrNull()?.label ?: ""
+    }
+
     private fun runMergeStepOverride(spy: Spy) {
         val hostOptions = sessionData.optJSONObject("host_field_options")
         val hostRoutes = sessionData.optJSONObject("host_map_routes")
@@ -1344,10 +1433,16 @@ class SharedFixtureTest(
                     val rawStats = r.field_config?.get("summary_stats") as? List<*>
                     val firstStat = rawStats?.firstOrNull() as? Map<*, *>
                     spy.state["resolved_stat0_value"] = (firstStat?.get("value") as? String) ?: ""
-                    // A stat that could not resolve and had no `| fallback` is DROPPED, so the count
-                    // is what proves the raw token never reaches a renderer.
+                    // #660 — a stat that cannot resolve and has a usable LABEL keeps its place and
+                    // shows a placeholder; one with nothing to say is still dropped. The count plus
+                    // the per-index values are what prove no raw token reaches a renderer either way.
                     spy.state["resolved_stat_count"] = rawStats?.size ?: 0
                     spy.state["resolved_stat0_label"] = (firstStat?.get("label") as? String) ?: ""
+                    rawStats?.forEachIndexed { i, entry ->
+                        val st = entry as? Map<*, *> ?: return@forEachIndexed
+                        spy.state["resolved_stat${i}_value"] = (st["value"] as? String) ?: ""
+                        spy.state["resolved_stat${i}_label"] = (st["label"] as? String) ?: ""
+                    }
                     // SPEC-452 — the resolved CHILD of a container. Children bypassed resolution
                     // entirely, and a fixture reading only the container's own keys cannot see that:
                     // it stays green whether or not the recursion exists.

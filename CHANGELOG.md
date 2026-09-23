@@ -4,6 +4,48 @@ All notable changes to the AppDNA Android SDK are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and
 the project uses [Semantic Versioning](https://semver.org/).
 
+## [1.0.51] — 2026-09-23
+
+Wraps iOS 1.0.79. Publishable version and feature-parity marker move independently — see
+`gradle.properties`.
+
+### Fixed
+- A stray grey **"Skip"** drew under the CTA of *every* screen. The render was gated on the skip
+  handler being non-null, and SPEC-476 had just made that handler unconditional — so the proxy for
+  "is skipping allowed" stopped meaning anything. It reads `skip_enabled` now, which is the flag the
+  console actually writes. (#653)
+- **`horizontal_align` did nothing on a width-constrained block.** A block with `element_width` of
+  `75%` or `300px` got its sizing box first, and the alignment was then applied *inside* a box
+  already shrunk to that width — so there was no room left to move in. A width-constrained block now
+  gets an outer full-width box that carries the alignment, matching SwiftUI's frame order. Affected
+  the pre-paywall Sound button and the "Regenerate Results" button. (#654, #659)
+- **Content sat behind the pinned bottom zone** and could not be scrolled to. The scroll area
+  reserved a hardcoded 80dp under a zone that is routinely ~140dp (two buttons plus a legal line),
+  so the last lines of a summary were unreachable — the scroll range ended before them. The reserve
+  is the zone's measured height now, and stays 0 when there is no bottom zone so short centred
+  screens stay centred. (#655)
+- **Summary cards vanished** when a single token did not resolve. SPEC-446 dropped the whole stat,
+  so one missing key in the host payload took the row with it. A card is dropped only when it would
+  say nothing at all: an unresolved *value* keeps the card and shows an em-dash, an unresolved
+  *label* keeps the value and drops the caption. (#660)
+- The **"or" text inside a social-login divider** was pinned to the theme's 60%-alpha on-surface
+  colour, so the authored colour applied to the line and not to the word between its segments.
+  Reads `divider_text_color` now. (#615)
+
+### Added
+- **Multi-buttons** — a group that lays its children out 1–3 per row, with the short last row either
+  centred or stretched, and its own background and corner radius. The children are real `button`
+  blocks carrying every Button setting, because each one triggers something different in the host
+  app. (#609)
+- A button action that **refreshes the step in place**. Until now `onElementInteraction` was fired
+  only by a fixed set of interactive blocks and never by a button, so a "Show more options" control
+  had no way to ask the host for new content without also advancing. The host's reply can now
+  replace a named block's `field_options`, which is where a select's options actually live. (#657)
+- Paywalls: a **standalone Back button** with its own style, position, colour, size, delay and text,
+  independent of the close affordance. (#652)
+- Paywalls: **Restore background colour and corner radius**, and a corner radius on each extra CTA
+  button. (#651)
+
 ## [1.0.50] — 2026-09-17
 
 Wraps iOS 1.0.78. Publishable version and feature-parity marker move independently — see

@@ -547,6 +547,8 @@ fun PaywallScreen(
 ) {
     var selectedPlanId by remember { mutableStateOf<String?>(null) }
     var showDismiss by remember { mutableStateOf(false) }
+    // #652 (round 2) — the Back button has its OWN delay, so it cannot ride on `showDismiss`.
+    var showBack by remember { mutableStateOf(false) }
     var isPurchasing by remember { mutableStateOf(false) }
     var isDismissing by remember { mutableStateOf(false) }
     var dragOffset by remember { mutableStateOf(0f) }
@@ -665,6 +667,22 @@ fun PaywallScreen(
             kotlinx.coroutines.delay(delay * 1000L)
         }
         showDismiss = true
+    }
+
+    // #652 (round 2) — the Back button reveals on its own schedule. Deliberately NOT gated on
+    // `dismiss.allowed`: that flag is about the close affordance on a force-choice paywall, and an
+    // author who switched Back on has said what they want.
+    LaunchedEffect(config.dismiss?.back?.enabled, config.dismiss?.back?.delay_seconds) {
+        val back = config.dismiss?.back
+        if (back?.enabled != true) {
+            showBack = false
+            return@LaunchedEffect
+        }
+        val backDelay = back.delay_seconds ?: 0
+        if (backDelay > 0) {
+            kotlinx.coroutines.delay(backDelay * 1000L)
+        }
+        showBack = true
     }
 
     // Localization helper + SPEC-088: Template variable interpolation
@@ -1119,6 +1137,56 @@ fun PaywallScreen(
             }
         }
 
+        // #652 (round 2) — the Back button, rendered INDEPENDENTLY of the close control.
+        //
+        // The first pass made "back" a dismiss STYLE, so a paywall could have a chevron or an X but
+        // never both, and they shared one position/colour/size. They are two buttons. iOS parity:
+        // PaywallRenderer.swift `backAffordance`.
+        config.dismiss?.back?.let { back ->
+            if (back.enabled == true && showBack) {
+                val backCd = stringResource(R.string.appdna_a11y_paywall_close)
+                val backSize = back.size ?: 16f
+                val backColor = back.color?.let { parseHexColor(it) } ?: Color.White
+                val backOnLeft = (back.position ?: "top_left") == "top_left"
+                if ((back.style ?: "chevron") == "text_link") {
+                    TextButton(
+                        onClick = { triggerDismiss() },
+                        modifier = Modifier
+                            .align(if (backOnLeft) Alignment.TopStart else Alignment.TopEnd)
+                            .statusBarsPadding()
+                            .padding(16.dp)
+                            .semantics { contentDescription = backCd },
+                    ) {
+                        Text(
+                            text = loc("back.text", back.text ?: "Back"),
+                            color = backColor,
+                            fontSize = backSize.sp,
+                        )
+                    }
+                } else {
+                    IconButton(
+                        onClick = { triggerDismiss() },
+                        modifier = Modifier
+                            .align(if (backOnLeft) Alignment.TopStart else Alignment.TopEnd)
+                            .statusBarsPadding()
+                            .padding(16.dp)
+                            .size((backSize * 2).dp)
+                            .clip(CircleShape)
+                            .background(Color.Black.copy(alpha = 0.3f))
+                            .semantics { contentDescription = backCd },
+                    ) {
+                        Text(
+                            // ‹ chevron or ← arrow — the glyph is the only visual difference.
+                            text = if ((back.style ?: "chevron") == "arrow") "\u2190" else "\u2039",
+                            color = backColor,
+                            fontSize = backSize.sp,
+                            fontWeight = FontWeight.SemiBold,
+                        )
+                    }
+                }
+            }
+        }
+
         // Dismiss control
         if (showDismiss) {
             // SPEC-070-A finalization R3 P0 (Lens A PW-5) — prefer `dismiss.style`
@@ -1434,7 +1502,9 @@ private fun PaywallExtraButtons(
         } else {
             Button(
                 onClick = onTap,
-                shape = RoundedCornerShape(cornerRadius.dp),
+                // #651 — an extra button had a Background but always inherited the CTA's radius, so
+                // a pill CTA forced every extra button to be a pill too. Unset still inherits.
+                shape = RoundedCornerShape((button.corner_radius ?: cornerRadius).dp),
                 colors = ButtonDefaults.buttonColors(
                     containerColor = button.bg_color?.let { parseHexColor(it) }
                         ?: MaterialTheme.colorScheme.secondaryContainer,
@@ -3077,6 +3147,13 @@ internal fun PaywallSectionView(
                 // Start; without `Alignment.CenterHorizontally` on the column
                 // OR `.fillMaxWidth() + textAlign = Center` on the text, the
                 // Restore link sticks to the left edge.
+                // #651 — Restore could be recoloured and resized but never given a FILL, so it
+                // could not be made to look like a second button next to the CTA. Unset renders the
+                // plain centred link exactly as before; the clip/background go on before the
+                // clickable so the ripple follows the authored shape.
+                val restoreBg = section.data?.restore_bg_color
+                    ?.takeIf { it.isNotEmpty() }?.let { parseHexColor(it) }
+                val restoreRadius = (section.data?.restore_corner_radius ?: 0f).dp
                 Text(
                     text = loc("cta.restore_text", restoreText),
                     color = restoreColor,
@@ -3084,6 +3161,13 @@ internal fun PaywallSectionView(
                     textAlign = TextAlign.Center,
                     modifier = Modifier
                         .fillMaxWidth()
+                        .then(
+                            if (restoreBg != null) {
+                                Modifier.clip(RoundedCornerShape(restoreRadius)).background(restoreBg)
+                            } else {
+                                Modifier
+                            },
+                        )
                         // SPEC-492 (#651 item 4) — the restore link's authored action; unset restores.
                         .clickable { performButtonAction(section.data?.restore_action, null, "restore") }
                         .padding(vertical = 8.dp)

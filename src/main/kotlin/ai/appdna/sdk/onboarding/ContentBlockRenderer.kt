@@ -385,6 +385,28 @@ internal fun parseStackAlignment(token: String?): Alignment? {
     }
 }
 
+/**
+ * One summary stat, made safe to render (#660, SPEC-446 AC).
+ *
+ * Returns null only when the card would say nothing at all. `UNRESOLVED_STAT_PLACEHOLDER` stands in
+ * for a value the host did not supply, so the card keeps its place instead of the screen silently
+ * losing a row.
+ */
+internal const val UNRESOLVED_STAT_PLACEHOLDER = "\u2014"
+
+internal fun sanitizeSummaryStat(stat: Map<*, *>): Map<*, *>? {
+    val valueUnresolved = (stat["value"] as? String)?.contains("{{") == true
+    val labelUnresolved = (stat["label"] as? String)?.contains("{{") == true
+    val hasLabel = (stat["label"] as? String)?.isNotBlank() == true
+    // Nothing resolved: no label to caption it and no value to show.
+    if (valueUnresolved && (labelUnresolved || !hasLabel)) return null
+    if (!valueUnresolved && !labelUnresolved) return stat
+    return stat.toMutableMap().apply {
+        if (valueUnresolved) this["value"] = UNRESOLVED_STAT_PLACEHOLDER
+        if (labelUnresolved) remove("label")
+    }
+}
+
 internal fun mapBlockAlignment(horizontal: String?, vertical: String?): Alignment {
     val h = when (horizontal) {
         "left" -> Alignment.Start
@@ -1336,14 +1358,19 @@ internal fun resolveBlockBindings(
             // in the big colored number on a summary card. Dropping the stat here rather than in the
             // renderer means no current or future renderer can leak it, and a fixture can see it as a
             // count. A stat whose LABEL alone is unresolved keeps its value and loses the caption.
+            //
+            // 🔴 #660 — dropping the stat was too much. WineTrails' booking summary is five stats,
+            // all bound to `hook_data.booking.*`. Until the host supplies them EVERY card vanished,
+            // so the screen read as "the Summary Screen does not render at all" on both platforms —
+            // and an author had no way to tell a mis-typed path from a host that sent nothing.
+            //
+            // A card with a resolved LABEL still has something true to show, so it keeps its shape
+            // and shows a placeholder where the value goes. A card with neither a label nor a value
+            // has nothing to say and is still dropped. Either way no raw `{{token}}` reaches the
+            // screen, which is the guarantee the original rule existed for.
             val safeStats = nextStats.mapNotNull { entry ->
                 val stat = entry as? Map<*, *> ?: return@mapNotNull entry
-                if ((stat["value"] as? String)?.contains("{{") == true) return@mapNotNull null
-                if ((stat["label"] as? String)?.contains("{{") == true) {
-                    stat.toMutableMap().apply { remove("label") }
-                } else {
-                    stat
-                }
+                sanitizeSummaryStat(stat)
             }
             if (changed || safeStats.size != nextStats.size) {
                 val nextCfg = cfg.toMutableMap()
@@ -1635,6 +1662,18 @@ suspend fun fireElementInteraction(
     return Triple(applied.inputValues, mergedOverrides, applied.advance)
 }
 
+/**
+ * #657 — replace a block's `field_options` with host-supplied ones from a refresh interaction.
+ *
+ * Separate from [resolvedFieldConfig] because options are a SIBLING of `field_config`, not a key
+ * inside it: merging them into `field_config` would compile, do nothing visible, and look fixed.
+ * iOS parity: `resolvedFieldOptions`.
+ */
+internal fun resolvedFieldOptions(
+    block: ContentBlock,
+    overrides: Map<String, List<InputOption>>,
+): ContentBlock = overrides[block.id]?.let { block.copy(field_options = it.toImmutableList()) } ?: block
+
 // MARK: - Content Block Renderer
 
 @Composable
@@ -1652,6 +1691,8 @@ fun ContentBlockRendererView(
     // Default no-op / empty so non-interactive call paths (previews, legacy) compile unchanged.
     onInteract: (String, String, String?) -> Unit = { _, _, _ -> },
     fieldConfigOverrides: Map<String, Map<String, Any>> = emptyMap(),
+    // #657 — per-block replacement options pushed back by a refresh interaction.
+    fieldOptionsOverrides: Map<String, List<InputOption>> = emptyMap(),
 ) {
     // SPEC-089d §6.3: Filter blocks by visibility condition
     val visibleBlocks = blocks.filter { block ->
@@ -1672,9 +1713,12 @@ fun ContentBlockRendererView(
             // SPEC-419 STEP-2 — fold host-pushed per-block field_config overrides UNCONDITIONALLY here,
             // AFTER resolveBlockBindings (which early-returns raw blocks that have no bindings — i.e.
             // every EPIC-11 element, so the merge can't live inside it). Empty overrides → no change.
-            val block = resolvedFieldConfig(
-                resolveBlockBindings(rawBlock, hookData = hookData, responses = responses, stepInputs = inputValues),
-                fieldConfigOverrides,
+            val block = resolvedFieldOptions(
+                resolvedFieldConfig(
+                    resolveBlockBindings(rawBlock, hookData = hookData, responses = responses, stepInputs = inputValues),
+                    fieldConfigOverrides,
+                ),
+                fieldOptionsOverrides,
             )
 
             val shouldAnimate = block.entrance_animation != null
@@ -1701,17 +1745,59 @@ fun ContentBlockRendererView(
             if (shouldAnimate) {
                 block.entrance_animation?.let { anim ->
                     EntranceAnimationWrapper(animation = anim) {
-                        Box(modifier = sizingModifier) {
+                        BlockSizingBox(block, sizingModifier) {
                             RenderBlock(block = block, onAction = onAction, toggleValues = toggleValues, inputValues = inputValues, loc = loc, currentStepIndex = currentStepIndex, totalSteps = totalSteps, onInteract = onInteract, stepBlocks = blocks)
                         }
                     }
                 }
             } else {
-                Box(modifier = sizingModifier) {
+                BlockSizingBox(block, sizingModifier) {
                     RenderBlock(block = block, onAction = onAction, toggleValues = toggleValues, inputValues = inputValues, loc = loc, currentStepIndex = currentStepIndex, totalSteps = totalSteps, onInteract = onInteract, stepBlocks = blocks)
                 }
             }
         }
+    }
+}
+
+/**
+ * #654 / #659 — a width-constrained block ignored its authored `horizontal_align` on Android.
+ *
+ * The sizing box (`element_width`) was applied OUTSIDE the alignment box, so the order was:
+ *
+ *   Box(width = 75%)            ← placed by the parent Column at Start
+ *     Box(fillMaxWidth, center) ← centres the child inside that already-left-placed 75%
+ *
+ * which centres nothing a user can see. `element_width: "75%"` + `horizontal_align: "center"` — the
+ * exact config on WineTrails' "Regenerate Results" and Audio Preview buttons — therefore rendered
+ * hard left on Android while iOS centred it, because SwiftUI applies `.frame(width:)` and
+ * `.frame(maxWidth: .infinity, alignment:)` in the opposite order.
+ *
+ * A block whose width is unconstrained (`auto` / `fill` / unset) was never affected: its sizing box
+ * wraps a `fillMaxWidth` child, so the inner alignment still has the whole row to work with. That is
+ * why this only ever showed up on the few blocks with an authored width.
+ */
+internal fun needsOuterAlignmentBox(elementWidth: String?, horizontalAlign: String?): Boolean {
+    if (horizontalAlign == null) return false
+    val w = elementWidth ?: return false
+    return w.endsWith("%") || w.endsWith("px")
+}
+
+/** Sizing wrapper that keeps `horizontal_align` meaningful for a width-constrained block. */
+@Composable
+internal fun BlockSizingBox(
+    block: ContentBlock,
+    sizingModifier: Modifier,
+    content: @Composable () -> Unit,
+) {
+    if (needsOuterAlignmentBox(block.element_width, block.horizontal_align)) {
+        Box(
+            modifier = Modifier.fillMaxWidth(),
+            contentAlignment = mapBlockAlignment(block.horizontal_align, block.vertical_align),
+        ) {
+            Box(modifier = sizingModifier) { content() }
+        }
+    } else {
+        Box(modifier = sizingModifier) { content() }
     }
 }
 
@@ -1807,9 +1893,9 @@ private fun RenderBlockContent(
         "settings_footer" -> SettingsFooterBlock(block, onAction, onInteract)
         "memory_match" -> MemoryMatchBlock(block, onInteract)
         "calendar_month" -> CalendarMonthBlock(block, inputValues, onInteract)
-        "button" -> ButtonBlock(block, onAction, loc, stepBlocks, inputValues)
+        "button" -> ButtonBlock(block, onAction, loc, stepBlocks, inputValues, onInteract = onInteract)
         // Device QA (s20/s22) — CTA-style button that plays `audio_url` on tap.
-        "sound_button" -> SoundButtonBlock(block, onAction, loc, stepBlocks, inputValues)
+        "sound_button" -> SoundButtonBlock(block, onAction, loc, stepBlocks, inputValues, onInteract = onInteract)
         "spacer" -> Spacer(modifier = Modifier.height((block.spacer_height ?: 24.0).dp)) // SPEC-419 pass-14 #11 — unset default 24 to match editor+preview (was 16)
         "list" -> ListBlock(block, loc)
         "divider" -> DividerBlock(block)
@@ -1841,6 +1927,8 @@ private fun RenderBlockContent(
         "date_wheel_picker" -> DateWheelPickerBlock(block, inputValues)
         "circular_gauge" -> CircularGaugeBlock(block)
         "row" -> RowBlock(block, onAction, toggleValues, inputValues, loc, stepBlocks)
+        // #609 — several CTAs laid out N per row on one shared background.
+        "multi_buttons" -> MultiButtonsBlock(block, onAction, toggleValues, inputValues, loc, stepBlocks, onInteract)
         // SPEC-089d: Pricing card
         "pricing_card" -> PricingCardBlock(block, onAction, inputValues)
         // SPEC-089d Phase 3: Form input block renderers (22 types)
@@ -2506,6 +2594,9 @@ private fun ButtonBlock(
     // Device QA (s20/s22) — when set (sound_button), tap runs this instead of
     // the flow-action routing below (e.g. play an audio clip).
     onClickOverride: (() -> Unit)? = null,
+    // #657 — a button with `action: "refresh_step"` fires the element-interaction hook instead of
+    // navigating, so the host can replace what the step shows without advancing it.
+    onInteract: (String, String, String?) -> Unit = { _, _, _ -> },
 ) {
     val text = block.text ?: "Continue"
     // SPEC-401-A R54 (Lens A R54 #4, P2) — 16→17sp matching iOS
@@ -2549,6 +2640,8 @@ private fun ButtonBlock(
     val onClick: () -> Unit = onClickOverride ?: {
         val action = block.action ?: "next"
         when (action) {
+            // #657 — refresh the step in place. iOS parity: ContentBlockRendererView `buttonBlock`.
+            "refresh_step" -> onInteract(block.id, "refresh", block.action_value)
             "link" -> {
                 // SPEC-070-A finalization Phase E — `link` action divergence.
                 // iOS InAppBrowser.present(url) does NOT auto-advance —
@@ -2814,6 +2907,8 @@ private fun SoundButtonBlock(
     loc: ((String, String) -> String)? = null,
     stepBlocks: List<ContentBlock> = emptyList(),
     inputValues: Map<String, Any> = emptyMap(),
+    // #657 — a refresh_step sound button fires the interaction hook like any other button.
+    onInteract: (String, String, String?) -> Unit = { _, _, _ -> },
 ) {
     val context = LocalContext.current
     LaunchedEffect(block.id) {
@@ -2829,6 +2924,7 @@ private fun SoundButtonBlock(
     }
     ButtonBlock(
         block, onAction, loc, stepBlocks, inputValues,
+        onInteract = onInteract,
         onClickOverride = { ai.appdna.sdk.core.AudioPlayer.play(context, (block.field_config?.get("audio_url") as? String)) },
     )
 }
@@ -4134,6 +4230,16 @@ private fun SocialLoginBlock(
     val dividerText = block.divider_text ?: "or"
     // Social-Login styling v2 — divider color/placement + in-button text align.
     val dividerColor = block.divider_color?.let { StyleEngine.parseColor(it) } ?: Color.Gray.copy(alpha = 0.3f)
+    // #615 — the LINE took `divider_color`; the TEXT between the segments was pinned to the theme's
+    // secondary, so "or continue with email" could not be themed at all. Unset keeps the previous
+    // colour exactly, so existing flows are untouched. iOS parity:
+    // ContentBlockRendererView.swift `dividerTextColor`.
+    // 🔴 Lives in `field_config`, NOT as a top-level field: `ContentBlock` is at 246 constructor
+    // params and Kotlin's synthetic `copy$default` adds one int mask per 32 params plus the
+    // receiver, which puts the generated method at exactly the JVM's 255-argument ceiling. Adding a
+    // 247th param compiles and then throws ClassFormatError in every test that loads the class.
+    val dividerTextColor = (block.field_config?.get("divider_text_color") as? String)
+        ?.takeIf { it.isNotEmpty() }?.let { StyleEngine.parseColor(it) }
     val dividerPosition = (block.field_config?.get("divider_position") as? String) ?: "bottom"
     val textAlign = (block.field_config?.get("button_text_align") as? String) ?: "center"
 
@@ -4490,8 +4596,9 @@ private fun SocialLoginBlock(
                     // ContentBlockRendererView.swift:713 .subheadline (~15pt).
                     fontSize = 15.sp,
                     // SPEC-401-A R44 — theme-adaptive secondary (was Color.Gray).
-                    // iOS .secondary (ContentBlockRendererView.swift:714).
-                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
+                    // iOS .secondary (ContentBlockRendererView.swift:714). #615 — an authored
+                    // `divider_text_color` wins.
+                    color = dividerTextColor ?: MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
                     modifier = Modifier.padding(horizontal = 12.dp),
                 )
                 Box(
@@ -7021,6 +7128,98 @@ private fun StackBlock(
 }
 
 // MARK: - Row Block (HStack container — SPEC-089d AC-025)
+
+/**
+ * #609 — how a Multi-buttons group splits its children into rows.
+ *
+ * Pure so the layout rule is asserted by a test and a shared fixture rather than by eye: the bugs
+ * this element exists to fix (#654/#659) were all layout rules that only a screenshot could check.
+ * Returns the number of buttons on each row, in order. `perRow` is clamped to 1..3 because the ask
+ * was "up to 3 per row" and a 0 would divide by zero.
+ */
+internal fun multiButtonRowPlan(childCount: Int, perRow: Int): List<Int> {
+    if (childCount <= 0) return emptyList()
+    val n = perRow.coerceIn(1, 3)
+    val full = childCount / n
+    val rest = childCount % n
+    return List(full) { n } + if (rest > 0) listOf(rest) else emptyList()
+}
+
+/**
+ * #609 — how much EMPTY column a short last row puts on each side of itself.
+ *
+ * A short row cannot be centred by arrangement alone, and that is not a detail: a button fills the
+ * width it is given, so a lone child in a `spacedBy(gap, CenterHorizontally)` row still spans the
+ * whole row and "center" renders pixel-identical to "stretch". The Roborazzi golden caught exactly
+ * that — two settings, one image.
+ *
+ * So the short row is padded with weighted spacers instead, which also makes the centred button
+ * exactly one COLUMN wide: it lines up under the buttons above it rather than being merely
+ * near-the-middle. Returns the weight for ONE side (half the missing columns), or 0 when the row is
+ * full or the author asked for stretch.
+ */
+internal fun multiButtonFillerWeight(rowSize: Int, perRow: Int, stretchLastRow: Boolean): Float {
+    val n = perRow.coerceIn(1, 3)
+    if (stretchLastRow || rowSize >= n || rowSize <= 0) return 0f
+    return (n - rowSize) / 2f
+}
+
+/**
+ * #609 — the Multi-buttons element: several CTAs laid out N per row, on one shared background.
+ *
+ * "Use a Row" was rejected for a good reason: these have to BE buttons, carrying every Button
+ * setting, because each one triggers a different thing in the host app. So the children are real
+ * `button` blocks rendered through [RenderBlock], and this element owns only the arrangement —
+ * which means any styling or action a Button gains later works here for free.
+ *
+ * An incomplete last row (the 3rd button under two) centres at natural width by default, which is
+ * the layout that was asked for; `last_row = "stretch"` makes it fill instead. iOS parity:
+ * `multiButtonsBlock`.
+ */
+@Composable
+private fun MultiButtonsBlock(
+    block: ContentBlock,
+    onAction: (String) -> Unit,
+    toggleValues: MutableMap<String, Boolean>,
+    inputValues: MutableMap<String, Any>,
+    loc: ((String, String) -> String)?,
+    stepBlocks: List<ContentBlock> = emptyList(),
+    onInteract: (String, String, String?) -> Unit = { _, _, _ -> },
+) {
+    val childBlocks = block.children ?: block.stack_children ?: emptyList()
+    val perRow = ((block.field_config?.get("buttons_per_row") as? Number)?.toInt() ?: 2).coerceIn(1, 3)
+    val gap = (block.spacing ?: block.gap ?: 12.0).dp
+    val stretchLastRow = (block.field_config?.get("last_row") as? String) == "stretch"
+
+    Column(
+        modifier = Modifier.fillMaxWidth(),
+        verticalArrangement = Arrangement.spacedBy(gap),
+    ) {
+        // The row split is a pure, tested rule (multiButtonRowPlan), not an inline chunk.
+        var cursor = 0
+        multiButtonRowPlan(childBlocks.size, perRow).forEach { rowSize ->
+            val rowChildren = childBlocks.subList(cursor, cursor + rowSize)
+            cursor += rowSize
+            val filler = multiButtonFillerWeight(rowChildren.size, perRow, stretchLastRow)
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(gap),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                // Every child is one column wide, whatever the row holds — so a short row lines up
+                // UNDER the buttons above it. The empty columns are split evenly either side, which
+                // is what centres it; see `multiButtonFillerWeight`.
+                if (filler > 0f) Spacer(Modifier.weight(filler))
+                rowChildren.forEach { child ->
+                    Box(modifier = Modifier.weight(1f)) {
+                        RenderBlock(child, onAction, toggleValues, inputValues, loc, stepBlocks = stepBlocks, onInteract = onInteract)
+                    }
+                }
+                if (filler > 0f) Spacer(Modifier.weight(filler))
+            }
+        }
+    }
+}
 
 @Composable
 private fun RowBlock(

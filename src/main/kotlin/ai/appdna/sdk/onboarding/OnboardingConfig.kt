@@ -660,6 +660,15 @@ data class ElementInteractionResult(
     val fieldConfigPatches: Map<String, Map<String, Any>>? = null,
     /** Patches to merge into the step's `inputValues` (keyed by field_id). */
     val inputValuePatches: Map<String, Any>? = null,
+    /**
+     * #657 — replacement options, keyed by blockId. The same shape `StepConfigOverride.fieldOptions`
+     * takes at render time.
+     *
+     * Without this the refresh action could not change the thing it exists to change: a select's
+     * options live in `field_options`, and `fieldConfigPatches` merges into `field_config` — a
+     * different field the renderer never reads for options.
+     */
+    val fieldOptions: Map<String, List<InputOption>>? = null,
     /** When true, advance to the next step after handling this interaction. */
     val advance: Boolean = false,
 )
@@ -668,6 +677,8 @@ data class ElementInteractionResult(
 data class AppliedInteraction(
     val inputValues: Map<String, Any>,
     val fieldConfigOverrides: Map<String, Map<String, Any>>,
+    /** #657 — per-block replacement options the renderer layers at read time. */
+    val fieldOptionsOverrides: Map<String, List<InputOption>> = emptyMap(),
     val advance: Boolean,
 )
 
@@ -681,6 +692,7 @@ fun applyInteractionResult(result: ElementInteractionResult, inputValues: Map<St
     return AppliedInteraction(
         inputValues = iv,
         fieldConfigOverrides = result.fieldConfigPatches ?: emptyMap(),
+        fieldOptionsOverrides = result.fieldOptions ?: emptyMap(),
         advance = result.advance,
     )
 }

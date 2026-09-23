@@ -34,6 +34,8 @@ import androidx.compose.runtime.snapshots.SnapshotStateMap
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
@@ -47,6 +49,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.IntOffset
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 // SPEC-070-A J.11 — accessibility string resources for onboarding chrome
@@ -2570,6 +2573,20 @@ internal fun emitSocialLoginAction(
 // legal text scrolled inline with the question content, making every step's
 // vertical rhythm wrong vs iOS. The keyboard would also push the CTA off
 // the screen on Android, while iOS pinned it via safeAreaInset.
+/**
+ * How much room the scrolling content must leave for the pinned bottom zone (#655).
+ *
+ * `measured` is 0 on the first composition, before the zone has been laid out. Falling back to the
+ * old 80dp there keeps the first frame identical to previous releases; once the real height arrives
+ * the reserve becomes exact. Returning 0 with no bottom zone is what lets a short screen still
+ * centre its content.
+ */
+internal fun bottomZoneReserve(hasBottomZone: Boolean, measured: Dp): Dp = when {
+    !hasBottomZone -> 0.dp
+    measured > 0.dp -> measured
+    else -> 80.dp
+}
+
 @androidx.compose.runtime.Composable
 private fun ThreeZoneBlockLayout(
     blocks: List<ContentBlock>,
@@ -2592,6 +2609,8 @@ private fun ThreeZoneBlockLayout(
     // threaded to every zone's ContentBlockRendererView.
     onInteract: (String, String, String?) -> Unit = { _, _, _ -> },
     fieldConfigOverrides: Map<String, Map<String, Any>> = emptyMap(),
+    // #657 — per-block replacement options from a refresh interaction, threaded to the renderer.
+    fieldOptionsOverrides: Map<String, List<InputOption>> = emptyMap(),
 ) {
     // SPEC-401-A R11 — apply `visibility_condition` BEFORE partitioning,
     // mirroring iOS at ThreeZoneStepLayout.swift:23-26. Previously Android
@@ -2626,6 +2645,19 @@ private fun ThreeZoneBlockLayout(
             else -> top.add(block)
         }
     }
+    // 🔴 #655 — the scrolling content reserved a FIXED 80dp for the pinned bottom zone.
+    //
+    // The bottom zone is an overlay (`align(Alignment.BottomCenter)`), so that number is the only
+    // thing keeping content out from underneath it. Two stacked buttons plus a line of legal text —
+    // WineTrails' summary and cross-sell screens — are ~110-140dp, so the last lines of content sat
+    // BEHIND the buttons and could not be scrolled into view: the scroll range ends where the
+    // padding ends, which is why it read as "not scrollable" rather than "clipped".
+    //
+    // Measuring the zone is the only correct reserve, because its height is authored: one button,
+    // three buttons, a button plus legal copy, are all legitimate.
+    var measuredBottomHeight by remember { mutableStateOf(0.dp) }
+    val density = LocalDensity.current
+
     val onlyCenterContent = top.isEmpty() && center.isNotEmpty()
 
     val configuration = androidx.compose.ui.platform.LocalConfiguration.current
@@ -2676,7 +2708,7 @@ private fun ThreeZoneBlockLayout(
                         .verticalScroll(rememberScrollState())
                         .heightIn(min = viewportHeight)
                         .padding(horizontal = horizontalPadding)
-                        .padding(bottom = if (bottom.isNotEmpty()) 80.dp else 0.dp),
+                        .padding(bottom = bottomZoneReserve(bottom.isNotEmpty(), measuredBottomHeight)),
                     verticalArrangement = Arrangement.Center,
                 ) {
                 ContentBlockRendererView(
@@ -2691,6 +2723,7 @@ private fun ThreeZoneBlockLayout(
                     totalSteps = totalSteps,
                     onInteract = onInteract,
                     fieldConfigOverrides = fieldConfigOverrides,
+                    fieldOptionsOverrides = fieldOptionsOverrides,
                 )
                 }
             }
@@ -2709,7 +2742,7 @@ private fun ThreeZoneBlockLayout(
             Column(
                 modifier = Modifier
                     .fillMaxSize()
-                    .padding(bottom = if (bottom.isNotEmpty()) 80.dp else 0.dp)
+                    .padding(bottom = bottomZoneReserve(bottom.isNotEmpty(), measuredBottomHeight))
                     .verticalScroll(rememberScrollState())
                     .padding(horizontal = horizontalPadding),
                 verticalArrangement = Arrangement.spacedBy(12.dp),
@@ -2730,6 +2763,7 @@ private fun ThreeZoneBlockLayout(
                             totalSteps = totalSteps,
                     onInteract = onInteract,
                     fieldConfigOverrides = fieldConfigOverrides,
+                    fieldOptionsOverrides = fieldOptionsOverrides,
                         )
                     }
                 }
@@ -2749,6 +2783,7 @@ private fun ThreeZoneBlockLayout(
                             totalSteps = totalSteps,
                     onInteract = onInteract,
                     fieldConfigOverrides = fieldConfigOverrides,
+                    fieldOptionsOverrides = fieldOptionsOverrides,
                         )
                     }
                 }
@@ -2765,6 +2800,12 @@ private fun ThreeZoneBlockLayout(
                 modifier = Modifier
                     .align(Alignment.BottomCenter)
                     .fillMaxWidth()
+                    // #655 — report the real height so the scrolling content above reserves exactly
+                    // this much and no authored bottom zone can bury the end of the content.
+                    .onGloballyPositioned { coords ->
+                        val h = with(density) { coords.size.height.toDp() }
+                        if (h != measuredBottomHeight) measuredBottomHeight = h
+                    }
                     .padding(horizontal = horizontalPadding)
                     // SPEC-419 — no extra bottom pad: the CTA sits right above the nav/gesture
                     // safe-area inset (the parent's safeDrawingPadding already insets it), matching
@@ -2784,6 +2825,7 @@ private fun ThreeZoneBlockLayout(
                     totalSteps = totalSteps,
                     onInteract = onInteract,
                     fieldConfigOverrides = fieldConfigOverrides,
+                    fieldOptionsOverrides = fieldOptionsOverrides,
                 )
             }
         }
@@ -2862,6 +2904,21 @@ private val AUTH_ACTIONS_REQUIRING_VALIDATION = setOf(
 )
 
 // SPEC-084: Block-based step view with 5 layout variants
+/**
+ * Whether the built-in "Skip" affordance renders on a step.
+ *
+ * Two independent things were conflated before #653: `skip_enabled` (the AUTHOR asked for a Skip
+ * link) and the presence of a skip handler (the SDK is ABLE to skip). SPEC-476 made the handler
+ * unconditional so a CTA with `action: "skip"` would stop being a dead button; anything gating a
+ * RENDER on the handler therefore started drawing itself everywhere.
+ *
+ * Exposed (rather than inlined) so the rule is asserted by a unit test instead of only by a
+ * screenshot: the render sites are Composables, and a gate that can only be checked by eye is how
+ * this regression shipped.
+ */
+internal fun shouldRenderSkipAffordance(skipEnabled: Boolean?, hasSkipHandler: Boolean): Boolean =
+    skipEnabled == true && hasSkipHandler
+
 @Composable
 private fun BlockBasedStepView(
     effectiveConfig: StepConfig,
@@ -2900,6 +2957,9 @@ private fun BlockBasedStepView(
     // SPEC-419 STEP-2 — per-block field_config overrides pushed by the host delegate (blockId -> key ->
     // value). Snapshot-observable so a merged override recomposes the affected block. Reset per step.
     val fieldConfigOverrides = remember(stepId) { mutableStateMapOf<String, Map<String, Any>>() }
+    // #657 — per-block replacement options from a refresh interaction. Same read-time override
+    // shape as the config overrides above, and reset per step for the same reason.
+    val fieldOptionsOverrides = remember(stepId) { mutableStateMapOf<String, List<InputOption>>() }
     val interactionScope = rememberCoroutineScope()
 
     // SPEC-401-A R35 — in-app validation pill (Lens C #4). iOS shows a
@@ -3291,6 +3351,11 @@ private fun BlockBasedStepView(
                 applied.fieldConfigOverrides.forEach { (id, patch) ->
                     fieldConfigOverrides[id] = (fieldConfigOverrides[id] ?: emptyMap()) + patch
                 }
+                // #657 — options are REPLACED wholesale, not merged: "the next four venues" is a new
+                // list, not an edit of the old one. A block the host did not name keeps what it had.
+                applied.fieldOptionsOverrides.forEach { (id, options) ->
+                    fieldOptionsOverrides[id] = options
+                }
                 if (applied.advance) handleAction("next")
             }
         }
@@ -3486,7 +3551,7 @@ private fun BlockBasedStepView(
                             .padding(vertical = 20.dp), // SPEC-419 — horizontal owned by ThreeZoneBlockLayout (8%) so margins match iOS ~10.4% (was double-padded ~15% → headings wrapped more)
                     ) {
                         Box(modifier = Modifier.weight(1f).fillMaxWidth()) {
-                            ThreeZoneBlockLayout(blocks = blocks, onAction = ::handleAction, toggleValues = toggleValues, inputValues = inputValues, loc = ::loc, responses = responses, hookData = hookData, currentStepIndex = currentStepIndex, totalSteps = totalSteps, onInteract = ::handleInteract, fieldConfigOverrides = fieldConfigOverrides)
+                            ThreeZoneBlockLayout(blocks = blocks, onAction = ::handleAction, toggleValues = toggleValues, inputValues = inputValues, loc = ::loc, responses = responses, hookData = hookData, currentStepIndex = currentStepIndex, totalSteps = totalSteps, onInteract = ::handleInteract, fieldConfigOverrides = fieldConfigOverrides, fieldOptionsOverrides = fieldOptionsOverrides)
                         }
                     }
                 }
@@ -3506,7 +3571,7 @@ private fun BlockBasedStepView(
                             .weight(0.6f)
                             .padding(16.dp),
                     ) {
-                        ThreeZoneBlockLayout(blocks = blocks, onAction = ::handleAction, toggleValues = toggleValues, inputValues = inputValues, loc = ::loc, responses = responses, hookData = hookData, currentStepIndex = currentStepIndex, totalSteps = totalSteps, onInteract = ::handleInteract, fieldConfigOverrides = fieldConfigOverrides)
+                        ThreeZoneBlockLayout(blocks = blocks, onAction = ::handleAction, toggleValues = toggleValues, inputValues = inputValues, loc = ::loc, responses = responses, hookData = hookData, currentStepIndex = currentStepIndex, totalSteps = totalSteps, onInteract = ::handleInteract, fieldConfigOverrides = fieldConfigOverrides, fieldOptionsOverrides = fieldOptionsOverrides)
                     }
                 }
             }
@@ -3517,7 +3582,7 @@ private fun BlockBasedStepView(
                         .fillMaxSize()
                         .padding(vertical = 20.dp), // SPEC-419 — horizontal owned by TZBL (8%) → margins match iOS ~10.4%
                 ) {
-                    ThreeZoneBlockLayout(blocks = blocks, onAction = ::handleAction, toggleValues = toggleValues, inputValues = inputValues, loc = ::loc, responses = responses, hookData = hookData, currentStepIndex = currentStepIndex, totalSteps = totalSteps, onInteract = ::handleInteract, fieldConfigOverrides = fieldConfigOverrides)
+                    ThreeZoneBlockLayout(blocks = blocks, onAction = ::handleAction, toggleValues = toggleValues, inputValues = inputValues, loc = ::loc, responses = responses, hookData = hookData, currentStepIndex = currentStepIndex, totalSteps = totalSteps, onInteract = ::handleInteract, fieldConfigOverrides = fieldConfigOverrides, fieldOptionsOverrides = fieldOptionsOverrides)
                     Spacer(Modifier.height(16.dp))
                     ai.appdna.sdk.core.NetworkImage(
                         url = effectiveConfig.image_url,
@@ -3539,7 +3604,7 @@ private fun BlockBasedStepView(
                         contentScale = androidx.compose.ui.layout.ContentScale.Fit,
                     )
                     Spacer(Modifier.height(16.dp))
-                    ThreeZoneBlockLayout(blocks = blocks, onAction = ::handleAction, toggleValues = toggleValues, inputValues = inputValues, loc = ::loc, responses = responses, hookData = hookData, currentStepIndex = currentStepIndex, totalSteps = totalSteps, onInteract = ::handleInteract, fieldConfigOverrides = fieldConfigOverrides)
+                    ThreeZoneBlockLayout(blocks = blocks, onAction = ::handleAction, toggleValues = toggleValues, inputValues = inputValues, loc = ::loc, responses = responses, hookData = hookData, currentStepIndex = currentStepIndex, totalSteps = totalSteps, onInteract = ::handleInteract, fieldConfigOverrides = fieldConfigOverrides, fieldOptionsOverrides = fieldOptionsOverrides)
                 }
             }
             else -> { // no_image
@@ -3549,15 +3614,26 @@ private fun BlockBasedStepView(
                         .fillMaxSize()
                         .padding(vertical = 20.dp), // SPEC-419 — horizontal owned by TZBL (8%) → margins match iOS ~10.4%
                 ) {
-                    ThreeZoneBlockLayout(blocks = blocks, onAction = ::handleAction, toggleValues = toggleValues, inputValues = inputValues, loc = ::loc, responses = responses, hookData = hookData, currentStepIndex = currentStepIndex, totalSteps = totalSteps, onInteract = ::handleInteract, fieldConfigOverrides = fieldConfigOverrides)
+                    ThreeZoneBlockLayout(blocks = blocks, onAction = ::handleAction, toggleValues = toggleValues, inputValues = inputValues, loc = ::loc, responses = responses, hookData = hookData, currentStepIndex = currentStepIndex, totalSteps = totalSteps, onInteract = ::handleInteract, fieldConfigOverrides = fieldConfigOverrides, fieldOptionsOverrides = fieldOptionsOverrides)
                 }
             }
         }
 
         // Skip button at bottom
-        if (onSkip != null) {
+        //
+        // 🔴 #653 — this was `if (onSkip != null)`, and SPEC-476 made `onSkip` non-null on EVERY
+        // step (correctly: a CTA with `action: "skip"` was a dead button while the handler was
+        // gated). The two consequences were not the same. The dispatch fix was right; this render
+        // gate was riding on the handler's nullability as a proxy for "skip is enabled", so the
+        // moment the handler was always passed, a grey "Skip" appeared at the bottom of every
+        // screen — underneath the CTA, because both are bottom-anchored.
+        //
+        // `skip_enabled` means "render a Skip affordance"; the handler means "skipping is
+        // possible". Gating on the flag matches iOS (OnboardingRenderer.swift:1512,
+        // ChatStepView.swift:405) and the other two Android sites in this file.
+        if (shouldRenderSkipAffordance(effectiveConfig.skip_enabled, onSkip != null)) {
             TextButton(
-                onClick = onSkip,
+                onClick = onSkip!!,
                 modifier = Modifier
                     .align(Alignment.BottomCenter)
                     .padding(bottom = 16.dp),
