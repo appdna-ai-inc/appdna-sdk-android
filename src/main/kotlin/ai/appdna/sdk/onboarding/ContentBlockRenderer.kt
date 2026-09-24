@@ -2612,8 +2612,13 @@ private fun ButtonBlock(
     // `text_color` wins; unset leaves Typography in charge, so a flow styled through Typography
     // alone is untouched. iOS parity.
     val styledBase = if (block.style != null) StyleEngine.applyTextStyle(baseStyle, block.style) else baseStyle
-    val effectiveStyle = block.text_color?.takeIf { it.isNotBlank() }
+    val colouredStyle = block.text_color?.takeIf { it.isNotBlank() }
         ?.let { styledBase.copy(color = StyleEngine.parseColor(it)) } ?: styledBase
+    // #609 follow-up — the button's own authored "Font size". Same specificity rule as `text_color`
+    // directly above and for the same reason: the control sits on the button panel, so it beats the
+    // generic Typography size rather than being silently beaten by it. Nothing read this field on
+    // ANY surface, so the input did nothing at all. Unset leaves the 17sp default untouched.
+    val effectiveStyle = block.font_size?.let { colouredStyle.copy(fontSize = it.sp) } ?: colouredStyle
     val context = LocalContext.current
     val btnVariant = block.variant ?: "primary"
     // Device QA (2026-08-04) — consent CTA: `cta_enabled_bg_color` / `cta_disabled_bg_color` drive the

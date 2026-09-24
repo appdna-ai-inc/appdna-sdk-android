@@ -1100,6 +1100,8 @@ class SharedFixtureTest(
         }
         spy.state["child_icon_emojis"] = children.map { it.icon_emoji ?: "" }
         spy.state["child_image_urls"] = children.map { it.image_url ?: "" }
+        // The third dead control, found by sweeping the panel rather than from a report.
+        spy.state["child_font_sizes"] = children.map { it.font_size ?: 0.0 }
     }
 
     private fun runRefreshStepInteraction(action: JSONObject, spy: Spy) {
