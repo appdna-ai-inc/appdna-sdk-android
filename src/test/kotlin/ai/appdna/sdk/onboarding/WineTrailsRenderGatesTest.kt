@@ -81,6 +81,33 @@ class WineTrailsRenderGatesTest {
         assertEquals(listOf(3, 1), multiButtonRowPlan(childCount = 4, perRow = 9))
     }
 
+    // ── #654 / #659 / #663 — a button could be SIZED or ALIGNED, never both ──────────────────
+
+    /*
+     * Three reports, one defect. The button hardcoded fillMaxWidth(), so `element_width: "auto"` —
+     * the one value meaning "be as wide as your label" — was ignored. WineTrails' "Show 4 More
+     * Options" is authored `auto` + `center` in production and rendered edge-to-edge.
+     */
+
+    @Test
+    fun `auto is the only width that stops a button filling its row`() {
+        assertFalse(buttonFillsWidth("auto"))
+    }
+
+    @Test
+    fun `unset and fill still fill, so no published CTA changes`() {
+        assertTrue(buttonFillsWidth(null))
+        assertTrue(buttonFillsWidth("fill"))
+        assertTrue(buttonFillsWidth("100%"))
+    }
+
+    @Test
+    fun `a percentage still fills — the sizing box is what constrains it`() {
+        // The button filling its already-constrained parent is what makes it exactly 75% wide.
+        assertTrue(buttonFillsWidth("75%"))
+        assertTrue(buttonFillsWidth("240px"))
+    }
+
     // ── #609 — the per-child button border that nothing read ─────────────────────────────────
 
     /*

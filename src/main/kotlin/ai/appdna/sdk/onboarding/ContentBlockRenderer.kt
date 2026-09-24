@@ -2743,6 +2743,13 @@ private fun ButtonBlock(
     // Without this the console "Size" control had no effect on the CTA (the field existed but was never read).
     val heightMod: Modifier = block.button_height?.let { Modifier.height(it.dp) }
         ?: Modifier.defaultMinSize(minHeight = 52.dp)
+    // #654/#659/#663 — `element_width: "auto"` means "as wide as the label". Every variant below
+    // used to hardcode fillMaxWidth(), which is why an auto-width button still spanned the row.
+    val widthMod: Modifier = if (buttonFillsWidth(block.element_width)) {
+        Modifier.fillMaxWidth()
+    } else {
+        Modifier.wrapContentWidth()
+    }
 
     // Gap 5: Gradient background support
     val shape = RoundedCornerShape(cornerRadius)
@@ -2853,7 +2860,7 @@ private fun ButtonBlock(
             // SPEC-089d §3.18: Outline variant — transparent bg, colored border + text
             OutlinedButton(
                 onClick = onClick,
-                modifier = Modifier.fillMaxWidth().then(heightMod).then(pressedModifier),
+                modifier = widthMod.then(heightMod).then(pressedModifier),
                 shape = shape,
                 border = authoredBorder,
                 colors = ButtonDefaults.outlinedButtonColors(contentColor = bgColor),
@@ -2865,7 +2872,7 @@ private fun ButtonBlock(
         "text" -> {
             TextButton(
                 onClick = onClick,
-                modifier = Modifier.fillMaxWidth().then(heightMod).then(pressedModifier),
+                modifier = widthMod.then(heightMod).then(pressedModifier),
                 shape = shape,
                 border = authoredBorder,
                 interactionSource = interactionSource,
@@ -2878,8 +2885,7 @@ private fun ButtonBlock(
             if (gradientModifier != null) {
                 // Gradient button: use Box with gradient background + clickable
                 Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
+                    modifier = widthMod
                         .then(heightMod)
                         .then(pressedModifier)
                         .clip(shape)
@@ -2893,7 +2899,7 @@ private fun ButtonBlock(
             } else {
                 Button(
                     onClick = onClick,
-                    modifier = Modifier.fillMaxWidth().then(heightMod).then(pressedModifier),
+                    modifier = widthMod.then(heightMod).then(pressedModifier),
                     shape = shape,
                     colors = ButtonDefaults.buttonColors(containerColor = bgColor),
                     border = authoredBorder,
@@ -7165,6 +7171,22 @@ internal fun multiButtonRowPlan(childCount: Int, perRow: Int): List<Int> {
     val rest = childCount % n
     return List(full) { n } + if (rest > 0) listOf(rest) else emptyList()
 }
+
+/**
+ * #654 / #659 / #663 — whether a button should stretch to the width it is offered.
+ *
+ * A button hardcoded `fillMaxWidth()` on Android, `.frame(maxWidth: .infinity)` on iOS and
+ * `w-full` in the console preview, so `element_width: "auto"` — the one value that means "be as
+ * wide as your label" — was ignored on all three. The author could size a button OR centre it,
+ * never both: at a fixed width the block was constrained, and at `auto` it silently filled the row.
+ * "Show 4 More Options" is authored `auto` + `center` and rendered edge-to-edge.
+ *
+ * `auto` is the ONLY value that stops the fill. Unset keeps filling (every published CTA relies on
+ * it), `fill`/`100%` obviously fill, and a px/% width has already constrained the parent box, so
+ * filling THAT box is what makes the button exactly as wide as authored. Mirrors iOS
+ * `buttonFillsWidth`.
+ */
+internal fun buttonFillsWidth(elementWidth: String?): Boolean = elementWidth != "auto"
 
 /**
  * #609 — the width of a button's AUTHORED border, in dp.
