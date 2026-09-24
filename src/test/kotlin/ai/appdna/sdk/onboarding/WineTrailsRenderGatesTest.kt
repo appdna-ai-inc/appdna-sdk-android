@@ -81,6 +81,48 @@ class WineTrailsRenderGatesTest {
         assertEquals(listOf(3, 1), multiButtonRowPlan(childCount = 4, perRow = 9))
     }
 
+    // ── #609 — the per-child button border that nothing read ─────────────────────────────────
+
+    /*
+     * Reported after the element itself passed: "Border color doesn't apply — the border never
+     * renders in that color, on device or in preview". It was true on ALL THREE surfaces. Every one
+     * stroked a hardcoded 1.5dp ring in the BACKGROUND colour, and only for `variant: outline`, so a
+     * filled button with border width 40 and a yellow border drew nothing whatsoever.
+     */
+
+    @Test
+    fun `an authored width draws a ring on a filled button`() {
+        // The exact case from the issue screenshot: a filled button at width 40 drew nothing.
+        assertEquals(40.0, authoredButtonBorderWidth(authored = 40.0, variant = "primary"), 0.0)
+        assertEquals(3.0, authoredButtonBorderWidth(authored = 3.0, variant = null), 0.0)
+    }
+
+    @Test
+    fun `an unauthored button keeps exactly the border it had before`() {
+        // Non-outline had no ring and must not grow one, or every published flow shifts.
+        assertEquals(0.0, authoredButtonBorderWidth(authored = null, variant = "primary"), 0.0)
+        assertEquals(0.0, authoredButtonBorderWidth(authored = null, variant = "text"), 0.0)
+        // Outline rings itself at 1.5 — the long-standing default, kept.
+        assertEquals(1.5, authoredButtonBorderWidth(authored = null, variant = "outline"), 0.0)
+    }
+
+    @Test
+    fun `an authored zero removes the ring, including from an outline button`() {
+        // "No border" has to be expressible, otherwise outline can never lose its ring.
+        assertEquals(0.0, authoredButtonBorderWidth(authored = 0.0, variant = "outline"), 0.0)
+        // A negative is nonsense rather than an inverted ring; clamp instead of passing it to Compose.
+        assertEquals(0.0, authoredButtonBorderWidth(authored = -5.0, variant = "primary"), 0.0)
+    }
+
+    @Test
+    fun `a blank colour counts as unset so the ring falls back to the button colour`() {
+        // The console ColorPicker writes "" for transparent; stroking "nothing" would hide the edge.
+        assertEquals(null, authoredButtonBorderColorHex(""))
+        assertEquals(null, authoredButtonBorderColorHex("   "))
+        assertEquals(null, authoredButtonBorderColorHex(null))
+        assertEquals("#f9ff00", authoredButtonBorderColorHex("#f9ff00"))
+    }
+
     @Test
     fun `a short last row reserves half the missing columns on each side`() {
         // The layout that was asked for: 3 buttons at 2 per row. The lone last button is ONE column

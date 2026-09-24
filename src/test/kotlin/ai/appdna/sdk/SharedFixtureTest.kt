@@ -1086,6 +1086,20 @@ class SharedFixtureTest(
             (group.field_config?.get("last_row") as? String ?: "center") == "center" &&
                 plan.isNotEmpty() && plan.last() != perRow
         spy.state["group_background"] = group.block_style?.background_color ?: ""
+
+        // #609 follow-up — the per-child settings that shipped on the panel and nothing read.
+        // "Border color doesn't apply … on device or in preview" was true on all three surfaces:
+        // each hardcoded a 1.5 ring in the BACKGROUND colour and drew it only for `outline`, so a
+        // filled button at width 40 drew nothing. Resolved through the SAME pure helpers the
+        // renderer uses, so a fixture cannot pass while the screen stays wrong.
+        spy.state["child_border_widths"] = children.map {
+            ai.appdna.sdk.onboarding.authoredButtonBorderWidth(it.border_width, it.variant)
+        }
+        spy.state["child_border_colors"] = children.map {
+            ai.appdna.sdk.onboarding.authoredButtonBorderColorHex(it.border_color) ?: ""
+        }
+        spy.state["child_icon_emojis"] = children.map { it.icon_emoji ?: "" }
+        spy.state["child_image_urls"] = children.map { it.image_url ?: "" }
     }
 
     private fun runRefreshStepInteraction(action: JSONObject, spy: Spy) {

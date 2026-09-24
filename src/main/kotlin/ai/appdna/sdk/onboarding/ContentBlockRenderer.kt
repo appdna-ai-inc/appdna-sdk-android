@@ -2635,6 +2635,19 @@ private fun ButtonBlock(
     }
     val txtColor = StyleEngine.parseColor(block.text_color ?: "#FFFFFF")
     val cornerRadius = (block.button_corner_radius ?: 12.0).dp
+    // #609 — the AUTHORED border. "Border color" and "Border width" sit on every button panel and
+    // on every multi-buttons child, and nothing read either: the ring was hardcoded to 1.5dp of the
+    // BACKGROUND colour and drawn only for `outline`. A filled button with a yellow border at width
+    // 40 drew nothing at all, which is exactly what was reported.
+    //
+    // Unset is unchanged: `outline` still rings itself at 1.5dp in its own colour and every other
+    // variant still has no border, so no published flow shifts. iOS/preview parity.
+    val authoredBorderWidth = authoredButtonBorderWidth(block.border_width, btnVariant)
+    val authoredBorderColor = authoredButtonBorderColorHex(block.border_color)
+        ?.let { StyleEngine.parseColor(it) } ?: bgColor
+    val authoredBorder = if (authoredBorderWidth > 0.0) {
+        androidx.compose.foundation.BorderStroke(authoredBorderWidth.dp, authoredBorderColor)
+    } else null
     val displayText = loc?.invoke("block.${block.id}.text", text) ?: text
 
     val onClick: () -> Unit = onClickOverride ?: {
@@ -2837,7 +2850,7 @@ private fun ButtonBlock(
                 onClick = onClick,
                 modifier = Modifier.fillMaxWidth().then(heightMod).then(pressedModifier),
                 shape = shape,
-                border = androidx.compose.foundation.BorderStroke(1.5.dp, bgColor),
+                border = authoredBorder,
                 colors = ButtonDefaults.outlinedButtonColors(contentColor = bgColor),
                 interactionSource = interactionSource,
             ) {
@@ -2849,6 +2862,7 @@ private fun ButtonBlock(
                 onClick = onClick,
                 modifier = Modifier.fillMaxWidth().then(heightMod).then(pressedModifier),
                 shape = shape,
+                border = authoredBorder,
                 interactionSource = interactionSource,
             ) {
                 ButtonContent(textColor = bgColor)
@@ -2865,6 +2879,7 @@ private fun ButtonBlock(
                         .then(pressedModifier)
                         .clip(shape)
                         .then(gradientModifier)
+                        .then(authoredBorder?.let { Modifier.border(it, shape) } ?: Modifier)
                         .clickable { onClick() },
                     contentAlignment = Alignment.Center,
                 ) {
@@ -2876,6 +2891,7 @@ private fun ButtonBlock(
                     modifier = Modifier.fillMaxWidth().then(heightMod).then(pressedModifier),
                     shape = shape,
                     colors = ButtonDefaults.buttonColors(containerColor = bgColor),
+                    border = authoredBorder,
                     // SPEC-419 — flat like iOS/SwiftUI buttons. Material's default ~1dp elevation
                     // casts a drop shadow that, on dark gradient steps, reads as a dark band below
                     // the CTA ("gap below the button" vs iOS where the gradient flows flat under it).
@@ -7144,6 +7160,30 @@ internal fun multiButtonRowPlan(childCount: Int, perRow: Int): List<Int> {
     val rest = childCount % n
     return List(full) { n } + if (rest > 0) listOf(rest) else emptyList()
 }
+
+/**
+ * #609 — the width of a button's AUTHORED border, in dp.
+ *
+ * Pure because the bug was a hardcoded constant nobody could see: all three surfaces stroked a
+ * fixed 1.5 of the BACKGROUND colour, and only for `outline`. A filled button with border width 40
+ * and a yellow border therefore drew nothing, and the two controls looked broken because they were
+ * never read. Returning 0 means "no ring", which is what an unauthored non-outline button gets — so
+ * no already-published flow changes. Mirrors iOS `authoredButtonBorderWidth`.
+ */
+internal fun authoredButtonBorderWidth(authored: Double?, variant: String?): Double {
+    if (authored != null) return maxOf(0.0, authored)
+    return if (variant == "outline") 1.5 else 0.0
+}
+
+/**
+ * #609 — the hex of a button's authored border colour, or null to fall back to its own colour.
+ *
+ * Blank counts as unset: the console's ColorPicker writes an empty string for "transparent", and
+ * treating that as a real colour would stroke a ring in nothing and hide the fill's own outline.
+ * Mirrors iOS `authoredButtonBorderColorHex`.
+ */
+internal fun authoredButtonBorderColorHex(authored: String?): String? =
+    authored?.takeIf { it.isNotBlank() }
 
 /**
  * #609 — how much EMPTY column a short last row puts on each side of itself.
