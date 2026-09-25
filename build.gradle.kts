@@ -251,6 +251,11 @@ dependencies {
 
     // OkHttp for event ingestion
     implementation(libs.okhttp)
+    // SPEC-495 — the bundled interactive map tier (Google). `compileOnly` is deliberately NOT used:
+    // the whole point of D1 is that a Flutter or React Native host gets a pannable map with no
+    // dependency of its own to add. That cost is real and measured — see .ai/sdk-size-budgets.json.
+    implementation(libs.maps.compose)
+    implementation(libs.play.services.maps)
 
     // Kotlin Coroutines — bumped to 1.8.1 (SPEC-070-A J.13).
     implementation(libs.kotlinx.coroutines.core)

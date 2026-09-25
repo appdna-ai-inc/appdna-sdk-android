@@ -2,6 +2,8 @@ package ai.appdna.sdk
 
 import ai.appdna.sdk.onboarding.ContentBlock
 import ai.appdna.sdk.onboarding.ContentBlockRendererView
+import ai.appdna.sdk.onboarding.MapBlock
+import ai.appdna.sdk.onboarding.MapPlacement
 import ai.appdna.sdk.onboarding.OnboardingConfigParser
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Column
@@ -64,8 +66,171 @@ class WineTrailsRenderSnapshotTest {
         }
     }
 
+    /**
+     * SPEC-495 — one map, captured through the PLACEMENT the step layout would give it.
+     *
+     * 🔴 The first version of the anchored golden went through `capture()`, which renders a block
+     * list inside a padded column — so it drew the map INLINE, with 12dp corners and a 16dp gutter,
+     * and the test was named `meetsBothEdges`. The picture disproved its own name and I nearly
+     * committed it. A golden whose name describes something the pixels do not show is worse than no
+     * golden: it is a false witness that outlives the person who recorded it.
+     *
+     * No padding here, because the whole claim is that an anchored map has none.
+     */
+    private fun capturePlacement(name: String, block: ContentBlock, placement: MapPlacement) {
+        captureRoboImage("src/test/snapshots/$name.png") {
+            MaterialTheme {
+                Column(Modifier.fillMaxWidth().background(Color(0xFF0F1117))) {
+                    MapBlock(block, placement)
+                }
+            }
+        }
+    }
+
     private fun button(id: String, text: String) =
         mapOf<String, Any>("id" to id, "type" to "button", "text" to text, "action" to "next")
+
+    // ── #671 — the REAL production Q6B step, byte-for-byte from the published flow ────────────
+
+    /**
+     * Reading code did not explain "the entire Q6B screen is frozen", so this renders the actual
+     * step the device downloads rather than an approximation of it: all six blocks, their real
+     * zones (`vertical_align` puts the sound button in CENTER and the CTA in BOTTOM, the rest fall
+     * to TOP), and the map's real `field_config` — in which every numeric is a STRING ("220", "12",
+     * "28"), `map_stops` is empty, and `map_interactive` is true.
+     *
+     * If composition throws, this test says so with the exception. If it renders, the golden shows
+     * what an Android user actually sees, which is the other half of the report.
+     */
+    private fun realQ6BBlocks(): List<ContentBlock> {
+        val json = org.json.JSONArray(Q6B_BLOCKS_JSON)
+        fun conv(v: Any?): Any? = when (v) {
+            is org.json.JSONObject -> v.keys().asSequence().associateWith { conv(v.get(it)) }.filterValues { it != null }
+            is org.json.JSONArray -> (0 until v.length()).map { conv(v.get(it)) }
+            else -> v
+        }
+        @Suppress("UNCHECKED_CAST")
+        val list = (0 until json.length()).map { conv(json.getJSONObject(it)) as Map<String, Any> }
+        val step = mapOf<String, Any>(
+            "type" to "custom", "name" to "Q6B", "analytics_name" to "Q6B", "skip_allowed" to false,
+            "config" to mapOf<String, Any>("content_blocks" to list, "layout_variant" to "image_fullscreen"),
+        )
+        return OnboardingConfigParser.parseStepForTest(step)?.config?.content_blocks ?: emptyList()
+    }
+
+    @Test
+    fun q6b_realProductionStep_rendersWithoutThrowing() {
+        capture("winetrails_q6b_real", realQ6BBlocks())
+    }
+
+    // ── #671 — the map block's full-bleed crashed the whole Android screen ───────────────────
+
+    /**
+     * Mrozu: on Android "the entire Q6B screen is frozen — nothing on it moves/scrolls"; on iOS the
+     * screen scrolls fine. A map that merely failed to load could not freeze the rest of the step,
+     * so the suspicion is composition, not the map.
+     *
+     * `map_full_bleed` cancels the step's horizontal padding so the map meets both screen edges.
+     * iOS does it with `.padding(.horizontal, -20)`, which SwiftUI accepts. Android copied the idea
+     * as `Modifier.padding(horizontal = (-20).dp)` — and Compose REQUIRES non-negative padding, so
+     * that throws the moment the modifier is constructed, which is during composition of the step.
+     *
+     * If this test throws, that is the bug: one authored boolean takes down the entire screen.
+     */
+    @Test
+    fun mapFullBleed_doesNotCrashTheStep() {
+        capture(
+            "winetrails_map_full_bleed",
+            blocksOf(
+                mapOf<String, Any>(
+                    "id" to "map1", "type" to "map",
+                    "field_config" to mapOf<String, Any>("map_full_bleed" to true, "map_height" to 180.0),
+                ),
+                mapOf<String, Any>("id" to "cta", "type" to "button", "text" to "Continue", "action" to "next"),
+            ),
+        )
+    }
+
+    // ── SPEC-495 — the sizing modes, as pictures ──────────────────────────────────────────────
+    //
+    // 🔴 GOLDENS, BECAUSE EVERY MAP BUG IN THIS BATCH WAS A LAYOUT BUG. #671 was a negative inset
+    // that a unit test would have called fine; the "frozen" report was a step that fits its viewport
+    // and therefore has nothing to scroll. Neither is visible from an assertion about a number. A
+    // picture is the only artefact that shows a map meeting both edges, or a step that lost its CTA
+    // behind a backdrop.
+    //
+    // No token and no key here on purpose: the runner has neither, so what these capture is the
+    // FALLBACK state — surface colour, corner radius, labelled text, and above all the geometry. The
+    // geometry is the part that broke.
+
+    /** A map pinned to the bottom edge: full width, square corners, no gutter on either side. */
+    @Test
+    fun mapAnchoredBottom_meetsBothEdges() {
+        capturePlacement(
+            "map_anchor_bottom",
+            blocksOf(
+                mapOf<String, Any>(
+                    "id" to "map1", "type" to "map",
+                    "field_config" to mapOf<String, Any>(
+                        "map_anchor" to "bottom",
+                        "map_height_mode" to "aspect",
+                        "map_aspect" to "16:9",
+                        "map_fallback_text" to "Map unavailable",
+                    ),
+                ),
+            ).first(),
+            MapPlacement.ANCHOR_BOTTOM,
+        )
+    }
+
+    /**
+     * A fullscreen map rendered INLINE — which is what a legacy step does with one, and what the
+     * hoist exists to prevent. It must still be a map, not a crash and not a zero-height strip.
+     */
+    @Test
+    fun mapFullscreen_rendersAsATallBlock() {
+        capture(
+            "map_fullscreen_inline",
+            blocksOf(
+                mapOf<String, Any>(
+                    "id" to "map1", "type" to "map",
+                    "field_config" to mapOf<String, Any>(
+                        "map_height_mode" to "fullscreen",
+                        "map_provider" to "google",
+                        "map_theme" to "dark",
+                        "map_fallback_text" to "Map unavailable",
+                    ),
+                ),
+            ),
+        )
+    }
+
+    /**
+     * The authored theme colours reaching a surface a person can see. With no key the map itself
+     * cannot draw, so this pins the one thing that IS under our control at that moment: the
+     * fallback surface and its text, which is the state a keyless host actually ships.
+     */
+    @Test
+    fun mapThemedFallback_usesAuthoredSurface() {
+        capture(
+            "map_themed_fallback",
+            blocksOf(
+                mapOf<String, Any>(
+                    "id" to "map1", "type" to "map",
+                    "field_config" to mapOf<String, Any>(
+                        "map_provider" to "google",
+                        "map_theme" to "dark",
+                        "map_theme_water_color" to "#0B1F3A",
+                        "map_surface_color" to "#1D2C4D",
+                        "map_fallback_text" to "Map unavailable",
+                        "map_fallback_text_color" to "#8EC3B9",
+                        "map_height" to 160.0,
+                        "map_corner_radius" to 20.0,
+                    ),
+                ),
+            ),
+        )
+    }
 
     // ── #654 / #659 — horizontal_align on a width-constrained block ───────────────────────────
 
@@ -179,4 +344,10 @@ class WineTrailsRenderSnapshotTest {
             ),
         )
     }
+
+    private companion object {
+        // Verbatim from orgs/…/config/onboarding_index/flows/… step13, 2026-09-25.
+        const val Q6B_BLOCKS_JSON = """[{"image_fit": "contain", "horizontal_align": "center", "type": "image", "height": "150", "image_url": "https://storage.googleapis.com/appdna-assets/assets/aa763dcf-feae-4fd7-ae8e-775acd1f483d/f67ebd31-c573-47dd-aa83-64742880e717/onboarding-images/b440e0b3-1817-400d-affa-bbe708bd25eb_1e980a3b-6a0a-4dda-b34c-ae2be7849103.png", "corner_radius": "12", "id": "block_1_1qxxjc"}, {"style": {"color": "#EAE9E5", "font_size": "22", "font_weight": "700", "alignment": "center"}, "horizontal_align": "center", "id": "block_1_32q89o", "text": "Your Audio Tour is almost ready!", "type": "heading", "level": "1"}, {"id": "block_1_i5umn3", "type": "map", "field_config": {"route_width": "4", "map_fallback_text": "Map unavailable", "route_casing_width": "2", "map_stops": [], "map_surface_color": "#E5E7EB", "marker_style": "pin", "route_style": "solid", "map_height": "220", "marker_size": "28", "route_show": true, "map_fit_to_stops": true, "map_zoom": "12", "route_casing_color": "#FFFFFF", "map_center_lat": 47.6205, "map_center_lng": -122.3493, "map_style": "streets", "map_corner_radius": "12", "map_interactive": true, "marker_color": "#FFD700", "route_color": "#cf4646"}, "horizontal_align": "center"}, {"style": {"color": "#EAE9E5", "alignment": "center", "font_size": "16", "font_weight": "500"}, "text": "Listen to a preview of your route narrative", "type": "text", "horizontal_align": "center", "id": "block_1_oule5g"}, {"style": {"alignment": "center", "color": "#EAE9E5", "font_size": "16", "font_weight": "600"}, "autoplay": false, "icon_emoji": "🔊", "element_width": "75%", "audio_url": "", "id": "block_4_869akv", "text_color": "#ffffff", "element_height": "50px", "bg_color": "#C48F7F", "horizontal_align": "center", "vertical_align": "center", "type": "sound_button", "vertical_offset": "0", "text": "{{hook_data.audioUrl}}", "zone": "center", "button_corner_radius": "24", "variant": "primary"}, {"variant": "primary", "id": "block_2_odjg4q", "button_corner_radius": "24", "zone": "bottom", "vertical_offset": "0", "text": "Unlock Full Audio Tour", "style": {"color": "#192334", "alignment": "center", "font_size": "16", "font_weight": "600"}, "type": "button", "text_color": "#192334", "horizontal_align": "center", "bg_color": "#FFD700", "vertical_align": "bottom", "element_width": "fill", "action": "next"}]"""
+    }
+
 }

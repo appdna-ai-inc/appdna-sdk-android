@@ -2954,6 +2954,27 @@ private fun BlockBasedStepView(
 ) {
     val variant = effectiveConfig.layout_variant ?: "no_image"
 
+    /**
+     * SPEC-495 §C — the two map placements that are NOT blocks in the column.
+     *
+     * A `fullscreen` map is the step's BACKGROUND, and a `top`/`bottom` anchored map is pinned to a
+     * step edge with the content flowing past it. Neither can be rendered from inside
+     * ThreeZoneBlockLayout, which lays its children out in a scrolling column — so they are lifted
+     * out here and the column renders what is left.
+     *
+     * 🔴 Lifted, not COPIED. The filter below removes them from `blocks`, or a fullscreen map would
+     * be drawn twice: once behind the content and once as an 844dp block inside it.
+     *
+     * Only the FIRST of each is honoured. Two backgrounds is not a thing an author can mean, and
+     * silently stacking them is how you get a map nobody can explain.
+     */
+    val backdropMap = blocks.firstOrNull { it.type == "map" && it.mapPlacement() == MapPlacement.BACKDROP }
+    val topMap = blocks.firstOrNull { it.type == "map" && it.mapPlacement() == MapPlacement.ANCHOR_TOP }
+    val bottomMap = blocks.firstOrNull { it.type == "map" && it.mapPlacement() == MapPlacement.ANCHOR_BOTTOM }
+    @Suppress("NAME_SHADOWING")
+    val blocks = blocks.filterNot { it === backdropMap || it === topMap || it === bottomMap }
+
+
     // SPEC-419 STEP-2 — per-block field_config overrides pushed by the host delegate (blockId -> key ->
     // value). Snapshot-observable so a merged override recomposes the affected block. Reset per step.
     val fieldConfigOverrides = remember(stepId) { mutableStateMapOf<String, Map<String, Any>>() }
@@ -3508,113 +3529,115 @@ private fun BlockBasedStepView(
             }
         }
 
-        when (variant) {
-            "image_fullscreen" -> {
-                Box(Modifier.fillMaxSize()) {
-                    // SPEC-419 — only render the variant image + its darkening overlay when an image
-                    // is ACTUALLY authored. Some authored steps use layout_variant=image_fullscreen
-                    // but have NO image_url (the bg is a gradient painted full-bleed by
-                    // StepFullScreenBackground). The Transparent→Black0.7 overlay was firing anyway,
-                    // darkening the BOTTOM of the CONTENT area (it's bounded to the safe-area content)
-                    // → a banded dark "gap" below the CTA vs the uniform navy in the nav region (the
-                    // user-reported bottom band). iOS only darkens over a real image; no image → no
-                    // overlay → the gradient stays uniform top-to-bottom.
-                    if (effectiveConfig.image_url != null) {
-                        ai.appdna.sdk.core.NetworkImage(
-                            url = effectiveConfig.image_url,
-                            modifier = Modifier.fillMaxSize(),
-                            contentScale = androidx.compose.ui.layout.ContentScale.Crop,
-                        )
-                        // Gradient overlay (legibility scrim over the image)
-                        Box(
+        StepMapFrame(backdrop = backdropMap, top = topMap, bottom = bottomMap) {
+            when (variant) {
+                "image_fullscreen" -> {
+                    Box(Modifier.fillMaxSize()) {
+                        // SPEC-419 — only render the variant image + its darkening overlay when an image
+                        // is ACTUALLY authored. Some authored steps use layout_variant=image_fullscreen
+                        // but have NO image_url (the bg is a gradient painted full-bleed by
+                        // StepFullScreenBackground). The Transparent→Black0.7 overlay was firing anyway,
+                        // darkening the BOTTOM of the CONTENT area (it's bounded to the safe-area content)
+                        // → a banded dark "gap" below the CTA vs the uniform navy in the nav region (the
+                        // user-reported bottom band). iOS only darkens over a real image; no image → no
+                        // overlay → the gradient stays uniform top-to-bottom.
+                        if (effectiveConfig.image_url != null) {
+                            ai.appdna.sdk.core.NetworkImage(
+                                url = effectiveConfig.image_url,
+                                modifier = Modifier.fillMaxSize(),
+                                contentScale = androidx.compose.ui.layout.ContentScale.Crop,
+                            )
+                            // Gradient overlay (legibility scrim over the image)
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxSize()
+                                    .background(
+                                        Brush.verticalGradient(
+                                            colors = listOf(Color.Transparent, Color.Black.copy(alpha = 0.7f)),
+                                            startY = 300f,
+                                        )
+                                    )
+                            )
+                        }
+                        // SPEC-419 — let ThreeZoneBlockLayout own ALL vertical positioning
+                        // (top/center/bottom zones), matching iOS which renders the bg full-screen
+                        // and positions the zone layout normally. The old `Arrangement.Bottom` +
+                        // 200dp top Spacer shoved a TOP-zone block (e.g. an injected select) ~200dp
+                        // down, so the block iOS pins to the top rendered a third of the way down.
+                        // The Box(weight = 1f) gives TZBL an explicitly BOUNDED height so its inner
+                        // verticalScroll never measures to infinity (the crash the old wrapper
+                        // guarded against) — without imposing any vertical offset.
+                        Column(
                             modifier = Modifier
                                 .fillMaxSize()
-                                .background(
-                                    Brush.verticalGradient(
-                                        colors = listOf(Color.Transparent, Color.Black.copy(alpha = 0.7f)),
-                                        startY = 300f,
-                                    )
-                                )
-                        )
+                                .padding(vertical = 20.dp), // SPEC-419 — horizontal owned by ThreeZoneBlockLayout (8%) so margins match iOS ~10.4% (was double-padded ~15% → headings wrapped more)
+                        ) {
+                            Box(modifier = Modifier.weight(1f).fillMaxWidth()) {
+                                ThreeZoneBlockLayout(blocks = blocks, onAction = ::handleAction, toggleValues = toggleValues, inputValues = inputValues, loc = ::loc, responses = responses, hookData = hookData, currentStepIndex = currentStepIndex, totalSteps = totalSteps, onInteract = ::handleInteract, fieldConfigOverrides = fieldConfigOverrides, fieldOptionsOverrides = fieldOptionsOverrides)
+                            }
+                        }
                     }
-                    // SPEC-419 — let ThreeZoneBlockLayout own ALL vertical positioning
-                    // (top/center/bottom zones), matching iOS which renders the bg full-screen
-                    // and positions the zone layout normally. The old `Arrangement.Bottom` +
-                    // 200dp top Spacer shoved a TOP-zone block (e.g. an injected select) ~200dp
-                    // down, so the block iOS pins to the top rendered a third of the way down.
-                    // The Box(weight = 1f) gives TZBL an explicitly BOUNDED height so its inner
-                    // verticalScroll never measures to infinity (the crash the old wrapper
-                    // guarded against) — without imposing any vertical offset.
-                    Column(
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .padding(vertical = 20.dp), // SPEC-419 — horizontal owned by ThreeZoneBlockLayout (8%) so margins match iOS ~10.4% (was double-padded ~15% → headings wrapped more)
-                    ) {
-                        Box(modifier = Modifier.weight(1f).fillMaxWidth()) {
+                }
+                "image_split" -> {
+                    Row(Modifier.fillMaxSize()) {
+                        // Image side (40%)
+                        ai.appdna.sdk.core.NetworkImage(
+                            url = effectiveConfig.image_url,
+                            modifier = Modifier.weight(0.4f).fillMaxHeight(),
+                            contentScale = androidx.compose.ui.layout.ContentScale.Crop,
+                        )
+                        // Content side (60%) — TZBL provides its own internal
+                        // verticalScroll (Hotfix-1.0.33 — was nested-scroll crash).
+                        Column(
+                            modifier = Modifier
+                                .weight(0.6f)
+                                .padding(16.dp),
+                        ) {
                             ThreeZoneBlockLayout(blocks = blocks, onAction = ::handleAction, toggleValues = toggleValues, inputValues = inputValues, loc = ::loc, responses = responses, hookData = hookData, currentStepIndex = currentStepIndex, totalSteps = totalSteps, onInteract = ::handleInteract, fieldConfigOverrides = fieldConfigOverrides, fieldOptionsOverrides = fieldOptionsOverrides)
                         }
                     }
                 }
-            }
-            "image_split" -> {
-                Row(Modifier.fillMaxSize()) {
-                    // Image side (40%)
-                    ai.appdna.sdk.core.NetworkImage(
-                        url = effectiveConfig.image_url,
-                        modifier = Modifier.weight(0.4f).fillMaxHeight(),
-                        contentScale = androidx.compose.ui.layout.ContentScale.Crop,
-                    )
-                    // Content side (60%) — TZBL provides its own internal
-                    // verticalScroll (Hotfix-1.0.33 — was nested-scroll crash).
+                "image_bottom" -> {
+                    // Hotfix-1.0.33 — outer scroll removed; TZBL owns scrolling.
                     Column(
                         modifier = Modifier
-                            .weight(0.6f)
-                            .padding(16.dp),
+                            .fillMaxSize()
+                            .padding(vertical = 20.dp), // SPEC-419 — horizontal owned by TZBL (8%) → margins match iOS ~10.4%
                     ) {
+                        ThreeZoneBlockLayout(blocks = blocks, onAction = ::handleAction, toggleValues = toggleValues, inputValues = inputValues, loc = ::loc, responses = responses, hookData = hookData, currentStepIndex = currentStepIndex, totalSteps = totalSteps, onInteract = ::handleInteract, fieldConfigOverrides = fieldConfigOverrides, fieldOptionsOverrides = fieldOptionsOverrides)
+                        Spacer(Modifier.height(16.dp))
+                        ai.appdna.sdk.core.NetworkImage(
+                            url = effectiveConfig.image_url,
+                            modifier = Modifier.fillMaxWidth().height(240.dp).clip(RoundedCornerShape(12.dp)),
+                            contentScale = androidx.compose.ui.layout.ContentScale.Fit,
+                        )
+                    }
+                }
+                "image_top" -> {
+                    // Hotfix-1.0.33 — outer scroll removed; TZBL owns scrolling.
+                    Column(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .padding(vertical = 20.dp), // SPEC-419 — horizontal owned by TZBL (8%) → margins match iOS ~10.4%
+                    ) {
+                        ai.appdna.sdk.core.NetworkImage(
+                            url = effectiveConfig.image_url,
+                            modifier = Modifier.fillMaxWidth().height(240.dp).clip(RoundedCornerShape(12.dp)),
+                            contentScale = androidx.compose.ui.layout.ContentScale.Fit,
+                        )
+                        Spacer(Modifier.height(16.dp))
                         ThreeZoneBlockLayout(blocks = blocks, onAction = ::handleAction, toggleValues = toggleValues, inputValues = inputValues, loc = ::loc, responses = responses, hookData = hookData, currentStepIndex = currentStepIndex, totalSteps = totalSteps, onInteract = ::handleInteract, fieldConfigOverrides = fieldConfigOverrides, fieldOptionsOverrides = fieldOptionsOverrides)
                     }
                 }
-            }
-            "image_bottom" -> {
-                // Hotfix-1.0.33 — outer scroll removed; TZBL owns scrolling.
-                Column(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .padding(vertical = 20.dp), // SPEC-419 — horizontal owned by TZBL (8%) → margins match iOS ~10.4%
-                ) {
-                    ThreeZoneBlockLayout(blocks = blocks, onAction = ::handleAction, toggleValues = toggleValues, inputValues = inputValues, loc = ::loc, responses = responses, hookData = hookData, currentStepIndex = currentStepIndex, totalSteps = totalSteps, onInteract = ::handleInteract, fieldConfigOverrides = fieldConfigOverrides, fieldOptionsOverrides = fieldOptionsOverrides)
-                    Spacer(Modifier.height(16.dp))
-                    ai.appdna.sdk.core.NetworkImage(
-                        url = effectiveConfig.image_url,
-                        modifier = Modifier.fillMaxWidth().height(240.dp).clip(RoundedCornerShape(12.dp)),
-                        contentScale = androidx.compose.ui.layout.ContentScale.Fit,
-                    )
-                }
-            }
-            "image_top" -> {
-                // Hotfix-1.0.33 — outer scroll removed; TZBL owns scrolling.
-                Column(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .padding(vertical = 20.dp), // SPEC-419 — horizontal owned by TZBL (8%) → margins match iOS ~10.4%
-                ) {
-                    ai.appdna.sdk.core.NetworkImage(
-                        url = effectiveConfig.image_url,
-                        modifier = Modifier.fillMaxWidth().height(240.dp).clip(RoundedCornerShape(12.dp)),
-                        contentScale = androidx.compose.ui.layout.ContentScale.Fit,
-                    )
-                    Spacer(Modifier.height(16.dp))
-                    ThreeZoneBlockLayout(blocks = blocks, onAction = ::handleAction, toggleValues = toggleValues, inputValues = inputValues, loc = ::loc, responses = responses, hookData = hookData, currentStepIndex = currentStepIndex, totalSteps = totalSteps, onInteract = ::handleInteract, fieldConfigOverrides = fieldConfigOverrides, fieldOptionsOverrides = fieldOptionsOverrides)
-                }
-            }
-            else -> { // no_image
-                // Hotfix-1.0.33 — outer scroll removed; TZBL owns scrolling.
-                Column(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .padding(vertical = 20.dp), // SPEC-419 — horizontal owned by TZBL (8%) → margins match iOS ~10.4%
-                ) {
-                    ThreeZoneBlockLayout(blocks = blocks, onAction = ::handleAction, toggleValues = toggleValues, inputValues = inputValues, loc = ::loc, responses = responses, hookData = hookData, currentStepIndex = currentStepIndex, totalSteps = totalSteps, onInteract = ::handleInteract, fieldConfigOverrides = fieldConfigOverrides, fieldOptionsOverrides = fieldOptionsOverrides)
+                else -> { // no_image
+                    // Hotfix-1.0.33 — outer scroll removed; TZBL owns scrolling.
+                    Column(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .padding(vertical = 20.dp), // SPEC-419 — horizontal owned by TZBL (8%) → margins match iOS ~10.4%
+                    ) {
+                        ThreeZoneBlockLayout(blocks = blocks, onAction = ::handleAction, toggleValues = toggleValues, inputValues = inputValues, loc = ::loc, responses = responses, hookData = hookData, currentStepIndex = currentStepIndex, totalSteps = totalSteps, onInteract = ::handleInteract, fieldConfigOverrides = fieldConfigOverrides, fieldOptionsOverrides = fieldOptionsOverrides)
+                    }
                 }
             }
         }

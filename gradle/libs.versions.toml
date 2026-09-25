@@ -47,6 +47,12 @@ kotlinxCollectionsImmutable = "0.3.7"
 
 # Networking / images
 okhttp = "4.12.0"
+# SPEC-495 — the bundled interactive map tier. maps-compose is the Compose wrapper over
+# play-services-maps; both resolve from google()/mavenCentral() with no credential, which is why
+# Google ships in this release and Mapbox does not (its Android SDK needs a secret download token
+# and its own Maven repo — see SPEC-495 §D3).
+mapsCompose = "4.4.1"
+playServicesMaps = "18.2.0"
 coil = "2.7.0"
 
 # Rich media (SPEC-070-A E.1 — SPEC-085 parity)
@@ -99,6 +105,8 @@ firebase-messaging           = { module = "com.google.firebase:firebase-messagin
 
 # Networking + JSON + serialization
 okhttp                       = { module = "com.squareup.okhttp3:okhttp", version.ref = "okhttp" }
+maps-compose                 = { module = "com.google.maps.android:maps-compose", version.ref = "mapsCompose" }
+play-services-maps           = { module = "com.google.android.gms:play-services-maps", version.ref = "playServicesMaps" }
 org-json                     = { module = "org.json:json", version.ref = "orgJson" }
 kotlinx-serialization-json   = { module = "org.jetbrains.kotlinx:kotlinx-serialization-json", version.ref = "kotlinxSerialization" }
 

@@ -30,6 +30,7 @@ import androidx.compose.ui.graphics.compositeOver
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import android.content.Intent
@@ -116,6 +117,7 @@ import androidx.compose.ui.zIndex
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.layout.layout
 import androidx.compose.runtime.DisposableEffect
 import ai.appdna.sdk.AppDNA
 import androidx.compose.animation.AnimatedVisibility
@@ -7173,6 +7175,38 @@ internal fun multiButtonRowPlan(childCount: Int, perRow: Int): List<Int> {
 }
 
 /**
+ * #671 — let a block bleed past its parent's horizontal padding, by `inset` on each side.
+ *
+ * 🔴 THIS WAS `Modifier.padding(horizontal = (-20).dp)` AND IT CRASHED THE WHOLE SCREEN.
+ *
+ * iOS expresses full bleed as `.padding(.horizontal, -20)`, which SwiftUI accepts and treats as
+ * "extend outward". Compose does not: `Modifier.padding` carries
+ * `require(value >= 0f) { "Padding must be non-negative" }` and throws when the modifier is
+ * CONSTRUCTED — during composition of the step, before anything is laid out. So a single authored
+ * boolean took down the entire screen, not just the map: on Q6B nothing scrolled and nothing could
+ * be tapped, while iOS rendered the same step correctly. That asymmetry is the whole signature.
+ *
+ * The Compose idiom is to measure against widened constraints and place the child back by the same
+ * inset. Width grows by `2 * inset` and the block shifts left by `inset`, which is what the author
+ * asked for — a map meeting both screen edges — without ever handing a negative value to `padding`.
+ */
+internal fun Modifier.fullBleedHorizontal(inset: Dp): Modifier = this.layout { measurable, constraints ->
+    val bleed = inset.roundToPx()
+    val extra = bleed * 2
+    val widened = constraints.copy(
+        minWidth = (constraints.minWidth + extra).coerceAtMost(constraints.maxWidth + extra),
+        maxWidth = constraints.maxWidth + extra,
+    )
+    val placeable = measurable.measure(widened)
+    // 🔴 Report the ORIGINAL width, not the widened one. Reporting the widened width makes the
+    // parent lay the block out as if it were wider, which pushes it right and cancels half the
+    // bleed — the first version of this fix bled past the left edge and stopped flush with the
+    // content on the right. Occupying the normal width and PAINTING wider is what "full bleed"
+    // means: the block keeps its place in the column and overflows both edges equally.
+    layout(constraints.maxWidth, placeable.height) { placeable.place(-bleed, 0) }
+}
+
+/**
  * #654 / #659 / #663 — whether a button should stretch to the width it is offered.
  *
  * A button hardcoded `fillMaxWidth()` on Android, `.frame(maxWidth: .infinity)` on iOS and
@@ -7628,13 +7662,33 @@ internal fun percentEncodeStrict(input: String): String {
 
 // Subscript through a local rather than a dotted accessor call: the authorability scanner treats
 // that method name as a field name and reports a phantom unauthorable field on every map.
-private fun ContentBlock.mapAny(key: String): Any? {
+internal fun ContentBlock.mapAny(key: String): Any? {
     val cfg = field_config ?: return null
     return cfg[key]
 }
-private fun ContentBlock.mapNum(key: String): Double? = (mapAny(key) as? Number)?.toDouble()
-private fun ContentBlock.mapStr(key: String): String? = mapAny(key) as? String
-private fun ContentBlock.mapBool(key: String): Boolean? = mapAny(key) as? Boolean
+/**
+ * SPEC-495 E1 — a map number, accepting the STRING the console actually publishes.
+ *
+ * 🔴 EVERY NUMERIC MAP SETTING WAS BEING SILENTLY DROPPED.
+ *
+ * The published WineTrails block carries `map_height: "220"`, `map_zoom: "12"`,
+ * `marker_size: "28"`, `route_width: "4"` — strings, not numbers. This read them with
+ * `as? Number`, which yields null for a String, so each fell back to its default and the author's
+ * map styling did nothing. The console panel showed height 280 and radius 15 while the device was
+ * handed "220" and "12". iOS had the identical accessor, so it was consistent rather than
+ * divergent — which is exactly why nobody noticed.
+ *
+ * Coercing on READ fixes every already-published flow at next launch, with no republish and no
+ * migration. A non-numeric string still yields null and the default, so "auto" or "" cannot be
+ * mistaken for a number.
+ */
+internal fun ContentBlock.mapNum(key: String): Double? = when (val v = mapAny(key)) {
+    is Number -> v.toDouble()
+    is String -> v.trim().toDoubleOrNull()
+    else -> null
+}
+internal fun ContentBlock.mapStr(key: String): String? = mapAny(key) as? String
+internal fun ContentBlock.mapBool(key: String): Boolean? = mapAny(key) as? Boolean
 
 /**
  * The stops this map draws. Precedence between delegate, variable and authored sources is resolved
@@ -7689,14 +7743,238 @@ internal fun mapRoutePolyline(block: ContentBlock): String? {
 }
 
 /** The composed Mapbox Static Images URL, or null when this app has no token. */
-internal fun mapStaticUrl(block: ContentBlock, token: String?, width: Int, height: Int): String? {
+/**
+ * SPEC-495 §A — which provider draws this map, defaulting to the one every published flow uses.
+ *
+ * Kept as a pure function of the block so the tier decision is asserted by a test and a shared
+ * fixture rather than inferred from a screenshot. An unknown value falls back to mapbox rather
+ * than rendering nothing: a typo in a provider name must not blank the map.
+ */
+/**
+ * SPEC-495 §D — the Mapbox style this map draws with, after the two overrides.
+ *
+ * Precedence: an explicit Studio URL beats everything, then the theme (which only speaks when it is
+ * not `auto`), then the named style. A Studio URL arrives as `mapbox://styles/user/id` and the
+ * static API wants `user/id`, so the scheme is stripped rather than sent and silently 404'd.
+ */
+internal fun resolveMapboxStyle(block: ContentBlock, styles: Map<String, String>): String {
+    val url = block.mapStr("map_style_url")?.trim()?.ifEmpty { null }
+    if (url != null) return url.removePrefix("mapbox://styles/")
+    return when (block.mapStr("map_theme") ?: "auto") {
+        "light" -> styles["light"]!!
+        "dark" -> styles["dark"]!!
+        else -> styles[block.mapStr("map_style") ?: "streets"] ?: styles["streets"]!!
+    }
+}
+
+/**
+ * The styled-map JSON for a theme, with every colour the author actually chose.
+ *
+ * 🔴 DEFAULTS, NOT CONSTANTS. These four hexes used to live as bare literals inside a JSON blob, and
+ * `check:authorability` was right to call every one an orphan: a person could see them and nobody
+ * could change them. Under Critical Rule 8 a colour a person sees is a colour a person can set, so
+ * each is now the default behind an authored field with its own ColorPicker. A theme is a starting
+ * point, not a cage — pick `dark`, then push the water bluer.
+ *
+ * Null for `auto` (and anything unrecognised): `auto` means "leave Google's own styling alone", and
+ * inventing a palette for it would make the one theme that promises not to restyle the map the one
+ * that does. An author who pasted their own `map_style_json` still wins outright, upstream of this.
+ */
+internal fun googleThemeJson(block: ContentBlock): String? {
+    val theme = block.mapStr("map_theme") ?: "auto"
+    if (theme != "dark" && theme != "light") return null
+    val dark = theme == "dark"
+    val geometry = block.mapStr("map_theme_geometry_color") ?: if (dark) "#1d2c4d" else "#f5f5f5"
+    val label = block.mapStr("map_theme_label_color") ?: if (dark) "#8ec3b9" else "#616161"
+    val stroke = block.mapStr("map_theme_label_stroke_color") ?: if (dark) "#1a3646" else "#ffffff"
+    val water = block.mapStr("map_theme_water_color") ?: if (dark) "#0e1626" else "#c9dced"
+    return """[{"elementType":"geometry","stylers":[{"color":"$geometry"}]},""" +
+        """{"elementType":"labels.text.fill","stylers":[{"color":"$label"}]},""" +
+        """{"elementType":"labels.text.stroke","stylers":[{"color":"$stroke"}]},""" +
+        """{"featureType":"water","elementType":"geometry","stylers":[{"color":"$water"}]}]"""
+}
+
+/** The style JSON a Google map should use: the author's if they gave one, else the theme's. */
+internal fun googleStyleJsonOf(block: ContentBlock): String? {
+    val authored = block.mapStr("map_style_json")?.ifEmpty { null }
+    if (authored != null) return authored
+    return googleThemeJson(block)
+}
+
+internal fun mapProviderOf(block: ContentBlock): String =
+    when (block.mapStr("map_provider")?.lowercase()) {
+        "google" -> "google"
+        else -> "mapbox"
+    }
+
+/**
+ * SPEC-495 §A — the static image URL for whichever provider the author chose.
+ *
+ * Returns null when that provider has no key, which is what drops the render to tier 4 (the
+ * labelled surface). Tier 4 must stay reachable: a map with no key degrades to a caption, never to
+ * a blank box.
+ */
+internal fun mapStaticUrl(
+    block: ContentBlock,
+    token: String?,
+    width: Int,
+    height: Int,
+    googleKey: String? = null,
+): String? = when (mapProviderOf(block)) {
+    "google" -> googleStaticUrl(block, googleKey, width, height)
+    else -> mapboxStaticUrl(block, token, width, height)
+}
+
+/**
+ * SPEC-495 §A/§D — the Google Static Maps URL, with the SAME semantics as the Mapbox builder.
+ *
+ * Same route-then-markers ordering (so pins draw over the line), the same two-stacked-paths trick
+ * for a route casing, the same "one character of label, and only up to 9 stops" rule, and the same
+ * fit-to-stops behaviour. Two providers that agree on everything except URL grammar is the point:
+ * an author switching provider should see the same map, not a different design.
+ *
+ * Google auto-fits when markers or a path are supplied and centre/zoom are OMITTED, so `fit` is
+ * expressed by leaving them out rather than by a sentinel like Mapbox's `auto`.
+ */
+internal fun googleStaticUrl(block: ContentBlock, key: String?, width: Int, height: Int): String? {
+    if (key.isNullOrEmpty()) return null
+    val isPlace = block.mapStr("map_mode") == "place"
+    val stops = mapStopsOf(block)
+    val parts = mutableListOf<String>()
+
+    val w = maxOf(1, width)
+    val h = maxOf(1, height)
+    parts.add("size=${w}x${h}")
+    if (block.mapBool("map_retina") != false) parts.add("scale=2")
+
+    // A Cloud map ID carries its own styling, so it REPLACES maptype + style rather than stacking
+    // with them — Google ignores `style` when `map_id` is present and silently, which would look
+    // like our styling being dropped.
+    val cloudId = block.mapStr("map_cloud_map_id")?.ifEmpty { null }
+    if (cloudId != null) {
+        parts.add("map_id=$cloudId")
+    } else {
+        parts.add("maptype=${googleMapType(block.mapStr("map_style"))}")
+        googleStyleParams(googleStyleJsonOf(block)).forEach { parts.add(it) }
+    }
+
+    // Route BEFORE markers, matching Mapbox: Google draws parameters in order, so the path must be
+    // emitted first for pins to sit on top of it.
+    if (!isPlace && block.mapBool("route_show") != false) {
+        val encoded = mapRoutePolyline(block) ?: if (stops.size >= 2) encodeMapPolyline(stops) else null
+        if (!encoded.isNullOrEmpty()) {
+            val routeW = (block.mapNum("route_width") ?: 4.0).toInt()
+            val opacity = (block.mapNum("route_opacity") ?: 1.0).coerceIn(0.0, 1.0)
+            val casingW = (block.mapNum("route_casing_width") ?: 2.0).toInt()
+            val enc = percentEncodeStrict(encoded)
+            if (casingW > 0) {
+                val casing = googleHex(block.mapStr("route_casing_color"), "ffffff", 1.0)
+                parts.add("path=color:0x$casing%7Cweight:${routeW + casingW * 2}%7Cenc:$enc")
+            }
+            val routeC = googleHex(block.mapStr("route_color"), "6366f1", opacity)
+            parts.add("path=color:0x$routeC%7Cweight:$routeW%7Cenc:$enc")
+        }
+    }
+
+    val markerStyle = block.mapStr("marker_style") ?: "numbered"
+    val custom = if (markerStyle == "custom" || markerStyle == "image") {
+        block.mapStr("marker_image_url")?.ifEmpty { null }
+    } else null
+    val markerColor = googleHex(block.mapStr("marker_color"), "6366f1", 1.0)
+    val startColor = googleHex(block.mapStr("marker_start_color"), block.mapStr("marker_color") ?: "6366f1", 1.0)
+    // Google's `size:` is a token, not a pixel value, so the console's pixel slider lands in the
+    // nearer of the two the API offers — the same honest approximation Mapbox's pin-s/pin-l makes.
+    val sizeTok = if ((block.mapNum("marker_size") ?: 28.0) >= 32) "mid" else "small"
+    stops.forEachIndexed { i, st ->
+        val at = "${trimNum(st.first)},${trimNum(st.second)}"
+        if (custom != null) {
+            parts.add("markers=icon:${percentEncodeStrict(custom)}%7C$at")
+            return@forEachIndexed
+        }
+        // A Google label is ONE uppercase character or digit, so past 9 stops it is dropped rather
+        // than rendered wrong — identical to the Mapbox rule so the two agree stop for stop.
+        val label = if (markerStyle == "numbered" && stops.size <= 9) "%7Clabel:${i + 1}" else ""
+        val colour = if (i == 0) startColor else markerColor
+        parts.add("markers=color:0x$colour%7Csize:$sizeTok$label%7C$at")
+    }
+
+    // Omitting centre+zoom is how Google is told to fit; with nothing to fit it needs an explicit
+    // viewport or the request is an error — the same trap as Mapbox's `auto`.
+    val fit = !isPlace && block.mapBool("map_fit_to_stops") != false && stops.isNotEmpty()
+    if (!fit) {
+        val lat = if (isPlace) (block.mapNum("place_lat") ?: 47.6205) else (block.mapNum("map_center_lat") ?: 47.6205)
+        val lng = if (isPlace) (block.mapNum("place_lng") ?: -122.3493) else (block.mapNum("map_center_lng") ?: -122.3493)
+        parts.add("center=${trimNum(lat)},${trimNum(lng)}")
+        parts.add("zoom=${(block.mapNum("map_zoom") ?: 12.0).toInt()}")
+    }
+    parts.add("key=$key")
+    return "https://maps.googleapis.com/maps/api/staticmap?" + parts.joinToString("&")
+}
+
+/** SPEC-495 §D — our style vocabulary mapped onto Google's four map types. */
+internal fun googleMapType(style: String?): String = when (style) {
+    "satellite" -> "satellite"
+    "satellite_streets" -> "hybrid"
+    "outdoors" -> "terrain"
+    else -> "roadmap"   // streets / light / dark — tone comes from style JSON, not maptype
+}
+
+/**
+ * SPEC-495 §D — Google styled-map JSON to repeated `style=` parameters.
+ *
+ * Google's static API does not take the JSON array its own interactive SDK takes; it takes one
+ * `style=` parameter per rule. Converting here means an author can paste the SAME JSON they would
+ * use in the interactive map or in Google's own style editor, and it works on both tiers.
+ * Malformed JSON yields NO style params rather than a broken request.
+ */
+internal fun googleStyleParams(json: String?): List<String> {
+    if (json.isNullOrBlank()) return emptyList()
+    return try {
+        val arr = org.json.JSONArray(json)
+        (0 until arr.length()).mapNotNull { i ->
+            val rule = arr.optJSONObject(i) ?: return@mapNotNull null
+            val bits = mutableListOf<String>()
+            rule.optString("featureType").takeIf { it.isNotEmpty() }?.let { bits.add("feature:$it") }
+            rule.optString("elementType").takeIf { it.isNotEmpty() }?.let { bits.add("element:$it") }
+            val stylers = rule.optJSONArray("stylers")
+            if (stylers != null) {
+                for (j in 0 until stylers.length()) {
+                    val st = stylers.optJSONObject(j) ?: continue
+                    for (k in st.keys()) {
+                        val v = st.opt(k)?.toString() ?: continue
+                        bits.add("$k:" + if (v.startsWith("#")) "0x" + v.removePrefix("#") else v)
+                    }
+                }
+            }
+            if (bits.isEmpty()) null else "style=" + bits.joinToString("%7C")
+        }
+    } catch (_: Exception) {
+        emptyList()
+    }
+}
+
+/**
+ * SPEC-495 §D — a hex colour for Google, which wants `0xRRGGBB` or `0xRRGGBBAA`.
+ *
+ * Opacity rides in the alpha byte because Google's static API has no separate opacity parameter,
+ * whereas Mapbox takes it as a path suffix. Same authored `route_opacity`, two grammars.
+ */
+internal fun googleHex(value: String?, fallback: String, opacity: Double): String {
+    val raw = (value ?: fallback).removePrefix("#").trim().ifEmpty { fallback.removePrefix("#") }
+    val rgb = if (raw.length >= 6) raw.substring(0, 6) else fallback.removePrefix("#")
+    if (opacity >= 1.0) return rgb
+    val a = (opacity.coerceIn(0.0, 1.0) * 255).toInt().coerceIn(0, 255)
+    return rgb + String.format("%02x", a)
+}
+
+internal fun mapboxStaticUrl(block: ContentBlock, token: String?, width: Int, height: Int): String? {
     if (token.isNullOrEmpty()) return null
     val styles = mapOf(
         "streets" to "mapbox/streets-v12", "outdoors" to "mapbox/outdoors-v12",
         "satellite" to "mapbox/satellite-v9", "satellite_streets" to "mapbox/satellite-streets-v12",
         "light" to "mapbox/light-v11", "dark" to "mapbox/dark-v11",
     )
-    val style = styles[block.mapStr("map_style") ?: "streets"] ?: styles["streets"]!!
+    val style = resolveMapboxStyle(block, styles)
     val isPlace = block.mapStr("map_mode") == "place"
     val stops = mapStopsOf(block)
     val overlays = mutableListOf<String>()
@@ -7778,11 +8056,45 @@ private fun trimNum(v: Double): String =
  *   3. the authored fallback text
  * Only rung 3 is a visible degradation, and it is labelled rather than blank.
  */
+/**
+ * SPEC-495 §C — where in the step this map is being drawn.
+ *
+ * The same block renders in three places and two of them are NOT inside the step's padded column,
+ * so two of its decisions have to change with the placement rather than being read off the block:
+ *
+ *   - **full-bleed** cancels the step's horizontal padding. In an anchored strip or behind the
+ *     content there is no padding to cancel, so applying it would push the map 20dp OFF each edge —
+ *     the same negative-inset shape that crashed the whole step in #671.
+ *   - **corner radius** defaults to 12 for a card in a column and to 0 for a map that is meant to
+ *     meet the screen edges. An author who set a radius still gets it; only the default moves.
+ */
+internal enum class MapPlacement(val wire: String) {
+    INLINE("inline"),
+    BACKDROP("backdrop"),
+    ANCHOR_TOP("anchor_top"),
+    ANCHOR_BOTTOM("anchor_bottom"),
+}
+
+/**
+ * Where in the step this map sits, from the block alone.
+ *
+ * `fullscreen` WINS over `map_anchor` rather than combining with it — a map cannot be both the
+ * background and a strip at one edge, and picking one is better than drawing two. Mirrored by
+ * `mapPlacementOf` (Swift) and `mapPlacementOf` (TypeScript), and pinned by the shared fixtures so
+ * the three cannot drift.
+ */
+internal fun ContentBlock.mapPlacement(): MapPlacement = when {
+    mapStr("map_height_mode") == "fullscreen" -> MapPlacement.BACKDROP
+    mapStr("map_anchor") == "top" -> MapPlacement.ANCHOR_TOP
+    mapStr("map_anchor") == "bottom" -> MapPlacement.ANCHOR_BOTTOM
+    else -> MapPlacement.INLINE
+}
+
 @Composable
-private fun MapBlock(block: ContentBlock) {
+internal fun MapBlock(block: ContentBlock, placement: MapPlacement = MapPlacement.INLINE) {
     val heightPx = mapHeightPx(block)
     val height = heightPx.dp
-    val radius = (block.mapNum("map_corner_radius") ?: 12.0).dp
+    val radius = (block.mapNum("map_corner_radius") ?: if (placement == MapPlacement.INLINE) 12.0 else 0.0).dp
     // Fixed default rather than a theme colour: iOS and the console both fall back to #E5E7EB, and
     // a theme-derived grey here would make the same unstyled map look different on each platform.
     val surface = StyleEngine.parseColor(block.mapStr("map_surface_color") ?: "#E5E7EB")
@@ -7799,15 +8111,21 @@ private fun MapBlock(block: ContentBlock) {
         // Full-bleed cancels the step's horizontal padding so the map meets both screen edges. It is
         // applied to the WHOLE column, card included, so an overlaid card stays inset relative to
         // the map rather than sliding off it.
-        modifier = if (block.mapBool("map_full_bleed") == true) {
-            Modifier.fillMaxWidth().padding(horizontal = (-20).dp)
+        modifier = if (block.mapBool("map_full_bleed") == true && placement == MapPlacement.INLINE) {
+            Modifier.fillMaxWidth().fullBleedHorizontal(20.dp)
+        } else if (placement == MapPlacement.BACKDROP) {
+            Modifier.fillMaxSize()
         } else {
             Modifier.fillMaxWidth()
         },
         verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
         Box(
-            modifier = Modifier.fillMaxWidth().height(height),
+            // A backdrop takes the step's real height rather than the 844dp reference the static
+            // image is REQUESTED at: the request needs a number, the layout must not be one, or the
+            // map is short of the bottom edge on a tall phone and clipped on a short one.
+            modifier = if (placement == MapPlacement.BACKDROP) Modifier.fillMaxSize()
+                       else Modifier.fillMaxWidth().height(height),
             contentAlignment = if (infoPosition == "overlay_top") Alignment.TopCenter else Alignment.BottomCenter,
         ) {
             Box(
@@ -7817,11 +8135,23 @@ private fun MapBlock(block: ContentBlock) {
                     .background(surface),
                 contentAlignment = Alignment.Center,
             ) {
+                val context = LocalContext.current
+                // SPEC-495 §A — tier precedence, highest first. A host that registered its own view
+                // still wins: an app already shipping a map must not end up running two engines.
+                val bundledGoogle = interactive &&
+                    mapProviderOf(block) == "google" &&
+                    hasGoogleMapsManifestKey(context)
                 if (factory != null) {
-                    // Tier 2 — the host's own map, given everything the author set.
+                    // Tier 1 — the host's own map, given everything the author set.
                     factory(mapResolvedConfig(block))
+                } else if (bundledGoogle) {
+                    // Tier 2 — a real pannable map from the bundled SDK. This is the tier #671
+                    // asked for, and the manifest-key check above is why a host without the
+                    // `com.google.android.geo.API_KEY` line falls through to the still image
+                    // rather than being handed the Maps SDK's grey "no key" rectangle.
+                    GoogleInteractiveMap(block)
                 } else {
-                    val url = mapStaticUrl(block, AppDNA.mapboxToken, 390, heightPx.toInt())
+                    val url = mapStaticUrl(block, AppDNA.mapboxToken, 390, heightPx.toInt(), AppDNA.googleMapsApiKey)
                     if (url != null) {
                         ai.appdna.sdk.core.NetworkImage(
                             url = url,
@@ -7873,6 +8203,10 @@ internal fun mapHeightPx(block: ContentBlock): Double = when (block.mapStr("map_
     // "Fill the step" is a tall block, not an unbounded one: a greedy `fillMaxHeight` inside the
     // step's scrolling column collapses every sibling to nothing.
     "fill" -> 520.0
+    // SPEC-495 §C — the height the BACKDROP static image is requested at, not the height it is laid
+    // out at (the layout fills the step). 844 is the logical height of the reference device the
+    // console previews at, so all three implementations ask the provider for the same picture.
+    "fullscreen" -> 844.0
     else -> block.mapNum("map_height") ?: 220.0
 }
 
@@ -12448,5 +12782,52 @@ private fun UnsupportedBlockPlaceholder(type: String, blockId: String) {
     ) {
         Text("Unsupported block: $type", fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = orange)
         Text("$blockId — update the AppDNA SDK", fontSize = 11.sp, color = orange)
+    }
+}
+
+/**
+ * SPEC-495 §C — the step, with its map placements around it.
+ *
+ * A `fullscreen` map goes BEHIND the whole step and `top`/`bottom` anchored maps pin to its edges,
+ * edge-to-edge, with the content flowing past them. All three are lifted out of the block column by
+ * `BlockBasedStepView` and handed here, so the column itself never sees them.
+ *
+ * 🔴 THE CONTENT SLOT IS `weight(1f)`, AND THAT IS THE WHOLE POINT.
+ *
+ * SPEC-495 §C says a fullscreen or anchored map must not break scrolling. A map that ate the
+ * available height and left the content measuring to infinity would do exactly that — and #671 was
+ * a map that only LOOKED like it had broken scrolling, so the real version is not a subtle bug to
+ * ship on top of it. `weight(1f)` gives the content an explicitly bounded height, which is what
+ * ThreeZoneBlockLayout's inner `verticalScroll` needs to work at all.
+ *
+ * With no placements at all this is the identity function — no Box, no Column, no layout change on
+ * the overwhelming majority of steps that have no map.
+ */
+@Composable
+internal fun StepMapFrame(
+    backdrop: ContentBlock?,
+    top: ContentBlock?,
+    bottom: ContentBlock?,
+    content: @Composable () -> Unit,
+) {
+    if (backdrop == null && top == null && bottom == null) {
+        content()
+        return
+    }
+    Box(modifier = Modifier.fillMaxSize()) {
+        if (backdrop != null) {
+            MapBlock(backdrop, MapPlacement.BACKDROP)
+        }
+        Column(modifier = Modifier.fillMaxSize()) {
+            if (top != null) {
+                MapBlock(top, MapPlacement.ANCHOR_TOP)
+            }
+            Box(modifier = Modifier.weight(1f).fillMaxWidth()) {
+                content()
+            }
+            if (bottom != null) {
+                MapBlock(bottom, MapPlacement.ANCHOR_BOTTOM)
+            }
+        }
     }
 }

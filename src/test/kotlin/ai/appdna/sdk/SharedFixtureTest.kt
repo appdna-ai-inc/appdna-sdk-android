@@ -41,6 +41,7 @@ import ai.appdna.sdk.billing.BillingError
 import ai.appdna.sdk.billing.billingErrorType
 import ai.appdna.sdk.config.ExperimentManager
 import ai.appdna.sdk.config.RemoteConfigManager
+import ai.appdna.sdk.onboarding.mapPlacement
 import ai.appdna.sdk.onboarding.RequiredFieldGate
 import ai.appdna.sdk.onboarding.summaryStatFieldId
 import ai.appdna.sdk.onboarding.resolveTemplateString
@@ -1246,7 +1247,15 @@ class SharedFixtureTest(
             sessionData.optString("map_token").ifEmpty { null },
             sessionData.optInt("map_width", 390),
             sessionData.optInt("map_height", 240),
+            // SPEC-495 §A — the provider is read off the block, so one driver covers both.
+            sessionData.optString("map_google_key").ifEmpty { null },
         )
+        // SPEC-495 §C — sizing and placement, from the REAL functions the renderer and the step
+        // layout call. Both are a switch over authored strings written three times in three
+        // languages, which is the exact shape that drifts silently: every version keeps returning a
+        // perfectly good number, just not the same one.
+        spy.state["map_resolved_height"] = ai.appdna.sdk.onboarding.mapHeightPx(block)
+        spy.state["map_placement"] = block.mapPlacement().wire
     }
 
     private fun runFetchRemoteConfig(action: JSONObject, spy: Spy) {

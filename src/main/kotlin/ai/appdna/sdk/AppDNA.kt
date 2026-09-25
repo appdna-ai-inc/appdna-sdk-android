@@ -37,7 +37,7 @@ import androidx.compose.runtime.Composable
 object AppDNA {
 
     /** SDK version string. */
-    const val sdkVersion = "1.0.53"
+    const val sdkVersion = "1.0.54"
 
     /**
      * SPEC-419 brand-threading — the app's brand accent hex (from `/settings/brand`,
@@ -354,6 +354,36 @@ object AppDNA {
      * Cached across launches so the very first onboarding of a cold, offline start still draws a
      * map rather than the fallback text. Bootstrap has not answered yet at that point.
      */
+    /**
+     * SPEC-495 §B — the customer's Google Maps key, delivered exactly like the Mapbox token.
+     *
+     * 🔴 Always the CUSTOMER's key, never ours: Google bills per static request and per interactive
+     * session, so the device must fetch directly and the request must bill to whoever owns the key.
+     * A host key set here wins over the bootstrap value forever — an explicit choice beats a remote
+     * default, matching `mapboxToken`.
+     *
+     * Server-delivered rather than host-set is what lets a Flutter or React Native app use Google
+     * maps with no extra wiring: the wrapper never has to expose a setter for it.
+     */
+    @JvmStatic
+    var googleMapsApiKey: String?
+        get() = hostGoogleKey
+            ?: remoteGoogleKey
+            ?: appContext?.getSharedPreferences(MAPBOX_TOKEN_PREFS, Context.MODE_PRIVATE)
+                ?.getString(GOOGLE_KEY_KEY, null)
+        set(value) { hostGoogleKey = value }
+
+    private var hostGoogleKey: String? = null
+    private var remoteGoogleKey: String? = null
+    private const val GOOGLE_KEY_KEY = "google_maps_api_key"
+
+    internal fun applyRemoteGoogleMapsKey(key: String?) {
+        remoteGoogleKey = key
+        val prefs = appContext?.getSharedPreferences(MAPBOX_TOKEN_PREFS, Context.MODE_PRIVATE) ?: return
+        if (!key.isNullOrEmpty()) prefs.edit().putString(GOOGLE_KEY_KEY, key).apply()
+        else prefs.edit().remove(GOOGLE_KEY_KEY).apply()
+    }
+
     internal fun applyRemoteMapboxToken(token: String?) {
         remoteMapboxToken = token
         val prefs = appContext?.getSharedPreferences(MAPBOX_TOKEN_PREFS, Context.MODE_PRIVATE) ?: return
@@ -1970,6 +2000,10 @@ object AppDNA {
                 // SPEC-451 — the customer's own Mapbox token, absent when they have not set one up.
                 applyRemoteMapboxToken(
                     result.optJSONObject("settings")?.optString("mapboxToken", "")?.ifEmpty { null },
+                )
+                // SPEC-495 §B — same path, same ownership rules, for the Google provider.
+                applyRemoteGoogleMapsKey(
+                    result.optJSONObject("settings")?.optString("googleMapsApiKey", "")?.ifEmpty { null },
                 )
 
                 val previousLock = runtimeLock
