@@ -7900,6 +7900,16 @@ internal fun googleStaticUrl(block: ContentBlock, key: String?, width: Int, heig
     // Google's `size:` is a token, not a pixel value, so the console's pixel slider lands in the
     // nearer of the two the API offers — the same honest approximation Mapbox's pin-s/pin-l makes.
     val sizeTok = if ((block.mapNum("marker_size") ?: 28.0) >= 32) "mid" else "small"
+    // 🔴 A NUMBERED marker must be at least `mid`, or Google silently drops the number.
+    //
+    // The Static Maps API renders `label:` only on markers of size `mid` and above — `small` and
+    // `tiny` cannot display one. Emitting `size:small` with `label:1` succeeds, draws the pins, and
+    // leaves the numbers off: a route whose stops the author numbered comes out as identical
+    // anonymous pins. Nothing errors. It was found by LOOKING at a rendered PNG from a real key,
+    // and Mapbox numbers its small pins happily — so it was a silent difference between providers
+    // for one authored config.
+    val numbered = markerStyle == "numbered" && stops.size <= 9
+    val markerSize = if (numbered && sizeTok == "small") "mid" else sizeTok
     stops.forEachIndexed { i, st ->
         val at = "${trimNum(st.first)},${trimNum(st.second)}"
         if (custom != null) {
@@ -7908,9 +7918,9 @@ internal fun googleStaticUrl(block: ContentBlock, key: String?, width: Int, heig
         }
         // A Google label is ONE uppercase character or digit, so past 9 stops it is dropped rather
         // than rendered wrong — identical to the Mapbox rule so the two agree stop for stop.
-        val label = if (markerStyle == "numbered" && stops.size <= 9) "%7Clabel:${i + 1}" else ""
+        val label = if (numbered) "%7Clabel:${i + 1}" else ""
         val colour = if (i == 0) startColor else markerColor
-        parts.add("markers=color:0x$colour%7Csize:$sizeTok$label%7C$at")
+        parts.add("markers=color:0x$colour%7Csize:$markerSize$label%7C$at")
     }
 
     // Omitting centre+zoom is how Google is told to fit; with nothing to fit it needs an explicit
