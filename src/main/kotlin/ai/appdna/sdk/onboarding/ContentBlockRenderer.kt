@@ -7801,10 +7801,25 @@ internal fun googleStyleJsonOf(block: ContentBlock): String? {
     return googleThemeJson(block)
 }
 
+/**
+ * SPEC-495 §A — which engine draws this map.
+ *
+ * 🔴 The APP's setting decides, not the block. The provider began as a per-map dropdown, which made
+ * an author re-pick the same value on every step and let them choose an engine their app had no key
+ * for — a silent placeholder on device with nothing to explain it. It is account-level setup now
+ * (console: Settings → Apps → Maps), delivered in the bootstrap payload beside the keys it selects
+ * between.
+ *
+ * A block that NAMES a provider still wins, and that is deliberate: flows published while the
+ * per-map dropdown existed carry `map_provider`, and they must keep rendering exactly as they do.
+ *
+ * An unknown value on either side falls back to mapbox — a typo must not blank the map.
+ */
 internal fun mapProviderOf(block: ContentBlock): String =
     when (block.mapStr("map_provider")?.lowercase()) {
         "google" -> "google"
-        else -> "mapbox"
+        "mapbox" -> "mapbox"
+        else -> if (AppDNA.mapProvider?.lowercase() == "google") "google" else "mapbox"
     }
 
 /**

@@ -384,6 +384,39 @@ object AppDNA {
         else prefs.edit().remove(GOOGLE_KEY_KEY).apply()
     }
 
+    /**
+     * SPEC-495 — the app's map engine (`mapbox` | `google`), delivered with the keys it selects
+     * between.
+     *
+     * 🔴 App-level, and that is a correction. The provider began as a per-block field, which let an
+     * author choose an engine their app had no key for and get a silent placeholder on device. It
+     * is set once in the console beside the credentials (Settings → Apps → Maps) and arrives here
+     * the same way they do. A block that still names a provider wins, so flows published before
+     * this keep rendering unchanged.
+     *
+     * Cached in prefs for the same reason the tokens are: the FIRST render after a cold launch
+     * happens before the bootstrap round-trip returns, and a map that flips engine a second later
+     * is worse than one that starts on the engine it ended on.
+     */
+    @JvmStatic
+    var mapProvider: String?
+        get() = hostMapProvider
+            ?: remoteMapProvider
+            ?: appContext?.getSharedPreferences(MAPBOX_TOKEN_PREFS, Context.MODE_PRIVATE)
+                ?.getString(MAP_PROVIDER_KEY, null)
+        set(value) { hostMapProvider = value }
+
+    private var hostMapProvider: String? = null
+    private var remoteMapProvider: String? = null
+    private const val MAP_PROVIDER_KEY = "map_provider"
+
+    internal fun applyRemoteMapProvider(provider: String?) {
+        remoteMapProvider = provider
+        val prefs = appContext?.getSharedPreferences(MAPBOX_TOKEN_PREFS, Context.MODE_PRIVATE) ?: return
+        if (!provider.isNullOrEmpty()) prefs.edit().putString(MAP_PROVIDER_KEY, provider).apply()
+        else prefs.edit().remove(MAP_PROVIDER_KEY).apply()
+    }
+
     internal fun applyRemoteMapboxToken(token: String?) {
         remoteMapboxToken = token
         val prefs = appContext?.getSharedPreferences(MAPBOX_TOKEN_PREFS, Context.MODE_PRIVATE) ?: return
@@ -2004,6 +2037,10 @@ object AppDNA {
                 // SPEC-495 §B — same path, same ownership rules, for the Google provider.
                 applyRemoteGoogleMapsKey(
                     result.optJSONObject("settings")?.optString("googleMapsApiKey", "")?.ifEmpty { null },
+                )
+                // SPEC-495 — the engine those two keys select between, same delivery path.
+                applyRemoteMapProvider(
+                    result.optJSONObject("settings")?.optString("mapProvider", "")?.ifEmpty { null },
                 )
 
                 val previousLock = runtimeLock
