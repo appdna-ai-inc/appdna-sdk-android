@@ -407,7 +407,13 @@ private fun applyBlockLevelOverrides(
     return blocks.map { block ->
         var next = block
         // SPEC-448 §B — host-supplied options.
-        o.fieldOptions?.get(block.id)?.let { next = next.copy(field_options = it.toImmutableList()) }
+        // SPEC-496 §A4 — applying host options REMOVES `option_set_id`, `repeat`, `empty_state` and
+        // `resolve_state` from the block's field_config: that is what makes "host fieldOptions beat
+        // an Option Set and a repeat" true (precedence: host > Option Set > repeat > authored).
+        // One giant `ContentBlock.copy` per method — see `withHostOptions` (D8 VerifyError guard).
+        o.fieldOptions?.get(block.id)?.let {
+            next = next.withHostOptions(it.toImmutableList())
+        }
         // SPEC-451 — host-supplied route. Written into `field_config` under the SAME keys the
         // console authors, so the renderer has exactly one code path and a delegate route cannot
         // render differently from an authored one.
@@ -428,7 +434,7 @@ private fun applyBlockLevelOverrides(
                 }
             }
             if (patch.isNotEmpty()) {
-                next = next.copy(field_config = (next.field_config ?: emptyMap()) + patch)
+                next = next.withFieldConfig((next.field_config ?: emptyMap()) + patch)
             }
         }
         next

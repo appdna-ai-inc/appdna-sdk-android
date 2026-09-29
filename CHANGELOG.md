@@ -4,6 +4,48 @@ All notable changes to the AppDNA Android SDK are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and
 the project uses [Semantic Versioning](https://semver.org/).
 
+## [1.0.54] — unreleased
+
+Wraps iOS 1.0.82. Ships SPEC-495 (maps) and SPEC-496 (host data, including P1b "Show more").
+
+### Added
+- **Maps (SPEC-495).** A `map` block can use Google as well as Mapbox (the customer's own key,
+  delivered like the Mapbox token), draw a real pannable map through the bundled Google Maps SDK
+  where the app can, style with Google map types / styled-map JSON, and be placed as a fullscreen
+  backdrop or anchored to the top or bottom of the step instead of inline.
+- **Host data for every element (SPEC-496).** `{{hook_data.…}}`, `data_templates` and bindings
+  resolve on the raw step JSON for every onboarding field; an `input_select` `repeat` generates its
+  options from a host list, with a pending state until `onBeforeStepRender` answers.
+- **"Show more" (SPEC-496 P1b).** `ElementInteractionResult.dataContext` merges into the step's
+  `hook_data` per top-level key (a `null` value removes the key), so a `refresh_step` button can load
+  the next page into a repeat Select. `refresh_step` now also fires from buttons nested in rows,
+  stacks, section backgrounds and carousel pages (before, it silently did nothing there). The tapped
+  button shows a spinner; a refresh ends after at most 8 s. New `ElementInteractionResult.
+  decodeDataContext` and `minimumBridgeTimeoutMs` for wrapper bridges.
+
+### Changed
+- `onElementInteraction` behaviour for every flow: `inputValuePatches` merge onto the answers as they
+  are when the reply lands (a pick made during the call is kept); a reply that arrives after the user
+  left the step — or started a newer presentation of it — is dropped, `advance` included; the
+  in-flight lock is per step presentation; a call started from the outgoing step during the exit
+  transition is refused (it used to be sent with the incoming step's id); interaction overlays reset
+  when the same view is reused for a new presentation.
+
+### Fixed
+- A throwing `onElementInteraction` no longer crashes the app; it is treated as `null`.
+
+### Binary compatibility
+- `ElementInteractionResult` gains `dataContext` and `AppliedInteraction` gains `inputValuePatches`
+  and `dataContext`, each as a defaulted LAST constructor parameter. Kotlin source is unchanged, and
+  Java callers keep compiling: both constructors are `@JvmOverloads`, and
+  `ElementInteractionResult(Map, Map, boolean)` — the pre-1.0.51 shape — is restored as an explicit
+  constructor. What is NOT preserved for **prebuilt** Kotlin binaries compiled against ≤ 1.0.53:
+  both are data classes, so their `copy` / `copy$default` signatures changed, and so did the
+  synthetic default-arguments constructor `<init>(…, int, DefaultConstructorMarker)` that Kotlin
+  emits for a call using defaulted or named arguments. A prebuilt Kotlin library that calls `copy`
+  on either type, or constructs either one with defaulted or named arguments, must be recompiled, or
+  it fails with `NoSuchMethodError`.
+
 ## [1.0.51] — 2026-09-23
 
 Wraps iOS 1.0.79. Publishable version and feature-parity marker move independently — see

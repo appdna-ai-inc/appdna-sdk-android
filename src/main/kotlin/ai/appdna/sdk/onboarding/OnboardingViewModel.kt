@@ -125,6 +125,20 @@ internal class OnboardingViewModel : ViewModel() {
     var lastViewedStepIndex: Int = -1
 
     /**
+     * SPEC-496 §B0 — the host-data "pending" state of the step on screen, per presentation. Held
+     * here (not in composition) so an Activity recreation mid-call keeps the presentation, sees the
+     * call was cancelled before replying, and re-fires it once.
+     */
+    val hostDataPresentations = HostDataPresentations()
+
+    /**
+     * SPEC-496 §5b C3 — the per-step interaction data layer (`ElementInteractionResult.dataContext`),
+     * the `onBeforeStepRender` base stamps and the flow-level `callSeq`. Beside [configOverrides], with
+     * exactly its lifetime: survives Activity recreation, cleared by [reset] and nothing else.
+     */
+    val hostDataInteractionStore = HostDataInteractionStore()
+
+    /**
      * Snapshot index restored by [OnboardingActivity.onCreate] from
      * `savedInstanceState`. Read once by the Compose host's initial-state
      * seed, then cleared.
@@ -201,6 +215,8 @@ internal class OnboardingViewModel : ViewModel() {
         // re-presented onboarding fires onBeforeStepRender + onStepViewed
         // for its own first step.
         lastViewedStepIndex = -1
+        hostDataPresentations.reset()
+        hostDataInteractionStore.reset()
         isBound = false
     }
 

@@ -225,6 +225,12 @@ class SharedFixtureTest(
             "receive_push" -> runReceivePush(action, spy)
             "tap_push" -> runTapPush(action, spy)
             "present_surface_under_experiment" -> runPresentSurfaceUnderExperiment(action, spy)
+            // SPEC-496 §H — the raw host-data pass, through the REAL HostDataResolver.
+            "resolve_block" -> runResolveBlock(spy)
+            // SPEC-496 — a presented onboarding step driven through the REAL step pipeline.
+            "host_data_scenario" -> runHostDataScenario(action, spy)
+            // SPEC-496 §5b C2 — the core decoder every bridge forwards `dataContext` through.
+            "decode_interaction_result" -> runDecodeInteractionResult(spy)
             else -> unsupported("no driver for action.kind=$kind")
         }
         assertExpectations(spy)
@@ -1041,6 +1047,160 @@ class SharedFixtureTest(
         spy.state["interpolated"] = TemplateEngine.interpolate(action.getString("template"), context)
         action.optStringOrNull("missing_key")?.let {
             spy.state["missing_key_resolved_to"] = TemplateEngine.interpolate(it, context)
+        }
+    }
+
+    // ---------------------------------------------------------------------------------------------
+    // SPEC-496 — resolve_block: the REAL raw host-data pass (HostDataResolver)
+    // ---------------------------------------------------------------------------------------------
+
+    /** The TemplateEngine context a fixture describes — the §A5 legacy-root resolver reads it. */
+    private fun fixtureTemplateContext(): TemplateContext {
+        val rc = (setup.optJSONObject("remote_config") ?: JSONObject()).asMap()
+        return TemplateContext(
+            userTraits = userTraits,
+            remoteConfig = { key -> rc[key]?.toString() },
+            onboardingResponses = emptyMap(),
+            computedData = emptyMap(),
+            sessionData = emptyMap(),
+            deviceInfo = emptyMap(),
+        )
+    }
+
+    @Suppress("UNCHECKED_CAST")
+    private fun sessionMap(key: String): Map<String, Any?>? = sessionData.optJSONObject(key)?.asMap()
+
+    @Suppress("UNCHECKED_CAST")
+    private fun sessionLocalizations(): Map<String, Map<String, String>>? =
+        sessionData.optJSONObject("localizations")?.asMap()?.mapValues { (_, v) ->
+            (v as? Map<String, Any?>).orEmpty().filterValues { it is String }.mapValues { it.value as String }
+        }
+
+    /**
+     * SPEC-496 §H — `resolve_block`: ONE raw block through the REAL `HostDataResolver.resolveRawBlock`,
+     * compared STRUCTURALLY and TYPE-STRICTLY against `expect.state_after.resolved_block` — "1" is not
+     * 1, a missing key is not null, and an extra key fails. The generic `state_after` check below is
+     * type-loose and projects maps onto the expected keys, which would let exactly the defects this
+     * fixture family exists to catch (a stringified number, a leftover `data_templates`) pass.
+     */
+    private fun runResolveBlock(spy: Spy) {
+        val raw = config?.asMap() ?: error("resolve_block needs setup.config (one raw block)")
+        val tctx = fixtureTemplateContext()
+        val ctx = ai.appdna.sdk.onboarding.HostDataContext(
+            stepId = sessionData.optString("step_id", "fixture_step").ifEmpty { "fixture_step" },
+            blockIndex = sessionData.optInt("block_index", 0),
+            hookData = sessionMap("hook_data"),
+            responses = sessionMap("responses"),
+            step = sessionMap("step"),
+            user = sessionMap("user"),
+            session = sessionMap("session"),
+            selected = sessionMap("selected"),
+            pending = sessionData.optBoolean("pending", false),
+            localizations = sessionLocalizations(),
+            locale = sessionData.optStringOrNull("locale"),
+            legacyToken = { path -> TemplateEngine.resolveToken(path, tctx) },
+        )
+        val result = ai.appdna.sdk.onboarding.HostDataResolver.resolveRawBlock(raw, ctx)
+        val expectedState = fixtureJson.getJSONObject("expect").optJSONObject("state_after") ?: JSONObject()
+        expectedState.optJSONObject("resolved_block")?.let { exp ->
+            assertStrictJson("[$fixtureName] resolved_block (log: ${result.log})", exp, result.block, "$")
+        }
+        expectedState.optJSONObject("resolved_localizations")?.let { exp ->
+            assertStrictJson("[$fixtureName] resolved_localizations", exp, result.localizations, "$")
+        }
+        spy.state["resolved_block"] = result.block
+        spy.state["resolved_localizations"] = result.localizations
+    }
+
+    /**
+     * SPEC-496 — `host_data_scenario`: one presented onboarding step, driven op by op through the
+     * REAL step pipeline (see [HostDataScenarioDriver]). Each checkpoint's observations are projected
+     * onto the keys the fixture names ("keys absent are not asserted"), with an absent map entry read
+     * as null — so `input_values: {tour: null}` asserts the value was CLEARED, not merely unlisted.
+     */
+    @Suppress("UNCHECKED_CAST")
+    private fun runHostDataScenario(action: JSONObject, spy: Spy) {
+        val stepJson = config?.optJSONObject("step")?.asMap() ?: error("host_data_scenario needs setup.config.step")
+        val script = action.getJSONArray("script").asList().map { it as Map<String, Any?> }
+        val driver = HostDataScenarioDriver(
+            stepJson = stepJson,
+            baselineResponses = sessionMap("responses") ?: emptyMap(),
+            baselineUser = sessionMap("user"),
+            baselineSession = sessionMap("session"),
+            baselineSelected = sessionMap("selected"),
+            legacyContext = fixtureTemplateContext(),
+        )
+        val observed = driver.run(script)
+        val expected = fixtureJson.getJSONObject("expect").optJSONObject("state_after")?.optJSONObject("checkpoints")
+            ?: error("host_data_scenario needs expect.state_after.checkpoints")
+        for (name in expected.keys()) {
+            assertTrue("[$fixtureName] checkpoint '$name' was never reached (got ${observed.keys})", observed.containsKey(name))
+        }
+        spy.state["checkpoints"] = projectLike(expected, observed)
+    }
+
+    /**
+     * SPEC-496 §5b C2 / C10 — `decode_interaction_result`: the raw reply's `dataContext` through the REAL
+     * `ElementInteractionResult.decodeDataContext`, compared TYPE-STRICTLY (a stringified number or a
+     * dropped null member fails). Driven twice — with the bridged `Map` shape (RN / Flutter hand the
+     * core a `Map<*, *>`) and with the raw `org.json` tree (`JSONObject.NULL` members) — and both must
+     * produce the same decoded map.
+     */
+    private fun runDecodeInteractionResult(spy: Spy) {
+        val reply = sessionData.optJSONObject("host_interaction_reply")
+            ?: error("decode_interaction_result needs setup.session_data.host_interaction_reply")
+        val expected = fixtureJson.getJSONObject("expect").optJSONObject("state_after")?.opt("decoded_data_context")
+        val fromMap = ai.appdna.sdk.onboarding.ElementInteractionResult.decodeDataContext(reply.asMap()["dataContext"])
+        val fromJson = ai.appdna.sdk.onboarding.ElementInteractionResult.decodeDataContext(reply.opt("dataContext"))
+        assertStrictJson("[$fixtureName] decoded_data_context (Map input)", expected, fromMap, "$")
+        assertStrictJson("[$fixtureName] decoded_data_context (JSONObject input)", expected, fromJson, "$")
+        // Integers stay integers (never widened to a fractional type), bools stay bools.
+        fun kinds(v: Any?): Any? = when (v) {
+            is Map<*, *> -> v.mapValues { kinds(it.value) }
+            is List<*> -> v.map { kinds(it) }
+            is Boolean -> "bool"
+            is Int, is Long -> "int"
+            is Double, is Float -> "fractional"
+            null -> "null"
+            else -> v.javaClass.simpleName
+        }
+        assertEquals("[$fixtureName] decoded value kinds (Map vs JSONObject input)", kinds(fromMap), kinds(fromJson))
+        spy.state["decoded_data_context"] = fromMap
+    }
+
+    /** [actual] restricted to [expected]'s object keys, recursively; an absent entry becomes null. */
+    private fun projectLike(expected: Any?, actual: Any?): Any? {
+        if (expected !is JSONObject) return actual
+        val m = actual as? Map<*, *>
+        val out = LinkedHashMap<String, Any?>()
+        for (k in expected.keys()) out[k] = projectLike(expected.opt(k), m?.get(k))
+        return out
+    }
+
+    /** Type-strict structural JSON equality (object key order irrelevant, array order significant). */
+    private fun assertStrictJson(label: String, expected: Any?, actual: Any?, path: String) {
+        fun fail(msg: String): Nothing = throw AssertionError("$label at $path: $msg\n  expected=$expected\n  actual=$actual")
+        when (expected) {
+            null, JSONObject.NULL -> if (actual != null) fail("expected null")
+            is JSONObject -> {
+                val m = actual as? Map<*, *> ?: fail("expected an object")
+                val ek = expected.keys().asSequence().toSet()
+                val ak = m.keys.map { it.toString() }.toSet()
+                if (ek != ak) fail("keys differ: missing=${ek - ak} extra=${ak - ek}")
+                for (k in ek) assertStrictJson(label, expected.opt(k), m[k], "$path.$k")
+            }
+            is JSONArray -> {
+                val l = actual as? List<*> ?: fail("expected an array")
+                if (l.size != expected.length()) fail("length ${l.size} != ${expected.length()}")
+                for (i in 0 until expected.length()) assertStrictJson(label, expected.opt(i), l[i], "$path[$i]")
+            }
+            is String -> if (actual !is String || actual != expected) fail("expected string")
+            is Boolean -> if (actual !is Boolean || actual != expected) fail("expected boolean")
+            is Number -> {
+                if (actual !is Number || actual is Boolean) fail("expected number")
+                if (java.math.BigDecimal(expected.toString()).compareTo(java.math.BigDecimal(actual.toString())) != 0) fail("number differs")
+            }
+            else -> if (expected != actual) fail("differs")
         }
     }
 

@@ -21,6 +21,7 @@ internal object SelectedOptionStore {
     @Synchronized
     fun record(fieldId: String, option: InputOption) {
         storage[fieldId] = payload(option)
+        revision.intValue++
     }
 
     /**
@@ -32,12 +33,32 @@ internal object SelectedOptionStore {
     @Synchronized
     fun record(fieldId: String, options: List<InputOption>) {
         storage[fieldId] = options.map { payload(it) }
+        revision.intValue++
     }
 
     @Synchronized
     fun clear(fieldId: String) {
         storage.remove(fieldId)
+        revision.intValue++
     }
+
+    /**
+     * SPEC-496 §B0 — keep only the recorded options whose value is still rendered (a multi-select
+     * whose list shrank after host data arrived). Empty → the field is cleared.
+     */
+    @Synchronized
+    fun retainValues(fieldId: String, values: Set<String>) {
+        val current = storage[fieldId] as? List<*> ?: return
+        val kept = current.filter { (it as? Map<*, *>)?.get("value")?.toString() in values }
+        if (kept.isEmpty()) storage.remove(fieldId) else storage[fieldId] = kept
+        revision.intValue++
+    }
+
+    /**
+     * SPEC-496 §A1 — bumps on every write, so a step whose blocks read the `selected` root
+     * re-resolves (Compose snapshot state: a read subscribes).
+     */
+    val revision = androidx.compose.runtime.mutableIntStateOf(0)
 
     /** The map the template resolver reads as the `selected` root. */
     @Synchronized

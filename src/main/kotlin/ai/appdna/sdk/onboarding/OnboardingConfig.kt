@@ -151,7 +151,15 @@ data class OnboardingStep(
      * writes it. The console publishes the whole step, so this has always been on the wire — it
      * was simply never parsed, and every name-keyed navigation rule silently resolved to null.
      */
-    val name: String? = null
+    val name: String? = null,
+    /**
+     * SPEC-496 §A1 — the step's content blocks exactly as published (the same ladder the typed
+     * decode reads), deep-copied once at parse, id-stamped (`<stepId>/<index path>`) and with
+     * SDK-internal markers stripped. The raw host-data pass resolves THESE before typed decode, so
+     * `data_templates`, `repeat` and tokens in typed slots survive. Null for a step built in code →
+     * today's view-level pass.
+     */
+    val rawContentBlocks: RawContentBlocks? = null,
 ) {
     enum class StepType(val value: String) {
         WELCOME("welcome"),
@@ -176,6 +184,20 @@ data class OnboardingStep(
         }
     }
 }
+
+/**
+ * SPEC-496 §A1 — the raw step JSON side table carried on [OnboardingStep].
+ *
+ * NOT a data class on purpose: equality is IDENTITY. A deep compare of every block map in
+ * `equals`/`hashCode` would run on every recomposition, and Compose only needs to know whether the
+ * published step changed — which a re-parse (new instance) answers. The maps are never mutated; the
+ * resolver deep-copies before it touches anything.
+ */
+@Immutable
+class RawContentBlocks internal constructor(
+    /** Stamped raw top-level blocks, index-aligned with the published array (non-objects kept). */
+    val blocks: List<Any?>,
+)
 
 /**
  * Step configuration -- varies by step type.
@@ -655,7 +677,7 @@ data class StepHookConfig(
 /** Result of [AppDNAOnboardingDelegate.onElementInteraction] — lets the host push state back into the live
  * step from its backend (SPEC-419 EPIC-11 — backend-interactive elements; e.g. a calendar day tap → backend
  * confirms → update the rendered element without leaving the step). */
-data class ElementInteractionResult(
+data class ElementInteractionResult @JvmOverloads constructor(
     /** Per-block `field_config` patches to merge + re-render. Keyed by blockId -> (key -> value). */
     val fieldConfigPatches: Map<String, Map<String, Any>>? = null,
     /** Patches to merge into the step's `inputValues` (keyed by field_id). */
@@ -671,15 +693,116 @@ data class ElementInteractionResult(
     val fieldOptions: Map<String, List<InputOption>>? = null,
     /** When true, advance to the next step after handling this interaction. */
     val advance: Boolean = false,
-)
+    /**
+     * SPEC-496 §5b C2 — data merged into this step's `{{hook_data.…}}`, shallow, per TOP-LEVEL key:
+     * a key named here replaces that key's value whole; a `null` value (Kotlin `null` or
+     * `JSONObject.NULL`) REMOVES the key; keys not named are untouched. `null` / `{}` changes nothing.
+     *
+     * Honoured on the reply of EVERY `onElementInteraction` (refresh, OTP, calendar…). Kept in memory
+     * for the flow presentation only — never persisted, sent to the backend or written to responses.
+     * Keys are names, not paths: `"a.b"` is a key called `a.b`.
+     *
+     * The LAST constructor parameter, with a default, so existing Kotlin callers are unchanged; the
+     * constructor is `@JvmOverloads` so existing Java callers are too.
+     */
+    val dataContext: Map<String, Any?>? = null,
+) {
+    /**
+     * SPEC-496 §5b C4.1 — the pre-#657 Java constructor `(Map, Map, boolean)`. #657 inserted
+     * `fieldOptions` BEFORE `advance`, so no `@JvmOverloads` overload has this parameter order; without
+     * this, a Java host written against 1.0.50 stops compiling.
+     */
+    constructor(
+        fieldConfigPatches: Map<String, Map<String, Any>>?,
+        inputValuePatches: Map<String, Any>?,
+        advance: Boolean,
+    ) : this(fieldConfigPatches, inputValuePatches, null, advance, null)
+
+    companion object {
+        /** The interaction action a `refresh_step` button fires. */
+        const val REFRESH_ACTION: String = "refresh"
+
+        /** §5b C5.5 — the SDK deadline of a `refresh` call (the ceiling §D allows for host data). */
+        const val REFRESH_TIMEOUT_MS: Long = 8_000L
+
+        /**
+         * SPEC-496 §5b C5.5 — the least a wrapper bridge must wait for the host's answer to an
+         * `onElementInteraction` call with [action], or null when the bridge keeps its own timeout.
+         * Each bridge applies it in one line — `max(configured, this ?: 0)` — so no bridge carries its
+         * own rule (ADR-001): 8000 for `"refresh"`, null otherwise.
+         */
+        @JvmStatic
+        fun minimumBridgeTimeoutMs(action: String?): Long? =
+            if (action == REFRESH_ACTION) REFRESH_TIMEOUT_MS else null
+
+        /**
+         * SPEC-496 §5b C2 — the ONE decoder for a host's `dataContext`, used by every wrapper bridge
+         * (one-line forward) and by the core before the value is written, whoever built it.
+         *
+         * - a non-map input → null;
+         * - keys are stringified;
+         * - a top-level `null` / `JSONObject.NULL` member is KEPT as Kotlin `null` — the removal marker.
+         *   (The bridges' `anyMap` / `asStringMap` helpers drop null members, which would make
+         *   "null removes a key" impossible from React Native and Flutter hosts);
+         * - nested bridged maps / lists (`Map<*, *>`, `JSONObject`, `JSONArray`, arrays) are normalised
+         *   recursively to `Map<String, Any?>` / `List<Any?>`, nested nulls kept;
+         * - every other value (string, number, bool) is passed through unchanged — the SDK does not
+         *   convert values.
+         */
+        @JvmStatic
+        fun decodeDataContext(raw: Any?): Map<String, Any?>? {
+            val top: Map<*, *> = when (raw) {
+                is Map<*, *> -> raw
+                is org.json.JSONObject -> jsonObjectEntries(raw)
+                else -> return null
+            }
+            val out = LinkedHashMap<String, Any?>(top.size)
+            for ((k, v) in top) out[k.toString()] = normaliseDataValue(v)
+            return out
+        }
+
+        private fun jsonObjectEntries(o: org.json.JSONObject): Map<String, Any?> {
+            val m = LinkedHashMap<String, Any?>()
+            val keys = o.keys()
+            while (keys.hasNext()) {
+                val k = keys.next()
+                m[k] = o.opt(k)
+            }
+            return m
+        }
+
+        // Plain Kotlin shapes first: a JVM unit test (no Robolectric) runs against android.jar's
+        // org.json STUBS, whose static state throws — so `JSONObject.NULL` is only touched for a value
+        // that is none of the plain shapes (`is` checks never initialise a class).
+        private fun normaliseDataValue(v: Any?): Any? = when (v) {
+            null -> null
+            is String, is Number, is Boolean -> v
+            is Map<*, *> -> LinkedHashMap<String, Any?>(v.size).also { m -> for ((k, x) in v) m[k.toString()] = normaliseDataValue(x) }
+            is List<*> -> v.map { normaliseDataValue(it) }
+            is Array<*> -> v.map { normaliseDataValue(it) }
+            is org.json.JSONObject -> normaliseDataValue(jsonObjectEntries(v))
+            is org.json.JSONArray -> (0 until v.length()).map { normaliseDataValue(v.opt(it)) }
+            else -> if (v == org.json.JSONObject.NULL) null else v
+        }
+    }
+}
 
 /** The merged result of applying an [ElementInteractionResult] to a step's live state. */
-data class AppliedInteraction(
+data class AppliedInteraction @JvmOverloads constructor(
+    /**
+     * The tap-time `inputValues` snapshot with `inputValuePatches` merged over it. Kept for
+     * compatibility; since SPEC-496 §5b C4.1 the renderers apply [inputValuePatches] onto the LIVE
+     * answers instead, so a pick made while the call was in flight is not reverted.
+     */
     val inputValues: Map<String, Any>,
     val fieldConfigOverrides: Map<String, Map<String, Any>>,
     /** #657 — per-block replacement options the renderer layers at read time. */
     val fieldOptionsOverrides: Map<String, List<InputOption>> = emptyMap(),
     val advance: Boolean,
+    /** SPEC-496 §5b C4.1 — the raw `result.inputValuePatches`, passed through. */
+    val inputValuePatches: Map<String, Any>? = null,
+    /** SPEC-496 §5b C2 — the raw `result.dataContext`, passed through unchanged. */
+    val dataContext: Map<String, Any?>? = null,
 )
 
 /** SPEC-419 EPIC-11 — pure application of an [ElementInteractionResult] to a step's live state. Merges
@@ -694,6 +817,8 @@ fun applyInteractionResult(result: ElementInteractionResult, inputValues: Map<St
         fieldConfigOverrides = result.fieldConfigPatches ?: emptyMap(),
         fieldOptionsOverrides = result.fieldOptions ?: emptyMap(),
         advance = result.advance,
+        inputValuePatches = result.inputValuePatches,
+        dataContext = result.dataContext,
     )
 }
 
@@ -1056,8 +1181,14 @@ internal object OnboardingConfigParser {
 
         // SPEC-084: Parse content blocks (fallback to step-level content_blocks if not in configMap)
         @Suppress("UNCHECKED_CAST")
-        val rawContentBlocks = (configMap["content_blocks"] as? List<*>)
+        val publishedContentBlocks = (configMap["content_blocks"] as? List<*>)
             ?: (map["content_blocks"] as? List<*>)
+        // SPEC-496 §A1 — capture the raw ladder ONCE: a deep copy (the maps are shared with the
+        // config cache), every id-less block at any depth stamped `<stepId>/<index path>`, authored
+        // SDK-internal markers stripped. The typed blocks below are decoded from THIS copy, so
+        // authored readers (secret ids, prefetch) and the resolved blocks agree on every id.
+        val stampedRaw = publishedContentBlocks?.let { captureRawContentBlocks(it, map["id"] as? String ?: "") }
+        val rawContentBlocks = stampedRaw?.blocks
         val contentBlocks = rawContentBlocks?.mapNotNull { b ->
             if (b is Map<*, *>) {
                 val bm = b as Map<String, Any>
@@ -1216,8 +1347,40 @@ internal object OnboardingConfigParser {
             hide_progress = map["hide_progress"] as? Boolean ?: configMap["hide_progress"] as? Boolean,
             hide_back = map["hide_back"] as? Boolean ?: configMap["hide_back"] as? Boolean,
             next_step_rules = nextStepRules,
-            name = map["name"] as? String
+            name = map["name"] as? String,
+            rawContentBlocks = stampedRaw,
         )
+    }
+
+    /** SPEC-496 §A1 — see [OnboardingStep.rawContentBlocks]. */
+    internal fun captureRawContentBlocks(published: List<*>, stepId: String): RawContentBlocks =
+        RawContentBlocks(
+            published.mapIndexed { i, b ->
+                if (b is Map<*, *>) {
+                    HostDataResolver.stampBlockIds(b, stepId, i).also { HostDataResolver.stripMarkers(it) }
+                } else b
+            },
+        )
+
+    /**
+     * SPEC-496 — decode one RESOLVED raw block with the SAME decoder the published step uses. JSON
+     * nulls are dropped first (the decoder is all `as?` casts over non-null maps).
+     */
+    @Suppress("UNCHECKED_CAST")
+    internal fun decodeRawBlock(map: Map<String, Any?>): ContentBlock =
+        decodeContentBlock(stripNulls(map) as Map<String, Any>)
+
+    /** SPEC-496 — host / interaction option maps through the one option parser. */
+    internal fun decodeRawOptions(list: List<*>): List<InputOption> = parseInputOptionList(list.map { stripNulls(it) })
+
+    private fun stripNulls(v: Any?): Any? = when (v) {
+        is Map<*, *> -> {
+            val out = LinkedHashMap<String, Any>()
+            for ((k, value) in v) if (value != null) out[k.toString()] = stripNulls(value)!!
+            out
+        }
+        is List<*> -> v.map { stripNulls(it) }
+        else -> v
     }
 
     /**

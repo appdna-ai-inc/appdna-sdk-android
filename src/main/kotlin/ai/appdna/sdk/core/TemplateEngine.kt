@@ -61,6 +61,15 @@ object TemplateEngine {
         }
     }
 
+    /**
+     * SPEC-496 §A5 — the per-token entry point the onboarding raw host-data pass routes every
+     * NON-block root through (`device`, `computed`, `remote_config`, `input`, bare names), so an old
+     * published flow keeps rendering exactly as it did when `loc()` interpolated it. Same semantics as
+     * [interpolate] for one token: null on a miss (the caller applies the `| fallback`, else "").
+     */
+    internal fun resolveToken(path: String, context: TemplateContext): String? =
+        resolveVariable(path.trim(), context)
+
     // MARK: - Variable Resolution
 
     private fun resolveVariable(path: String, context: TemplateContext): String? {

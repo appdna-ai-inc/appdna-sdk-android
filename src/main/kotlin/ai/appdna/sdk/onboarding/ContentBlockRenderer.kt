@@ -1563,7 +1563,56 @@ internal fun summaryStatSize(stat: Map<*, *>, key: String, fallback: Float): Flo
 }
 
 object RequiredFieldGate {
-    fun evaluate(blocks: List<ContentBlock>, inputValues: Map<String, Any>): Pair<Boolean, String?> {
+    /**
+     * SPEC-496 §A1 "Required gate input" — the gate's full answer: whether the step may advance, the
+     * first failing field's label, and which toast explains it. `toastKind` is `"loading"` while a
+     * field waits for host data (§B0 pending), `"validation"` for an ordinary missing answer, and
+     * null when the step may advance.
+     */
+    data class Result(val canAdvance: Boolean, val fieldLabel: String?, val toastKind: String?)
+
+    /**
+     * The SDK-internal §B0 marker the raw host-data pass wrote on this block, if any — honoured ONLY
+     * on a block the raw pass produced ([rawResolvedIds], §A1). An authored `resolve_state` on a
+     * skipped block, a fallen-back block, a Screen or SDUI never changes the gate. iOS parity
+     * (`OnboardingStepPipeline.resolveState(_:rawResolvedIds:)`).
+     */
+    internal fun resolveState(block: ContentBlock, rawResolvedIds: Set<String>): String? =
+        if (block.id in rawResolvedIds) block.field_config?.get("resolve_state") as? String else null
+
+    fun evaluate(
+        blocks: List<ContentBlock>,
+        inputValues: Map<String, Any>,
+        rawResolvedIds: Set<String> = emptySet(),
+    ): Pair<Boolean, String?> =
+        evaluateDetailed(blocks, inputValues, rawResolvedIds).let { it.canAdvance to it.fieldLabel }
+
+    fun evaluateDetailed(
+        blocks: List<ContentBlock>,
+        inputValues: Map<String, Any>,
+        rawResolvedIds: Set<String> = emptySet(),
+    ): Result {
+        // SPEC-496 §B0 — a field whose options still wait on host data is UNANSWERED, even when a
+        // saved value exists (the saved value may not survive the reply), and the toast says
+        // "Loading…" rather than blaming the user. Checked first so a pending field is never
+        // reported as an ordinary missing answer. Only a raw-resolved block's marker counts, so this
+        // never fires on a step without host data.
+        for (block in blocks) {
+            if (resolveState(block, rawResolvedIds) != "pending") continue
+            val minimum = (block.field_config?.get("min_selections") as? Number)?.toInt() ?: 0
+            if (block.field_required == true || minimum > 0) {
+                return Result(false, block.field_label ?: block.label ?: (block.field_id ?: block.id), "loading")
+            }
+        }
+        val (ok, label) = evaluateAnswers(blocks, inputValues, rawResolvedIds)
+        return Result(ok, label, if (ok) null else "validation")
+    }
+
+    private fun evaluateAnswers(
+        blocks: List<ContentBlock>,
+        inputValues: Map<String, Any>,
+        rawResolvedIds: Set<String>,
+    ): Pair<Boolean, String?> {
         // SPEC-446 §3 — a Summary Screen can host inputs INSIDE its stats, so one block may carry
         // several field ids while the loop below reads exactly one (`field_id ?: id`). Without this
         // pass the gate sees none of them; and block-level `field_required` on such a block would
@@ -1610,7 +1659,15 @@ object RequiredFieldGate {
         // that as "at least zero, always satisfied" is both correct and what an author means.
         // Parity with iOS RequiredFieldGate.
         for (block in blocks) {
-            val minimum = (block.field_config?.get("min_selections") as? Number)?.toInt() ?: continue
+            var minimum = (block.field_config?.get("min_selections") as? Number)?.toInt() ?: continue
+            if (minimum <= 0) continue
+            // SPEC-496 §B0 — a §B0-scoped Select that renders 0 options after host data settled is
+            // satisfied (the user is never trapped), and one that renders fewer options than the
+            // minimum needs only as many as it shows.
+            when (resolveState(block, rawResolvedIds)) {
+                "empty_in_scope" -> continue
+                "scoped" -> minimum = minOf(minimum, block.field_options?.size ?: 0)
+            }
             if (minimum <= 0) continue
             val fieldId = block.field_id ?: block.id
             val count = (inputValues[fieldId] as? List<*>)?.size ?: 0
@@ -1620,6 +1677,8 @@ object RequiredFieldGate {
         for (block in blocks) {
             if (block.type == "summary_screen") continue // see above — per-stat, never block-level
             if (block.field_required != true) continue
+            // SPEC-496 §B0 — required, in scope, and 0 options to pick from: satisfied.
+            if (resolveState(block, rawResolvedIds) == "empty_in_scope") continue
             val fieldId = block.field_id ?: block.id
             val empty = when (val v = inputValues[fieldId]) {
                 null -> true
@@ -1674,7 +1733,13 @@ suspend fun fireElementInteraction(
 internal fun resolvedFieldOptions(
     block: ContentBlock,
     overrides: Map<String, List<InputOption>>,
-): ContentBlock = overrides[block.id]?.let { block.copy(field_options = it.toImmutableList()) } ?: block
+): ContentBlock = overrides[block.id]?.let {
+    // SPEC-496 §A4 — host options (either channel) beat an Option Set and a repeat.
+    block.copy(
+        field_options = it.toImmutableList(),
+        field_config = block.field_config?.filterKeys { k -> k !in HostDataStepPipeline.HOST_OPTIONS_DROPPED_KEYS },
+    )
+} ?: block
 
 // MARK: - Content Block Renderer
 
@@ -1695,15 +1760,27 @@ fun ContentBlockRendererView(
     fieldConfigOverrides: Map<String, Map<String, Any>> = emptyMap(),
     // #657 — per-block replacement options pushed back by a refresh interaction.
     fieldOptionsOverrides: Map<String, List<InputOption>> = emptyMap(),
+    /**
+     * SPEC-496 §A4 — the step's FULL layered block list, for readers that judge the whole step (the
+     * consent-reactive CTA gate). A zone renders only its own blocks but must gate on all of them.
+     * Null = [blocks] (a sheet, a preview).
+     */
+    stepBlocks: List<ContentBlock>? = null,
 ) {
+    // SPEC-496 §A1 — inside an onboarding step the raw host-data pass resolved, every block here is
+    // already resolved AND layered (options, patches): the view-level pass must not run again, or it
+    // would re-scan host data. Screens/SDUI never set the flag and keep today's pass.
+    val rawResolved = LocalHostDataRawResolved.current
+    val rawIds = hostDataRawResolvedIds()
     // SPEC-089d §6.3: Filter blocks by visibility condition
     val visibleBlocks = blocks.filter { block ->
         evaluateVisibilityCondition(
             block.visibility_condition,
             responses = responses,
             hookData = hookData,
-        )
+        ) && !block.isHiddenByHostData(rawIds)
     }
+    val gateBlocks = stepBlocks ?: blocks
 
     Column(
         modifier = Modifier.fillMaxWidth(),
@@ -1715,7 +1792,7 @@ fun ContentBlockRendererView(
             // SPEC-419 STEP-2 — fold host-pushed per-block field_config overrides UNCONDITIONALLY here,
             // AFTER resolveBlockBindings (which early-returns raw blocks that have no bindings — i.e.
             // every EPIC-11 element, so the merge can't live inside it). Empty overrides → no change.
-            val block = resolvedFieldOptions(
+            val block = if (rawResolved) rawBlock else resolvedFieldOptions(
                 resolvedFieldConfig(
                     resolveBlockBindings(rawBlock, hookData = hookData, responses = responses, stepInputs = inputValues),
                     fieldConfigOverrides,
@@ -1748,13 +1825,13 @@ fun ContentBlockRendererView(
                 block.entrance_animation?.let { anim ->
                     EntranceAnimationWrapper(animation = anim) {
                         BlockSizingBox(block, sizingModifier) {
-                            RenderBlock(block = block, onAction = onAction, toggleValues = toggleValues, inputValues = inputValues, loc = loc, currentStepIndex = currentStepIndex, totalSteps = totalSteps, onInteract = onInteract, stepBlocks = blocks)
+                            RenderBlock(block = block, onAction = onAction, toggleValues = toggleValues, inputValues = inputValues, loc = loc, currentStepIndex = currentStepIndex, totalSteps = totalSteps, onInteract = onInteract, stepBlocks = gateBlocks)
                         }
                     }
                 }
             } else {
                 BlockSizingBox(block, sizingModifier) {
-                    RenderBlock(block = block, onAction = onAction, toggleValues = toggleValues, inputValues = inputValues, loc = loc, currentStepIndex = currentStepIndex, totalSteps = totalSteps, onInteract = onInteract, stepBlocks = blocks)
+                    RenderBlock(block = block, onAction = onAction, toggleValues = toggleValues, inputValues = inputValues, loc = loc, currentStepIndex = currentStepIndex, totalSteps = totalSteps, onInteract = onInteract, stepBlocks = gateBlocks)
                 }
             }
         }
@@ -2109,7 +2186,8 @@ private fun CarouselBlock(
 ) {
     // EPIC-8 — swipeable carousel: each child block is a page; render a HorizontalPager
     // + a dot indicator. Page indicator colors come through field_config.
-    val pages = block.children ?: block.stack_children ?: return
+    // SPEC-496 §B0 — a nested child the raw pass hid (`empty_state: hidden`) is not a page.
+    val pages = (block.children ?: block.stack_children ?: return).visibleUnderHostData()
     if (pages.isEmpty()) return
     val pagerState = androidx.compose.foundation.pager.rememberPagerState(pageCount = { pages.size })
     val activeColor = (block.field_config?.get("indicator_active_color") as? String)?.let { StyleEngine.parseColor(it) }
@@ -2168,7 +2246,7 @@ private fun SectionBackgroundBlock(
     }
     // No early-return on empty zones — render the foreground children on a bare background, matching
     // iOS (ContentBlockRendererView) + the console preview (was: rendered nothing when zones absent).
-    val children = block.children ?: block.stack_children ?: emptyList()
+    val children = (block.children ?: block.stack_children ?: emptyList()).visibleUnderHostData()
     // Cross-platform parity — iOS overlays children in a `VStack(spacing: 12)` (a fixed 12pt
     // inter-child gap) and positions them with Spacers per content_arrangement
     // (ContentBlockRendererView.swift:438-445). Android previously used a bare
@@ -2629,12 +2707,14 @@ private fun ButtonBlock(
     // toggles consent. Both nil → plain `bg_color` (non-breaking). Parity with iOS.
     val ctaEnabledHex = block.field_config?.get("cta_enabled_bg_color") as? String
     val ctaDisabledHex = block.field_config?.get("cta_disabled_bg_color") as? String
+    // SPEC-496 §A1 — the markers count only on raw-resolved blocks, exactly as in the advance gate.
+    val rawIds = hostDataRawResolvedIds()
     val bgColor = run {
         val fallback = block.bg_color ?: (ai.appdna.sdk.AppDNA.brandAccentHex ?: "#6366F1")
         if (ctaEnabledHex == null && ctaDisabledHex == null) {
             StyleEngine.parseColor(fallback)
         } else {
-            val satisfied = RequiredFieldGate.evaluate(stepBlocks, inputValues).first
+            val satisfied = RequiredFieldGate.evaluate(stepBlocks, inputValues, rawIds).first
             StyleEngine.parseColor(
                 if (satisfied) (ctaEnabledHex ?: fallback) else (ctaDisabledHex ?: ctaEnabledHex ?: fallback),
             )
@@ -2656,12 +2736,20 @@ private fun ButtonBlock(
         androidx.compose.foundation.BorderStroke(authoredBorderWidth.dp, authoredBorderColor)
     } else null
     val displayText = loc?.invoke("block.${block.id}.text", text) ?: text
+    // SPEC-496 §5b C5.1 — inside an onboarding step the step's interaction wiring is AUTHORITATIVE for a
+    // `refresh_step` button at any depth (row / stack / section_background / carousel page children get
+    // it through the local, not a parameter). Null in Screens / SDUI and inside option sheets, where the
+    // explicit `onInteract` stays in charge. Never read with a tap override (sound_button).
+    val stepInteraction = if (onClickOverride == null && block.action == "refresh_step") LocalStepInteraction.current else null
+    val refreshLoading = stepInteraction != null && stepInteraction.loadingBlockId == block.id
+    val refreshTappable = stepInteraction?.isTappable(block.id) ?: true
 
     val onClick: () -> Unit = onClickOverride ?: {
         val action = block.action ?: "next"
         when (action) {
             // #657 — refresh the step in place. iOS parity: ContentBlockRendererView `buttonBlock`.
-            "refresh_step" -> onInteract(block.id, "refresh", block.action_value)
+            // A tap while not tappable is refused (with a debug log) by the step's coordinator.
+            "refresh_step" -> (stepInteraction?.onInteract ?: onInteract)(block.id, "refresh", block.action_value)
             "link" -> {
                 // SPEC-070-A finalization Phase E — `link` action divergence.
                 // iOS InAppBrowser.present(url) does NOT auto-advance —
@@ -2751,7 +2839,7 @@ private fun ButtonBlock(
         Modifier.fillMaxWidth()
     } else {
         Modifier.wrapContentWidth()
-    }
+    }.then(refreshStateSemantics(refreshLoading, refreshTappable))
 
     // Gap 5: Gradient background support
     val shape = RoundedCornerShape(cornerRadius)
@@ -2775,6 +2863,9 @@ private fun ButtonBlock(
     // Gap 6: Button content with optional icon_emoji / image_url
     @Composable
     fun ButtonContent(textColor: Color) {
+        // SPEC-496 §5b C5.3 — while this button's refresh runs: label/icon at opacity 0 under a spinner
+        // tinted with the label's own colour (style.color → text colour, as the Text below resolves it).
+        RefreshLoadingContent(refreshLoading, block.style?.color?.let { StyleEngine.parseColor(it) } ?: textColor) {
         Row(
             horizontalArrangement = Arrangement.Center,
             verticalAlignment = Alignment.CenterVertically,
@@ -2855,6 +2946,7 @@ private fun ButtonBlock(
                 style = effectiveStyle.copy(color = resolvedTextColor),
             )
         }
+        } // RefreshLoadingContent
     }
 
     when (btnVariant) {
@@ -7122,7 +7214,7 @@ private fun StackBlock(
     // stack-block creation. iOS reads both at ContentBlockRendererView.swift
     // :1129. Without this fallback Android renders empty Stack on console
     // payloads.
-    val childBlocks = (block.children ?: block.stack_children ?: emptyList()).sortedBy { it.z_index ?: 0.0 }
+    val childBlocks = (block.children ?: block.stack_children ?: emptyList()).visibleUnderHostData().sortedBy { it.z_index ?: 0.0 }
     // SPEC-401-A — iOS Stack alignment supports 9 named tokens
     // (top_left/topLeading/topLeft, top, top_right, leading, center,
     // trailing, bottom_left, bottom, bottom_right). Android previously
@@ -7287,7 +7379,8 @@ private fun MultiButtonsBlock(
     stepBlocks: List<ContentBlock> = emptyList(),
     onInteract: (String, String, String?) -> Unit = { _, _, _ -> },
 ) {
-    val childBlocks = block.children ?: block.stack_children ?: emptyList()
+    // SPEC-496 §B0 — nested children honour `empty_state: hidden` like top-level blocks.
+    val childBlocks = (block.children ?: block.stack_children ?: emptyList()).visibleUnderHostData()
     val perRow = ((block.field_config?.get("buttons_per_row") as? Number)?.toInt() ?: 2).coerceIn(1, 3)
     val gap = (block.spacing ?: block.gap ?: 12.0).dp
     val stretchLastRow = (block.field_config?.get("last_row") as? String) == "stretch"
@@ -7336,7 +7429,8 @@ private fun RowBlock(
     // alongside `children` for Row blocks; console editor writes
     // `stack_children` on row-block creation (StepContentEditor.tsx).
     // Mirrors iOS ContentBlockRendererView.swift:1129.
-    val childBlocks = block.children ?: block.stack_children ?: emptyList()
+    // SPEC-496 §B0 — nested children honour `empty_state: hidden` like top-level blocks.
+    val childBlocks = (block.children ?: block.stack_children ?: emptyList()).visibleUnderHostData()
     // SPEC-419 — editor writes `spacing` (preview reads `spacing`); `gap` is the legacy/imported
     // key. Read spacing first so authored row gap isn't lost on-device.
     val rowGap = (block.spacing ?: block.gap ?: 8.0).dp
@@ -7730,8 +7824,16 @@ internal fun mapStopsOf(block: ContentBlock): List<Pair<Double, Double>> {
  *  3. `map_route_polyline` as authored — a fixed route pasted into the panel.
  *  4. the stops, joined in order, which is a straight line between them and not a road route.
  */
-internal fun mapRoutePolyline(block: ContentBlock): String? {
+internal fun mapRoutePolyline(block: ContentBlock, rawResolved: Boolean = false): String? {
     val variable = block.mapStr("map_route_variable")
+    // SPEC-496 §A1 — for a block the raw host-data pass resolved, the variable IS the polyline: no
+    // `.interpolated()` (that would re-scan host data) and no `{{` guard (an encoded polyline uses
+    // ASCII 63–126, so a real one can contain `{{`).
+    if (rawResolved) {
+        val v = variable?.trim()
+        if (!v.isNullOrEmpty()) return v
+        return block.mapStr("map_route_polyline")?.ifEmpty { null }
+    }
     if (!variable.isNullOrEmpty()) {
         val resolved = variable.interpolated().trim()
         // An unresolved `{{token}}` comes back verbatim. Drawing it as a polyline would produce a
@@ -7835,9 +7937,11 @@ internal fun mapStaticUrl(
     width: Int,
     height: Int,
     googleKey: String? = null,
+    /** SPEC-496 — the block came through the raw host-data pass (see [mapRoutePolyline]). */
+    rawResolved: Boolean = false,
 ): String? = when (mapProviderOf(block)) {
-    "google" -> googleStaticUrl(block, googleKey, width, height)
-    else -> mapboxStaticUrl(block, token, width, height)
+    "google" -> googleStaticUrl(block, googleKey, width, height, rawResolved)
+    else -> mapboxStaticUrl(block, token, width, height, rawResolved)
 }
 
 /**
@@ -7851,7 +7955,7 @@ internal fun mapStaticUrl(
  * Google auto-fits when markers or a path are supplied and centre/zoom are OMITTED, so `fit` is
  * expressed by leaving them out rather than by a sentinel like Mapbox's `auto`.
  */
-internal fun googleStaticUrl(block: ContentBlock, key: String?, width: Int, height: Int): String? {
+internal fun googleStaticUrl(block: ContentBlock, key: String?, width: Int, height: Int, rawResolved: Boolean = false): String? {
     if (key.isNullOrEmpty()) return null
     val isPlace = block.mapStr("map_mode") == "place"
     val stops = mapStopsOf(block)
@@ -7876,7 +7980,7 @@ internal fun googleStaticUrl(block: ContentBlock, key: String?, width: Int, heig
     // Route BEFORE markers, matching Mapbox: Google draws parameters in order, so the path must be
     // emitted first for pins to sit on top of it.
     if (!isPlace && block.mapBool("route_show") != false) {
-        val encoded = mapRoutePolyline(block) ?: if (stops.size >= 2) encodeMapPolyline(stops) else null
+        val encoded = mapRoutePolyline(block, rawResolved) ?: if (stops.size >= 2) encodeMapPolyline(stops) else null
         if (!encoded.isNullOrEmpty()) {
             val routeW = (block.mapNum("route_width") ?: 4.0).toInt()
             val opacity = (block.mapNum("route_opacity") ?: 1.0).coerceIn(0.0, 1.0)
@@ -7992,7 +8096,7 @@ internal fun googleHex(value: String?, fallback: String, opacity: Double): Strin
     return rgb + String.format("%02x", a)
 }
 
-internal fun mapboxStaticUrl(block: ContentBlock, token: String?, width: Int, height: Int): String? {
+internal fun mapboxStaticUrl(block: ContentBlock, token: String?, width: Int, height: Int, rawResolved: Boolean = false): String? {
     if (token.isNullOrEmpty()) return null
     val styles = mapOf(
         "streets" to "mapbox/streets-v12", "outdoors" to "mapbox/outdoors-v12",
@@ -8006,7 +8110,7 @@ internal fun mapboxStaticUrl(block: ContentBlock, token: String?, width: Int, he
 
     // Route BEFORE markers, so pins draw on top of the line rather than under it.
     if (!isPlace && block.mapBool("route_show") != false) {
-        val encoded = mapRoutePolyline(block)
+        val encoded = mapRoutePolyline(block, rawResolved)
             ?: if (stops.size >= 2) encodeMapPolyline(stops) else null
         if (!encoded.isNullOrEmpty()) {
             val w = (block.mapNum("route_width") ?: 4.0).toInt()
@@ -8176,7 +8280,10 @@ internal fun MapBlock(block: ContentBlock, placement: MapPlacement = MapPlacemen
                     // rather than being handed the Maps SDK's grey "no key" rectangle.
                     GoogleInteractiveMap(block)
                 } else {
-                    val url = mapStaticUrl(block, AppDNA.mapboxToken, 390, heightPx.toInt(), AppDNA.googleMapsApiKey)
+                    val url = mapStaticUrl(
+                        block, AppDNA.mapboxToken, 390, heightPx.toInt(), AppDNA.googleMapsApiKey,
+                        rawResolved = LocalHostDataRawResolved.current,
+                    )
                     if (url != null) {
                         ai.appdna.sdk.core.NetworkImage(
                             url = url,
@@ -10032,130 +10139,30 @@ internal fun selectBlockFrom(field: FormField): ContentBlock? {
     )
 }
 
-@Composable
-private fun FormInputSelectBlock(
-    block: ContentBlock,
-    inputValues: MutableMap<String, Any>,
-) {
-    val fieldId = block.field_id ?: block.id
-    // SPEC-448 (#556) — a Select can source its options from an Option Set instead of the
-    // authored list. The ladder is cache → embedded page → authored, resolved SYNCHRONOUSLY so the
-    // first frame has something real; awaiting here would put the network on the render path,
-    // which is the "looks like it is fetching" the spec forbids. `field_options` doubles as the
-    // embedded page — the same array an SDK predating this spec renders — so an old build degrades
-    // to a short list rather than an empty Select. Mirrors iOS FormInputSelectBlock.
-    val optionSetId = block.field_config?.get("option_set_id") as? String
-    val optionSetVersion = (block.field_config?.get("option_set_version") as? Number)?.toInt()
-    val authoredOptions = block.field_options ?: emptyList()
-    var dynamicOptions by remember(optionSetId) { mutableStateOf<List<InputOption>>(emptyList()) }
-    val baseOptions = if (optionSetId.isNullOrEmpty()) authoredOptions else
-        OptionSetStore.immediateOptions(optionSetId, authoredOptions, authoredOptions)
-            .let { if (dynamicOptions.isNotEmpty()) dynamicOptions else it }
+// ─────────────────────────────────────────────────────────────────────────────────────────────
+// SPEC-496 — FormInputSelectBlock is split into the pieces below.
+//
+// It was ONE ~1,200-line composable. Compose inlines every Column/Row/Box body into the enclosing
+// method, so the whole Select — Option-Set ladder, search, paging, selection, and six display
+// styles — compiled to a single enormous JVM method. At that size D8 (AGP 8.6) mis-allocated a
+// register in it (`optionSetId` overwritten by a constant before `Composer.changed(...)` for the
+// `remember(optionSetId, searchResults, allOptions)` key), ART's verifier rejected the WHOLE
+// `ContentBlockRendererKt` class, and every block-based onboarding step crashed with VerifyError.
+// The JVM bytecode was valid (Robolectric passed); only the dexed method was broken.
+//
+// The split is purely structural: every remember/LaunchedEffect keeps its keys and its order, every
+// testTag and semantics modifier is unchanged, and the display-style bodies are the original code
+// moved verbatim. The helpers below take `SelectOptionStyle` (deliberately NOT @Stable) as their
+// receiver, so none of them is skippable — each re-runs whenever FormInputSelectBlock recomposes,
+// exactly as the inlined code did. `ComposeMethodSizeGuardTest` keeps any one method from growing back.
+// ─────────────────────────────────────────────────────────────────────────────────────────────
 
-    // Refresh AFTER the first composition. A fresher list swaps in when it arrives; a failed
-    // refresh returns empty and must NOT clear a working list, so the ladder stays standing.
-    if (!optionSetId.isNullOrEmpty()) {
-        LaunchedEffect(optionSetId) {
-            // Load any persisted copy FIRST, so a cold launch has a real cache rung rather than
-            // falling to the embedded page and re-downloading on every app start.
-            OptionSetStore.hydrate(optionSetId)
-            val hydrated = OptionSetStore.cachedItems(optionSetId)
-            if (hydrated.isNotEmpty()) dynamicOptions = hydrated
-
-            val fresh = OptionSetStore.refresh(optionSetId, AppDNA.optionSetClient, optionSetVersion)
-            if (fresh.isNotEmpty()) dynamicOptions = fresh
-        }
-    }
-
-    // SPEC-448 — the search box. `searchResults` is null when no search is active, which is a
-    // different state from "searched and found nothing" and renders differently. Mirrors iOS.
-    val showsSearch = (block.field_config?.get("options_search") as? Boolean) == true
-    var searchText by remember(block.id) { mutableStateOf("") }
-    var searchResults by remember(block.id) { mutableStateOf<List<InputOption>?>(null) }
-    var isSearching by remember(block.id) { mutableStateOf(false) }
-    val pagingScope = rememberCoroutineScope()
-
-    // Debounced: each keystroke restarts this effect, so a fast typist issues ONE request rather
-    // than one per character. The endpoint has its own rate-limit bucket precisely because a
-    // search box is the chattiest thing pointed at it.
-    LaunchedEffect(searchText, optionSetId) {
-        val trimmed = searchText.trim()
-        if (trimmed.isEmpty()) {
-            // Clearing the box restores the full list — an empty query is not a filter.
-            searchResults = null
-            isSearching = false
-            return@LaunchedEffect
-        }
-        if (optionSetId.isNullOrEmpty()) {
-            // A locally-authored list is searched in memory: no network, no spinner, and it works
-            // with no Option Set at all.
-            val folded = trimmed.lowercase()
-            searchResults = authoredOptions.filter {
-                (it.label ?: "").lowercase().contains(folded) ||
-                    (it.subtitle ?: "").lowercase().contains(folded)
-            }
-            return@LaunchedEffect
-        }
-        kotlinx.coroutines.delay(250)
-        isSearching = true
-        val results = OptionSetStore.search(optionSetId, trimmed, AppDNA.optionSetClient)
-        isSearching = false
-        // null means the search could NOT be performed. Leaving the previous list up is right:
-        // replacing it with an empty one would tell the user their query matched nothing, which is
-        // a different and wrong statement.
-        if (results != null) searchResults = results
-    }
-
-    // An active search REPLACES the list, including an empty result — that is the honest answer to
-    // "nothing matched", and falling back to the full list would silently ignore what was typed.
-    val allOptions = searchResults ?: baseOptions
-
-    // SPEC-448 — paging. Triggered by the LAST option becoming visible rather than by a scroll
-    // offset: offsets differ per display style (grid, stacked list and dropdown all scroll
-    // differently) and would need separate maths for each, while "the last row appeared" means the
-    // same thing everywhere. Search results are never paged — the server already returned the
-    // matches for that query, and appending page 2 of the UNFILTERED list under them would mix
-    // the two. `isPaging` stops a burst of callbacks issuing several identical requests.
-    var isPaging by remember(block.id) { mutableStateOf(false) }
-    val pageInIfNeeded: (InputOption) -> Unit = remember(optionSetId, searchResults, allOptions) {
-        { option ->
-            val cursor = optionSetId?.let { OptionSetStore.cursor(it) }
-            val isLast = (option.value ?: option.id) == allOptions.lastOrNull()?.let { it.value ?: it.id }
-            if (searchResults == null && !optionSetId.isNullOrEmpty() && cursor != null && !isPaging && isLast) {
-                isPaging = true
-                pagingScope.launch {
-                    OptionSetStore.nextPage(optionSetId, cursor, AppDNA.optionSetClient)
-                    // Read the merged list back from the store rather than appending here: the
-                    // store de-duplicates by value, and a reorder between two fetches can
-                    // legitimately return an item already held.
-                    val merged = OptionSetStore.cachedItems(optionSetId)
-                    if (merged.isNotEmpty()) dynamicOptions = merged
-                    isPaging = false
-                }
-            }
-        }
-    }
-    // SPEC-441 (#541) — an optional row of category chips above the options; the active chip
-    // SCROLLS to that section (see the note on `options` below — nothing is filtered out).
-    // Authored as field_config.categories = [{id,label,icon?}]; an option points at one by id.
-    val categories: List<Triple<String, String, String?>> =
-        (block.field_config?.get("categories") as? List<*>)?.mapNotNull { entry ->
-            val m = entry as? Map<*, *> ?: return@mapNotNull null
-            val id = m["id"] as? String ?: return@mapNotNull null
-            val label = m["label"] as? String ?: return@mapNotNull null
-            Triple(id, label, m["icon"] as? String)
-        }.orEmpty()
-    val showCategoryHeader = (block.field_config?.get("category_header") as? Boolean) ?: true
-    var activeCategory by remember(block.id) { mutableStateOf(categories.firstOrNull()?.first ?: "") }
-    // The chips are scroll-spy NAVIGATION, not a filter — every category renders as its own
-    // titled section in one scrolling list. (An earlier build filtered to the active chip; that
-    // was a misread of a screenshot showing only the first section.) Uncategorised options lead,
-    // then each category's options in the authored order.
-    val options = if (categories.isEmpty()) allOptions else
-        allOptions.filter { it.category == null } +
-            categories.flatMap { (catId, _, _) -> allOptions.filter { it.category == catId } }
-    // Gap 1: Read display_style from field_config; defaults to "dropdown".
-    val displayStyle = (block.field_config?.get("display_style") as? String) ?: "dropdown"
+/**
+ * SPEC-496 — the block-level styling a Select resolves from `field_style` / `field_config`.
+ * Pure reads of the block, previously ~100 locals at the top of FormInputSelectBlock. Recomputed on
+ * every composition (as before), never remembered.
+ */
+private class SelectOptionStyle(val block: ContentBlock) {
     // SPEC-448 (#556) — `use_variable` / `use_webhook` used to be read into variables right here,
     // under a comment saying "parse but ignore". They are gone from the console and from this
     // parse: an Option Set is the real mechanism, and reading a key in order to ignore it is how
@@ -10273,7 +10280,174 @@ private fun FormInputSelectBlock(
     // FormInputBlockViews.swift:678-679, defaults 15/12); per-option size overrides these.
     val defaultTitleSize = (cfg?.get("title_font_size") as? Number)?.toFloat() ?: 15f
     val defaultSubtitleSize = (cfg?.get("subtitle_font_size") as? Number)?.toFloat() ?: 12f
-    var selectedValue by remember { mutableStateOf(inputValues[fieldId] as? String ?: "") }
+}
+
+/** SPEC-496 — the option list of a Select: Option-Set ladder, search and paging state. */
+private class SelectOptionsState(
+    val showsSearch: Boolean,
+    val baseOptions: List<InputOption>,
+    val allOptions: List<InputOption>,
+    val searchTextState: MutableState<String>,
+    val searchResultsState: MutableState<List<InputOption>?>,
+    val isSearchingState: State<Boolean>,
+    val pageInIfNeeded: (InputOption) -> Unit,
+)
+
+/**
+ * SPEC-496 — moved verbatim out of FormInputSelectBlock (the region D8 miscompiled). Same state,
+ * same `remember` keys, same LaunchedEffect keys, in the same order. A value-returning composable
+ * has no restart scope of its own, so its state reads still subscribe FormInputSelectBlock, as
+ * they did when this code was inline.
+ */
+@Composable
+private fun rememberSelectOptionsState(block: ContentBlock): SelectOptionsState {
+    // SPEC-448 (#556) — a Select can source its options from an Option Set instead of the
+    // authored list. The ladder is cache → embedded page → authored, resolved SYNCHRONOUSLY so the
+    // first frame has something real; awaiting here would put the network on the render path,
+    // which is the "looks like it is fetching" the spec forbids. `field_options` doubles as the
+    // embedded page — the same array an SDK predating this spec renders — so an old build degrades
+    // to a short list rather than an empty Select. Mirrors iOS FormInputSelectBlock.
+    val optionSetId = block.field_config?.get("option_set_id") as? String
+    val optionSetVersion = (block.field_config?.get("option_set_version") as? Number)?.toInt()
+    val authoredOptions = block.field_options ?: emptyList()
+    var dynamicOptions by remember(optionSetId) { mutableStateOf<List<InputOption>>(emptyList()) }
+    val baseOptions = if (optionSetId.isNullOrEmpty()) authoredOptions else
+        OptionSetStore.immediateOptions(optionSetId, authoredOptions, authoredOptions)
+            .let { if (dynamicOptions.isNotEmpty()) dynamicOptions else it }
+
+    // Refresh AFTER the first composition. A fresher list swaps in when it arrives; a failed
+    // refresh returns empty and must NOT clear a working list, so the ladder stays standing.
+    if (!optionSetId.isNullOrEmpty()) {
+        LaunchedEffect(optionSetId) {
+            // Load any persisted copy FIRST, so a cold launch has a real cache rung rather than
+            // falling to the embedded page and re-downloading on every app start.
+            OptionSetStore.hydrate(optionSetId)
+            val hydrated = OptionSetStore.cachedItems(optionSetId)
+            if (hydrated.isNotEmpty()) dynamicOptions = hydrated
+
+            val fresh = OptionSetStore.refresh(optionSetId, AppDNA.optionSetClient, optionSetVersion)
+            if (fresh.isNotEmpty()) dynamicOptions = fresh
+        }
+    }
+
+    // SPEC-448 — the search box. `searchResults` is null when no search is active, which is a
+    // different state from "searched and found nothing" and renders differently. Mirrors iOS.
+    val showsSearch = (block.field_config?.get("options_search") as? Boolean) == true
+    val searchTextState = remember(block.id) { mutableStateOf("") }
+    val searchText by searchTextState
+    val searchResultsState = remember(block.id) { mutableStateOf<List<InputOption>?>(null) }
+    var searchResults by searchResultsState
+    val isSearchingState = remember(block.id) { mutableStateOf(false) }
+    var isSearching by isSearchingState
+    val pagingScope = rememberCoroutineScope()
+
+    // Debounced: each keystroke restarts this effect, so a fast typist issues ONE request rather
+    // than one per character. The endpoint has its own rate-limit bucket precisely because a
+    // search box is the chattiest thing pointed at it.
+    // SPEC-496 §B0 — `authoredOptions` is a key too: a repeat list that arrives WHILE a query is
+    // typed (host data landing after pending) must be re-filtered, not only on the next keystroke.
+    LaunchedEffect(searchText, optionSetId, authoredOptions) {
+        val trimmed = searchText.trim()
+        if (trimmed.isEmpty()) {
+            // Clearing the box restores the full list — an empty query is not a filter.
+            searchResults = null
+            isSearching = false
+            return@LaunchedEffect
+        }
+        if (optionSetId.isNullOrEmpty()) {
+            // A locally-authored list is searched in memory: no network, no spinner, and it works
+            // with no Option Set at all.
+            searchResults = filterOptionsLocally(authoredOptions, trimmed)
+            return@LaunchedEffect
+        }
+        kotlinx.coroutines.delay(250)
+        isSearching = true
+        val results = OptionSetStore.search(optionSetId, trimmed, AppDNA.optionSetClient)
+        isSearching = false
+        // null means the search could NOT be performed. Leaving the previous list up is right:
+        // replacing it with an empty one would tell the user their query matched nothing, which is
+        // a different and wrong statement.
+        if (results != null) searchResults = results
+    }
+
+    // An active search REPLACES the list, including an empty result — that is the honest answer to
+    // "nothing matched", and falling back to the full list would silently ignore what was typed.
+    val allOptions = searchResults ?: baseOptions
+
+    // SPEC-448 — paging. Triggered by the LAST option becoming visible rather than by a scroll
+    // offset: offsets differ per display style (grid, stacked list and dropdown all scroll
+    // differently) and would need separate maths for each, while "the last row appeared" means the
+    // same thing everywhere. Search results are never paged — the server already returned the
+    // matches for that query, and appending page 2 of the UNFILTERED list under them would mix
+    // the two. `isPaging` stops a burst of callbacks issuing several identical requests.
+    var isPaging by remember(block.id) { mutableStateOf(false) }
+    val pageInIfNeeded: (InputOption) -> Unit = remember(optionSetId, searchResults, allOptions) {
+        { option ->
+            val cursor = optionSetId?.let { OptionSetStore.cursor(it) }
+            val isLast = (option.value ?: option.id) == allOptions.lastOrNull()?.let { it.value ?: it.id }
+            if (searchResults == null && !optionSetId.isNullOrEmpty() && cursor != null && !isPaging && isLast) {
+                isPaging = true
+                pagingScope.launch {
+                    OptionSetStore.nextPage(optionSetId, cursor, AppDNA.optionSetClient)
+                    // Read the merged list back from the store rather than appending here: the
+                    // store de-duplicates by value, and a reorder between two fetches can
+                    // legitimately return an item already held.
+                    val merged = OptionSetStore.cachedItems(optionSetId)
+                    if (merged.isNotEmpty()) dynamicOptions = merged
+                    isPaging = false
+                }
+            }
+        }
+    }
+    return SelectOptionsState(
+        showsSearch = showsSearch,
+        baseOptions = baseOptions,
+        allOptions = allOptions,
+        searchTextState = searchTextState,
+        searchResultsState = searchResultsState,
+        isSearchingState = isSearchingState,
+        pageInIfNeeded = pageInIfNeeded,
+    )
+}
+
+@Composable
+private fun FormInputSelectBlock(
+    block: ContentBlock,
+    inputValues: MutableMap<String, Any>,
+) {
+    val fieldId = block.field_id ?: block.id
+    // SPEC-448 (#556) — Option-Set ladder, search and paging: see rememberSelectOptionsState.
+    val optionsState = rememberSelectOptionsState(block)
+    val showsSearch = optionsState.showsSearch
+    val baseOptions = optionsState.baseOptions
+    val allOptions = optionsState.allOptions
+    // SPEC-441 (#541) — an optional row of category chips above the options; the active chip
+    // SCROLLS to that section (see the note on `options` below — nothing is filtered out).
+    // Authored as field_config.categories = [{id,label,icon?}]; an option points at one by id.
+    val categories: List<Triple<String, String, String?>> =
+        (block.field_config?.get("categories") as? List<*>)?.mapNotNull { entry ->
+            val m = entry as? Map<*, *> ?: return@mapNotNull null
+            val id = m["id"] as? String ?: return@mapNotNull null
+            val label = m["label"] as? String ?: return@mapNotNull null
+            Triple(id, label, m["icon"] as? String)
+        }.orEmpty()
+    val showCategoryHeader = (block.field_config?.get("category_header") as? Boolean) ?: true
+    val activeCategoryState = remember(block.id) { mutableStateOf(categories.firstOrNull()?.first ?: "") }
+    // The chips are scroll-spy NAVIGATION, not a filter — every category renders as its own
+    // titled section in one scrolling list. (An earlier build filtered to the active chip; that
+    // was a misread of a screenshot showing only the first section.) Uncategorised options lead,
+    // then each category's options in the authored order.
+    val options = if (categories.isEmpty()) allOptions else
+        allOptions.filter { it.category == null } +
+            categories.flatMap { (catId, _, _) -> allOptions.filter { it.category == catId } }
+    // Gap 1: Read display_style from field_config; defaults to "dropdown".
+    val displayStyle = (block.field_config?.get("display_style") as? String) ?: "dropdown"
+    // SPEC-496 — the block-level styling (and the multi-select flag) now live in SelectOptionStyle.
+    val style = SelectOptionStyle(block)
+    val isMulti = style.isMulti
+    val cfg = style.cfg
+    val selectedValueState = remember { mutableStateOf(inputValues[fieldId] as? String ?: "") }
+    var selectedValue by selectedValueState
     val initialSelected: Set<String> = remember {
         when (val existing = inputValues[fieldId]) {
             is List<*> -> existing.filterIsInstance<String>().toSet()
@@ -10282,15 +10456,29 @@ private fun FormInputSelectBlock(
         }
     }
     var selectedValues by remember { mutableStateOf(initialSelected) }
+    // SPEC-496 §B0 — a selection the step clears from outside (host data arrived and the value is no
+    // longer rendered) must leave the view's selected state too, not only `inputValues`.
+    val externalValue = inputValues[fieldId]
+    LaunchedEffect(externalValue) {
+        selectedValue = externalValue as? String ?: ""
+        selectedValues = when (externalValue) {
+            is List<*> -> externalValue.filterIsInstance<String>().toSet()
+            is String -> if (externalValue.isNotEmpty()) setOf(externalValue) else emptySet()
+            else -> emptySet()
+        }
+    }
     fun toggleMulti(value: String) {
-        selectedValues = if (selectedValues.contains(value)) {
-            selectedValues - value
+        // SPEC-496 §B0 — toggle against the step's CURRENT value (a pruned value is gone from it),
+        // not the view's copy, which the sync above only refreshes after the next composition.
+        val current = chipSelectionOf(inputValues[fieldId])
+        selectedValues = if (current.contains(value)) {
+            current - value
         } else {
             // Enforce the console-configured cap on the ADD path only;
             // removing a selection must always work.
             val maxSel = (cfg?.get("max_selections") as? Number)?.toInt()
-            if (maxSel != null && selectedValues.size >= maxSel) return
-            selectedValues + value
+            if (maxSel != null && current.size >= maxSel) return
+            current + value
         }
         inputValues[fieldId] = selectedValues.toList()
         // SPEC-448 — record the full OPTIONS alongside the values, in selection order, so a later
@@ -10311,7 +10499,8 @@ private fun FormInputSelectBlock(
             toggleMulti(value)
         } else {
             selectedValue = value
-            inputValues[fieldId] = value
+            // SPEC-496 — the shared pick bookkeeping (inputValues + SelectedOptionStore).
+            recordOptionPick(block, allOptions, value, inputValues)
         }
         // Picking an option that owns a sheet opens it. The choice is already recorded above;
         // the sheet only presents, so nothing else is reported to the host app.
@@ -10319,9 +10508,11 @@ private fun FormInputSelectBlock(
             ?.takeIf { !it.sheet_blocks.isNullOrEmpty() }
             ?.let { sheetOption = it }
     }
+    val isSelectedFn: (String) -> Boolean = { v -> isOptionSelected(v) }
+    val pickFn: (String) -> Unit = { v -> pickOption(v) }
 
     sheetOption?.let { opt ->
-        OptionBottomSheet(option = opt, onDismiss = { sheetOption = null })
+        OptionBottomSheet(option = opt, parentBlockId = block.id, onDismiss = { sheetOption = null })
     }
 
     Column(
@@ -10337,866 +10528,1045 @@ private fun FormInputSelectBlock(
         // Progress shows INSIDE the field and nowhere else. A spinner over the list would say
         // "this screen is loading", which is false — the list is right there and still usable.
         if (showsSearch) {
-            OutlinedTextField(
-                value = searchText,
-                onValueChange = { searchText = it },
-                singleLine = true,
-                placeholder = { Text("Search", fontSize = 15.sp) },
-                leadingIcon = {
-                    Text("\uD83D\uDD0D", fontSize = 14.sp)
-                },
-                trailingIcon = {
-                    when {
-                        isSearching -> CircularProgressIndicator(
-                            modifier = Modifier.size(16.dp),
-                            strokeWidth = 2.dp,
-                        )
-                        searchText.isNotEmpty() -> Text(
-                            "\u2715",
-                            fontSize = 14.sp,
-                            modifier = Modifier.clickable {
-                                searchText = ""
-                                searchResults = null
-                            },
-                        )
-                        else -> Unit
-                    }
-                },
-                modifier = Modifier.fillMaxWidth(),
-            )
+            SelectSearchField(optionsState.searchTextState, optionsState.searchResultsState, optionsState.isSearchingState)
         }
 
         // SPEC-441 (#541) — the chip row, above the options it filters. Mirrors iOS
         // FormInputSelectBlock.categoryChipRow and the console preview.
         if (categories.isNotEmpty()) {
-            val accent = ai.appdna.sdk.AppDNA.brandAccentColor()
+            SelectCategoryChips(categories, activeCategoryState)
+        }
+
+        // SPEC-496 §B0 — a Select in scope that renders 0 options after host data settled shows the
+        // resolved `empty_text` in place of its options (`hide_when_empty` hides the whole block one
+        // level up). Decided by the raw pass, never while pending.
+        val hostEmptyText = block.hostDataEmptyState(hostDataRawResolvedIds())
+            ?.takeIf { it.first == "text" && baseOptions.isEmpty() }?.second
+        if (hostEmptyText != null) {
+            Text(
+                text = hostEmptyText,
+                fontSize = 15.sp,
+                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
+                modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp),
+            )
+        } else when (displayStyle) {
+            "stacked" -> style.SelectStackedOptions(options, categories, showCategoryHeader, isSelectedFn, pickFn)
+            "grid" -> style.SelectGridOptions(options, isSelectedFn, pickFn)
+            "image_tiles" -> style.SelectImageTileOptions(options, isSelectedFn, pickFn)
+            "bubble" -> style.SelectBubbleOptions(options, isSelectedFn, pickFn)
+            "list" -> style.SelectListOptions(options, isSelectedFn, pickFn)
+            else -> style.SelectDropdownOptions(options, fieldId, inputValues, selectedValueState)
+        }
+
+        SelectGridTooltip(block, displayStyle)
+    }
+}
+
+/** SPEC-496 — the Select's search box (moved verbatim from FormInputSelectBlock). */
+@Composable
+private fun SelectSearchField(
+    searchTextState: MutableState<String>,
+    searchResultsState: MutableState<List<InputOption>?>,
+    isSearchingState: State<Boolean>,
+) {
+    var searchText by searchTextState
+    val isSearching by isSearchingState
+    OutlinedTextField(
+        value = searchText,
+        onValueChange = { searchText = it },
+        singleLine = true,
+        placeholder = { Text("Search", fontSize = 15.sp) },
+        leadingIcon = {
+            Text("\uD83D\uDD0D", fontSize = 14.sp)
+        },
+        trailingIcon = {
+            when {
+                isSearching -> CircularProgressIndicator(
+                    modifier = Modifier.size(16.dp),
+                    strokeWidth = 2.dp,
+                )
+                searchText.isNotEmpty() -> Text(
+                    "\u2715",
+                    fontSize = 14.sp,
+                    modifier = Modifier.clickable {
+                        searchText = ""
+                        searchResultsState.value = null
+                    },
+                )
+                else -> Unit
+            }
+        },
+        modifier = Modifier.fillMaxWidth(),
+    )
+}
+
+/** SPEC-441 (#541) — the category chip row (moved verbatim from FormInputSelectBlock). */
+@Composable
+private fun SelectCategoryChips(
+    categories: List<Triple<String, String, String?>>,
+    activeCategoryState: MutableState<String>,
+) {
+    var activeCategory by activeCategoryState
+    val accent = ai.appdna.sdk.AppDNA.brandAccentColor()
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .horizontalScroll(rememberScrollState()),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        categories.forEach { (catId, catLabel, catIcon) ->
+            val isActive = catId == activeCategory
+            Box(
+                modifier = Modifier
+                    .clip(RoundedCornerShape(50))
+                    .background(if (isActive) accent.copy(alpha = 0.2f) else Color.Gray.copy(alpha = 0.15f))
+                    .clickable { activeCategory = catId }
+                    .padding(horizontal = 12.dp, vertical = 7.dp),
+            ) {
+                Text(
+                    text = catIcon?.let { "$it $catLabel" } ?: catLabel,
+                    fontSize = 13.sp,
+                    fontWeight = FontWeight.Medium,
+                    color = if (isActive) accent else Color.Gray,
+                )
+            }
+        }
+    }
+}
+
+/** display_style "stacked" — a Column of option cards. */
+@Composable
+private fun SelectOptionStyle.SelectStackedOptions(
+    options: List<InputOption>,
+    categories: List<Triple<String, String, String?>>,
+    showCategoryHeader: Boolean,
+    isOptionSelected: (String) -> Boolean,
+    pickOption: (String) -> Unit,
+) {
+    // Stacked: Column of cards. Per-option bg/border/text colors honored
+    // (Hotfix-1.0.33). Mirrors iOS FormInputBlockViews.swift:532-622.
+    // SPEC-419 pass-13 — option_height (or size) → row min-height, mirroring iOS.
+    val stackedMinHeight = ((cfg?.get("option_height") as? Number)?.toFloat()
+        ?: (cfg?.get("size") as? Number)?.toFloat())
+    // SPEC-419 pass-24 — show_item_separators (console Switch, stacked only) draws a
+    // divider between stacked options, honoring separator_color + separator_thickness
+    // like the list variant. Off by default (cards already have borders).
+    val showItemSeparators = (cfg?.get("show_item_separators") as? Boolean) == true
+    val stackedSepColor = (cfg?.get("separator_color") as? String)?.let { StyleEngine.parseColor(it) }
+        ?: StyleEngine.parseColor("#D1D5DB")
+    val stackedSepThickness = ((cfg?.get("separator_thickness") as? Number)?.toDouble() ?: 1.0).dp
+    Column(
+        verticalArrangement = Arrangement.spacedBy(optionSpacingDp),
+        modifier = Modifier.fillMaxWidth(),
+    ) {
+        options.forEachIndexed { oi, option ->   // SPEC-419 — per-index parity node key
+            SelectStackedOptionRow(
+                oi = oi,
+                option = option,
+                options = options,
+                categories = categories,
+                showCategoryHeader = showCategoryHeader,
+                stackedMinHeight = stackedMinHeight,
+                showItemSeparators = showItemSeparators,
+                stackedSepColor = stackedSepColor,
+                stackedSepThickness = stackedSepThickness,
+                isOptionSelected = isOptionSelected,
+                pickOption = pickOption,
+            )
+        }
+    }
+}
+
+/** One stacked option: optional section header, the card (+ badge), optional separator. */
+@Composable
+private fun SelectOptionStyle.SelectStackedOptionRow(
+    oi: Int,
+    option: InputOption,
+    options: List<InputOption>,
+    categories: List<Triple<String, String, String?>>,
+    showCategoryHeader: Boolean,
+    stackedMinHeight: Float?,
+    showItemSeparators: Boolean,
+    stackedSepColor: Color,
+    stackedSepThickness: Dp,
+    isOptionSelected: (String) -> Boolean,
+    pickOption: (String) -> Unit,
+) {
+    // SPEC-441 (#541) — section header before the first option of each
+    // category. Mirrors iOS sectionStart + the console preview.
+    if (showCategoryHeader && option.category != null &&
+        (oi == 0 || options[oi - 1].category != option.category)
+    ) {
+        categories.firstOrNull { it.first == option.category }?.let { (_, cl, ci) ->
+            Text(
+                text = ci?.let { "$it $cl" } ?: cl,
+                fontSize = 13.sp,
+                fontWeight = FontWeight.Medium,
+                color = Color.Gray,
+                modifier = Modifier.fillMaxWidth().padding(top = if (oi == 0) 0.dp else 8.dp),
+            )
+        }
+    }
+    val isSelected = isOptionSelected(option.value)
+    // Per-option color overrides — each option can carry its own
+    // bg / border / selected colors that override the field_config
+    // block-level fallbacks resolved above. Selected state wins so
+    // `selected_text_color` always applies on top of `title_color`.
+    val optUnselBg = option.bg_color?.let { StyleEngine.parseColor(it) } ?: unselectedBg
+    val optSelBg = option.selected_bg_color?.let { StyleEngine.parseColor(it) } ?: selectedBg
+    val optUnselBorder = option.border_color?.let { StyleEngine.parseColor(it) } ?: unselectedBorder
+    val optSelBorder = option.selected_border_color?.let { StyleEngine.parseColor(it) } ?: selectedBorder
+    val optSelText = option.selected_text_color?.let { StyleEngine.parseColor(it) } ?: selectedTextCol
+    val optTitleColor = if (isSelected) optSelText else (option.title_color?.let { StyleEngine.parseColor(it) } ?: textCol)
+    // SPEC-419 — SELECTED-state legibility for the secondary labels (subtitle +
+    // trailing_text). When selected they adopt the option's selected text color so
+    // they stay readable on a colored selected bg; otherwise the faded base. Mirrors
+    // iOS FormInputBlockViews.swift (both use optSubtitleColor). Without this the
+    // subtitle ("Slow and steady") AND trailing label ("Popular") went invisible on
+    // the green selected card.
+    val optSubtitleColor = run {
+        val base = if (textCol == Color.Unspecified) Color.White else textCol
+        if (isSelected) {
+            option.selected_text_color?.let { StyleEngine.parseColor(it) }
+                ?: option.subtitle_color?.let { StyleEngine.parseColor(it) }
+                ?: cfgSubtitleColor
+                ?: base.copy(alpha = 0.65f)
+        } else {
+            option.subtitle_color?.let { StyleEngine.parseColor(it) } ?: cfgSubtitleColor ?: base.copy(alpha = 0.65f)
+        }
+    }
+    // SPEC-401-A R64 — single click target so TalkBack treats
+    // Card+Checkbox/RadioButton as ONE element. Card owns the
+    // click + a11y; inner RadioButton/Checkbox uses null handler.
+    // SPEC-419 D5 — Box wrap so the badge can straddle the card top border
+    // (render half above the top edge, un-clipped by the Card).
+    androidx.compose.foundation.layout.Box {
+    Card(
+        modifier = Modifier
+            // EPIC-1 — selection_animation glow: accent halo on the selected option
+            // (static glow now; pulse/sparkle motion is a future dynamic layer).
+            .then(
+                if (isSelected && selectionAnimation != "none") {
+                    Modifier.shadow(
+                        elevation = 12.dp,
+                        shape = RoundedCornerShape(optionCornerR),
+                        clip = false,
+                        ambientColor = fillCol,
+                        spotColor = fillCol,
+                    )
+                } else {
+                    Modifier
+                },
+            )
+            .fillMaxWidth()
+            .then(if (stackedMinHeight != null) Modifier.heightIn(min = stackedMinHeight.dp) else Modifier)
+            .testTag("option.$oi.row.bg")
+            .then(
+                if (isMulti) {
+                    Modifier.toggleable(
+                        value = isSelected,
+                        role = androidx.compose.ui.semantics.Role.Checkbox,
+                        onValueChange = { pickOption(option.value) },
+                    )
+                } else {
+                    Modifier.selectable(
+                        selected = isSelected,
+                        role = androidx.compose.ui.semantics.Role.RadioButton,
+                        onClick = { pickOption(option.value) },
+                    )
+                }
+            ),
+        shape = RoundedCornerShape(optionCornerR),
+        colors = CardDefaults.cardColors(
+            // QA-R4 — multiply alpha (not overwrite).
+            // Old `.copy(alpha = bgOpacity)` turned a base
+            // alpha-0.15 white into alpha-1.0 white when
+            // bgOpacity was 1.0 (the default), producing a
+            // fully opaque card. Multiplying preserves the
+            // authored translucency: base 0.15 × 1.0 = 0.15.
+            containerColor = (if (isSelected) optSelBg else optUnselBg).let { c ->
+                val withOpacity = c.copy(alpha = c.alpha * bgOpacity)
+                // blur_background → frosted-glass approximation (iOS .ultraThinMaterial).
+                if (useBlur) withOpacity.compositeOver(frostVeneer) else withOpacity
+            },
+        ),
+        border = androidx.compose.foundation.BorderStroke(
+            if (isSelected && showBorderHighlight) selectedBorderW else unselectedBorderW,
+            if (isSelected) optSelBorder else optUnselBorder,
+        ),
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth().padding(12.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            if (showRadio && radioOnLeft) {
+                SelectRadioIndicator(isSelected = isSelected, isMulti = isMulti, fillCol = checkmarkCol, radioFill = radioFill)
+                Spacer(Modifier.width(8.dp))
+            }
+            // Per-option image (with optional selected/unselected variants).
+            option.resolvedImageURL(isSelected)?.takeIf { it.isNotEmpty() }?.let { url ->
+                Box(modifier = Modifier.size((optImgSizeRaw ?: 32f).dp).clip(when (option.image_shape ?: gImageShape) { "rounded" -> RoundedCornerShape(12.dp); "square" -> RoundedCornerShape(0.dp); else -> CircleShape })) {
+                    ai.appdna.sdk.core.NetworkImage(
+                        url = url,
+                        modifier = Modifier.fillMaxSize(),
+                        // Select v2 — option_image_scale (cover=Crop, contain/fit=Fit).
+                        contentScale = optionImageContentScale,
+                    )
+                    // EPIC-1 — image overlay tint; selected uses selected_image_overlay_*
+                    // (falls back to base). Parity with iOS imageWithOverlay (FormInputBlockViews).
+                    (if (isSelected) (option.selected_image_overlay_color ?: gSelectedOverlayHex ?: option.image_overlay_color ?: gOverlayHex) else (option.image_overlay_color ?: gOverlayHex))
+                        ?.takeIf { it.isNotBlank() }?.let { ov ->
+                            val ovA = ((if (isSelected) (option.selected_image_overlay_opacity ?: option.image_overlay_opacity ?: gOverlayOpacity) else (option.image_overlay_opacity ?: gOverlayOpacity)) ?: 0.3).toFloat()
+                            Box(Modifier.matchParentSize().background(StyleEngine.parseColor(ov).copy(alpha = ovA)))
+                        }
+                }
+                Spacer(Modifier.width(8.dp))
+            }
+            option.icon?.takeIf { it.isNotEmpty() }?.let { icon ->
+                Text(text = icon)
+                Spacer(Modifier.width(8.dp))
+            }
+            // SPEC-419 D7 — leading_text (renders after image+icon, contract order)
+            option.leading_text?.takeIf { it.isNotBlank() }?.let { lt ->
+                Text(
+                    text = lt,
+                    fontSize = 14.sp,
+                    color = optTitleColor,
+                    fontWeight = FontWeight.SemiBold,
+                    fontFamily = optionFontFamily,
+                    modifier = Modifier.testTag("option.$oi.leading_text"),
+                )
+                Spacer(Modifier.width(8.dp))
+            }
+            Column(
+                modifier = Modifier.weight(1f),
+                // EPIC-1 — per-option center alignment (was always start-aligned).
+                // Mirrors iOS FormInputBlockViews.swift:601 (VStack .center/.leading).
+                horizontalAlignment = if ((option.text_alignment ?: gTextAlignment) == "center") Alignment.CenterHorizontally else Alignment.Start,
+            ) {
+                Text(
+                    text = option.label,
+                    modifier = Modifier.testTag("option.$oi.title"),
+                    // SPEC-419 pass-15 #36 — fall back to block-level default (not hardcoded 14).
+                    fontSize = (option.title_font_size?.toFloat() ?: defaultTitleSize).sp,
+                    color = optTitleColor,
+                    // Select v2 — option_font_family + option_text_wrap (wrap fully vs single-line truncate).
+                    fontFamily = optionFontFamily,
+                    maxLines = if (optionTextWrap) Int.MAX_VALUE else 1,
+                    overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
+                    fontWeight = (option.title_font_weight ?: gTitleWeight)?.let { wStr ->
+                        ai.appdna.sdk.core.FontResolver.fontWeight(wStr.toIntOrNull() ?: when (wStr.lowercase()) {
+                            "thin" -> 100; "extralight", "ultralight" -> 200
+                            "light" -> 300; "normal", "regular" -> 400
+                            "medium" -> 500; "semibold" -> 600
+                            "bold" -> 700; "extrabold", "heavy" -> 800
+                            "black" -> 900; else -> 400
+                        })
+                    } ?: FontWeight.Normal,
+                )
+                option.subtitle?.takeIf { it.isNotBlank() }?.let { subtitle ->
+                    // QA-R14 — subtitle default color
+                    // = option text color × 0.65 alpha,
+                    // mirroring iOS `FormInputBlockViews.swift:
+                    // 518-519` `textCol.opacity(0.65)`. Was
+                    // `MaterialTheme.colorScheme.onSurface ×
+                    // 0.6` which on dark gradient backgrounds
+                    // resolved to near-black-on-dark (low
+                    // contrast) because M3 default `onSurface`
+                    // adapts to the host's color scheme, not
+                    // the step's authored background.
+                    Text(
+                        text = subtitle,
+                        modifier = Modifier.testTag("option.$oi.subtitle"),
+                        // SPEC-419 pass-15 #36 — fall back to block-level default (not hardcoded 12).
+                        fontSize = (option.subtitle_font_size?.toFloat() ?: defaultSubtitleSize).sp,
+                        color = optSubtitleColor,
+                        // Select v2 — option_font_family + option_text_wrap.
+                        fontFamily = optionFontFamily,
+                        maxLines = if (optionTextWrap) Int.MAX_VALUE else 1,
+                        overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
+                    )
+                }
+            }
+            // SPEC-419 D7 — trailing_text (after title/subtitle column, before the radio)
+            option.trailing_text?.takeIf { it.isNotBlank() }?.let { tt ->
+                Spacer(Modifier.width(8.dp))
+                Text(
+                    text = tt,
+                    fontSize = 12.sp,
+                    color = optSubtitleColor,
+                    fontFamily = optionFontFamily,
+                    modifier = Modifier.testTag("option.$oi.trailing_text"),
+                )
+            }
+            if (showRadio && !radioOnLeft) {
+                Spacer(Modifier.width(8.dp))
+                SelectRadioIndicator(isSelected = isSelected, isMulti = isMulti, fillCol = checkmarkCol, radioFill = radioFill)
+            }
+        }
+    }
+    // SPEC-419 D5 — per-option badge straddling the card top border (BoxScope child,
+    // half above the top edge; inset 12dp from the trailing/leading edge).
+    option.badge?.text?.takeIf { it.isNotBlank() }?.let { bt ->
+        // SPEC-419 pass-13 — honor the full 4-corner + center badge_position
+        // set (was contains("leading") only → bottom_* badges pinned to top).
+        // Mirrors iOS badgeAlignment/badgeOffsetX (FormInputBlockViews.swift:842).
+        val badgePos = option.badge?.position ?: ""
+        val badgeAlign = when (badgePos) {
+            "top_leading" -> Alignment.TopStart
+            "bottom_leading" -> Alignment.BottomStart
+            "bottom_trailing" -> Alignment.BottomEnd
+            "leading" -> Alignment.CenterStart
+            "trailing" -> Alignment.CenterEnd
+            else -> Alignment.TopEnd
+        }
+        val badgeOffsetX = when (badgePos) {
+            "top_leading", "bottom_leading", "leading" -> 12.dp
+            else -> (-12).dp
+        }
+        Box(
+            modifier = Modifier
+                .align(badgeAlign)
+                .offset(x = badgeOffsetX, y = (-9).dp)
+                .testTag("option.$oi.badge")
+                .background(
+                    option.badge?.bg_color?.let { StyleEngine.parseColor(it) } ?: Color(0xFF22C55E),
+                    RoundedCornerShape(999.dp),
+                )
+                .padding(horizontal = 8.dp, vertical = 2.dp),
+        ) {
+            Text(
+                text = bt,
+                fontSize = 10.sp,
+                fontWeight = FontWeight.Bold,
+                color = option.badge?.text_color?.let { StyleEngine.parseColor(it) } ?: Color.White,
+            )
+        }
+    }
+    }
+    // SPEC-419 pass-24 — optional divider between stacked options (parity with list).
+    if (showItemSeparators && oi < options.lastIndex) {
+        Box(modifier = Modifier.fillMaxWidth().height(stackedSepThickness).background(stackedSepColor))
+    }
+}
+
+/** display_style "grid" — N-column cards. */
+@Composable
+private fun SelectOptionStyle.SelectGridOptions(
+    options: List<InputOption>,
+    isOptionSelected: (String) -> Boolean,
+    pickOption: (String) -> Unit,
+) {
+    // Grid: N-column layout. Hotfix-1.0.33 — read `grid_columns` from
+    // field_config (default 2). Per-option color reads now honored.
+    val gridCols = ((cfg?.get("grid_columns") as? Number)?.toInt() ?: 2).coerceIn(1, 6)
+    // SPEC-419 pass-13 — honor option_height (or size) as a cell min-height,
+    // mirroring iOS gridSelectView optionHeight (FormInputBlockViews.swift:1026).
+    val gridMinHeight = ((cfg?.get("option_height") as? Number)?.toFloat()
+        ?: (cfg?.get("size") as? Number)?.toFloat())
+    val chunked = options.chunked(gridCols)
+    Column(verticalArrangement = Arrangement.spacedBy(optionSpacingDp)) {
+        chunked.forEach { row ->
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(optionSpacingDp),
+            ) {
+                row.forEach { option ->
+                    SelectGridOptionCell(
+                        option = option,
+                        modifier = Modifier.weight(1f),
+                        gridMinHeight = gridMinHeight,
+                        isOptionSelected = isOptionSelected,
+                        pickOption = pickOption,
+                    )
+                }
+                // Fill empty slots in last row to keep grid alignment
+                repeat(gridCols - row.size) { Spacer(Modifier.weight(1f)) }
+            }
+        }
+        // Tooltip is rendered once by the outer grid-scoped block (resolveIcon-aware);
+        // the duplicate inner render was removed (pass-16) to match iOS's single tooltip.
+    }
+}
+
+/** One grid cell. `modifier` carries the RowScope weight the cell used to apply itself. */
+@Composable
+private fun SelectOptionStyle.SelectGridOptionCell(
+    option: InputOption,
+    modifier: Modifier,
+    gridMinHeight: Float?,
+    isOptionSelected: (String) -> Boolean,
+    pickOption: (String) -> Unit,
+) {
+    val isSelected = isOptionSelected(option.value)
+    val optUnselBg = option.bg_color?.let { StyleEngine.parseColor(it) } ?: unselectedBg
+    val optSelBg = option.selected_bg_color?.let { StyleEngine.parseColor(it) } ?: selectedBg
+    val optUnselBorder = option.border_color?.let { StyleEngine.parseColor(it) } ?: unselectedBorder
+    val optSelBorder = option.selected_border_color?.let { StyleEngine.parseColor(it) } ?: selectedBorder
+    val optSelText = option.selected_text_color?.let { StyleEngine.parseColor(it) } ?: selectedTextCol
+    val optTitleColor = if (isSelected) optSelText else (option.title_color?.let { StyleEngine.parseColor(it) } ?: textCol)
+    // EPIC-1 — resolve cell alignment: per-option override → block grid_cell_alignment → center.
+    // Mirrors iOS gridSelectView cellAlignmentKey. Was hardcoded CenterHorizontally / TextAlign.Center.
+    val cellAlignKey = option.cell_alignment ?: (cfg?.get("grid_cell_alignment") as? String) ?: "center"
+    val cellHAlign = when (cellAlignKey) {
+        "leading", "left" -> Alignment.Start
+        "trailing", "right" -> Alignment.End
+        else -> Alignment.CenterHorizontally
+    }
+    val cellTextAlign = when (cellAlignKey) {
+        "leading", "left" -> TextAlign.Start
+        "trailing", "right" -> TextAlign.End
+        else -> TextAlign.Center
+    }
+    Card(
+        modifier = modifier
+            .then(if (gridMinHeight != null) Modifier.heightIn(min = gridMinHeight.dp) else Modifier)
+            .clickable { pickOption(option.value) },
+        shape = RoundedCornerShape(cornerR),
+        colors = CardDefaults.cardColors(
+            // QA-R4 — multiply alpha, same fix as stacked branch.
+            containerColor = (if (isSelected) optSelBg else optUnselBg).let { c ->
+                val withOpacity = c.copy(alpha = c.alpha * bgOpacity)
+                // blur_background → frosted-glass approximation (iOS .ultraThinMaterial), same as stacked.
+                if (useBlur) withOpacity.compositeOver(frostVeneer) else withOpacity
+            },
+        ),
+        border = androidx.compose.foundation.BorderStroke(
+            if (isSelected) selectedBorderW else unselectedBorderW,
+            if (isSelected) optSelBorder else optUnselBorder,
+        ),
+    ) {
+        Box(modifier = Modifier.fillMaxWidth()) {
+            // Hoisted so both the inline option icon (below) and the
+            // toggle badge overlay can share the block-level defaults.
+            val defSelIcon = cfg?.get("selected_icon") as? String
+            val defUnselIcon = cfg?.get("unselected_icon") as? String
+            Column(
+                modifier = Modifier.fillMaxWidth().padding(12.dp),
+                horizontalAlignment = cellHAlign,
+            ) {
+                option.resolvedImageURL(isSelected)?.takeIf { it.isNotEmpty() }?.let { url ->
+                    Box(modifier = Modifier.size((optImgSizeRaw ?: 40f).dp).clip(when (option.image_shape ?: gImageShape) { "rounded" -> RoundedCornerShape(12.dp); "square" -> RoundedCornerShape(0.dp); else -> CircleShape })) {
+                        ai.appdna.sdk.core.NetworkImage(
+                            url = url,
+                            modifier = Modifier.fillMaxSize(),
+                            contentScale = ContentScale.Crop,
+                        )
+                        // EPIC-1 — image overlay tint; selected uses selected_image_overlay_* (falls back to base).
+                        (if (isSelected) (option.selected_image_overlay_color ?: gSelectedOverlayHex ?: option.image_overlay_color ?: gOverlayHex) else (option.image_overlay_color ?: gOverlayHex))
+                            ?.takeIf { it.isNotBlank() }?.let { ov ->
+                                val ovA = ((if (isSelected) (option.selected_image_overlay_opacity ?: option.image_overlay_opacity ?: gOverlayOpacity) else (option.image_overlay_opacity ?: gOverlayOpacity)) ?: 0.3).toFloat()
+                                Box(Modifier.matchParentSize().background(StyleEngine.parseColor(ov).copy(alpha = ovA)))
+                            }
+                    }
+                    Spacer(Modifier.height(4.dp))
+                }
+                // Drain2 parity — grid select now renders option.icon
+                // (emoji/glyph) with a selected/unselected swap, mirroring
+                // iOS gridSelectView (FormInputBlockViews.swift:1295-1306)
+                // and the console preview.
+                option.icon?.takeIf { it.isNotEmpty() }?.let { icon ->
+                    val resolvedIcon = if (isSelected) (option.selected_icon ?: defSelIcon ?: icon)
+                                       else (option.unselected_icon ?: defUnselIcon ?: icon)
+                    Text(
+                        text = resolvedIcon,
+                        fontSize = 22.sp,
+                        color = if (isSelected) optSelText else textCol,
+                    )
+                    Spacer(Modifier.height(4.dp))
+                }
+                Text(
+                    text = option.label,
+                    // Grid honors block-level title default (0.85 factor, parity with iOS gridSelectView + preview).
+                    fontSize = (option.title_font_size?.toFloat() ?: defaultTitleSize * 0.85f).sp,
+                    color = optTitleColor,
+                    fontWeight = (option.title_font_weight ?: gTitleWeight)?.let { wStr ->
+                        ai.appdna.sdk.core.FontResolver.fontWeight(wStr.toIntOrNull() ?: when (wStr.lowercase()) {
+                            "thin" -> 100; "extralight", "ultralight" -> 200
+                            "light" -> 300; "normal", "regular" -> 400
+                            "medium" -> 500; "semibold" -> 600
+                            "bold" -> 700; "extrabold", "heavy" -> 800
+                            "black" -> 900; else -> 400
+                        })
+                    } ?: FontWeight.Normal,
+                    textAlign = cellTextAlign,
+                )
+                option.subtitle?.takeIf { it.isNotBlank() }?.let { subtitle ->
+                    Text(
+                        text = subtitle,
+                        fontSize = (option.subtitle_font_size?.toFloat() ?: defaultSubtitleSize).sp,
+                        // Drain2 parity — derive the default subtitle color from the
+                        // authored step text color (textCol), not M3 onSurface which
+                        // adapts to the host theme and goes near-black on a dark step
+                        // bg. Mirrors iOS grid (textCol.opacity(0.65)) + preview (a6).
+                        color = option.subtitle_color?.let { StyleEngine.parseColor(it) }
+                            ?: cfgSubtitleColor
+                            ?: (if (textCol == Color.Unspecified) Color.White else textCol).copy(alpha = 0.65f),
+                        textAlign = cellTextAlign,
+                    )
+                }
+            }
+            // EPIC-1 / SPEC-419 pass-13 — toggle-icon overlay honors
+            // show_toggle_icon, toggle_icon_position, toggle_icon_size,
+            // and selected/unselected bg+fg colors (was hardcoded TopEnd,
+            // 12sp, no bg). Mirrors iOS gridSelectView
+            // (FormInputBlockViews.swift:1003-1149).
+            // defSelIcon/defUnselIcon hoisted above the Column.
+            val showToggleIcon = (cfg?.get("show_toggle_icon") as? Boolean) ?: (defSelIcon != null)
+            if (showToggleIcon) {
+                val toggleAlign = when (cfg?.get("toggle_icon_position") as? String) {
+                    "top_leading" -> Alignment.TopStart
+                    "bottom_trailing" -> Alignment.BottomEnd
+                    "bottom_leading" -> Alignment.BottomStart
+                    else -> Alignment.TopEnd
+                }
+                val toggleSizeF = (cfg?.get("toggle_icon_size") as? Number)?.toFloat() ?: 20f
+                val badgeIcon = if (isSelected) (option.selected_icon ?: defSelIcon ?: "✓")
+                                else (option.unselected_icon ?: defUnselIcon ?: "+")
+                val badgeFg = if (isSelected)
+                    ((cfg?.get("toggle_icon_selected_fg_color") as? String)?.let { StyleEngine.parseColor(it) } ?: optSelText)
+                else ((cfg?.get("toggle_icon_unselected_fg_color") as? String)?.let { StyleEngine.parseColor(it) } ?: textCol.copy(alpha = 0.5f))
+                val badgeBg = if (isSelected)
+                    ((cfg?.get("toggle_icon_selected_bg_color") as? String)?.let { StyleEngine.parseColor(it) } ?: fillCol.copy(alpha = 0.2f))
+                else ((cfg?.get("toggle_icon_unselected_bg_color") as? String)?.let { StyleEngine.parseColor(it) } ?: Color.Transparent)
+                Box(
+                    modifier = Modifier
+                        .align(toggleAlign)
+                        .padding(6.dp)
+                        .size(toggleSizeF.dp)
+                        .background(badgeBg, CircleShape),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Text(
+                        text = badgeIcon,
+                        fontSize = (toggleSizeF * 0.5f).sp,
+                        color = badgeFg,
+                        fontWeight = FontWeight.Bold,
+                    )
+                }
+            }
+        }
+    }
+}
+
+/** display_style "image_tiles" — SPEC-447 (#555) tiles. */
+@Composable
+private fun SelectOptionStyle.SelectImageTileOptions(
+    options: List<InputOption>,
+    isOptionSelected: (String) -> Boolean,
+    pickOption: (String) -> Unit,
+) {
+    // SPEC-447 (#555) — where the TEXT sits relative to the image. `full_bleed` is the
+    // default and renders exactly as before; the other two give the label a surface of
+    // its own instead of dimming the photograph with a scrim. Parity with iOS
+    // FormInputBlockViews.swift image_tiles.
+    val tileLayout = (cfg?.get("tile_image_layout") as? String) ?: "full_bleed"
+    val stripRatio = ((cfg?.get("tile_strip_ratio") as? Number)?.toFloat() ?: 0.75f)
+        .coerceIn(0.5f, 0.95f)
+    val surfaceCol = ((cfg?.get("tile_surface_color") as? String)
+        ?: block.field_style?.background_color ?: "#111827").let { StyleEngine.parseColor(it) }
+    val imgInsetDp = ((cfg?.get("tile_image_inset") as? Number)?.toFloat() ?: 8f).dp
+    val frameWDp = ((cfg?.get("tile_image_frame_width") as? Number)?.toFloat() ?: 0f).dp
+    val frameCol = StyleEngine.parseColor((cfg?.get("tile_image_frame_color") as? String) ?: "#374151")
+    // EPIC-1 — tall tiles: image fills the tile, label overlaid at the bottom over a
+    // dark scrim; selected = accent border. N-column grid (grid_columns, default 2).
+    val tileCols = ((cfg?.get("grid_columns") as? Number)?.toInt() ?: 2).coerceIn(1, 4)
+    val tileHeight = ((cfg?.get("tile_height") as? Number)?.toFloat() ?: 140f).dp
+    // SPEC-419 pass-24 — tile_aspect_ratio ("W:H", console Select 1:1/4:3/16:9/3:4)
+    // sizes the tile by its (weight-1f) width × the ratio. When set it overrides the
+    // fixed tile_height; falls back to tile_height when unset.
+    val tileAspect = (cfg?.get("tile_aspect_ratio") as? String)?.let { s ->
+        val parts = s.split(":")
+        val w = parts.getOrNull(0)?.toFloatOrNull()
+        val h = parts.getOrNull(1)?.toFloatOrNull()
+        if (parts.size == 2 && w != null && h != null && w > 0f && h > 0f) w / h else null
+    }
+    Column(verticalArrangement = Arrangement.spacedBy(optionSpacingDp)) {
+        options.chunked(tileCols).forEach { row ->
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(optionSpacingDp),
+            ) {
+                row.forEach { option ->
+                    SelectImageTile(
+                        option = option,
+                        modifier = Modifier.weight(1f),
+                        tileLayout = tileLayout,
+                        stripRatio = stripRatio,
+                        surfaceCol = surfaceCol,
+                        imgInsetDp = imgInsetDp,
+                        frameWDp = frameWDp,
+                        frameCol = frameCol,
+                        tileHeight = tileHeight,
+                        tileAspect = tileAspect,
+                        isOptionSelected = isOptionSelected,
+                        pickOption = pickOption,
+                    )
+                }
+                // Keep tiles equal width when the last row is short.
+                repeat(tileCols - row.size) { Box(Modifier.weight(1f)) }
+            }
+        }
+    }
+}
+
+/** One image tile. `modifier` carries the RowScope weight the tile used to apply itself. */
+@Composable
+private fun SelectOptionStyle.SelectImageTile(
+    option: InputOption,
+    modifier: Modifier,
+    tileLayout: String,
+    stripRatio: Float,
+    surfaceCol: Color,
+    imgInsetDp: Dp,
+    frameWDp: Dp,
+    frameCol: Color,
+    tileHeight: Dp,
+    tileAspect: Float?,
+    isOptionSelected: (String) -> Boolean,
+    pickOption: (String) -> Unit,
+) {
+    val isSelected = isOptionSelected(option.value)
+    val optSelBorder = option.selected_border_color?.let { StyleEngine.parseColor(it) } ?: selectedBorder
+    val optUnselBorder = option.border_color?.let { StyleEngine.parseColor(it) } ?: unselectedBorder
+    Box(
+        modifier = modifier
+            .then(if (tileAspect != null) Modifier.aspectRatio(tileAspect) else Modifier.height(tileHeight))
+            .clip(RoundedCornerShape(cornerR))
+            .selectable(
+                selected = isSelected,
+                role = androidx.compose.ui.semantics.Role.RadioButton,
+                onClick = { pickOption(option.value) },
+            )
+            .border(
+                androidx.compose.foundation.BorderStroke(
+                    if (isSelected) selectedBorderW else unselectedBorderW,
+                    if (isSelected) optSelBorder else optUnselBorder,
+                ),
+                RoundedCornerShape(cornerR),
+            ),
+    ) {
+        if (tileLayout != "full_bleed") {
+            // The tile surface sits under everything. The BAND under the
+            // text is drawn separately, below, sized by the text itself:
+            // a fixed share of the tile cannot be right at every tile
+            // height and font size, and when the text is taller than the
+            // share it spills back onto the photograph — which is the
+            // exact defect #555 reported.
+            Box(Modifier.matchParentSize().background(surfaceCol))
+        }
+        option.resolvedImageURL(isSelected)?.takeIf { it.isNotEmpty() }?.let { url ->
+            val imgModifier = when (tileLayout) {
+                "image_strip" -> Modifier.fillMaxWidth().fillMaxHeight(stripRatio).align(Alignment.TopStart)
+                "contained" -> Modifier
+                    .fillMaxWidth()
+                    .fillMaxHeight(stripRatio)
+                    .align(Alignment.TopStart)
+                    .padding(imgInsetDp)
+                    .clip(RoundedCornerShape(8.dp))
+                    .then(
+                        if (frameWDp.value > 0f) {
+                            Modifier.border(
+                                androidx.compose.foundation.BorderStroke(frameWDp, frameCol),
+                                RoundedCornerShape(8.dp),
+                            )
+                        } else Modifier,
+                    )
+                else -> Modifier.matchParentSize()
+            }
+            ai.appdna.sdk.core.NetworkImage(
+                url = url,
+                modifier = imgModifier,
+                contentScale = ContentScale.Crop,
+            )
+        }
+        (if (isSelected) (option.selected_image_overlay_color ?: gSelectedOverlayHex ?: option.image_overlay_color ?: gOverlayHex) else (option.image_overlay_color ?: gOverlayHex))
+            ?.takeIf { it.isNotBlank() }?.let { ov ->
+                val ovA = ((if (isSelected) (option.selected_image_overlay_opacity ?: option.image_overlay_opacity ?: gOverlayOpacity) else (option.image_overlay_opacity ?: gOverlayOpacity)) ?: 0.3).toFloat()
+                // SPEC-447 AC — the overlay covers the IMAGE REGION ONLY in the
+                // two surfaced layouts. It used matchParentSize(), so authoring a
+                // dark scrim and then switching layout dimmed the text band too:
+                // the very surface these layouts exist to provide, tinted by a
+                // setting meant for the photograph. The bottom scrim below was
+                // already gated on full_bleed; this is that same reasoning applied
+                // to the other overlay. Geometry mirrors the image, inset included.
+                Box(
+                    when (tileLayout) {
+                        "image_strip" -> Modifier
+                            .fillMaxWidth().fillMaxHeight(stripRatio).align(Alignment.TopStart)
+                        "contained" -> Modifier
+                            .fillMaxWidth().fillMaxHeight(stripRatio).align(Alignment.TopStart)
+                            .padding(imgInsetDp).clip(RoundedCornerShape(8.dp))
+                        else -> Modifier.matchParentSize()
+                    }.background(StyleEngine.parseColor(ov).copy(alpha = ovA)),
+                )
+            }
+        // Bottom scrim — only meaningful when the text is ON the image.
+        // With a text surface it would dim the very surface these
+        // layouts exist to provide.
+        if (tileLayout == "full_bleed") {
+            Box(
+                modifier = Modifier
+                    .matchParentSize()
+                    .background(
+                        Brush.verticalGradient(
+                            0.45f to Color.Transparent,
+                            1f to Color.Black.copy(alpha = 0.65f),
+                        ),
+                    ),
+            )
+        }
+        Column(
+            modifier = Modifier
+                .align(Alignment.BottomStart)
+                .fillMaxWidth()
+                // SPEC-447 — the band is painted UNDER THE TEXT and is
+                // therefore exactly as tall as the text needs. Painting
+                // it as a fixed share of the tile (1 - strip_ratio) put
+                // the title back on the photograph whenever two lines
+                // did not fit the share — at the default 140dp tile and
+                // ratio 0.75 that is 35dp for a 15sp title plus a 12sp
+                // subtitle, so it always overflowed. Verified in the
+                // golden before this line existed.
+                .then(
+                    if (tileLayout != "full_bleed") {
+                        Modifier.background(surfaceCol)
+                    } else Modifier,
+                )
+                .padding(10.dp),
+        ) {
+            Text(
+                text = option.label,
+                color = Color.White,
+                fontSize = (option.title_font_size ?: 15.0).sp,
+                fontWeight = FontWeight.SemiBold,
+            )
+            option.subtitle?.takeIf { it.isNotBlank() }?.let { sub ->
+                Text(text = sub, color = Color.White.copy(alpha = 0.85f), fontSize = (option.subtitle_font_size ?: 12.0).sp)
+            }
+        }
+    }
+}
+
+/** display_style "bubble" — wrapping pills. */
+@Composable
+private fun SelectOptionStyle.SelectBubbleOptions(
+    options: List<InputOption>,
+    isOptionSelected: (String) -> Boolean,
+    pickOption: (String) -> Unit,
+) {
+    // EPIC-1 — chips/pills that wrap (FlowRow). Selected = filled accent; unselected =
+    // bordered/transparent. Common for interests/tags multi-select.
+    androidx.compose.foundation.layout.FlowRow(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(optionSpacingDp),
+        verticalArrangement = Arrangement.spacedBy(optionSpacingDp),
+    ) {
+        options.forEach { option ->
+            val isSelected = isOptionSelected(option.value)
+            val chipBg = if (isSelected) (option.selected_bg_color?.let { StyleEngine.parseColor(it) } ?: fillCol)
+                else (option.bg_color?.let { StyleEngine.parseColor(it) } ?: Color.Transparent)
+            val chipBorder = if (isSelected) (option.selected_border_color?.let { StyleEngine.parseColor(it) } ?: selectedBorder)
+                else (option.border_color?.let { StyleEngine.parseColor(it) } ?: unselectedBorder)
+            val chipText = if (isSelected) selectedTextCol else textCol
+            Box(
+                modifier = Modifier
+                    .clip(RoundedCornerShape(percent = 50))
+                    .background(chipBg)
+                    .border(
+                        androidx.compose.foundation.BorderStroke(
+                            if (isSelected) selectedBorderW else unselectedBorderW,
+                            chipBorder,
+                        ),
+                        RoundedCornerShape(percent = 50),
+                    )
+                    .selectable(
+                        selected = isSelected,
+                        role = androidx.compose.ui.semantics.Role.RadioButton,
+                        onClick = { pickOption(option.value) },
+                    )
+                    .padding(horizontal = 16.dp, vertical = 9.dp),
+            ) {
+                Text(
+                    text = option.label,
+                    color = chipText,
+                    fontSize = (option.title_font_size ?: 14.0).sp,
+                    fontWeight = FontWeight.Medium,
+                )
+            }
+        }
+    }
+}
+
+/** display_style "list" — borderless rows with hairline separators. */
+@Composable
+private fun SelectOptionStyle.SelectListOptions(
+    options: List<InputOption>,
+    isOptionSelected: (String) -> Boolean,
+    pickOption: (String) -> Unit,
+) {
+    // EPIC-1 — borderless list: full-width rows + a hairline divider between items
+    // (settings-list look). Honors per-option bg + separator_color + selected tint/check.
+    val separatorColor = (cfg?.get("separator_color") as? String)?.let { StyleEngine.parseColor(it) }
+        ?: StyleEngine.parseColor("#D1D5DB")
+    // SPEC-419 pass-24 — separator_thickness (console Slider 0–4, default 1) drives the
+    // divider height; thickness was previously hardcoded to 1.dp.
+    val separatorThickness = ((cfg?.get("separator_thickness") as? Number)?.toDouble() ?: 1.0).dp
+    Column(modifier = Modifier.fillMaxWidth()) {
+        options.forEachIndexed { oi, option ->
+            val isSelected = isOptionSelected(option.value)
+            val rowBg = if (isSelected) (option.selected_bg_color?.let { StyleEngine.parseColor(it) } ?: selectedBg)
+                else (option.bg_color?.let { StyleEngine.parseColor(it) } ?: Color.Transparent)
+            val rowTitle = if (isSelected) (option.selected_text_color?.let { StyleEngine.parseColor(it) } ?: selectedTextCol)
+                else (option.title_color?.let { StyleEngine.parseColor(it) } ?: textCol)
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .horizontalScroll(rememberScrollState()),
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-            ) {
-                categories.forEach { (catId, catLabel, catIcon) ->
-                    val isActive = catId == activeCategory
-                    Box(
-                        modifier = Modifier
-                            .clip(RoundedCornerShape(50))
-                            .background(if (isActive) accent.copy(alpha = 0.2f) else Color.Gray.copy(alpha = 0.15f))
-                            .clickable { activeCategory = catId }
-                            .padding(horizontal = 12.dp, vertical = 7.dp),
-                    ) {
-                        Text(
-                            text = catIcon?.let { "$it $catLabel" } ?: catLabel,
-                            fontSize = 13.sp,
-                            fontWeight = FontWeight.Medium,
-                            color = if (isActive) accent else Color.Gray,
-                        )
-                    }
-                }
-            }
-        }
-
-        when (displayStyle) {
-            "stacked" -> {
-                // Stacked: Column of cards. Per-option bg/border/text colors honored
-                // (Hotfix-1.0.33). Mirrors iOS FormInputBlockViews.swift:532-622.
-                // SPEC-419 pass-13 — option_height (or size) → row min-height, mirroring iOS.
-                val stackedMinHeight = ((cfg?.get("option_height") as? Number)?.toFloat()
-                    ?: (cfg?.get("size") as? Number)?.toFloat())
-                // SPEC-419 pass-24 — show_item_separators (console Switch, stacked only) draws a
-                // divider between stacked options, honoring separator_color + separator_thickness
-                // like the list variant. Off by default (cards already have borders).
-                val showItemSeparators = (cfg?.get("show_item_separators") as? Boolean) == true
-                val stackedSepColor = (cfg?.get("separator_color") as? String)?.let { StyleEngine.parseColor(it) }
-                    ?: StyleEngine.parseColor("#D1D5DB")
-                val stackedSepThickness = ((cfg?.get("separator_thickness") as? Number)?.toDouble() ?: 1.0).dp
-                Column(
-                    verticalArrangement = Arrangement.spacedBy(optionSpacingDp),
-                    modifier = Modifier.fillMaxWidth(),
-                ) {
-                    options.forEachIndexed { oi, option ->   // SPEC-419 — per-index parity node key
-                        // SPEC-441 (#541) — section header before the first option of each
-                        // category. Mirrors iOS sectionStart + the console preview.
-                        if (showCategoryHeader && option.category != null &&
-                            (oi == 0 || options[oi - 1].category != option.category)
-                        ) {
-                            categories.firstOrNull { it.first == option.category }?.let { (_, cl, ci) ->
-                                Text(
-                                    text = ci?.let { "$it $cl" } ?: cl,
-                                    fontSize = 13.sp,
-                                    fontWeight = FontWeight.Medium,
-                                    color = Color.Gray,
-                                    modifier = Modifier.fillMaxWidth().padding(top = if (oi == 0) 0.dp else 8.dp),
-                                )
-                            }
-                        }
-                        val isSelected = isOptionSelected(option.value)
-                        // Per-option color overrides — each option can carry its own
-                        // bg / border / selected colors that override the field_config
-                        // block-level fallbacks resolved above. Selected state wins so
-                        // `selected_text_color` always applies on top of `title_color`.
-                        val optUnselBg = option.bg_color?.let { StyleEngine.parseColor(it) } ?: unselectedBg
-                        val optSelBg = option.selected_bg_color?.let { StyleEngine.parseColor(it) } ?: selectedBg
-                        val optUnselBorder = option.border_color?.let { StyleEngine.parseColor(it) } ?: unselectedBorder
-                        val optSelBorder = option.selected_border_color?.let { StyleEngine.parseColor(it) } ?: selectedBorder
-                        val optSelText = option.selected_text_color?.let { StyleEngine.parseColor(it) } ?: selectedTextCol
-                        val optTitleColor = if (isSelected) optSelText else (option.title_color?.let { StyleEngine.parseColor(it) } ?: textCol)
-                        // SPEC-419 — SELECTED-state legibility for the secondary labels (subtitle +
-                        // trailing_text). When selected they adopt the option's selected text color so
-                        // they stay readable on a colored selected bg; otherwise the faded base. Mirrors
-                        // iOS FormInputBlockViews.swift (both use optSubtitleColor). Without this the
-                        // subtitle ("Slow and steady") AND trailing label ("Popular") went invisible on
-                        // the green selected card.
-                        val optSubtitleColor = run {
-                            val base = if (textCol == Color.Unspecified) Color.White else textCol
-                            if (isSelected) {
-                                option.selected_text_color?.let { StyleEngine.parseColor(it) }
-                                    ?: option.subtitle_color?.let { StyleEngine.parseColor(it) }
-                                    ?: cfgSubtitleColor
-                                    ?: base.copy(alpha = 0.65f)
-                            } else {
-                                option.subtitle_color?.let { StyleEngine.parseColor(it) } ?: cfgSubtitleColor ?: base.copy(alpha = 0.65f)
-                            }
-                        }
-                        // SPEC-401-A R64 — single click target so TalkBack treats
-                        // Card+Checkbox/RadioButton as ONE element. Card owns the
-                        // click + a11y; inner RadioButton/Checkbox uses null handler.
-                        // SPEC-419 D5 — Box wrap so the badge can straddle the card top border
-                        // (render half above the top edge, un-clipped by the Card).
-                        androidx.compose.foundation.layout.Box {
-                        Card(
-                            modifier = Modifier
-                                // EPIC-1 — selection_animation glow: accent halo on the selected option
-                                // (static glow now; pulse/sparkle motion is a future dynamic layer).
-                                .then(
-                                    if (isSelected && selectionAnimation != "none") {
-                                        Modifier.shadow(
-                                            elevation = 12.dp,
-                                            shape = RoundedCornerShape(optionCornerR),
-                                            clip = false,
-                                            ambientColor = fillCol,
-                                            spotColor = fillCol,
-                                        )
-                                    } else {
-                                        Modifier
-                                    },
-                                )
-                                .fillMaxWidth()
-                                .then(if (stackedMinHeight != null) Modifier.heightIn(min = stackedMinHeight.dp) else Modifier)
-                                .testTag("option.$oi.row.bg")
-                                .then(
-                                    if (isMulti) {
-                                        Modifier.toggleable(
-                                            value = isSelected,
-                                            role = androidx.compose.ui.semantics.Role.Checkbox,
-                                            onValueChange = { pickOption(option.value) },
-                                        )
-                                    } else {
-                                        Modifier.selectable(
-                                            selected = isSelected,
-                                            role = androidx.compose.ui.semantics.Role.RadioButton,
-                                            onClick = { pickOption(option.value) },
-                                        )
-                                    }
-                                ),
-                            shape = RoundedCornerShape(optionCornerR),
-                            colors = CardDefaults.cardColors(
-                                // QA-R4 — multiply alpha (not overwrite).
-                                // Old `.copy(alpha = bgOpacity)` turned a base
-                                // alpha-0.15 white into alpha-1.0 white when
-                                // bgOpacity was 1.0 (the default), producing a
-                                // fully opaque card. Multiplying preserves the
-                                // authored translucency: base 0.15 × 1.0 = 0.15.
-                                containerColor = (if (isSelected) optSelBg else optUnselBg).let { c ->
-                                    val withOpacity = c.copy(alpha = c.alpha * bgOpacity)
-                                    // blur_background → frosted-glass approximation (iOS .ultraThinMaterial).
-                                    if (useBlur) withOpacity.compositeOver(frostVeneer) else withOpacity
-                                },
-                            ),
-                            border = androidx.compose.foundation.BorderStroke(
-                                if (isSelected && showBorderHighlight) selectedBorderW else unselectedBorderW,
-                                if (isSelected) optSelBorder else optUnselBorder,
-                            ),
-                        ) {
-                            Row(
-                                modifier = Modifier.fillMaxWidth().padding(12.dp),
-                                verticalAlignment = Alignment.CenterVertically,
-                            ) {
-                                if (showRadio && radioOnLeft) {
-                                    SelectRadioIndicator(isSelected = isSelected, isMulti = isMulti, fillCol = checkmarkCol, radioFill = radioFill)
-                                    Spacer(Modifier.width(8.dp))
-                                }
-                                // Per-option image (with optional selected/unselected variants).
-                                option.resolvedImageURL(isSelected)?.takeIf { it.isNotEmpty() }?.let { url ->
-                                    Box(modifier = Modifier.size((optImgSizeRaw ?: 32f).dp).clip(when (option.image_shape ?: gImageShape) { "rounded" -> RoundedCornerShape(12.dp); "square" -> RoundedCornerShape(0.dp); else -> CircleShape })) {
-                                        ai.appdna.sdk.core.NetworkImage(
-                                            url = url,
-                                            modifier = Modifier.fillMaxSize(),
-                                            // Select v2 — option_image_scale (cover=Crop, contain/fit=Fit).
-                                            contentScale = optionImageContentScale,
-                                        )
-                                        // EPIC-1 — image overlay tint; selected uses selected_image_overlay_*
-                                        // (falls back to base). Parity with iOS imageWithOverlay (FormInputBlockViews).
-                                        (if (isSelected) (option.selected_image_overlay_color ?: gSelectedOverlayHex ?: option.image_overlay_color ?: gOverlayHex) else (option.image_overlay_color ?: gOverlayHex))
-                                            ?.takeIf { it.isNotBlank() }?.let { ov ->
-                                                val ovA = ((if (isSelected) (option.selected_image_overlay_opacity ?: option.image_overlay_opacity ?: gOverlayOpacity) else (option.image_overlay_opacity ?: gOverlayOpacity)) ?: 0.3).toFloat()
-                                                Box(Modifier.matchParentSize().background(StyleEngine.parseColor(ov).copy(alpha = ovA)))
-                                            }
-                                    }
-                                    Spacer(Modifier.width(8.dp))
-                                }
-                                option.icon?.takeIf { it.isNotEmpty() }?.let { icon ->
-                                    Text(text = icon)
-                                    Spacer(Modifier.width(8.dp))
-                                }
-                                // SPEC-419 D7 — leading_text (renders after image+icon, contract order)
-                                option.leading_text?.takeIf { it.isNotBlank() }?.let { lt ->
-                                    Text(
-                                        text = lt,
-                                        fontSize = 14.sp,
-                                        color = optTitleColor,
-                                        fontWeight = FontWeight.SemiBold,
-                                        fontFamily = optionFontFamily,
-                                        modifier = Modifier.testTag("option.$oi.leading_text"),
-                                    )
-                                    Spacer(Modifier.width(8.dp))
-                                }
-                                Column(
-                                    modifier = Modifier.weight(1f),
-                                    // EPIC-1 — per-option center alignment (was always start-aligned).
-                                    // Mirrors iOS FormInputBlockViews.swift:601 (VStack .center/.leading).
-                                    horizontalAlignment = if ((option.text_alignment ?: gTextAlignment) == "center") Alignment.CenterHorizontally else Alignment.Start,
-                                ) {
-                                    Text(
-                                        text = option.label,
-                                        modifier = Modifier.testTag("option.$oi.title"),
-                                        // SPEC-419 pass-15 #36 — fall back to block-level default (not hardcoded 14).
-                                        fontSize = (option.title_font_size?.toFloat() ?: defaultTitleSize).sp,
-                                        color = optTitleColor,
-                                        // Select v2 — option_font_family + option_text_wrap (wrap fully vs single-line truncate).
-                                        fontFamily = optionFontFamily,
-                                        maxLines = if (optionTextWrap) Int.MAX_VALUE else 1,
-                                        overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
-                                        fontWeight = (option.title_font_weight ?: gTitleWeight)?.let { wStr ->
-                                            ai.appdna.sdk.core.FontResolver.fontWeight(wStr.toIntOrNull() ?: when (wStr.lowercase()) {
-                                                "thin" -> 100; "extralight", "ultralight" -> 200
-                                                "light" -> 300; "normal", "regular" -> 400
-                                                "medium" -> 500; "semibold" -> 600
-                                                "bold" -> 700; "extrabold", "heavy" -> 800
-                                                "black" -> 900; else -> 400
-                                            })
-                                        } ?: FontWeight.Normal,
-                                    )
-                                    option.subtitle?.takeIf { it.isNotBlank() }?.let { subtitle ->
-                                        // QA-R14 — subtitle default color
-                                        // = option text color × 0.65 alpha,
-                                        // mirroring iOS `FormInputBlockViews.swift:
-                                        // 518-519` `textCol.opacity(0.65)`. Was
-                                        // `MaterialTheme.colorScheme.onSurface ×
-                                        // 0.6` which on dark gradient backgrounds
-                                        // resolved to near-black-on-dark (low
-                                        // contrast) because M3 default `onSurface`
-                                        // adapts to the host's color scheme, not
-                                        // the step's authored background.
-                                        Text(
-                                            text = subtitle,
-                                            modifier = Modifier.testTag("option.$oi.subtitle"),
-                                            // SPEC-419 pass-15 #36 — fall back to block-level default (not hardcoded 12).
-                                            fontSize = (option.subtitle_font_size?.toFloat() ?: defaultSubtitleSize).sp,
-                                            color = optSubtitleColor,
-                                            // Select v2 — option_font_family + option_text_wrap.
-                                            fontFamily = optionFontFamily,
-                                            maxLines = if (optionTextWrap) Int.MAX_VALUE else 1,
-                                            overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
-                                        )
-                                    }
-                                }
-                                // SPEC-419 D7 — trailing_text (after title/subtitle column, before the radio)
-                                option.trailing_text?.takeIf { it.isNotBlank() }?.let { tt ->
-                                    Spacer(Modifier.width(8.dp))
-                                    Text(
-                                        text = tt,
-                                        fontSize = 12.sp,
-                                        color = optSubtitleColor,
-                                        fontFamily = optionFontFamily,
-                                        modifier = Modifier.testTag("option.$oi.trailing_text"),
-                                    )
-                                }
-                                if (showRadio && !radioOnLeft) {
-                                    Spacer(Modifier.width(8.dp))
-                                    SelectRadioIndicator(isSelected = isSelected, isMulti = isMulti, fillCol = checkmarkCol, radioFill = radioFill)
-                                }
-                            }
-                        }
-                        // SPEC-419 D5 — per-option badge straddling the card top border (BoxScope child,
-                        // half above the top edge; inset 12dp from the trailing/leading edge).
-                        option.badge?.text?.takeIf { it.isNotBlank() }?.let { bt ->
-                            // SPEC-419 pass-13 — honor the full 4-corner + center badge_position
-                            // set (was contains("leading") only → bottom_* badges pinned to top).
-                            // Mirrors iOS badgeAlignment/badgeOffsetX (FormInputBlockViews.swift:842).
-                            val badgePos = option.badge?.position ?: ""
-                            val badgeAlign = when (badgePos) {
-                                "top_leading" -> Alignment.TopStart
-                                "bottom_leading" -> Alignment.BottomStart
-                                "bottom_trailing" -> Alignment.BottomEnd
-                                "leading" -> Alignment.CenterStart
-                                "trailing" -> Alignment.CenterEnd
-                                else -> Alignment.TopEnd
-                            }
-                            val badgeOffsetX = when (badgePos) {
-                                "top_leading", "bottom_leading", "leading" -> 12.dp
-                                else -> (-12).dp
-                            }
-                            Box(
-                                modifier = Modifier
-                                    .align(badgeAlign)
-                                    .offset(x = badgeOffsetX, y = (-9).dp)
-                                    .testTag("option.$oi.badge")
-                                    .background(
-                                        option.badge?.bg_color?.let { StyleEngine.parseColor(it) } ?: Color(0xFF22C55E),
-                                        RoundedCornerShape(999.dp),
-                                    )
-                                    .padding(horizontal = 8.dp, vertical = 2.dp),
-                            ) {
-                                Text(
-                                    text = bt,
-                                    fontSize = 10.sp,
-                                    fontWeight = FontWeight.Bold,
-                                    color = option.badge?.text_color?.let { StyleEngine.parseColor(it) } ?: Color.White,
-                                )
-                            }
-                        }
-                        }
-                        // SPEC-419 pass-24 — optional divider between stacked options (parity with list).
-                        if (showItemSeparators && oi < options.lastIndex) {
-                            Box(modifier = Modifier.fillMaxWidth().height(stackedSepThickness).background(stackedSepColor))
-                        }
-                    }
-                }
-            }
-            "grid" -> {
-                // Grid: N-column layout. Hotfix-1.0.33 — read `grid_columns` from
-                // field_config (default 2). Per-option color reads now honored.
-                val gridCols = ((cfg?.get("grid_columns") as? Number)?.toInt() ?: 2).coerceIn(1, 6)
-                // SPEC-419 pass-13 — honor option_height (or size) as a cell min-height,
-                // mirroring iOS gridSelectView optionHeight (FormInputBlockViews.swift:1026).
-                val gridMinHeight = ((cfg?.get("option_height") as? Number)?.toFloat()
-                    ?: (cfg?.get("size") as? Number)?.toFloat())
-                val chunked = options.chunked(gridCols)
-                Column(verticalArrangement = Arrangement.spacedBy(optionSpacingDp)) {
-                    chunked.forEach { row ->
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.spacedBy(optionSpacingDp),
-                        ) {
-                            row.forEach { option ->
-                                val isSelected = isOptionSelected(option.value)
-                                val optUnselBg = option.bg_color?.let { StyleEngine.parseColor(it) } ?: unselectedBg
-                                val optSelBg = option.selected_bg_color?.let { StyleEngine.parseColor(it) } ?: selectedBg
-                                val optUnselBorder = option.border_color?.let { StyleEngine.parseColor(it) } ?: unselectedBorder
-                                val optSelBorder = option.selected_border_color?.let { StyleEngine.parseColor(it) } ?: selectedBorder
-                                val optSelText = option.selected_text_color?.let { StyleEngine.parseColor(it) } ?: selectedTextCol
-                                val optTitleColor = if (isSelected) optSelText else (option.title_color?.let { StyleEngine.parseColor(it) } ?: textCol)
-                                // EPIC-1 — resolve cell alignment: per-option override → block grid_cell_alignment → center.
-                                // Mirrors iOS gridSelectView cellAlignmentKey. Was hardcoded CenterHorizontally / TextAlign.Center.
-                                val cellAlignKey = option.cell_alignment ?: (cfg?.get("grid_cell_alignment") as? String) ?: "center"
-                                val cellHAlign = when (cellAlignKey) {
-                                    "leading", "left" -> Alignment.Start
-                                    "trailing", "right" -> Alignment.End
-                                    else -> Alignment.CenterHorizontally
-                                }
-                                val cellTextAlign = when (cellAlignKey) {
-                                    "leading", "left" -> TextAlign.Start
-                                    "trailing", "right" -> TextAlign.End
-                                    else -> TextAlign.Center
-                                }
-                                Card(
-                                    modifier = Modifier
-                                        .weight(1f)
-                                        .then(if (gridMinHeight != null) Modifier.heightIn(min = gridMinHeight.dp) else Modifier)
-                                        .clickable { pickOption(option.value) },
-                                    shape = RoundedCornerShape(cornerR),
-                                    colors = CardDefaults.cardColors(
-                                        // QA-R4 — multiply alpha, same fix as stacked branch.
-                                        containerColor = (if (isSelected) optSelBg else optUnselBg).let { c ->
-                                            val withOpacity = c.copy(alpha = c.alpha * bgOpacity)
-                                            // blur_background → frosted-glass approximation (iOS .ultraThinMaterial), same as stacked.
-                                            if (useBlur) withOpacity.compositeOver(frostVeneer) else withOpacity
-                                        },
-                                    ),
-                                    border = androidx.compose.foundation.BorderStroke(
-                                        if (isSelected) selectedBorderW else unselectedBorderW,
-                                        if (isSelected) optSelBorder else optUnselBorder,
-                                    ),
-                                ) {
-                                    Box(modifier = Modifier.fillMaxWidth()) {
-                                        // Hoisted so both the inline option icon (below) and the
-                                        // toggle badge overlay can share the block-level defaults.
-                                        val defSelIcon = cfg?.get("selected_icon") as? String
-                                        val defUnselIcon = cfg?.get("unselected_icon") as? String
-                                        Column(
-                                            modifier = Modifier.fillMaxWidth().padding(12.dp),
-                                            horizontalAlignment = cellHAlign,
-                                        ) {
-                                            option.resolvedImageURL(isSelected)?.takeIf { it.isNotEmpty() }?.let { url ->
-                                                Box(modifier = Modifier.size((optImgSizeRaw ?: 40f).dp).clip(when (option.image_shape ?: gImageShape) { "rounded" -> RoundedCornerShape(12.dp); "square" -> RoundedCornerShape(0.dp); else -> CircleShape })) {
-                                                    ai.appdna.sdk.core.NetworkImage(
-                                                        url = url,
-                                                        modifier = Modifier.fillMaxSize(),
-                                                        contentScale = ContentScale.Crop,
-                                                    )
-                                                    // EPIC-1 — image overlay tint; selected uses selected_image_overlay_* (falls back to base).
-                                                    (if (isSelected) (option.selected_image_overlay_color ?: gSelectedOverlayHex ?: option.image_overlay_color ?: gOverlayHex) else (option.image_overlay_color ?: gOverlayHex))
-                                                        ?.takeIf { it.isNotBlank() }?.let { ov ->
-                                                            val ovA = ((if (isSelected) (option.selected_image_overlay_opacity ?: option.image_overlay_opacity ?: gOverlayOpacity) else (option.image_overlay_opacity ?: gOverlayOpacity)) ?: 0.3).toFloat()
-                                                            Box(Modifier.matchParentSize().background(StyleEngine.parseColor(ov).copy(alpha = ovA)))
-                                                        }
-                                                }
-                                                Spacer(Modifier.height(4.dp))
-                                            }
-                                            // Drain2 parity — grid select now renders option.icon
-                                            // (emoji/glyph) with a selected/unselected swap, mirroring
-                                            // iOS gridSelectView (FormInputBlockViews.swift:1295-1306)
-                                            // and the console preview.
-                                            option.icon?.takeIf { it.isNotEmpty() }?.let { icon ->
-                                                val resolvedIcon = if (isSelected) (option.selected_icon ?: defSelIcon ?: icon)
-                                                                   else (option.unselected_icon ?: defUnselIcon ?: icon)
-                                                Text(
-                                                    text = resolvedIcon,
-                                                    fontSize = 22.sp,
-                                                    color = if (isSelected) optSelText else textCol,
-                                                )
-                                                Spacer(Modifier.height(4.dp))
-                                            }
-                                            Text(
-                                                text = option.label,
-                                                // Grid honors block-level title default (0.85 factor, parity with iOS gridSelectView + preview).
-                                                fontSize = (option.title_font_size?.toFloat() ?: defaultTitleSize * 0.85f).sp,
-                                                color = optTitleColor,
-                                                fontWeight = (option.title_font_weight ?: gTitleWeight)?.let { wStr ->
-                                                    ai.appdna.sdk.core.FontResolver.fontWeight(wStr.toIntOrNull() ?: when (wStr.lowercase()) {
-                                                        "thin" -> 100; "extralight", "ultralight" -> 200
-                                                        "light" -> 300; "normal", "regular" -> 400
-                                                        "medium" -> 500; "semibold" -> 600
-                                                        "bold" -> 700; "extrabold", "heavy" -> 800
-                                                        "black" -> 900; else -> 400
-                                                    })
-                                                } ?: FontWeight.Normal,
-                                                textAlign = cellTextAlign,
-                                            )
-                                            option.subtitle?.takeIf { it.isNotBlank() }?.let { subtitle ->
-                                                Text(
-                                                    text = subtitle,
-                                                    fontSize = (option.subtitle_font_size?.toFloat() ?: defaultSubtitleSize).sp,
-                                                    // Drain2 parity — derive the default subtitle color from the
-                                                    // authored step text color (textCol), not M3 onSurface which
-                                                    // adapts to the host theme and goes near-black on a dark step
-                                                    // bg. Mirrors iOS grid (textCol.opacity(0.65)) + preview (a6).
-                                                    color = option.subtitle_color?.let { StyleEngine.parseColor(it) }
-                                                        ?: cfgSubtitleColor
-                                                        ?: (if (textCol == Color.Unspecified) Color.White else textCol).copy(alpha = 0.65f),
-                                                    textAlign = cellTextAlign,
-                                                )
-                                            }
-                                        }
-                                        // EPIC-1 / SPEC-419 pass-13 — toggle-icon overlay honors
-                                        // show_toggle_icon, toggle_icon_position, toggle_icon_size,
-                                        // and selected/unselected bg+fg colors (was hardcoded TopEnd,
-                                        // 12sp, no bg). Mirrors iOS gridSelectView
-                                        // (FormInputBlockViews.swift:1003-1149).
-                                        // defSelIcon/defUnselIcon hoisted above the Column.
-                                        val showToggleIcon = (cfg?.get("show_toggle_icon") as? Boolean) ?: (defSelIcon != null)
-                                        if (showToggleIcon) {
-                                            val toggleAlign = when (cfg?.get("toggle_icon_position") as? String) {
-                                                "top_leading" -> Alignment.TopStart
-                                                "bottom_trailing" -> Alignment.BottomEnd
-                                                "bottom_leading" -> Alignment.BottomStart
-                                                else -> Alignment.TopEnd
-                                            }
-                                            val toggleSizeF = (cfg?.get("toggle_icon_size") as? Number)?.toFloat() ?: 20f
-                                            val badgeIcon = if (isSelected) (option.selected_icon ?: defSelIcon ?: "✓")
-                                                            else (option.unselected_icon ?: defUnselIcon ?: "+")
-                                            val badgeFg = if (isSelected)
-                                                ((cfg?.get("toggle_icon_selected_fg_color") as? String)?.let { StyleEngine.parseColor(it) } ?: optSelText)
-                                            else ((cfg?.get("toggle_icon_unselected_fg_color") as? String)?.let { StyleEngine.parseColor(it) } ?: textCol.copy(alpha = 0.5f))
-                                            val badgeBg = if (isSelected)
-                                                ((cfg?.get("toggle_icon_selected_bg_color") as? String)?.let { StyleEngine.parseColor(it) } ?: fillCol.copy(alpha = 0.2f))
-                                            else ((cfg?.get("toggle_icon_unselected_bg_color") as? String)?.let { StyleEngine.parseColor(it) } ?: Color.Transparent)
-                                            Box(
-                                                modifier = Modifier
-                                                    .align(toggleAlign)
-                                                    .padding(6.dp)
-                                                    .size(toggleSizeF.dp)
-                                                    .background(badgeBg, CircleShape),
-                                                contentAlignment = Alignment.Center,
-                                            ) {
-                                                Text(
-                                                    text = badgeIcon,
-                                                    fontSize = (toggleSizeF * 0.5f).sp,
-                                                    color = badgeFg,
-                                                    fontWeight = FontWeight.Bold,
-                                                )
-                                            }
-                                        }
-                                    }
-                                }
-                            }
-                            // Fill empty slots in last row to keep grid alignment
-                            repeat(gridCols - row.size) { Spacer(Modifier.weight(1f)) }
-                        }
-                    }
-                    // Tooltip is rendered once by the outer grid-scoped block (resolveIcon-aware);
-                    // the duplicate inner render was removed (pass-16) to match iOS's single tooltip.
-                }
-            }
-            "image_tiles" -> {
-                // SPEC-447 (#555) — where the TEXT sits relative to the image. `full_bleed` is the
-                // default and renders exactly as before; the other two give the label a surface of
-                // its own instead of dimming the photograph with a scrim. Parity with iOS
-                // FormInputBlockViews.swift image_tiles.
-                val tileLayout = (cfg?.get("tile_image_layout") as? String) ?: "full_bleed"
-                val stripRatio = ((cfg?.get("tile_strip_ratio") as? Number)?.toFloat() ?: 0.75f)
-                    .coerceIn(0.5f, 0.95f)
-                val surfaceCol = ((cfg?.get("tile_surface_color") as? String)
-                    ?: block.field_style?.background_color ?: "#111827").let { StyleEngine.parseColor(it) }
-                val imgInsetDp = ((cfg?.get("tile_image_inset") as? Number)?.toFloat() ?: 8f).dp
-                val frameWDp = ((cfg?.get("tile_image_frame_width") as? Number)?.toFloat() ?: 0f).dp
-                val frameCol = StyleEngine.parseColor((cfg?.get("tile_image_frame_color") as? String) ?: "#374151")
-                // EPIC-1 — tall tiles: image fills the tile, label overlaid at the bottom over a
-                // dark scrim; selected = accent border. N-column grid (grid_columns, default 2).
-                val tileCols = ((cfg?.get("grid_columns") as? Number)?.toInt() ?: 2).coerceIn(1, 4)
-                val tileHeight = ((cfg?.get("tile_height") as? Number)?.toFloat() ?: 140f).dp
-                // SPEC-419 pass-24 — tile_aspect_ratio ("W:H", console Select 1:1/4:3/16:9/3:4)
-                // sizes the tile by its (weight-1f) width × the ratio. When set it overrides the
-                // fixed tile_height; falls back to tile_height when unset.
-                val tileAspect = (cfg?.get("tile_aspect_ratio") as? String)?.let { s ->
-                    val parts = s.split(":")
-                    val w = parts.getOrNull(0)?.toFloatOrNull()
-                    val h = parts.getOrNull(1)?.toFloatOrNull()
-                    if (parts.size == 2 && w != null && h != null && w > 0f && h > 0f) w / h else null
-                }
-                Column(verticalArrangement = Arrangement.spacedBy(optionSpacingDp)) {
-                    options.chunked(tileCols).forEach { row ->
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.spacedBy(optionSpacingDp),
-                        ) {
-                            row.forEach { option ->
-                                val isSelected = isOptionSelected(option.value)
-                                val optSelBorder = option.selected_border_color?.let { StyleEngine.parseColor(it) } ?: selectedBorder
-                                val optUnselBorder = option.border_color?.let { StyleEngine.parseColor(it) } ?: unselectedBorder
-                                Box(
-                                    modifier = Modifier
-                                        .weight(1f)
-                                        .then(if (tileAspect != null) Modifier.aspectRatio(tileAspect) else Modifier.height(tileHeight))
-                                        .clip(RoundedCornerShape(cornerR))
-                                        .selectable(
-                                            selected = isSelected,
-                                            role = androidx.compose.ui.semantics.Role.RadioButton,
-                                            onClick = { pickOption(option.value) },
-                                        )
-                                        .border(
-                                            androidx.compose.foundation.BorderStroke(
-                                                if (isSelected) selectedBorderW else unselectedBorderW,
-                                                if (isSelected) optSelBorder else optUnselBorder,
-                                            ),
-                                            RoundedCornerShape(cornerR),
-                                        ),
-                                ) {
-                                    if (tileLayout != "full_bleed") {
-                                        // The tile surface sits under everything. The BAND under the
-                                        // text is drawn separately, below, sized by the text itself:
-                                        // a fixed share of the tile cannot be right at every tile
-                                        // height and font size, and when the text is taller than the
-                                        // share it spills back onto the photograph — which is the
-                                        // exact defect #555 reported.
-                                        Box(Modifier.matchParentSize().background(surfaceCol))
-                                    }
-                                    option.resolvedImageURL(isSelected)?.takeIf { it.isNotEmpty() }?.let { url ->
-                                        val imgModifier = when (tileLayout) {
-                                            "image_strip" -> Modifier.fillMaxWidth().fillMaxHeight(stripRatio).align(Alignment.TopStart)
-                                            "contained" -> Modifier
-                                                .fillMaxWidth()
-                                                .fillMaxHeight(stripRatio)
-                                                .align(Alignment.TopStart)
-                                                .padding(imgInsetDp)
-                                                .clip(RoundedCornerShape(8.dp))
-                                                .then(
-                                                    if (frameWDp.value > 0f) {
-                                                        Modifier.border(
-                                                            androidx.compose.foundation.BorderStroke(frameWDp, frameCol),
-                                                            RoundedCornerShape(8.dp),
-                                                        )
-                                                    } else Modifier,
-                                                )
-                                            else -> Modifier.matchParentSize()
-                                        }
-                                        ai.appdna.sdk.core.NetworkImage(
-                                            url = url,
-                                            modifier = imgModifier,
-                                            contentScale = ContentScale.Crop,
-                                        )
-                                    }
-                                    (if (isSelected) (option.selected_image_overlay_color ?: gSelectedOverlayHex ?: option.image_overlay_color ?: gOverlayHex) else (option.image_overlay_color ?: gOverlayHex))
-                                        ?.takeIf { it.isNotBlank() }?.let { ov ->
-                                            val ovA = ((if (isSelected) (option.selected_image_overlay_opacity ?: option.image_overlay_opacity ?: gOverlayOpacity) else (option.image_overlay_opacity ?: gOverlayOpacity)) ?: 0.3).toFloat()
-                                            // SPEC-447 AC — the overlay covers the IMAGE REGION ONLY in the
-                                            // two surfaced layouts. It used matchParentSize(), so authoring a
-                                            // dark scrim and then switching layout dimmed the text band too:
-                                            // the very surface these layouts exist to provide, tinted by a
-                                            // setting meant for the photograph. The bottom scrim below was
-                                            // already gated on full_bleed; this is that same reasoning applied
-                                            // to the other overlay. Geometry mirrors the image, inset included.
-                                            Box(
-                                                when (tileLayout) {
-                                                    "image_strip" -> Modifier
-                                                        .fillMaxWidth().fillMaxHeight(stripRatio).align(Alignment.TopStart)
-                                                    "contained" -> Modifier
-                                                        .fillMaxWidth().fillMaxHeight(stripRatio).align(Alignment.TopStart)
-                                                        .padding(imgInsetDp).clip(RoundedCornerShape(8.dp))
-                                                    else -> Modifier.matchParentSize()
-                                                }.background(StyleEngine.parseColor(ov).copy(alpha = ovA)),
-                                            )
-                                        }
-                                    // Bottom scrim — only meaningful when the text is ON the image.
-                                    // With a text surface it would dim the very surface these
-                                    // layouts exist to provide.
-                                    if (tileLayout == "full_bleed") {
-                                        Box(
-                                            modifier = Modifier
-                                                .matchParentSize()
-                                                .background(
-                                                    Brush.verticalGradient(
-                                                        0.45f to Color.Transparent,
-                                                        1f to Color.Black.copy(alpha = 0.65f),
-                                                    ),
-                                                ),
-                                        )
-                                    }
-                                    Column(
-                                        modifier = Modifier
-                                            .align(Alignment.BottomStart)
-                                            .fillMaxWidth()
-                                            // SPEC-447 — the band is painted UNDER THE TEXT and is
-                                            // therefore exactly as tall as the text needs. Painting
-                                            // it as a fixed share of the tile (1 - strip_ratio) put
-                                            // the title back on the photograph whenever two lines
-                                            // did not fit the share — at the default 140dp tile and
-                                            // ratio 0.75 that is 35dp for a 15sp title plus a 12sp
-                                            // subtitle, so it always overflowed. Verified in the
-                                            // golden before this line existed.
-                                            .then(
-                                                if (tileLayout != "full_bleed") {
-                                                    Modifier.background(surfaceCol)
-                                                } else Modifier,
-                                            )
-                                            .padding(10.dp),
-                                    ) {
-                                        Text(
-                                            text = option.label,
-                                            color = Color.White,
-                                            fontSize = (option.title_font_size ?: 15.0).sp,
-                                            fontWeight = FontWeight.SemiBold,
-                                        )
-                                        option.subtitle?.takeIf { it.isNotBlank() }?.let { sub ->
-                                            Text(text = sub, color = Color.White.copy(alpha = 0.85f), fontSize = (option.subtitle_font_size ?: 12.0).sp)
-                                        }
-                                    }
-                                }
-                            }
-                            // Keep tiles equal width when the last row is short.
-                            repeat(tileCols - row.size) { Box(Modifier.weight(1f)) }
-                        }
-                    }
-                }
-            }
-            "bubble" -> {
-                // EPIC-1 — chips/pills that wrap (FlowRow). Selected = filled accent; unselected =
-                // bordered/transparent. Common for interests/tags multi-select.
-                androidx.compose.foundation.layout.FlowRow(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(optionSpacingDp),
-                    verticalArrangement = Arrangement.spacedBy(optionSpacingDp),
-                ) {
-                    options.forEach { option ->
-                        val isSelected = isOptionSelected(option.value)
-                        val chipBg = if (isSelected) (option.selected_bg_color?.let { StyleEngine.parseColor(it) } ?: fillCol)
-                            else (option.bg_color?.let { StyleEngine.parseColor(it) } ?: Color.Transparent)
-                        val chipBorder = if (isSelected) (option.selected_border_color?.let { StyleEngine.parseColor(it) } ?: selectedBorder)
-                            else (option.border_color?.let { StyleEngine.parseColor(it) } ?: unselectedBorder)
-                        val chipText = if (isSelected) selectedTextCol else textCol
-                        Box(
-                            modifier = Modifier
-                                .clip(RoundedCornerShape(percent = 50))
-                                .background(chipBg)
-                                .border(
-                                    androidx.compose.foundation.BorderStroke(
-                                        if (isSelected) selectedBorderW else unselectedBorderW,
-                                        chipBorder,
-                                    ),
-                                    RoundedCornerShape(percent = 50),
-                                )
-                                .selectable(
-                                    selected = isSelected,
-                                    role = androidx.compose.ui.semantics.Role.RadioButton,
-                                    onClick = { pickOption(option.value) },
-                                )
-                                .padding(horizontal = 16.dp, vertical = 9.dp),
-                        ) {
-                            Text(
-                                text = option.label,
-                                color = chipText,
-                                fontSize = (option.title_font_size ?: 14.0).sp,
-                                fontWeight = FontWeight.Medium,
-                            )
-                        }
-                    }
-                }
-            }
-            "list" -> {
-                // EPIC-1 — borderless list: full-width rows + a hairline divider between items
-                // (settings-list look). Honors per-option bg + separator_color + selected tint/check.
-                val separatorColor = (cfg?.get("separator_color") as? String)?.let { StyleEngine.parseColor(it) }
-                    ?: StyleEngine.parseColor("#D1D5DB")
-                // SPEC-419 pass-24 — separator_thickness (console Slider 0–4, default 1) drives the
-                // divider height; thickness was previously hardcoded to 1.dp.
-                val separatorThickness = ((cfg?.get("separator_thickness") as? Number)?.toDouble() ?: 1.0).dp
-                Column(modifier = Modifier.fillMaxWidth()) {
-                    options.forEachIndexed { oi, option ->
-                        val isSelected = isOptionSelected(option.value)
-                        val rowBg = if (isSelected) (option.selected_bg_color?.let { StyleEngine.parseColor(it) } ?: selectedBg)
-                            else (option.bg_color?.let { StyleEngine.parseColor(it) } ?: Color.Transparent)
-                        val rowTitle = if (isSelected) (option.selected_text_color?.let { StyleEngine.parseColor(it) } ?: selectedTextCol)
-                            else (option.title_color?.let { StyleEngine.parseColor(it) } ?: textCol)
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .background(rowBg)
-                                .selectable(
-                                    selected = isSelected,
-                                    role = androidx.compose.ui.semantics.Role.RadioButton,
-                                    onClick = { pickOption(option.value) },
-                                )
-                                .padding(horizontal = 4.dp, vertical = 14.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                        ) {
-                            Column(modifier = Modifier.weight(1f)) {
-                                Text(text = option.label, color = rowTitle, fontSize = (option.title_font_size ?: 16.0).sp)
-                                option.subtitle?.takeIf { it.isNotBlank() }?.let { sub ->
-                                    Text(text = sub, color = rowTitle, fontSize = (option.subtitle_font_size ?: 13.0).sp)
-                                }
-                            }
-                            if (isSelected) {
-                                Text(text = "✓", color = fillCol, fontSize = 18.sp, fontWeight = FontWeight.Bold)
-                            }
-                        }
-                        if (oi < options.lastIndex) {
-                            Box(modifier = Modifier.fillMaxWidth().height(separatorThickness).background(separatorColor))
-                        }
-                    }
-                }
-            }
-            else -> {
-                // "dropdown" (default): Spinner/dropdown
-                var expanded by remember { mutableStateOf(false) }
-                var selectedLabel by remember { mutableStateOf(
-                    options.firstOrNull { it.value == selectedValue }?.label ?: block.field_placeholder ?: "Select..."
-                ) }
-
-                Box(modifier = Modifier.fillMaxWidth()) {
-                    OutlinedButton(
-                        onClick = { expanded = true },
-                        modifier = Modifier.fillMaxWidth(),
-                        shape = RoundedCornerShape((block.field_style?.corner_radius ?: 8.0).dp),
-                        border = androidx.compose.foundation.BorderStroke(
-                            // honor field_style.border_width (0 = no outline), matching iOS fieldBorderWidth
-                            (if ((block.block_style?.border_width ?: 0.0) > 0) 0.0 else (block.field_style?.border_width ?: 1.0)).dp,
-                            StyleEngine.parseColor(block.field_style?.border_color ?: "#D1D5DB"),
-                        ),
-                        // SPEC-401-A R44 — theme-adaptive content color (was Color.DarkGray
-                // — invisible on dark surface in dark mode). Container honors field_style.background_color (iOS parity).
-                colors = ButtonDefaults.outlinedButtonColors(
-                    containerColor = block.field_style?.background_color?.let { StyleEngine.parseColor(it) } ?: Color.Transparent,
-                    contentColor = MaterialTheme.colorScheme.onSurface,
-                ),
-                    ) {
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                        ) {
-                            Text(text = selectedLabel, fontSize = 14.sp)
-                            Text(text = "\u25BC", fontSize = 12.sp)
-                        }
-                    }
-                    DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
-                        options.forEach { option ->
-                            DropdownMenuItem(
-                                text = {
-                                    Row(verticalAlignment = Alignment.CenterVertically) {
-                                        // Gap 7: Option image_url in dropdown
-                                        option.image_url?.let { url ->
-                                            if (url.isNotEmpty()) {
-                                                ai.appdna.sdk.core.NetworkImage(
-                                                    url = url,
-                                                    modifier = Modifier.size(24.dp).clip(CircleShape),
-                                                    contentScale = ContentScale.Crop,
-                                                )
-                                                Spacer(Modifier.width(8.dp))
-                                            }
-                                        }
-                                        Text(option.label)
-                                    }
-                                },
-                                onClick = {
-                                    selectedLabel = option.label
-                                    selectedValue = option.value
-                                    inputValues[fieldId] = option.value
-                                    // SPEC-448 — the full option, for `{{selected.<field_id>.…}}` on a later screen.
-                                    SelectedOptionStore.record(fieldId, option)
-                                    expanded = false
-                                },
-                            )
-                        }
-                    }
-                }
-            }
-        }
-
-        // SPEC-401-A R68 (Lens A P2) — tooltip caption below select grid /
-        // stacked / dropdown matching iOS FormInputBlockViews.swift:769-770
-        // + 926-937. Reads field_config.tooltip_text + tooltip_icon.
-        // Renders 12sp caption with optional 12dp leading icon at 50% alpha.
-        // Audit pass-8 — scope the tooltip caption to displayStyle=="grid" to
-        // match iOS, which renders it only inside gridSelectView
-        // (FormInputBlockViews.swift:1180/1349), and the editor, which exposes
-        // tooltip_text only in the grid section (StepContentEditor.tsx:6941).
-        // Previously this rendered for every display style (dropdown/stacked/
-        // list/bubble/image_tiles), so a tooltip on a non-grid select showed on
-        // Android but not iOS.
-        val tooltipText = block.field_config?.get("tooltip_text") as? String
-        val tooltipIconRef = block.field_config?.get("tooltip_icon") as? String
-        if (!tooltipText.isNullOrBlank() && displayStyle == "grid") {
-            val captionColor = StyleEngine.parseColor(block.field_style?.text_color ?: "#1A1A1A").copy(alpha = 0.5f)
-            Row(
+                    .background(rowBg)
+                    .selectable(
+                        selected = isSelected,
+                        role = androidx.compose.ui.semantics.Role.RadioButton,
+                        onClick = { pickOption(option.value) },
+                    )
+                    .padding(horizontal = 4.dp, vertical = 14.dp),
                 verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(4.dp),
-                modifier = Modifier.padding(top = 4.dp),
             ) {
-                // Match iOS, which defaults the tooltip icon to "info.circle" and
-                // always renders it when tooltip_text is present
-                // (FormInputBlockViews.swift). Resolve the authored icon or fall
-                // back to the "info" glyph so the ℹ shown in the console preview
-                // renders on-device even without an explicit tooltip_icon.
-                val iconRef = ai.appdna.sdk.core.resolveIcon(tooltipIconRef ?: "info")
-                if (iconRef != null) {
-                    ai.appdna.sdk.core.IconView(ref = iconRef, defaultSize = 12f)
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(text = option.label, color = rowTitle, fontSize = (option.title_font_size ?: 16.0).sp)
+                    option.subtitle?.takeIf { it.isNotBlank() }?.let { sub ->
+                        Text(text = sub, color = rowTitle, fontSize = (option.subtitle_font_size ?: 13.0).sp)
+                    }
                 }
-                Text(
-                    text = tooltipText,
-                    fontSize = 12.sp,
-                    color = captionColor,
+                if (isSelected) {
+                    Text(text = "✓", color = fillCol, fontSize = 18.sp, fontWeight = FontWeight.Bold)
+                }
+            }
+            if (oi < options.lastIndex) {
+                Box(modifier = Modifier.fillMaxWidth().height(separatorThickness).background(separatorColor))
+            }
+        }
+    }
+}
+
+/** display_style "dropdown" (the default). */
+@Composable
+private fun SelectOptionStyle.SelectDropdownOptions(
+    options: List<InputOption>,
+    fieldId: String,
+    inputValues: MutableMap<String, Any>,
+    selectedValueState: MutableState<String>,
+) {
+    var selectedValue by selectedValueState
+    // "dropdown" (default): Spinner/dropdown
+    var expanded by remember { mutableStateOf(false) }
+    // SPEC-496 §B0 — derived on every recomposition, never remembered: a remembered label
+    // stays stale after a prune clears the value, and shows the placeholder forever when a
+    // restored value's options only arrive with host data.
+    // The recorded pick is the fallback when the value is not in the list on screen: an
+    // Option Set search result is never merged into the cached pages, so after clearing
+    // the query (or under a query that excludes it) the pick is still the answer. A
+    // pruned value is gone from `inputValues` (and the record cleared), so it still
+    // shows the placeholder. Reading `revision` subscribes to record/clear.
+    SelectedOptionStore.revision.intValue
+    val selectedLabel = dropdownSelectedLabel(
+        options, selectedValue, SelectedOptionStore.snapshot()[fieldId],
+        block.field_placeholder ?: "Select...",
+    )
+
+    Box(modifier = Modifier.fillMaxWidth()) {
+        OutlinedButton(
+            onClick = { expanded = true },
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape((block.field_style?.corner_radius ?: 8.0).dp),
+            border = androidx.compose.foundation.BorderStroke(
+                // honor field_style.border_width (0 = no outline), matching iOS fieldBorderWidth
+                (if ((block.block_style?.border_width ?: 0.0) > 0) 0.0 else (block.field_style?.border_width ?: 1.0)).dp,
+                StyleEngine.parseColor(block.field_style?.border_color ?: "#D1D5DB"),
+            ),
+            // SPEC-401-A R44 — theme-adaptive content color (was Color.DarkGray
+    // — invisible on dark surface in dark mode). Container honors field_style.background_color (iOS parity).
+    colors = ButtonDefaults.outlinedButtonColors(
+        containerColor = block.field_style?.background_color?.let { StyleEngine.parseColor(it) } ?: Color.Transparent,
+        contentColor = MaterialTheme.colorScheme.onSurface,
+    ),
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+            ) {
+                Text(text = selectedLabel, fontSize = 14.sp)
+                Text(text = "\u25BC", fontSize = 12.sp)
+            }
+        }
+        DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
+            options.forEach { option ->
+                DropdownMenuItem(
+                    text = {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            // Gap 7: Option image_url in dropdown
+                            option.image_url?.let { url ->
+                                if (url.isNotEmpty()) {
+                                    ai.appdna.sdk.core.NetworkImage(
+                                        url = url,
+                                        modifier = Modifier.size(24.dp).clip(CircleShape),
+                                        contentScale = ContentScale.Crop,
+                                    )
+                                    Spacer(Modifier.width(8.dp))
+                                }
+                            }
+                            Text(option.label)
+                        }
+                    },
+                    onClick = {
+                        selectedValue = option.value
+                        inputValues[fieldId] = option.value
+                        // SPEC-448 — the full option, for `{{selected.<field_id>.…}}` on a later screen.
+                        SelectedOptionStore.record(fieldId, option)
+                        expanded = false
+                    },
                 )
             }
+        }
+    }
+}
+
+/** SPEC-401-A R68 — the grid-only tooltip caption under a Select. */
+@Composable
+private fun SelectGridTooltip(block: ContentBlock, displayStyle: String) {
+    // SPEC-401-A R68 (Lens A P2) — tooltip caption below select grid /
+    // stacked / dropdown matching iOS FormInputBlockViews.swift:769-770
+    // + 926-937. Reads field_config.tooltip_text + tooltip_icon.
+    // Renders 12sp caption with optional 12dp leading icon at 50% alpha.
+    // Audit pass-8 — scope the tooltip caption to displayStyle=="grid" to
+    // match iOS, which renders it only inside gridSelectView
+    // (FormInputBlockViews.swift:1180/1349), and the editor, which exposes
+    // tooltip_text only in the grid section (StepContentEditor.tsx:6941).
+    // Previously this rendered for every display style (dropdown/stacked/
+    // list/bubble/image_tiles), so a tooltip on a non-grid select showed on
+    // Android but not iOS.
+    val tooltipText = block.field_config?.get("tooltip_text") as? String
+    val tooltipIconRef = block.field_config?.get("tooltip_icon") as? String
+    if (!tooltipText.isNullOrBlank() && displayStyle == "grid") {
+        val captionColor = StyleEngine.parseColor(block.field_style?.text_color ?: "#1A1A1A").copy(alpha = 0.5f)
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(4.dp),
+            modifier = Modifier.padding(top = 4.dp),
+        ) {
+            // Match iOS, which defaults the tooltip icon to "info.circle" and
+            // always renders it when tooltip_text is present
+            // (FormInputBlockViews.swift). Resolve the authored icon or fall
+            // back to the "info" glyph so the ℹ shown in the console preview
+            // renders on-device even without an explicit tooltip_icon.
+            val iconRef = ai.appdna.sdk.core.resolveIcon(tooltipIconRef ?: "info")
+            if (iconRef != null) {
+                ai.appdna.sdk.core.IconView(ref = iconRef, defaultSize = 12f)
+            }
+            Text(
+                text = tooltipText,
+                fontSize = 12.sp,
+                color = captionColor,
+            )
         }
     }
 }
@@ -11575,6 +11945,26 @@ private fun FormInputStepperBlock(
     }
 }
 
+/**
+ * The segmented view's next selected value when the step's value moves from [previous] to [next], or
+ * null to keep [shown]: a stored string always wins; a value that was stored and is now gone clears.
+ */
+internal fun segmentedSync(shown: String, previous: Any?, next: Any?): String? = when {
+    next is String -> next.takeIf { it != shown }
+    next == null && previous != null -> "".takeIf { shown.isNotEmpty() }
+    else -> null
+}
+
+/**
+ * The Segmented default-first rule: with nothing answered (absent, or "") and options present, the
+ * first option is selected AND written. A host-set value of another type is an answer — left alone
+ * (null). Mirrors iOS `SegmentedDefault.pick`.
+ */
+internal fun segmentedDefault(current: Any?, options: List<InputOption>): String? {
+    if (current != null && !(current is String && current.isEmpty())) return null
+    return options.firstOrNull()?.value?.takeIf { it.isNotEmpty() }
+}
+
 /** Segmented picker input. */
 @Composable
 private fun FormInputSegmentedBlock(
@@ -11584,10 +11974,32 @@ private fun FormInputSegmentedBlock(
     val fieldId = block.field_id ?: block.id
     val options = block.field_options ?: emptyList()
     // OB-6 audit follow-up — restore saved value on back nav.
+    // SPEC-496 — a host-patched answer of another type (a number, a bool) is NOT replaced by the
+    // first option: the view shows nothing selected and writes nothing back (see `segmentedDefault`).
     var selectedValue by remember {
         mutableStateOf(
-            (inputValues[fieldId] as? String) ?: (options.firstOrNull()?.value ?: "")
+            (inputValues[fieldId] as? String)?.takeIf { it.isNotEmpty() }
+                ?: segmentedDefault(inputValues[fieldId], options) ?: ""
         )
+    }
+    // SPEC-496 §B0 — options that arrive only after pending ends (empty → non-empty) get the same
+    // default-first rule the first frame applies, when nothing is selected yet.
+    val hasOptions = options.isNotEmpty()
+    LaunchedEffect(hasOptions) {
+        if (!hasOptions || selectedValue.isNotEmpty()) return@LaunchedEffect
+        segmentedDefault(inputValues[fieldId], options)?.let {
+            selectedValue = it
+            inputValues[fieldId] = it
+        }
+    }
+    // SPEC-496 §B0 — re-sync with the step's value: a restored / host-written value shows, and a value
+    // the step pruned (host data settled without it) leaves the view's selected state. The first-option
+    // default is visual until written below, so only a value that WAS there and is now gone clears it.
+    val externalValue = inputValues[fieldId]
+    val lastExternal = remember { arrayOf<Any?>(externalValue) }
+    LaunchedEffect(externalValue) {
+        segmentedSync(selectedValue, lastExternal[0], externalValue)?.let { selectedValue = it }
+        lastExternal[0] = externalValue
     }
     val fillCol = StyleEngine.parseColor(block.field_style?.fill_color ?: block.active_color ?: (ai.appdna.sdk.AppDNA.brandAccentHex ?: "#6366F1"))
 
@@ -11847,6 +12259,20 @@ private fun FormInputRangeSliderBlock(
     }
 }
 
+/** A chips / multi value as the step stores it (`List`, legacy `Set`, or a lone `String`). */
+internal fun chipSelectionOf(value: Any?): Set<String> = when (value) {
+    is List<*> -> value.filterIsInstance<String>().toSet()
+    is Set<*> -> value.filterIsInstance<String>().toSet()
+    is String -> if (value.isNotEmpty()) setOf(value) else emptySet()
+    else -> emptySet()
+}
+
+/** One chip tap: remove when selected; add unless at the cap (removing always works). */
+internal fun toggleChipSelection(current: Set<String>, value: String, maxSelections: Int?): Set<String> =
+    if (value in current) current - value
+    else if (maxSelections != null && current.size >= maxSelections) current
+    else current + value
+
 /** Chips / tag selection input. */
 @Composable
 private fun FormInputChipsBlock(
@@ -11860,13 +12286,13 @@ private fun FormInputChipsBlock(
     // kept as a fallback for older/imported configs.
     val maxSelections = (block.field_config?.get("max_chips") as? Number)?.toInt() ?: (block.field_config?.get("max_selections") as? Number)?.toInt()
     // OB-6 audit follow-up — restore saved chips selection on back nav.
-    var selectedValues by remember {
-        mutableStateOf(
-            (inputValues[fieldId] as? List<*>)?.filterIsInstance<String>()?.toSet()
-                ?: (inputValues[fieldId] as? Set<*>)?.filterIsInstance<String>()?.toSet()
-                ?: setOf()
-        )
-    }
+    var selectedValues by remember { mutableStateOf(chipSelectionOf(inputValues[fieldId])) }
+    // SPEC-496 §B0 — a value the step prunes from outside (host data settled and the option is no
+    // longer rendered) leaves the view's selected state too, and the next tap toggles against the
+    // step's CURRENT value — never a remembered copy — so a pruned chip is not written back into
+    // `inputValues` (→ `responses`, `min_selections`).
+    val externalValue = inputValues[fieldId]
+    LaunchedEffect(externalValue) { selectedValues = chipSelectionOf(externalValue) }
 
     Column(
         modifier = Modifier.fillMaxWidth(),
@@ -11896,15 +12322,11 @@ private fun FormInputChipsBlock(
                         // fainter on Android for the same JSON.
                         .background(if (isSelected) fillCol else Color.Gray.copy(alpha = 0.1f))
                         .clickable {
-                            selectedValues = if (isSelected) {
-                                selectedValues - option.value
-                            } else {
-                                if (maxSelections != null && selectedValues.size >= maxSelections) {
-                                    selectedValues // at max
-                                } else {
-                                    selectedValues + option.value
-                                }
-                            }
+                            selectedValues = toggleChipSelection(
+                                current = chipSelectionOf(inputValues[fieldId]),
+                                value = option.value,
+                                maxSelections = maxSelections,
+                            )
                             inputValues[fieldId] = selectedValues.toList()
                         }
                         .padding(horizontal = 14.dp, vertical = 8.dp),
@@ -12644,9 +13066,17 @@ private fun StubBlockPlaceholder(typeName: String) {
  */
 @OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
 @Composable
-private fun OptionBottomSheet(option: InputOption, onDismiss: () -> Unit) {
+private fun OptionBottomSheet(option: InputOption, parentBlockId: String, onDismiss: () -> Unit) {
     val sheetToggles = remember { mutableStateMapOf<String, Boolean>() }
     val sheetInputs = remember { mutableStateMapOf<String, Any>() }
+    // SPEC-496 §B0 "Sheet ids" — a sheet the raw host-data pass resolved is re-read from its resolved
+    // raw JSON, and ONLY its recorded `sheet_step_paths` are resolved here, against the sheet's own
+    // inputs; nothing else is re-scanned. A sheet without raw (host-supplied options) keeps today's
+    // view-level pass.
+    val rawSheet = if (LocalHostDataRawResolved.current) {
+        LocalHostDataSheets.current["$parentBlockId|${option.id ?: option.value}"]
+    } else null
+    val sheetBlocks = if (rawSheet != null) resolveSheetBlocks(rawSheet, sheetInputs.toMap()) else option.sheet_blocks.orEmpty()
     androidx.compose.material3.ModalBottomSheet(onDismissRequest = onDismiss) {
         Column(
             modifier = Modifier
@@ -12654,8 +13084,15 @@ private fun OptionBottomSheet(option: InputOption, onDismiss: () -> Unit) {
                 .padding(horizontal = 20.dp)
                 .padding(bottom = 24.dp),
         ) {
+            // SPEC-496 §5b C5.1 — the sheet is composed under the step, so the step's interaction wiring
+            // would leak into it: a `refresh_step` button in `sheet_blocks` fires NOTHING (the sheet has
+            // its own inputs and no interaction channel; the publish validator warns).
+            androidx.compose.runtime.CompositionLocalProvider(
+                LocalHostDataRawResolved provides (rawSheet != null),
+                LocalStepInteraction provides null,
+            ) {
             ContentBlockRendererView(
-                blocks = option.sheet_blocks.orEmpty(),
+                blocks = sheetBlocks,
                 onAction = { action ->
                     // The CTA closes the sheet; the flow continues underneath, where the
                     // option is already selected.
@@ -12664,6 +13101,7 @@ private fun OptionBottomSheet(option: InputOption, onDismiss: () -> Unit) {
                 toggleValues = sheetToggles,
                 inputValues = sheetInputs,
             )
+            }
         }
     }
 }

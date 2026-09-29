@@ -225,10 +225,14 @@ class OnboardingActivity : ComponentActivity() {
                         viewModel.onStepSkipped?.invoke(stepId, stepIndex)
                     },
                     onFlowCompleted = { responses ->
+                        // SPEC-496 §B0 — a step whose onBeforeStepRender is still in flight was
+                        // viewed; pay its onStepViewed BEFORE the flow ends (reset() nulls it after).
+                        viewModel.hostDataPresentations.current?.fireStepViewedIfOwed()
                         viewModel.onFlowCompleted?.invoke(responses)
                         cleanup()
                     },
                     onFlowDismissed = { lastStepId, lastStepIndex ->
+                        viewModel.hostDataPresentations.current?.fireStepViewedIfOwed()
                         viewModel.onFlowDismissed?.invoke(lastStepId, lastStepIndex)
                         cleanup()
                     }
@@ -277,6 +281,8 @@ class OnboardingActivity : ComponentActivity() {
         flow?.let { f ->
             val idx = viewModel.currentIndex.intValue.coerceIn(0, (f.steps.size - 1).coerceAtLeast(0))
             val stepId = f.steps.getOrNull(idx)?.id ?: ""
+            // SPEC-496 §B0 — see onFlowDismissed above: the viewed step is reported before the dismiss.
+            viewModel.hostDataPresentations.current?.fireStepViewedIfOwed()
             viewModel.onFlowDismissed?.invoke(stepId, idx)
         }
         // cleanup() calls reset() + finish(); no need for super.onBackPressed()
@@ -538,10 +544,9 @@ internal fun OnboardingFlowHost(
 
     // SPEC-083: Hook state
     var isProcessing by remember { mutableStateOf(false) }
-    // SPEC-419 STEP-2 — lightweight guard for in-flight element interactions (calendar tap, otp digit,
-    // memory flip, press-hold, wheel commit, footer toggle). Separate from the full-step `isProcessing`
-    // so an element fire never dims the whole step; overlapping fires are dropped.
-    var interactionInFlight by remember { mutableStateOf(false) }
+    // SPEC-496 §5b C5.3 — the in-flight guard for element interactions moved from here (flow-level) to
+    // the step's per-PRESENTATION `InteractionCoordinator`: a slow reply from a step the user left no
+    // longer blocks the next step's interactions.
     var loadingText by remember { mutableStateOf("Processing...") }
     var errorMessage by remember { mutableStateOf<String?>(null) }
     var showError by remember { mutableStateOf(false) }
@@ -557,6 +562,31 @@ internal fun OnboardingFlowHost(
     // onBeforeStepRender. Mirrors iOS @State preservation via SwiftUI
     // view-identity diffing.
     val configOverrides = viewModel?.configOverrides ?: remember { mutableStateMapOf() }
+    // SPEC-496 §B0 — host data pending, per presentation of the step on screen. Created here, in
+    // composition, BEFORE the step's first resolve: the delegate call itself only starts in the
+    // LaunchedEffect below, and without this the first frame would be treated as "after pending".
+    val hostDataPresentations = viewModel?.hostDataPresentations ?: remember { HostDataPresentations() }
+    // SPEC-496 §5b C3 — the interaction data layer, its stamps and `callSeq`, beside `configOverrides`
+    // with exactly its lifetime; the holder every reader of `hook_data` goes through.
+    val hostDataInteractionStore = viewModel?.hostDataInteractionStore ?: remember { HostDataInteractionStore() }
+    val hostDataAccess = remember(configOverrides, hostDataInteractionStore, hostDataPresentations) {
+        HostDataInteractionAccess(configOverrides, hostDataInteractionStore, hostDataPresentations)
+    }
+    val hostDataPresentation: HostDataPresentation? = if (currentIndex < flow.steps.size) {
+        val s = flow.steps[currentIndex]
+        hostDataPresentations.presentationFor(
+            step = s,
+            stepIndex = currentIndex,
+            hasDelegate = delegate != null,
+            // §5b C3 — cached = a base, or a layer VALUE under a key the step references. Sampled only
+            // when the presentation is created (latched).
+            // Read WITHOUT observation: it only matters when a presentation is created (a navigation,
+            // which recomposes anyway), so a layer write must not recompose the whole flow host.
+            hasCachedOverride = androidx.compose.runtime.snapshots.Snapshot.withoutReadObservation {
+                hostDataAccess.cachedAtArrival(s)
+            },
+        )
+    } else null
 
     val progress = if (flow.steps.isNotEmpty()) {
         (currentIndex + 1).toFloat() / flow.steps.size
@@ -577,29 +607,27 @@ internal fun OnboardingFlowHost(
     // scope applies (inputValues + fieldConfigOverrides + advance). No advance logic here — the flow host
     // can't see the step's blocks to validate; the step scope routes any advance through the required-
     // field-gated handleAction("next"). Mirrors iOS OnboardingFlowHost.performInteraction.
-    suspend fun performInteraction(
-        blockId: String,
-        action: String,
-        value: String?,
-        inputValues: Map<String, Any>,
-    ): AppliedInteraction? {
-        if (interactionInFlight) return null
-        interactionInFlight = true
-        try {
-            val stepId = if (currentIndex < flow.steps.size) flow.steps[currentIndex].id else ""
-            val result = delegate?.onElementInteraction(
-                flowId = flow.id,
+    //
+    // SPEC-496 §5b C5.5 — now the bare host call. The lock, the 8 s refresh deadline, throw → nil, the
+    // generation token and the "still current?" check live in the step's `InteractionCoordinator`, which
+    // also passes its OWN step id (reading `flow.steps[currentIndex]` here sent the INCOMING step's id
+    // during an exit transition).
+    // Stable instances that read the LATEST delegate / flow, so the per-step wiring can be remembered.
+    val latestInteractionDelegate by rememberUpdatedState(delegate)
+    val latestFlowId by rememberUpdatedState(flow.id)
+    val elementInteractionCall: ElementInteractionCall = remember {
+        { stepId, blockId, action, value, inputValues ->
+            latestInteractionDelegate?.onElementInteraction(
+                flowId = latestFlowId,
                 stepId = stepId,
                 blockId = blockId,
                 action = action,
                 value = value,
                 inputValues = inputValues,
-            ) ?: return null
-            return applyInteractionResult(result, inputValues)
-        } finally {
-            interactionInFlight = false
+            )
         }
     }
+    val hasInteractionHandler: () -> Boolean = remember { { latestInteractionDelegate != null } }
 
     // SPEC-070-A finalization OB-7 — image preload at flow init.
     // iOS `OnboardingRenderer.swift:130-139` walks every step's content_blocks
@@ -636,36 +664,54 @@ internal fun OnboardingFlowHost(
     // view tagged with `.id(currentIndex)` — fires once per index change
     // (including back-nav re-visits via id swap) but NOT on rotation.
     LaunchedEffect(currentIndex) {
-        if (currentIndex < flow.steps.size && currentIndex != viewModel?.lastViewedStepIndex) {
-            viewModel?.lastViewedStepIndex = currentIndex
+        val presentation = hostDataPresentation
+        // SPEC-496 §B0 — a call cancelled before replying (Activity recreation) is re-fired ONCE,
+        // bypassing the lastViewedStepIndex guard, as the latest generation with a fresh deadline.
+        // The decision lives in `beforeStepRenderEffect` so the shared fixture drives the SAME gate.
+        beforeStepRenderEffect(
+            stepIndex = currentIndex,
+            stepCount = flow.steps.size,
+            presentation = presentation,
+            lastViewedStepIndex = { viewModel?.lastViewedStepIndex },
+            setLastViewedStepIndex = { viewModel?.lastViewedStepIndex = it },
+        ) {
             val step = flow.steps[currentIndex]
-            delegate?.let { d ->
-                // 🔴 BOUNDED. This call used to have no timeout at all, which was mostly harmless
-                // while few hosts did real work in the hook — SPEC-448 §B asks every host to FETCH
-                // DATA here, so a customer awaiting their own backend on a bad connection, with no
-                // timeout of their own, would hang the step indefinitely and it would look like our
-                // bug. The SDK's own server hooks have always bounded themselves; this now matches.
-                // 3s rather than the hook default of 10s: a hook is a background call, this one
-                // stands between the user and a visible screen.
-                val override = kotlinx.coroutines.withTimeoutOrNull(3_000L) {
-                    d.onBeforeStepRender(
+            val stepIndex = currentIndex
+            val d = delegate
+            // 🔴 BOUNDED. SPEC-448 §B asks every host to FETCH DATA here, so a customer awaiting their
+            // own backend on a bad connection would otherwise hang the step indefinitely. 3s rather
+            // than the hook default of 10s: this call stands between the user and a visible screen.
+            // SPEC-496 §B0 — the deadline is a SEPARATE delay(3000) path that ends pending even when
+            // the host ignores cancellation (withTimeoutOrNull alone cannot), with generation tokens
+            // so only the latest call ends it; `onStepViewed` fires exactly once per step view.
+            runBeforeStepRenderHook(
+                presentation = presentation ?: HostDataPresentation(step.id, stepIndex, -1).also { it.start(false) },
+                hostScope = this,
+                call = {
+                    d?.onBeforeStepRender(
                         flowId = flow.id,
                         stepId = step.id,
-                        stepIndex = currentIndex,
+                        stepIndex = stepIndex,
                         stepType = step.type.value,
                         responses = responses.toMap()
                     )
-                }
-                if (override != null) {
+                },
+                onOverride = {},
+                // §5b C3 — the base is stamped with the `callSeq` this call drew at its START.
+                drawSeq = hostDataAccess::nextCallSeq,
+                onStampedOverride = { override, seq ->
                     // A late reply is applied only if the user is STILL on this step. Dropping it
                     // into a step they have left would rewrite a screen they are no longer looking
                     // at. On expiry the flow proceeds with cache then static options.
                     if (currentIndex < flow.steps.size && flow.steps[currentIndex].id == step.id) {
-                        configOverrides[step.id] = override
+                        hostDataAccess.applyBeforeRenderReply(step.id, override, seq)
                     }
-                }
-            }
-            onStepViewed(step.id, currentIndex)
+                },
+                onStepViewed = { onStepViewed(step.id, stepIndex) },
+                // Left before the reply (the index moved on): the step WAS viewed — fire it now.
+                // Still presented (recreation): the re-fire fires it instead.
+                stillPresented = { presentation == null || hostDataPresentations.current === presentation },
+            )
         }
     }
 
@@ -1491,10 +1537,23 @@ internal fun OnboardingFlowHost(
                 val effectiveConfig = configOverrides[step.id]
                     ?.let { step.config.applyingOverride(it) }
                     ?: step.config
-
+                // SPEC-496 §5b — this composition's OWN presentation (looked up on every recomposition)
+                // and the flow-level holder, threaded to the step through a local (see StepHostDataWiring).
+                val stepWiring = rememberStepHostDataWiring(
+                    hostDataAccess, stepIdx, step.id, elementInteractionCall, hasInteractionHandler,
+                )
+                androidx.compose.runtime.CompositionLocalProvider(LocalStepHostDataWiring provides stepWiring) {
                 OnboardingStepView(
                     step = step,
                     effectiveConfig = effectiveConfig,
+                    // SPEC-496 — the UN-merged override (the host-data pipeline merges it after
+                    // resolve) and the pending flag of THIS step's presentation. An outgoing step
+                    // mid-transition keeps the pending flag it had (§B0: no selection is cleared
+                    // while pending — forcing it out of pending would re-resolve it with no hook data
+                    // and prune a restored value), and never prunes at all.
+                    stepOverride = configOverrides[step.id],
+                    hostDataPending = hostDataPresentations.pendingFor(stepIdx, step.id),
+                    hostDataIsCurrent = stepIdx == currentIndex,
                     flowId = flow.id,
                     // 🔴 The delegate the RENDERER holds — the same reference `onBeforeStepAdvance`
                     // is called on. The auth gate + permission callbacks downstream must read THIS,
@@ -1502,8 +1561,8 @@ internal fun OnboardingFlowHost(
                     // delegate to `presentOnboarding(...)` gets a veto seam that works and an auth
                     // gate that thinks there is no delegate at all.
                     delegate = delegate,
-                    // SPEC-419 STEP-2 — flow-host interaction seam threaded to the step scope.
-                    performInteraction = ::performInteraction,
+                    // SPEC-419 STEP-2 / SPEC-496 §5b — the interaction seam reaches the step through
+                    // LocalStepHostDataWiring above (the coordinator is per presentation).
                     // SPEC-401-A R11 — pass accumulated responses (immutable
                     // snapshot of the host's SnapshotStateMap) so block-level
                     // `visibility_condition` operators evaluate against real
@@ -1514,7 +1573,9 @@ internal fun OnboardingFlowHost(
                     // ThreeZoneBlockLayout → ContentBlockRendererView since SPEC-401-A R11, but NO
                     // caller ever supplied it, so it was `null` on every render and every
                     // `hook_data` binding and `{{hook_data.x}}` token resolved to nothing.
-                    hookData = configOverrides[step.id]?.dataContext,
+                    // SPEC-496 §5b C3 — the EFFECTIVE map: the base plus the interaction layer. Its
+                    // top-level values are never null (a null member is a removal), hence the cast.
+                    hookData = effectiveHookDataForView(hostDataAccess, step.id),
                     // SPEC-070-A finalization B4 P1 — when revisiting a step
                     // via back navigation, restore previously-entered field
                     // values. Mirrors iOS OnboardingStepRouter savedResponses
@@ -1709,6 +1770,7 @@ internal fun OnboardingFlowHost(
                     currentStepIndex = currentIndex,
                     totalSteps = flow.steps.size,
                 )
+                } // SPEC-496 §5b LocalStepHostDataWiring
                 }
             }
         }
@@ -2181,7 +2243,13 @@ fun OnboardingStepView(
     hookData: Map<String, Any>? = null,
     // SPEC-419 STEP-2 — flow-host interaction seam (delegate round-trip + applyInteractionResult),
     // threaded into BlockBasedStepView where the step scope owns advance + inputValues + overrides.
-    performInteraction: suspend (String, String, String?, Map<String, Any>) -> AppliedInteraction? = { _, _, _, _ -> null },
+    performInteraction: suspend (String, String, String?, Map<String, Any>) -> AppliedInteraction? = NoElementInteraction,
+    /** SPEC-496 — `configOverrides[step.id]`, UN-merged: the host-data pipeline merges it after resolve. */
+    stepOverride: StepConfigOverride? = null,
+    /** SPEC-496 §B0 — this presentation's host data is still pending. */
+    hostDataPending: Boolean = false,
+    /** SPEC-496 §B0 — false for the outgoing step of a transition: it renders, but never prunes. */
+    hostDataIsCurrent: Boolean = true,
 ) {
     // SPEC-070-A finalization B4 P1 — pre-populate from savedResponses on
     // first composition. `step.id` keying the remember ensures a fresh
@@ -2241,6 +2309,10 @@ fun OnboardingStepView(
             // SPEC-419 STEP-2 — pass the flow-host interaction seam down to the step scope.
             performInteraction = performInteraction,
             delegate = delegate,
+            step = step,
+            stepOverride = stepOverride,
+            hostDataPending = hostDataPending,
+            hostDataIsCurrent = hostDataIsCurrent,
         )
     } else {
         // Legacy rendering
@@ -2618,9 +2690,15 @@ private fun ThreeZoneBlockLayout(
     // ContentBlockRendererView filtered per-zone, so the
     // `onlyCenterContent` decision used the unfiltered top count and
     // took the wrong layout branch when a top block was hidden.
+    // SPEC-496 §B0 — a block the raw pass hid (`hide_when_empty` at 0 options) takes no zone slot.
+    val rawIds = hostDataRawResolvedIds()
     val visibleBlocks = blocks.filter { block ->
-        evaluateVisibilityCondition(block.visibility_condition, responses = responses, hookData = hookData)
+        evaluateVisibilityCondition(block.visibility_condition, responses = responses, hookData = hookData) &&
+            !block.isHiddenByHostData(rawIds)
     }
+    // SPEC-496 §A4 — the consent-CTA gate judges the WHOLE layered step (lifted maps included), not
+    // just the column this layout draws.
+    val stepGateBlocks = LocalStepGateBlocks.current ?: blocks
     // SPEC-401-A R55 (Lens A R54 #2, P1) — drop the `!anyZoned` early
     // return so the unzoned case still runs through the partition + zone
     // render path, getting responsive horizontal padding + scroll wrapper
@@ -2724,6 +2802,7 @@ private fun ThreeZoneBlockLayout(
                     onInteract = onInteract,
                     fieldConfigOverrides = fieldConfigOverrides,
                     fieldOptionsOverrides = fieldOptionsOverrides,
+                    stepBlocks = stepGateBlocks,
                 )
                 }
             }
@@ -2764,6 +2843,7 @@ private fun ThreeZoneBlockLayout(
                     onInteract = onInteract,
                     fieldConfigOverrides = fieldConfigOverrides,
                     fieldOptionsOverrides = fieldOptionsOverrides,
+                    stepBlocks = stepGateBlocks,
                         )
                     }
                 }
@@ -2784,6 +2864,7 @@ private fun ThreeZoneBlockLayout(
                     onInteract = onInteract,
                     fieldConfigOverrides = fieldConfigOverrides,
                     fieldOptionsOverrides = fieldOptionsOverrides,
+                    stepBlocks = stepGateBlocks,
                         )
                     }
                 }
@@ -2826,6 +2907,7 @@ private fun ThreeZoneBlockLayout(
                     onInteract = onInteract,
                     fieldConfigOverrides = fieldConfigOverrides,
                     fieldOptionsOverrides = fieldOptionsOverrides,
+                    stepBlocks = stepGateBlocks,
                 )
             }
         }
@@ -2944,15 +3026,66 @@ private fun BlockBasedStepView(
     stepId: String = "",
     // SPEC-419 STEP-2 — flow-host interaction seam. This is the STEP scope: it owns fieldConfigOverrides
     // + handleInteract and routes any host-requested advance through the required-field-gated handleAction.
-    performInteraction: suspend (String, String, String?, Map<String, Any>) -> AppliedInteraction? = { _, _, _, _ -> null },
+    performInteraction: suspend (String, String, String?, Map<String, Any>) -> AppliedInteraction? = NoElementInteraction,
     /**
      * The renderer's delegate. Read by the auth-action gate ([emitAuthAction] /
      * [emitSocialLoginAction]) and by the permission callbacks below, all of which used to read the
      * GLOBAL `AppDNA.onboarding.listener` instead — a different reference.
      */
     delegate: AppDNAOnboardingDelegate? = null,
+    /**
+     * SPEC-496 — the presented step (its raw blocks drive the host-data pass), the UN-merged
+     * `configOverrides[step.id]` (merged by the pipeline AFTER resolve, never before) and the §B0
+     * pending flag of this presentation. A step without raw blocks keeps today's view-level pass.
+     */
+    step: OnboardingStep? = null,
+    stepOverride: StepConfigOverride? = null,
+    hostDataPending: Boolean = false,
+    hostDataIsCurrent: Boolean = true,
 ) {
     val variant = effectiveConfig.layout_variant ?: "no_image"
+
+    // SPEC-496 §5b — the flow host's holder + THIS composition's presentation (null outside the host).
+    val hostDataWiring = LocalStepHostDataWiring.current
+    val myPresentation = hostDataWiring?.presentation
+    // SPEC-419 STEP-2 — per-block field_config overrides pushed by the host delegate (blockId -> key ->
+    // value). Snapshot-observable so a merged override recomposes the affected block.
+    // SPEC-496 §5b C4 — keyed by PRESENTATION: a composition reused for a new presentation (0→1→0 inside
+    // the exit tween) starts clean, like a normal revisit.
+    val fieldConfigOverrides = remember(stepId, myPresentation) { mutableStateMapOf<String, Map<String, Any>>() }
+    // #657 — per-block replacement options from a refresh interaction. Same read-time override
+    // shape as the config overrides above, and keyed the same way.
+    val fieldOptionsOverrides = remember(stepId, myPresentation) { mutableStateMapOf<String, List<InputOption>>() }
+
+    // SPEC-496 §A1/§A4 — ONE layered block list for every reader: raw pass → typed decode (per-key
+    // revert) → StepConfigOverride merge → interaction layering. Rendering, the required gate, the
+    // validation toast and the consent-CTA gate all read `blocks` below. Memoised inside the
+    // pipeline, so a recomposition whose inputs did not change re-uses the previous resolve.
+    val hostPipeline = remember(step) { step?.takeIf { it.rawContentBlocks != null }?.let { HostDataStepPipeline(it) } }
+    @Suppress("UNUSED_VARIABLE")
+    val selectedRevision = SelectedOptionStore.revision.intValue // a read subscribes: `selected` root
+    // The inputs of one resolve — a function, so an interaction that asks to advance can re-run the
+    // pipeline with the overrides it just wrote (§A4, see handleInteract). The presentation parameters
+    // are passed in: this composition's for the frame, `liveParamsState.value` for handleInteract's
+    // coroutine, which resumes AFTER the host round-trip and must not read tap-time values.
+    val liveParams = HostDataLiveParams(stepOverride, responses, hostDataPending, hostDataIsCurrent)
+    val liveParamsState = rememberUpdatedState(liveParams)
+    // SPEC-496 §5b C3 — the effective `hook_data` is read from the flow-level owner at CALL time (base +
+    // interaction layer), never from a composition snapshot.
+    fun hostDataInputs(p: HostDataLiveParams): HostDataInputs = liveHostDataInputs(
+        p.stepOverride, hostDataWiring?.access?.effectiveHookData(stepId) ?: p.stepOverride?.dataContext,
+        p.responses, inputValues, p.pending, fieldConfigOverrides, fieldOptionsOverrides,
+    )
+    val hostResolved: ResolvedHostDataStep? = hostPipeline?.resolve(hostDataInputs(liveParams))
+    val layeredBlocks: List<ContentBlock> = hostResolved?.blocks ?: blocks
+    @Suppress("NAME_SHADOWING")
+    val effectiveConfig: StepConfig = hostResolved?.let { effectiveConfig.copy(localizations = it.localizations) } ?: effectiveConfig
+    // §B0 — after host data settles, a value no longer rendered leaves inputValues + the store. Only
+    // the step on screen prunes: an outgoing step mid-transition must not touch the (global)
+    // SelectedOptionStore or a restored value.
+    LaunchedEffect(hostResolved?.blocks, hostDataIsCurrent) {
+        if (hostDataIsCurrent) hostResolved?.let { pruneHostDataSelections(it.blocks, it.rawResolvedIds, inputValues) }
+    }
 
     /**
      * SPEC-495 §C — the two map placements that are NOT blocks in the column.
@@ -2968,20 +3101,17 @@ private fun BlockBasedStepView(
      * Only the FIRST of each is honoured. Two backgrounds is not a thing an author can mean, and
      * silently stacking them is how you get a map nobody can explain.
      */
-    val backdropMap = blocks.firstOrNull { it.type == "map" && it.mapPlacement() == MapPlacement.BACKDROP }
-    val topMap = blocks.firstOrNull { it.type == "map" && it.mapPlacement() == MapPlacement.ANCHOR_TOP }
-    val bottomMap = blocks.firstOrNull { it.type == "map" && it.mapPlacement() == MapPlacement.ANCHOR_BOTTOM }
+    val backdropMap = layeredBlocks.firstOrNull { it.type == "map" && it.mapPlacement() == MapPlacement.BACKDROP }
+    val topMap = layeredBlocks.firstOrNull { it.type == "map" && it.mapPlacement() == MapPlacement.ANCHOR_TOP }
+    val bottomMap = layeredBlocks.firstOrNull { it.type == "map" && it.mapPlacement() == MapPlacement.ANCHOR_BOTTOM }
+    // SPEC-496 §A4 — the gate reads the WHOLE layered step, lifted maps included.
+    val gateBlocks = layeredBlocks
     @Suppress("NAME_SHADOWING")
-    val blocks = blocks.filterNot { it === backdropMap || it === topMap || it === bottomMap }
-
-
-    // SPEC-419 STEP-2 — per-block field_config overrides pushed by the host delegate (blockId -> key ->
-    // value). Snapshot-observable so a merged override recomposes the affected block. Reset per step.
-    val fieldConfigOverrides = remember(stepId) { mutableStateMapOf<String, Map<String, Any>>() }
-    // #657 — per-block replacement options from a refresh interaction. Same read-time override
-    // shape as the config overrides above, and reset per step for the same reason.
-    val fieldOptionsOverrides = remember(stepId) { mutableStateMapOf<String, List<InputOption>>() }
+    val blocks = layeredBlocks.filterNot { it === backdropMap || it === topMap || it === bottomMap }
     val interactionScope = rememberCoroutineScope()
+    // SPEC-496 §5b C5.5 — ONE coordinator per presentation: the lock, the loading block, the 8 s refresh
+    // deadline, the generation token and the live "still current?" check.
+    val coordinator = rememberInteractionCoordinator(stepId, hostDataWiring, interactionScope, performInteraction)
 
     // SPEC-401-A R35 — in-app validation pill (Lens C #4). iOS shows a
     // bottom-aligned styled pill `OnboardingRenderer.swift:1383-1402`
@@ -2998,6 +3128,11 @@ private fun BlockBasedStepView(
     // SPEC-084: Localization helper for step text
     // SPEC-087: Also interpolates {{variables}} after localization
     fun loc(key: String, fallback: String): String {
+        // SPEC-496 §A1 — lookup-only for a step the raw pass resolved: the translations are already
+        // resolved, and interpolating again would re-scan host data containing `{{`.
+        if (hostResolved != null) {
+            return lookupOnlyLoc(key, fallback, effectiveConfig.localizations, effectiveConfig.default_locale)
+        }
         val localized = LocalizationEngine.resolve(key, effectiveConfig.localizations, effectiveConfig.default_locale, fallback)
         return localized.interpolated()
     }
@@ -3015,7 +3150,14 @@ private fun BlockBasedStepView(
     // (including the QA-R19 `List<*>` empty-multi-select branch) moved there verbatim, so behavior is
     // unchanged; extracting it proves an interaction-driven advance can NOT bypass required-field
     // validation without a live host (see ElementInteractionWiringTest).
-    fun canAdvance(): Pair<Boolean, String?> = RequiredFieldGate.evaluate(blocks, inputValues)
+    // SPEC-496 — an interaction-requested advance sets [interactionGate] to the step re-resolved with
+    // the overrides that interaction just wrote; `gateBlocks` above is this composition's list, which
+    // predates them (a host that replaces an empty required Select's options and advances in the same
+    // reply would otherwise advance past the now-unanswered field).
+    val interactionGate = remember(stepId) { arrayOfNulls<ResolvedHostDataStep>(1) }
+    fun canAdvance(): RequiredFieldGate.Result = interactionGate[0]?.let {
+        RequiredFieldGate.evaluateDetailed(it.blocks, inputValues, it.rawResolvedIds)
+    } ?: RequiredFieldGate.evaluateDetailed(gateBlocks, inputValues, hostResolved?.rawResolvedIds.orEmpty())
 
     val activityCtx = androidx.compose.ui.platform.LocalContext.current
 
@@ -3210,13 +3352,15 @@ private fun BlockBasedStepView(
             rawAction == PendingCompletionRoute.ACTION_NAME ||
             rawAction in AUTH_ACTIONS_REQUIRING_VALIDATION
         if (requiresValidation) {
-            val (ok, fieldLabel) = canAdvance()
-            if (!ok) {
+            val gate = canAdvance()
+            if (!gate.canAdvance) {
                 // SPEC-401-A R51 (Lens C #3, P3) — match iOS toast copy at
                 // OnboardingRenderer.swift:1393 `"Please fill in <field>"`.
                 // Was Android-bespoke `"<field> is required"` — analytics
                 // filtering on the toast text would split between platforms.
-                val msg = "Please fill in ${fieldLabel ?: "required fields"}"
+                // SPEC-496 §A1 — while host data is pending the field is not the user's fault.
+                val msg = if (gate.toastKind == "loading") "Loading…"
+                    else "Please fill in ${gate.fieldLabel ?: "required fields"}"
                 // SPEC-401-A R35 — surface as in-app pill instead of system
                 // Toast (iOS OnboardingRenderer.swift:1383-1402).
                 validationMessage = msg
@@ -3363,25 +3507,36 @@ private fun BlockBasedStepView(
     // reassigned), key-level-merge field_config overrides, and — if the host asked to advance — funnel
     // through the EXISTING handleAction("next"), the ONLY entry that runs canAdvance (RequiredFieldGate)
     // then onNext → onBeforeStepAdvance. Mirrors iOS OnboardingStepRouter.handleInteract.
+    //
+    // SPEC-496 §5b — the call goes through this presentation's coordinator (refused when not current /
+    // in flight / a refresh while pending). A reply that passes its arrival check is applied in one
+    // snapshot (applyInteractionReply: patches onto the CURRENT answers, dataContext into the layer,
+    // options, field_config), then an `advance` is gated on the step re-resolved from the layer as just
+    // written.
     fun handleInteract(blockId: String, action: String, value: String?) {
-        interactionScope.launch {
-            val applied = performInteraction(blockId, action, value, inputValues.toMap())
-            if (applied != null) {
-                inputValues.clear()
-                inputValues.putAll(applied.inputValues)
-                applied.fieldConfigOverrides.forEach { (id, patch) ->
-                    fieldConfigOverrides[id] = (fieldConfigOverrides[id] ?: emptyMap()) + patch
+        coordinator.start(blockId, action, value, inputValues.toMap(), liveParamsState.value.pending) { result, stamp ->
+            applyInteractionReply(result, stamp, stepId, inputValues, hostDataWiring?.access, fieldConfigOverrides, fieldOptionsOverrides)
+            if (result.advance) {
+                // §A4 + §B0 — gate on the step re-resolved with what was just written, its vanished
+                // selections pruned first (the LaunchedEffect prune only runs after the next frame).
+                val now = liveParamsState.value
+                interactionGate[0] = hostPipeline?.let { p ->
+                    resolveForInteractionAdvance(p, now.isCurrent, inputValues) { hostDataInputs(now) }
                 }
-                // #657 — options are REPLACED wholesale, not merged: "the next four venues" is a new
-                // list, not an edit of the old one. A block the host did not name keeps what it had.
-                applied.fieldOptionsOverrides.forEach { (id, options) ->
-                    fieldOptionsOverrides[id] = options
-                }
-                if (applied.advance) handleAction("next")
+                try { handleAction("next") } finally { interactionGate[0] = null }
             }
         }
     }
+    // §5b C5.1 — what nested renderers (row, stack, section_background, carousel pages) read.
+    val stepInteraction = rememberStepInteraction(coordinator, ::handleInteract) { liveParamsState.value.pending }
 
+    androidx.compose.runtime.CompositionLocalProvider(
+        LocalHostDataRawResolved provides (hostResolved != null),
+        LocalHostDataRawResolvedIds provides (hostResolved?.rawResolvedIds ?: emptySet()),
+        LocalHostDataSheets provides (hostResolved?.sheetRaw ?: emptyMap()),
+        LocalStepGateBlocks provides gateBlocks,
+        LocalStepInteraction provides stepInteraction,
+    ) {
     Box(modifier = modifier.entryAnimation(effectiveConfig.animation?.entry_animation, effectiveConfig.animation?.entry_duration_ms)) {
         // Step-level background (color, gradient, image)
         effectiveConfig.background?.let { bg ->
@@ -3724,6 +3879,7 @@ private fun BlockBasedStepView(
             )
         }
     }
+    } // SPEC-496 CompositionLocalProvider
 }
 
 /** SPEC-421 — identifies a pending "Open Settings" affordance for a denied permission. */
