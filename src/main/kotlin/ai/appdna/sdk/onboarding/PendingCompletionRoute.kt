@@ -3,7 +3,7 @@ package ai.appdna.sdk.onboarding
 /**
  * The destination a `link_on_complete` CTA asked for, held until the flow finishes.
  *
- * WHY THIS EXISTS: a cross-sell near the end of a flow ("book a wine tasting") has a destination
+ * WHY THIS EXISTS: a cross-sell near the end of a flow ("book a workshop") has a destination
  * that should open once the user is actually done. Opening it on tap tears them out of an
  * onboarding they have not finished — the same reason `flag` advances instead of routing. So the
  * tap records where to go, the user continues, and the SDK opens it at completion.

@@ -60,7 +60,7 @@ Wraps iOS 1.0.79. Publishable version and feature-parity marker move independent
   `75%` or `300px` got its sizing box first, and the alignment was then applied *inside* a box
   already shrunk to that width — so there was no room left to move in. A width-constrained block now
   gets an outer full-width box that carries the alignment, matching SwiftUI's frame order. Affected
-  the pre-paywall Sound button and the "Regenerate Results" button. (#654, #659)
+  any 75%-wide sound button or button authored `center` or `right`. (#654, #659)
 - **Content sat behind the pinned bottom zone** and could not be scrolled to. The scroll area
   reserved a hardcoded 80dp under a zone that is routinely ~140dp (two buttons plus a legal line),
   so the last lines of a summary were unreachable — the scroll range ended before them. The reserve

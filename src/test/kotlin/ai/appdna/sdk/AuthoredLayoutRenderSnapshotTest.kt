@@ -21,22 +21,22 @@ import org.robolectric.annotation.Config
 import org.robolectric.annotation.GraphicsMode
 
 /**
- * Pixels for the two WineTrails defects that only pixels can settle — #654/#659 and #609.
+ * Pixels for the two authored-layout defects that only pixels can settle — #654/#659 and #609.
  *
- * `WineTrailsRenderGatesTest` asserts the RULES (`needsOuterAlignmentBox`, `multiButtonRowPlan`) and
+ * `AuthoredLayoutRenderGatesTest` asserts the RULES (`needsOuterAlignmentBox`, `multiButtonRowPlan`) and
  * the shared fixture asserts the row arithmetic, but neither can see whether the renderer actually
  * USES them. That gap is not hypothetical here: #654/#659 were reported precisely because the rule
  * was right and the composition order was wrong — the sizing box was applied first, so the
  * alignment was then resolved inside a box already shrunk to 75%, leaving nowhere to move. A test
  * that only checks the function would have stayed green through the entire bug.
  *
- * Record:  ./gradlew recordRoborazziDebug --tests "*WineTrailsRenderSnapshotTest*"
+ * Record:  ./gradlew recordRoborazziDebug --tests "*AuthoredLayoutRenderSnapshotTest*"
  * Compare: ./gradlew verifyRoborazziDebug   (the CI gate)
  */
 @RunWith(RobolectricTestRunner::class)
 @GraphicsMode(GraphicsMode.Mode.NATIVE)
 @Config(sdk = [34], qualifiers = "w411dp-h891dp-xxhdpi")
-class WineTrailsRenderSnapshotTest {
+class AuthoredLayoutRenderSnapshotTest {
 
     private fun blocksOf(vararg blocks: Map<String, Any>): List<ContentBlock> {
         val step = mapOf<String, Any>(
@@ -90,20 +90,21 @@ class WineTrailsRenderSnapshotTest {
     private fun button(id: String, text: String) =
         mapOf<String, Any>("id" to id, "type" to "button", "text" to text, "action" to "next")
 
-    // ── #671 — the REAL production Q6B step, byte-for-byte from the published flow ────────────
+    // ── #671 — a six-block image/heading/map/text/sound/CTA step, authored the way the console writes it ──
 
     /**
-     * Reading code did not explain "the entire Q6B screen is frozen", so this renders the actual
-     * step the device downloads rather than an approximation of it: all six blocks, their real
-     * zones (`vertical_align` puts the sound button in CENTER and the CTA in BOTTOM, the rest fall
-     * to TOP), and the map's real `field_config` — in which every numeric is a STRING ("220", "12",
-     * "28"), `map_stops` is empty, and `map_interactive` is true.
+     * Reading code did not explain a report of a step whose screen was "frozen", so this renders a
+     * step with the same SHAPE as the one reported rather than a minimal approximation of it: six
+     * blocks (image, heading, map, text, sound button, button), their zones (`vertical_align` puts
+     * the sound button in CENTER and the CTA in BOTTOM, the rest fall to TOP), and a map
+     * `field_config` in which every numeric is a STRING ("220", "12", "28"), `map_stops` is empty,
+     * and `map_interactive` is true. The content is synthetic.
      *
      * If composition throws, this test says so with the exception. If it renders, the golden shows
-     * what an Android user actually sees, which is the other half of the report.
+     * what an Android user actually sees.
      */
-    private fun realQ6BBlocks(): List<ContentBlock> {
-        val json = org.json.JSONArray(Q6B_BLOCKS_JSON)
+    private fun sixBlockMapStepBlocks(): List<ContentBlock> {
+        val json = org.json.JSONArray(SIX_BLOCK_MAP_STEP_JSON)
         fun conv(v: Any?): Any? = when (v) {
             is org.json.JSONObject -> v.keys().asSequence().associateWith { conv(v.get(it)) }.filterValues { it != null }
             is org.json.JSONArray -> (0 until v.length()).map { conv(v.get(it)) }
@@ -112,22 +113,22 @@ class WineTrailsRenderSnapshotTest {
         @Suppress("UNCHECKED_CAST")
         val list = (0 until json.length()).map { conv(json.getJSONObject(it)) as Map<String, Any> }
         val step = mapOf<String, Any>(
-            "type" to "custom", "name" to "Q6B", "analytics_name" to "Q6B", "skip_allowed" to false,
+            "type" to "custom", "name" to "Map summary", "analytics_name" to "map_summary", "skip_allowed" to false,
             "config" to mapOf<String, Any>("content_blocks" to list, "layout_variant" to "image_fullscreen"),
         )
         return OnboardingConfigParser.parseStepForTest(step)?.config?.content_blocks ?: emptyList()
     }
 
     @Test
-    fun q6b_realProductionStep_rendersWithoutThrowing() {
-        capture("winetrails_q6b_real", realQ6BBlocks())
+    fun sixBlockMapStep_rendersWithoutThrowing() {
+        capture("authored_layout_six_block_map_step", sixBlockMapStepBlocks())
     }
 
     // ── #671 — the map block's full-bleed crashed the whole Android screen ───────────────────
 
     /**
-     * Mrozu: on Android "the entire Q6B screen is frozen — nothing on it moves/scrolls"; on iOS the
-     * screen scrolls fine. A map that merely failed to load could not freeze the rest of the step,
+     * Reported: on Android a step containing a map was "frozen — nothing on it moves/scrolls"; on
+     * iOS the same step scrolls fine. A map that merely failed to load could not freeze the rest of the step,
      * so the suspicion is composition, not the map.
      *
      * `map_full_bleed` cancels the step's horizontal padding so the map meets both screen edges.
@@ -140,7 +141,7 @@ class WineTrailsRenderSnapshotTest {
     @Test
     fun mapFullBleed_doesNotCrashTheStep() {
         capture(
-            "winetrails_map_full_bleed",
+            "authored_layout_map_full_bleed",
             blocksOf(
                 mapOf<String, Any>(
                     "id" to "map1", "type" to "map",
@@ -241,10 +242,10 @@ class WineTrailsRenderSnapshotTest {
     @Test
     fun constrainedWidthButton_centered() {
         capture(
-            "winetrails_align_center_75pct",
+            "authored_layout_align_center_75pct",
             blocksOf(
                 mapOf<String, Any>(
-                    "id" to "cta", "type" to "button", "text" to "Regenerate Results", "action" to "next",
+                    "id" to "cta", "type" to "button", "text" to "Refresh List", "action" to "next",
                     "element_width" to "75%", "horizontal_align" to "center",
                 ),
             ),
@@ -255,10 +256,10 @@ class WineTrailsRenderSnapshotTest {
     @Test
     fun constrainedWidthButton_right() {
         capture(
-            "winetrails_align_right_75pct",
+            "authored_layout_align_right_75pct",
             blocksOf(
                 mapOf<String, Any>(
-                    "id" to "cta", "type" to "button", "text" to "Audio Preview", "action" to "next",
+                    "id" to "cta", "type" to "button", "text" to "Play Sample", "action" to "next",
                     "element_width" to "75%", "horizontal_align" to "right",
                 ),
             ),
@@ -273,7 +274,7 @@ class WineTrailsRenderSnapshotTest {
     @Test
     fun fullWidthButton_centeredIsUnchanged() {
         capture(
-            "winetrails_align_center_fullwidth",
+            "authored_layout_align_center_fullwidth",
             blocksOf(
                 mapOf<String, Any>(
                     "id" to "cta", "type" to "button", "text" to "Continue", "action" to "next",
@@ -289,14 +290,14 @@ class WineTrailsRenderSnapshotTest {
     @Test
     fun multiButtons_twoThenOne_centered() {
         capture(
-            "winetrails_multi_buttons_2_then_1_center",
+            "authored_layout_multi_buttons_2_then_1_center",
             blocksOf(
                 mapOf<String, Any>(
                     "id" to "group", "type" to "multi_buttons", "spacing" to 12,
                     "field_config" to mapOf<String, Any>("buttons_per_row" to 2, "last_row" to "center"),
                     "block_style" to mapOf<String, Any>("background_color" to "#1F2937", "border_radius" to 16),
                     "stack_children" to listOf(
-                        button("b1", "Book a tasting"),
+                        button("b1", "Book a session"),
                         button("b2", "Audio tour"),
                         button("b3", "Guided tour"),
                     ),
@@ -309,14 +310,14 @@ class WineTrailsRenderSnapshotTest {
     @Test
     fun multiButtons_twoThenOne_stretched() {
         capture(
-            "winetrails_multi_buttons_2_then_1_stretch",
+            "authored_layout_multi_buttons_2_then_1_stretch",
             blocksOf(
                 mapOf<String, Any>(
                     "id" to "group", "type" to "multi_buttons", "spacing" to 12,
                     "field_config" to mapOf<String, Any>("buttons_per_row" to 2, "last_row" to "stretch"),
                     "block_style" to mapOf<String, Any>("background_color" to "#1F2937", "border_radius" to 16),
                     "stack_children" to listOf(
-                        button("b1", "Book a tasting"),
+                        button("b1", "Book a session"),
                         button("b2", "Audio tour"),
                         button("b3", "Guided tour"),
                     ),
@@ -329,16 +330,16 @@ class WineTrailsRenderSnapshotTest {
     @Test
     fun multiButtons_threePerRow() {
         capture(
-            "winetrails_multi_buttons_3_per_row",
+            "authored_layout_multi_buttons_3_per_row",
             blocksOf(
                 mapOf<String, Any>(
                     "id" to "group", "type" to "multi_buttons", "spacing" to 8,
                     "field_config" to mapOf<String, Any>("buttons_per_row" to 3),
                     "block_style" to mapOf<String, Any>("background_color" to "#1F2937", "border_radius" to 16),
                     "stack_children" to listOf(
-                        button("b1", "Red"),
-                        button("b2", "White"),
-                        button("b3", "Rosé"),
+                        button("b1", "Small"),
+                        button("b2", "Medium"),
+                        button("b3", "Large"),
                     ),
                 ),
             ),
@@ -346,8 +347,8 @@ class WineTrailsRenderSnapshotTest {
     }
 
     private companion object {
-        // Verbatim from orgs/…/config/onboarding_index/flows/… step13, 2026-09-25.
-        const val Q6B_BLOCKS_JSON = """[{"image_fit": "contain", "horizontal_align": "center", "type": "image", "height": "150", "image_url": "https://storage.googleapis.com/appdna-assets/assets/aa763dcf-feae-4fd7-ae8e-775acd1f483d/f67ebd31-c573-47dd-aa83-64742880e717/onboarding-images/b440e0b3-1817-400d-affa-bbe708bd25eb_1e980a3b-6a0a-4dda-b34c-ae2be7849103.png", "corner_radius": "12", "id": "block_1_1qxxjc"}, {"style": {"color": "#EAE9E5", "font_size": "22", "font_weight": "700", "alignment": "center"}, "horizontal_align": "center", "id": "block_1_32q89o", "text": "Your Audio Tour is almost ready!", "type": "heading", "level": "1"}, {"id": "block_1_i5umn3", "type": "map", "field_config": {"route_width": "4", "map_fallback_text": "Map unavailable", "route_casing_width": "2", "map_stops": [], "map_surface_color": "#E5E7EB", "marker_style": "pin", "route_style": "solid", "map_height": "220", "marker_size": "28", "route_show": true, "map_fit_to_stops": true, "map_zoom": "12", "route_casing_color": "#FFFFFF", "map_center_lat": 47.6205, "map_center_lng": -122.3493, "map_style": "streets", "map_corner_radius": "12", "map_interactive": true, "marker_color": "#FFD700", "route_color": "#cf4646"}, "horizontal_align": "center"}, {"style": {"color": "#EAE9E5", "alignment": "center", "font_size": "16", "font_weight": "500"}, "text": "Listen to a preview of your route narrative", "type": "text", "horizontal_align": "center", "id": "block_1_oule5g"}, {"style": {"alignment": "center", "color": "#EAE9E5", "font_size": "16", "font_weight": "600"}, "autoplay": false, "icon_emoji": "🔊", "element_width": "75%", "audio_url": "", "id": "block_4_869akv", "text_color": "#ffffff", "element_height": "50px", "bg_color": "#C48F7F", "horizontal_align": "center", "vertical_align": "center", "type": "sound_button", "vertical_offset": "0", "text": "{{hook_data.audioUrl}}", "zone": "center", "button_corner_radius": "24", "variant": "primary"}, {"variant": "primary", "id": "block_2_odjg4q", "button_corner_radius": "24", "zone": "bottom", "vertical_offset": "0", "text": "Unlock Full Audio Tour", "style": {"color": "#192334", "alignment": "center", "font_size": "16", "font_weight": "600"}, "type": "button", "text_color": "#192334", "horizontal_align": "center", "bg_color": "#FFD700", "vertical_align": "bottom", "element_width": "fill", "action": "next"}]"""
+        // Synthetic content with the shape of a console-authored step: numerics as strings, empty stops.
+        const val SIX_BLOCK_MAP_STEP_JSON = """[{"image_fit": "contain", "horizontal_align": "center", "type": "image", "height": "150", "image_url": "https://assets.example.com/onboarding/hero.png", "corner_radius": "12", "id": "img_1"}, {"style": {"color": "#F5F5F5", "font_size": "22", "font_weight": "700", "alignment": "center"}, "horizontal_align": "center", "id": "heading_1", "text": "Your plan is almost ready!", "type": "heading", "level": "1"}, {"id": "map_1", "type": "map", "field_config": {"route_width": "4", "map_fallback_text": "Map unavailable", "route_casing_width": "2", "map_stops": [], "map_surface_color": "#E5E7EB", "marker_style": "pin", "route_style": "solid", "map_height": "220", "marker_size": "28", "route_show": true, "map_fit_to_stops": true, "map_zoom": "12", "route_casing_color": "#FFFFFF", "map_center_lat": 40.7128, "map_center_lng": -74.006, "map_style": "streets", "map_corner_radius": "12", "map_interactive": true, "marker_color": "#F59E0B", "route_color": "#EF4444"}, "horizontal_align": "center"}, {"style": {"color": "#F5F5F5", "alignment": "center", "font_size": "16", "font_weight": "500"}, "text": "Listen to a short sample", "type": "text", "horizontal_align": "center", "id": "text_1"}, {"style": {"alignment": "center", "color": "#F5F5F5", "font_size": "16", "font_weight": "600"}, "autoplay": false, "icon_emoji": "🔊", "element_width": "75%", "audio_url": "", "id": "sound_1", "text_color": "#ffffff", "element_height": "50px", "bg_color": "#6366F1", "horizontal_align": "center", "vertical_align": "center", "type": "sound_button", "vertical_offset": "0", "text": "{{hook_data.sample_url}}", "zone": "center", "button_corner_radius": "24", "variant": "primary"}, {"variant": "primary", "id": "cta_1", "button_corner_radius": "24", "zone": "bottom", "vertical_offset": "0", "text": "Continue", "style": {"color": "#111827", "alignment": "center", "font_size": "16", "font_weight": "600"}, "type": "button", "text_color": "#111827", "horizontal_align": "center", "bg_color": "#F59E0B", "vertical_align": "bottom", "element_width": "fill", "action": "next"}]"""
     }
 
 }

@@ -1359,7 +1359,7 @@ class SharedFixtureTest(
         val blocks = merged.content_blocks.orEmpty()
         spy.state["merged_block_count"] = blocks.size
         spy.state["merged_block_ids"] = blocks.map { it.id }
-        blocks.firstOrNull { it.id == "winery_select" }?.let { target ->
+        blocks.firstOrNull { it.id == "venue_select" }?.let { target ->
             spy.state["merged_target_option_count"] = target.field_options?.size ?: 0
             spy.state["merged_target_first_value"] =
                 target.field_options?.firstOrNull()?.let { it.value ?: it.id }

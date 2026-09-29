@@ -13,7 +13,7 @@ import org.junit.Test
  * it was to look at a screen. They are pure functions now precisely so a regression fails here
  * instead of in a tester's screenshot.
  */
-class WineTrailsRenderGatesTest {
+class AuthoredLayoutRenderGatesTest {
 
     // ── #653 — the stray "Skip" on every Android screen ──────────────────────────────────────
 
@@ -39,7 +39,7 @@ class WineTrailsRenderGatesTest {
 
     @Test
     fun `a percent-width block with an alignment needs the outer alignment box`() {
-        // WineTrails' "Regenerate Results" and Audio Preview buttons, exactly as authored.
+        // A 75%-wide button authored `center`, and one authored `right` — the reported shapes.
         assertTrue(needsOuterAlignmentBox(elementWidth = "75%", horizontalAlign = "center"))
         assertTrue(needsOuterAlignmentBox(elementWidth = "300px", horizontalAlign = "center"))
         assertTrue(needsOuterAlignmentBox(elementWidth = "50%", horizontalAlign = "right"))
@@ -85,8 +85,8 @@ class WineTrailsRenderGatesTest {
 
     /*
      * Three reports, one defect. The button hardcoded fillMaxWidth(), so `element_width: "auto"` —
-     * the one value meaning "be as wide as your label" — was ignored. WineTrails' "Show 4 More
-     * Options" is authored `auto` + `center` in production and rendered edge-to-edge.
+     * the one value meaning "be as wide as your label" — was ignored. A "show more" button
+     * authored `auto` + `center` rendered edge-to-edge.
      */
 
     @Test

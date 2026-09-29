@@ -145,7 +145,7 @@ internal object NextStepRuleEvaluator {
 
         // Re-bound to the original local names so every operator below is unchanged. `step` matters
         // as much as `responses`: the aliases that map an authored "opt_1" onto the stored
-        // "wine_tasting" come from the SOURCE step's options, not the step being left.
+        // "workshop" come from the SOURCE step's options, not the step being left.
         val scope = resolveConditionScope(rawField, stepResponses, allResponses, currentStep, allSteps)
         val field = scope.field
         val responses = scope.responses

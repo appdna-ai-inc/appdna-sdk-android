@@ -247,7 +247,7 @@ class RefreshStepWiringComposeTest {
                 "config" to mapOf(
                     "content_blocks" to listOf(
                         mapOf(
-                            "id" to "sel", "type" to "input_select", "field_id" to "select_Q6A",
+                            "id" to "sel", "type" to "input_select", "field_id" to "select_recs",
                             "field_options" to listOf(
                                 mapOf(
                                     "id" to "opt_1", "label" to "Recommended", "value" to "recommended",

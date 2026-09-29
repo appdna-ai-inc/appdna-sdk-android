@@ -77,43 +77,43 @@ class HostDataAuditRegressionTest {
 
     @Test
     fun `M1 chips - a value pruned after host data settles is not written back on the next tap`() {
-        val inputValues = mutableStateMapOf<String, Any>("wine" to listOf("a", "b"))
-        val before = block("wine", "input_chips", listOf(opt("a"), opt("b"), opt("c")))
+        val inputValues = mutableStateMapOf<String, Any>("drink" to listOf("a", "b"))
+        val before = block("drink", "input_chips", listOf(opt("a"), opt("b"), opt("c")))
         val shown = mutableStateOf(listOf(before))
         compose.setContent {
             ContentBlockRendererView(blocks = shown.value, onAction = {}, toggleValues = mutableMapOf(), inputValues = inputValues)
         }
         compose.waitForIdle()
         // Host data settles: `b` is no longer rendered → the step's prune removes it.
-        val after = block("wine", "input_chips", listOf(opt("a"), opt("c")), mapOf("resolve_state" to "scoped"))
+        val after = block("drink", "input_chips", listOf(opt("a"), opt("c")), mapOf("resolve_state" to "scoped"))
         compose.runOnIdle {
             shown.value = listOf(after)
-            assertTrue(pruneHostDataSelections(listOf(after), setOf("wine"), inputValues))
+            assertTrue(pruneHostDataSelections(listOf(after), setOf("drink"), inputValues))
         }
         compose.waitForIdle()
         compose.onNodeWithText("C").performClick()
         compose.waitForIdle()
-        assertEquals(listOf("a", "c"), inputValues["wine"])
+        assertEquals(listOf("a", "c"), inputValues["drink"])
     }
 
     @Test
     fun `M1 multi select - toggles against the pruned value, not the view copy`() {
-        val inputValues = mutableStateMapOf<String, Any>("wine" to listOf("a", "b"))
+        val inputValues = mutableStateMapOf<String, Any>("drink" to listOf("a", "b"))
         val cfg = mapOf<String, Any>("display_style" to "stacked", "multi_select" to true)
-        val shown = mutableStateOf(listOf(block("wine", "input_select", listOf(opt("a"), opt("b"), opt("c")), cfg)))
+        val shown = mutableStateOf(listOf(block("drink", "input_select", listOf(opt("a"), opt("b"), opt("c")), cfg)))
         compose.setContent {
             ContentBlockRendererView(blocks = shown.value, onAction = {}, toggleValues = mutableMapOf(), inputValues = inputValues)
         }
         compose.waitForIdle()
-        val after = block("wine", "input_select", listOf(opt("a"), opt("c")), cfg + ("resolve_state" to "scoped"))
+        val after = block("drink", "input_select", listOf(opt("a"), opt("c")), cfg + ("resolve_state" to "scoped"))
         compose.runOnIdle {
             shown.value = listOf(after)
-            pruneHostDataSelections(listOf(after), setOf("wine"), inputValues)
+            pruneHostDataSelections(listOf(after), setOf("drink"), inputValues)
         }
         compose.waitForIdle()
         compose.onNodeWithText("C").performClick()
         compose.waitForIdle()
-        assertEquals(listOf("a", "c"), inputValues["wine"])
+        assertEquals(listOf("a", "c"), inputValues["drink"])
     }
 
     @Test
@@ -538,7 +538,7 @@ class HostDataAuditRegressionTest {
             )),
             "field_config" to mapOf("repeat" to mapOf("source" to "hook_data.tours", "template_option_id" to "opt")),
         )
-        val r = HostDataResolver.resolveRawBlock(raw, HostDataContext(stepId = "s", hookData = mapOf("tours" to listOf(mapOf("id" to "t1", "name" to "Cellar walk")))))
+        val r = HostDataResolver.resolveRawBlock(raw, HostDataContext(stepId = "s", hookData = mapOf("tours" to listOf(mapOf("id" to "t1", "name" to "Garden walk")))))
         @Suppress("UNCHECKED_CAST")
         val sheetRaw = ((r.block["field_options"] as List<*>).single() as Map<*, *>)["sheet_blocks"] as List<Map<String, Any?>>
         // The raw pass leaves the token alone and records the path on the CHILD, not the row.

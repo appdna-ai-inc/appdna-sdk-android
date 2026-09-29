@@ -55,8 +55,8 @@ class FlagCtaDispatchTest {
 
     @Test
     fun `a flag CTA hands the host the colon-encoded pair`() {
-        val received = tap("Add a private tasting", listOf(
-            button("Add a private tasting", "flag", "upsell_choice=booking"),
+        val received = tap("Add a private workshop", listOf(
+            button("Add a private workshop", "flag", "upsell_choice=booking"),
         ))
         assertEquals(listOf("flag:upsell_choice=booking"), received)
 

@@ -2727,7 +2727,7 @@ private fun ThreeZoneBlockLayout(
     //
     // The bottom zone is an overlay (`align(Alignment.BottomCenter)`), so that number is the only
     // thing keeping content out from underneath it. Two stacked buttons plus a line of legal text —
-    // WineTrails' summary and cross-sell screens — are ~110-140dp, so the last lines of content sat
+    // a typical summary or cross-sell screen — are ~110-140dp, so the last lines of content sat
     // BEHIND the buttons and could not be scrolled into view: the scroll range ends where the
     // padding ends, which is why it read as "not scrollable" rather than "clipped".
     //
@@ -3387,7 +3387,7 @@ private fun BlockBasedStepView(
             }
             // A CTA that records WHERE TO GO when the flow finishes and continues — see
             // `PendingCompletionRoute`. Advances exactly like "next": this exists for a cross-sell
-            // the user meets BEFORE the end ("book a tasting"), and opening on tap would abandon the
+            // the user meets BEFORE the end ("book a workshop"), and opening on tap would abandon the
             // rest of the flow. `link` already covers "open it now".
             PendingCompletionRoute.ACTION_NAME -> {
                 val raw = actionValue?.trim()

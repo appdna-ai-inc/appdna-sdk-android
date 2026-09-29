@@ -56,14 +56,14 @@ class ImageTileLayoutSnapshotTest {
                     mapOf<String, Any>(
                         "id" to "tiles_layout",
                         "type" to "input_select",
-                        "field_id" to "winery",
-                        "field_label" to "Pick a vineyard",
+                        "field_id" to "venue",
+                        "field_label" to "Pick a venue",
                         "field_config" to (
                             mapOf<String, Any>("display_style" to "image_tiles", "grid_columns" to 2) + layoutConfig
                             ),
                         "field_options" to listOf(
-                            mapOf<String, Any>("id" to "w1", "label" to "Sunrise Vineyard", "subtitle" to "Lakeside", "image_url" to "https://example.com/a.png") + optionExtras,
-                            mapOf<String, Any>("id" to "w2", "label" to "Southridge Vineyard", "subtitle" to "Highlands", "image_url" to "https://example.com/b.png") + optionExtras,
+                            mapOf<String, Any>("id" to "w1", "label" to "Sunrise Venue", "subtitle" to "Lakeside", "image_url" to "https://example.com/a.png") + optionExtras,
+                            mapOf<String, Any>("id" to "w2", "label" to "Southridge Venue", "subtitle" to "Highlands", "image_url" to "https://example.com/b.png") + optionExtras,
                         ),
                     ),
                 ),
@@ -270,7 +270,7 @@ class ImageTileLayoutSnapshotTest {
                 "map_fallback_text" to "Map unavailable",
                 "place_lat" to 51.5072, "place_lng" to -0.1276,
                 "place_title" to "Our Shoreditch studio",
-                "place_subtitle" to "Open daily 11-6 · tastings from £15",
+                "place_subtitle" to "Open daily 11-6 · workshops from £15",
                 "place_info_position" to "overlay_bottom",
                 "place_info_bg" to "#FFFFFF", "place_info_text" to "#111827", "place_info_radius" to 12,
             ),

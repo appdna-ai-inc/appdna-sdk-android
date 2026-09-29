@@ -1361,9 +1361,9 @@ internal fun resolveBlockBindings(
             // renderer means no current or future renderer can leak it, and a fixture can see it as a
             // count. A stat whose LABEL alone is unresolved keeps its value and loses the caption.
             //
-            // 🔴 #660 — dropping the stat was too much. WineTrails' booking summary is five stats,
+            // 🔴 #660 — dropping the stat was too much. A five-stat booking summary,
             // all bound to `hook_data.booking.*`. Until the host supplies them EVERY card vanished,
-            // so the screen read as "the Summary Screen does not render at all" on both platforms —
+            // so the screen read as "the summary screen does not render at all" on both platforms —
             // and an author had no way to tell a mis-typed path from a host that sent nothing.
             //
             // A card with a resolved LABEL still has something true to show, so it keeps its shape
@@ -1847,7 +1847,7 @@ fun ContentBlockRendererView(
  *     Box(fillMaxWidth, center) ← centres the child inside that already-left-placed 75%
  *
  * which centres nothing a user can see. `element_width: "75%"` + `horizontal_align: "center"` — the
- * exact config on WineTrails' "Regenerate Results" and Audio Preview buttons — therefore rendered
+ * exact config on the reported 75%-wide buttons — therefore rendered
  * hard left on Android while iOS centred it, because SwiftUI applies `.frame(width:)` and
  * `.frame(maxWidth: .infinity, alignment:)` in the opposite order.
  *
@@ -7275,7 +7275,7 @@ internal fun multiButtonRowPlan(childCount: Int, perRow: Int): List<Int> {
  * "extend outward". Compose does not: `Modifier.padding` carries
  * `require(value >= 0f) { "Padding must be non-negative" }` and throws when the modifier is
  * CONSTRUCTED — during composition of the step, before anything is laid out. So a single authored
- * boolean took down the entire screen, not just the map: on Q6B nothing scrolled and nothing could
+ * boolean took down the entire screen, not just the map: on the reported step nothing scrolled and nothing could
  * be tapped, while iOS rendered the same step correctly. That asymmetry is the whole signature.
  *
  * The Compose idiom is to measure against widened constraints and place the child back by the same
@@ -7305,7 +7305,7 @@ internal fun Modifier.fullBleedHorizontal(inset: Dp): Modifier = this.layout { m
  * `w-full` in the console preview, so `element_width: "auto"` — the one value that means "be as
  * wide as your label" — was ignored on all three. The author could size a button OR centre it,
  * never both: at a fixed width the block was constrained, and at `auto` it silently filled the row.
- * "Show 4 More Options" is authored `auto` + `center` and rendered edge-to-edge.
+ * A "show more" button authored `auto` + `center` rendered edge-to-edge.
  *
  * `auto` is the ONLY value that stops the fill. Unset keeps filling (every published CTA relies on
  * it), `fill`/`100%` obviously fill, and a px/% width has already constrained the parent box, so
@@ -7765,7 +7765,7 @@ internal fun ContentBlock.mapAny(key: String): Any? {
  *
  * 🔴 EVERY NUMERIC MAP SETTING WAS BEING SILENTLY DROPPED.
  *
- * The published WineTrails block carries `map_height: "220"`, `map_zoom: "12"`,
+ * A published map block carries `map_height: "220"`, `map_zoom: "12"`,
  * `marker_size: "28"`, `route_width: "4"` — strings, not numbers. This read them with
  * `as? Number`, which yields null for a String, so each fell back to its default and the author's
  * map styling did nothing. The console panel showed height 280 and radius 15 while the device was

@@ -4,7 +4,7 @@ package ai.appdna.sdk.onboarding
  * A CTA that records the user's choice without leaving the flow.
  *
  * WHY THIS EXISTS: a summary or upsell step offers something the app must act on *later* — "book a
- * tasting", "start the trial", "talk to a human". Routing there the moment the button is tapped
+ * workshop", "start the trial", "talk to a human". Routing there the moment the button is tapped
  * abandons an onboarding the user is halfway through, and the host then has to rebuild the flow's
  * position by hand to bring them back. A flag CTA instead writes one key, advances exactly like
  * `next`, and lets the host route once, at `onOnboardingCompleted`, when the flow is finished.
