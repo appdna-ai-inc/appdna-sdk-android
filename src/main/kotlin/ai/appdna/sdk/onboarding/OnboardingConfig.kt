@@ -573,6 +573,43 @@ sealed class StepAdvanceResult {
             val action = stepData?.get("action") as? String ?: return null
             return if (action in AuthActionPolicy.bridgeFloorActions) AUTH_BRIDGE_TIMEOUT_MS else null
         }
+
+        /** The decision types a wrapper bridge understands in a host's `onBeforeStepAdvance` reply. */
+        private val BRIDGE_DECISION_TYPES = setOf(
+            "proceed", "proceedWithData", "block", "skipTo", "skipToWithData", "stay",
+        )
+
+        /**
+         * SPEC-497 — did the host make an EXPLICIT, RECOGNISED decision? A wrapper bridge's auth gate
+         * blocks a sign-in step unless this is true. Not a decision: a non-map, the
+         * `__appdna_unhandled` sentinel, a map with no or an unknown `type` — and a `skipTo` /
+         * `skipToWithData` whose `stepId` is missing, not a string or blank. That last one used to
+         * count: `{type: "skipTo"}` decoded to `SkipTo("")`, which names no step and so ADVANCED — past
+         * a sign-in step nobody signed in on. Same rule as iOS `isExplicitBridgeDecision(_:)`.
+         */
+        @JvmStatic
+        fun isExplicitBridgeDecision(reply: Any?): Boolean {
+            val map = reply as? Map<*, *> ?: return false
+            if (map["__appdna_unhandled"] == true) return false
+            val type = map["type"] as? String ?: return false
+            if (type !in BRIDGE_DECISION_TYPES) return false
+            if (type == "skipTo" || type == "skipToWithData") return bridgeSkipTarget(map) != null
+            return true
+        }
+
+        /**
+         * The step a `skipTo` / `skipToWithData` reply names, or null when the reply is not a skip or
+         * its `stepId` is missing, not a string or blank. A wrapper decodes a null target as NO skip:
+         * `ProceedWithData` when the reply carries data, else `Proceed` (and on a sign-in step it is
+         * not a decision at all — [isExplicitBridgeDecision]).
+         */
+        @JvmStatic
+        fun bridgeSkipTarget(reply: Any?): String? {
+            val map = reply as? Map<*, *> ?: return null
+            val type = map["type"] as? String
+            if (type != "skipTo" && type != "skipToWithData") return null
+            return (map["stepId"] as? String)?.takeIf { it.isNotBlank() }
+        }
     }
 }
 
