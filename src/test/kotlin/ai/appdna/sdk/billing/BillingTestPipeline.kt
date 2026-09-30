@@ -21,20 +21,22 @@ internal class BillingTestPipeline(ctx: Context, name: String) {
     val tracker: EventTracker
     private val db = EventDatabase(ctx, 10_000, "billing_${name.take(40)}.db")
 
+    /** Shut down on close(): a leaked queue keeps its auto-flush coroutine alive for the whole test JVM. */
+    private val queue: EventQueue
+
     init {
         ClientSeqCounter.init(ctx)
         DroppedEventsCounter.init(ctx)
         db.clearAll()
         tracker = EventTracker(IdentityManager(LocalStorage(ctx)), "1.0", "sandbox")
-        tracker.setEventQueue(
-            EventQueue(
-                apiClient = ApiClient("adn_test_billing", Environment.PRODUCTION),
-                eventDatabase = db,
-                connectivityMonitor = null,
-                batchSize = 0,
-                flushInterval = Long.MAX_VALUE,
-            ),
+        queue = EventQueue(
+            apiClient = ApiClient("adn_test_billing", Environment.PRODUCTION),
+            eventDatabase = db,
+            connectivityMonitor = null,
+            batchSize = 0,
+            flushInterval = Long.MAX_VALUE,
         )
+        tracker.setEventQueue(queue)
         AppDNA.installEventTrackerForTest(tracker)
     }
 
@@ -46,6 +48,7 @@ internal class BillingTestPipeline(ctx: Context, name: String) {
     fun props(name: String): JSONObject = events().first { it.first == name }.second
 
     fun close() {
+        queue.shutdown()
         AppDNA.installEventTrackerForTest(null)
         db.clearAll()
     }

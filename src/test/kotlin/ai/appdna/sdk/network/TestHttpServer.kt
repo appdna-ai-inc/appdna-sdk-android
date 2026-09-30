@@ -112,12 +112,12 @@ internal class TestHttpServer(
     companion object {
         /**
          * Wait until `Dispatchers.IO` is responsive again. The Robolectric test JVM is shared by up to
-         * 250 tests (`forkEvery`), and earlier classes leave a backlog of event-database work on the IO
-         * pool (seen: every worker inside Robolectric's native SQLite / `ShadowCloseGuard`). The code
-         * under test does its HTTP on that pool, so a real-network test first lets the backlog drain —
-         * otherwise it measures the previous tests, not the SDK. Returns the time spent (ms).
+         * 250 tests (`forkEvery`), and earlier classes can leave work on the IO pool. (The worst case —
+         * every worker inside Robolectric's native SQLite forever — was `EventQueue`'s auto-flush
+         * spinning on an overflowed `flushInterval * 1000`, fixed with this test.) The code under test
+         * does its HTTP on that pool, so a real-network test first lets it drain. Returns the ms spent.
          */
-        fun settleIoDispatcher(maxSeconds: Long = 180): Long {
+        fun settleIoDispatcher(maxSeconds: Long = 60): Long {
             val started = System.nanoTime()
             val deadline = started + TimeUnit.SECONDS.toNanos(maxSeconds)
             var fastRounds = 0

@@ -302,8 +302,12 @@ internal class EventQueue(
 
     private fun startAutoFlush() {
         flushJob = scope.launch {
+            // `flushInterval * 1000` overflowed for a very large interval (e.g. Long.MAX_VALUE, which
+            // every test pipeline passes to mean "never") into a NEGATIVE delay — which returns at once,
+            // so the loop spun on Dispatchers.IO flushing the database forever. Saturate instead.
+            val intervalMs = if (flushInterval > Long.MAX_VALUE / 1000) Long.MAX_VALUE else flushInterval * 1000
             while (isActive) {
-                delay(flushInterval * 1000)
+                delay(intervalMs)
                 performFlushWithRetry()
             }
         }

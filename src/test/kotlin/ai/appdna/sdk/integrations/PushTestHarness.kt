@@ -33,19 +33,21 @@ internal class PushTestHarness(
     val tapped = mutableListOf<Pair<PushPayload, String?>>()
     val routes = mutableListOf<Pair<String, String>>()
 
+    /** Shut down on close(): a leaked queue keeps its auto-flush coroutine alive for the whole test JVM. */
+    private val queue: EventQueue
+
     init {
         ClientSeqCounter.init(ctx)
         DroppedEventsCounter.init(ctx)
         db.clearAll()
-        tracker.setEventQueue(
-            EventQueue(
-                apiClient = ApiClient("adn_test_push", Environment.PRODUCTION),
-                eventDatabase = db,
-                connectivityMonitor = null,
-                batchSize = 0,
-                flushInterval = Long.MAX_VALUE,
-            ),
+        queue = EventQueue(
+            apiClient = ApiClient("adn_test_push", Environment.PRODUCTION),
+            eventDatabase = db,
+            connectivityMonitor = null,
+            batchSize = 0,
+            flushInterval = Long.MAX_VALUE,
         )
+        tracker.setEventQueue(queue)
         AppDNA.push.contextOverride = ctx
         PushIdempotency.resetForTesting()
         AppDNA.push.manager = PushTokenManager(ctx, storage, tracker, apiClient)
@@ -66,6 +68,7 @@ internal class PushTestHarness(
     }
 
     fun close() {
+        queue.shutdown()
         db.clearAll()
         AppDNA.push.setDelegate(null)
         AppDNA.push.manager = null
