@@ -172,6 +172,35 @@ class PushNotificationActionsTest {
         assertNotNull(nm.getNotificationChannel("appdna_sound_chime"))
     }
 
+    /**
+     * The server keeps the `notification` block; in the foreground such a message reaches the service,
+     * which displays it through the same builder — with the push's buttons and sound.
+     */
+    @Test
+    fun `a foreground notification-block message gets the buttons and the sound channel`() {
+        PushSoundChannels.rawResourceId = { _, key -> if (key == "chime") 0x7f0f0001 else 0 }
+        val b = android.os.Bundle()
+        (data(mapOf("sound" to "chime.wav")) - "title" - "body").forEach { (k, v) -> b.putString(k, v) }
+        b.putString("gcm.n.e", "1")
+        b.putString("gcm.n.title", "T")
+        b.putString("gcm.n.body", "B")
+        service.onMessageReceived(RemoteMessage(b))
+        idle()
+        val n = notifications().single()
+        assertEquals(listOf("View", "Later", "Reply"), n.actions.map { it.title.toString() })
+        assertEquals("appdna_sound_chime", n.channelId)
+    }
+
+    /** handleMessage (a host that owns Firebase Messaging but lets AppDNA display) uses the same builder. */
+    @Test
+    fun `a host-forwarded handleMessage gets the buttons too`() {
+        val b = android.os.Bundle()
+        data().forEach { (k, v) -> b.putString(k, v) }
+        assertTrue(AppDNA.push.handleMessage(RemoteMessage(b)))
+        idle()
+        assertEquals(3, notifications().single().actions.size)
+    }
+
     @Test
     fun `sound keys match the server rule`() {
         assertEquals("notification_chime", PushSoundChannels.soundKey("Notification-Chime.WAV"))
