@@ -91,6 +91,7 @@ import ai.appdna.sdk.onboarding.stepAdvanceResultName
 import ai.appdna.sdk.paywalls.AppDNAPaywallDelegate
 import ai.appdna.sdk.paywalls.PaywallConfig
 import ai.appdna.sdk.paywalls.PaywallConfigParser
+import ai.appdna.sdk.paywalls.PaywallManager
 import ai.appdna.sdk.paywalls.restoreOutcome
 import ai.appdna.sdk.paywalls.selectPaywallForPlacement
 import ai.appdna.sdk.screens.AppDNAScreenDelegate
@@ -168,8 +169,12 @@ class SharedFixtureTest(
 
     private var pipeline: Pipeline? = null
 
+    private var scenario: ai.appdna.sdk.billing.BillingScenario? = null
+
     @After
     fun tearDown() {
+        scenario?.teardown()
+        AppDNA.installEventTrackerForTest(null)
         pipeline?.close()
         ScreenManager.shared.setDelegate(null)
         AppDNA.onboarding.setDelegate(null)
@@ -245,6 +250,15 @@ class SharedFixtureTest(
             "map_interactive_plan" -> runMapInteractivePlan(action, spy)
             // SPEC-497 §13h.3 — getLocationData over the stored answer.
             "location_data_from_answer" -> runLocationDataFromAnswer(action, spy)
+            // SPEC-497 billing (A1, C1, C2, D-R40-1, C5) — the REAL billing core, FakeBillingClient-driven.
+            "billing_ownership" -> runBillingOwnership(action, spy)
+            "purchase_completion_plan" -> runPurchaseCompletionPlan(action, spy)
+            "delivery_queue" -> runDeliveryQueue(action, spy)
+            "decode_verify_reply" -> runDecodeVerifyReply(action, spy)
+            "derive_app_account_token" -> runDeriveAppAccountToken(action, spy)
+            "entitlement_snapshot_merge" -> runEntitlementSnapshotMerge(action, spy)
+            "trial_price" -> runTrialPrice(action, spy)
+            "subscription_snapshot_diff" -> runSubscriptionSnapshotDiff(action, spy)
             else -> unsupported("no driver for action.kind=$kind")
         }
         assertExpectations(spy)
@@ -658,7 +672,10 @@ class SharedFixtureTest(
         // context.screen is populated by the screen provider (NavigationInterceptor in production).
         val screen = props["screen_name"] as? String
         p.tracker.setScreenProvider { screen }
-        p.tracker.track(name, props)
+        // SPEC-497 §11.9 (R52): through the PUBLIC AppDNA.track — the host path, which strips the reserved
+        // `emitted_by` / `_appdna_origin` keys — with the capturing tracker installed.
+        AppDNA.installEventTrackerForTest(p.tracker)
+        AppDNA.track(name, props)
 
         spy.events += p.envelopes().map { it.toEventPair() }
         spy.state["current_screen"] = screen
@@ -796,6 +813,12 @@ class SharedFixtureTest(
             spy.delegateCalls.add("onPaywallPresented" to mapOf("paywallId" to paywallId))
         }
 
+        override fun onPaywallPurchaseStarted(paywallId: String, productId: String) {
+            spy.delegateCalls.add(
+                "onPaywallPurchaseStarted" to mapOf("paywallId" to paywallId, "productId" to productId),
+            )
+        }
+
         override fun onPaywallPurchaseCompleted(paywallId: String, productId: String, transaction: TransactionInfo) {
             spy.delegateCalls.add(
                 "onPaywallPurchaseCompleted" to mapOf("paywallId" to paywallId, "productId" to productId),
@@ -849,6 +872,7 @@ class SharedFixtureTest(
     }
 
     private fun runPurchase(action: JSONObject, spy: Spy) {
+        if (config?.has("billing_provider") == true) return runPaywallTapFailsLoudly(action, spy)
         val p = Pipeline(fixtureName).also { pipeline = it }
         val paywallId = action.getString("paywall_id")
         val productId = action.getString("product_id")
@@ -2040,6 +2064,295 @@ class SharedFixtureTest(
             }
         }
         spy.events += p.envelopes().map { it.toEventPair() }
+    }
+
+
+    // ---------------------------------------------------------------------------------------------
+    // SPEC-497 billing — the REAL billing core (BillingOwnership, NativeBillingManager, PurchaseCompletion,
+    // ReceiptVerifier, EntitlementCache) against a FakeBillingClient and a scripted server
+    // ---------------------------------------------------------------------------------------------
+
+    private fun providerFrom(v: Any?): BillingProvider {
+        val raw = when (v) {
+            is JSONObject -> v.asMap()
+            else -> v
+        }
+        return BillingProvider.fromWire(raw) ?: unsupported("billing provider $v does not decode (BillingProvider.fromWire)")
+    }
+
+    /** §3.9 — the ownership policy, straight from the production seam. */
+    private fun runBillingOwnership(action: JSONObject, spy: Spy) {
+        val policy = ai.appdna.sdk.billing.BillingOwnership.policy(providerFrom(action.get("provider")))
+        spy.state["policy"] = mapOf(
+            "ownsTransactions" to policy.ownsTransactions,
+            "sdkCanPurchase" to policy.sdkCanPurchase,
+            "sdkCanRestore" to policy.sdkCanRestore,
+            "observerMode" to policy.observerMode.wire,
+            "emitsLifecycleEvents" to policy.emitsLifecycleEvents,
+        )
+    }
+
+    /**
+     * §3.9 `paywall_purchase_*_fails_loudly` — the tap driven through the REAL PaywallManager purchase
+     * path with the billing production builds for the provider: `none` → no manager; `revenueCat` → a
+     * non-owning NativeBillingManager. No store call happens on this path.
+     */
+    private fun runPaywallTapFailsLoudly(action: JSONObject, spy: Spy) {
+        val p = Pipeline(fixtureName).also { pipeline = it }
+        AppDNA.installEventTrackerForTest(p.tracker)
+        val provider = providerFrom(config!!.opt("billing_provider"))
+        val policy = ai.appdna.sdk.billing.BillingOwnership.policy(provider)
+        if (policy.ownsTransactions) unsupported("fails_loudly with an owning provider")
+        if (provider !is BillingProvider.None) {
+            scenario = ai.appdna.sdk.billing.BillingScenario(ctx, JSONObject(), ownsTransactions = false)
+        }
+        AppDNA.billing.ownershipPolicy = policy
+        val paywallId = action.getString("paywall_id")
+        val productId = action.getString("product_id")
+        val manager = PaywallManager(
+            remoteConfigManager = RemoteConfigManager(null, p.storage, 3600L),
+            eventTracker = p.tracker,
+        )
+        val activity = org.robolectric.Robolectric.buildActivity(android.app.Activity::class.java).setup().get()
+        val paywallJson = JSONObject(config!!.toString()).apply {
+            put("name", optString("name", "fixture"))
+            if (!has("layout")) put("layout", JSONObject().put("type", "stack"))
+            if (!has("sections")) put("sections", JSONArray())
+        }
+        val paywall = PaywallConfigParser.parsePaywalls(mapOf(paywallId to paywallJson.asMap().filterValues { it != null }.mapValues { it.value!! }))[paywallId]
+            ?: unsupported("setup.config is not a parseable paywall")
+        val plan = paywall.plans?.firstOrNull { it.product_id == productId }
+            ?: ai.appdna.sdk.paywalls.PaywallPlan(id = productId, product_id = productId, name = productId, price = "")
+        manager.handlePurchase(activity, paywallId, plan, paywall, emptyMap(), RecordingPaywallDelegate(spy))
+        repeat(10) { idle() }
+        spy.events += p.envelopes().map { it.toEventPair() }
+        AppDNA.billing.ownershipPolicy = ai.appdna.sdk.billing.BillingOwnershipPolicy.NotConfigured
+    }
+
+    /** A scenario on the fixture's setup, with the capturing tracker installed. */
+    private fun billingScenario(spy: Spy, recordDelegates: Boolean = true): Pair<Pipeline, ai.appdna.sdk.billing.BillingScenario> {
+        val p = Pipeline(fixtureName).also { pipeline = it }
+        AppDNA.installEventTrackerForTest(p.tracker)
+        // setup.config.billing_provider picks the ownership (A1); default storeKit2.
+        val owns = config?.opt("billing_provider")?.let { ai.appdna.sdk.billing.BillingOwnership.policy(providerFrom(it)).ownsTransactions } ?: true
+        val sc = ai.appdna.sdk.billing.BillingScenario(
+            ctx, setup,
+            ownsTransactions = owns,
+            delegateLog = if (recordDelegates) spy.delegateCalls else mutableListOf(),
+        ).also { scenario = it }
+        return p to sc
+    }
+
+    /**
+     * §13a.5 — the C1 scenarios through the PurchaseCompletion entry point named by `action.entry`.
+     * `purchase` drives `NativeBillingManager.purchase()` end to end (launch → Play listener → run); the
+     * launch half's `purchase_started` / `billing_purchase_requested` are pinned elsewhere
+     * (PurchaseEventsEmittedOnceTest) and are not part of these fixtures' event lists.
+     */
+    private fun runPurchaseCompletionPlan(action: JSONObject, spy: Spy) {
+        val (p, sc) = billingScenario(spy)
+        AppDNA.paywall.setDelegate(RecordingPaywallDelegate(spy))
+        if (setup.optBoolean("delegate_set", true)) sc.setDelegate()
+        sc.idle()
+        when (val entry = action.getString("entry")) {
+            "purchase" -> {
+                val activity = org.robolectric.Robolectric.buildActivity(android.app.Activity::class.java).setup().get()
+                action.optStringOrNull("paywall_id")?.let { sc.mgr.currentPaywallId = it }
+                val r = sc.drive { sc.mgr.purchase(activity, action.getString("product_id")) }
+                spy.state["purchase_result"] = r.getOrNull()?.let { it::class.simpleName } ?: "threw:${r.exceptionOrNull()?.javaClass?.simpleName}"
+            }
+            "on_start" -> repeat(action.optInt("runs", 1)) { sc.drive { sc.mgr.reconcileSubscriptionState() } }
+            "restore" -> sc.drive { sc.mgr.restorePurchases() }
+            "identify_refresh" -> sc.drive {
+                val user = sc.currentUser ?: unsupported("identify_refresh without setup.current_user_id")
+                sc.mgr.completion.noteIdentified(user, null)
+                sc.mgr.refreshEntitlementCache(anonymousToFirstUser = true)
+            }
+            else -> unsupported("purchase_completion_plan entry=$entry")
+        }
+        sc.idle()
+        spy.events += p.envelopes().map { it.toEventPair() }
+            .filter { it.first != "purchase_started" && it.first != "billing_purchase_requested" }
+        spy.state["launch_count"] = sc.fake.launchCount
+        spy.state["verify_calls"] = sc.verifyCalls.toList()
+        spy.state["acknowledge_calls"] = sc.fake.acknowledgeCalls.toList()
+        spy.state["consume_calls"] = sc.fake.consumeCalls.toList()
+        spy.state["entitlements"] = sc.entitlementIds()
+        spy.state["reported_tokens"] = sc.reportedState()
+        spy.state["purchase_class_cache"] = sc.ledger.classCache().toMap()
+        spy.state["pending_deliveries"] = sc.queueTokens()
+    }
+
+    /**
+     * D-R40-1 — the delivery queue. Steps: `set_delegate` (trigger ii), `identify` (trigger iii — the
+     * billing half of AppDNA.identify: the identity switch, `noteIdentified`, the drain), `reset` (the
+     * billing half of AppDNA.reset), `report` (a Play update with no live caller, through the real listener).
+     * `deliveries` = the queued tokens the drain removed after a successful delegate call.
+     */
+    private fun runDeliveryQueue(action: JSONObject, spy: Spy) {
+        val (p, sc) = billingScenario(spy)
+        val everQueued = LinkedHashSet(sc.queueTokens())
+        val steps = action.optJSONArray("steps") ?: JSONArray()
+        for (i in 0 until steps.length()) {
+            val step = steps.getJSONObject(i)
+            when (val k = step.getString("kind")) {
+                "set_delegate" -> { sc.setDelegate(); sc.idle() }
+                "reset" -> {
+                    sc.currentUser = null
+                    sc.cache.stopObserving(); sc.cache.clear(); sc.mgr.completion.noteIdentityCleared()
+                }
+                "identify" -> {
+                    val previous = sc.currentUser
+                    val user = step.getString("user_id")
+                    AppAccountTokenResolverSeam.recordFirst(user)
+                    sc.currentUser = user
+                    sc.drive { sc.mgr.completion.noteIdentified(user, previous) }
+                    sc.mgr.triggerDrain()
+                    sc.idle()
+                }
+                "report" -> {
+                    val purchase = ai.appdna.sdk.billing.FakeBillingClient.purchase(
+                        productId = step.getString("product_id"),
+                        token = step.getString("token"),
+                        orderId = step.optStringOrNull("order_id"),
+                        obfuscatedAccountId = step.optStringOrNull("obfuscated_account_id"),
+                    )
+                    val type = if (setup.optJSONObject("product_details")?.optJSONObject(step.getString("product_id"))?.optString("product_type") == "subs")
+                        com.android.billingclient.api.BillingClient.ProductType.SUBS else com.android.billingclient.api.BillingClient.ProductType.INAPP
+                    sc.fake.deliver(purchase, type)
+                    sc.idle()
+                }
+                else -> unsupported("delivery_queue step kind=$k")
+            }
+            everQueued += sc.queueTokens()
+        }
+        sc.idle()
+        val left = sc.queueTokens()
+        spy.state["queue"] = left
+        spy.state["deliveries"] = everQueued.filter { it !in left }
+        spy.events += p.envelopes().map { it.toEventPair() }
+    }
+
+    /** Records the device's first-identified user through the production resolver. */
+    private object AppAccountTokenResolverSeam {
+        fun recordFirst(userId: String) = ai.appdna.sdk.billing.AppAccountTokenResolver.recordFirstIdentifiedUserIdIfNeeded(userId)
+    }
+
+    /** §13b.4 — the verify reply DTO through the REAL ReceiptVerifier parser. */
+    private fun runDecodeVerifyReply(action: JSONObject, spy: Spy) {
+        val out = LinkedHashMap<String, Any?>()
+        val cases = action.optJSONArray("cases") ?: unsupported("decode_verify_reply without cases")
+        for (i in 0 until cases.length()) {
+            val c = cases.getJSONObject(i)
+            val v = ai.appdna.sdk.billing.ReceiptVerifier.parseVerifyReply(c.getJSONObject("reply"))
+            out[c.getString("name")] = mapOf(
+                "entitled" to v.entitled,
+                "product_id" to v.entitlement.productId,
+                "product_type" to v.productType,
+                "store" to v.entitlement.store,
+                "status" to v.entitlement.status,
+                "expires_at" to v.entitlement.expiresAt,
+                "is_trial" to v.entitlement.isTrial,
+                "original_transaction_id" to v.originalTransactionId,
+                "consume" to v.consume,
+            )
+        }
+        spy.state["parsed"] = out
+    }
+
+    /** §13b.2 — the account-token derivation, through the production resolver. */
+    private fun runDeriveAppAccountToken(action: JSONObject, spy: Spy) {
+        val cases = action.optJSONArray("cases") ?: unsupported("derive_app_account_token without cases")
+        spy.state["tokens"] = (0 until cases.length()).map { i ->
+            ai.appdna.sdk.billing.AppAccountTokenResolver.token(cases.getJSONObject(i).getString("user_id"))?.toString()?.lowercase()
+        }
+    }
+
+    /** §13b.2 — the entitlement cache merge; each case runs its own setup against a fresh cache. */
+    private fun runEntitlementSnapshotMerge(action: JSONObject, spy: Spy) {
+        val cases = action.optJSONArray("cases") ?: unsupported("entitlement_snapshot_merge without cases")
+        val out = LinkedHashMap<String, Any?>()
+        for (i in 0 until cases.length()) {
+            val c = cases.getJSONObject(i)
+            scenario?.teardown()
+            val sc = ai.appdna.sdk.billing.BillingScenario(ctx, c.optJSONObject("setup") ?: JSONObject()).also { scenario = it }
+            val steps = c.optJSONArray("steps") ?: JSONArray()
+            for (j in 0 until steps.length()) {
+                val step = steps.getJSONObject(j)
+                when (val k = step.getString("kind")) {
+                    "snapshot" -> sc.cache.applySnapshot(
+                        ai.appdna.sdk.billing.EntitlementCache.parseSubscriptionsImpl(
+                            mapOf("subscriptions" to (step.optJSONArray("subscriptions") ?: JSONArray()).asList()),
+                        ),
+                    )
+                    "update" -> sc.cache.update(
+                        ai.appdna.sdk.billing.Entitlement(
+                            productId = step.getString("product_id"), store = step.optString("store", "google_play"),
+                            status = "active", expiresAt = null, isTrial = false, offerType = null,
+                        ),
+                        step.optStringOrNull("product_type"),
+                    )
+                    "refresh" -> sc.drive { sc.mgr.refreshEntitlementCache() }
+                    else -> unsupported("entitlement_snapshot_merge step kind=$k")
+                }
+            }
+            val got = sc.entitlementIds()
+            out[c.getString("name")] = got
+            val want = c.optJSONArray("expect_entitlements")
+            if (want != null) assertEquals("[$fixtureName] case ${c.getString("name")}", canon(want), canon(got))
+        }
+        spy.state["entitlements"] = out
+    }
+
+    /** §13a.2 (R43–R47) — the price a purchase reports, from the verify reply's `is_trial`. */
+    private fun runTrialPrice(action: JSONObject, spy: Spy) {
+        val (p, sc) = billingScenario(spy, recordDelegates = false)
+        val activity = org.robolectric.Robolectric.buildActivity(android.app.Activity::class.java).setup().get()
+        sc.drive { sc.mgr.purchase(activity, action.getString("product_id")) }
+        sc.idle()
+        val completed = p.envelopes().map { it.toEventPair() }.firstOrNull { it.first == "purchase_completed" }
+            ?: throw AssertionError("[$fixtureName] no purchase_completed was emitted")
+        spy.state["event"] = completed.second
+    }
+
+    /**
+     * §13e.5 rule 2 — the production diff. `previous_snapshot` is saved and read back through the
+     * production save/load (so legacy blank ids are normalised as on device); properties compare EXACTLY.
+     */
+    private fun runSubscriptionSnapshotDiff(action: JSONObject, spy: Spy) {
+        val (p, sc) = billingScenario(spy, recordDelegates = false)
+        fun snap(o: JSONObject) = ai.appdna.sdk.billing.NativeBillingManager.SubSnapshot(
+            productId = o.getString("product_id"),
+            purchaseTime = o.getLong("purchase_time"),
+            isAcknowledged = true,
+            isAutoRenewing = o.optBoolean("is_auto_renewing", false),
+            transactionId = o.optStringOrNull("transaction_id") ?: if (o.has("transaction_id") && !o.isNull("transaction_id")) o.getString("transaction_id") else null,
+            originalTransactionId = if (o.has("original_transaction_id") && !o.isNull("original_transaction_id")) o.getString("original_transaction_id") else null,
+        )
+        fun list(key: String) = (setup.optJSONArray(key) ?: JSONArray()).let { a -> (0 until a.length()).map { snap(a.getJSONObject(it)) } }
+        sc.mgr.saveSnapshot(list("previous_snapshot").associateBy { it.productId })
+        val previous = sc.mgr.loadLastSnapshot()
+        val current = list("current").associateBy { it.productId }
+        sc.mgr.diffAndEmit(previous, current)
+        sc.mgr.saveSnapshot(current)
+        spy.state["snapshot_after"] = sc.mgr.loadLastSnapshot().values.map { s ->
+            mapOf(
+                "product_id" to s.productId,
+                "purchase_time" to s.purchaseTime,
+                "is_auto_renewing" to s.isAutoRenewing,
+                "transaction_id" to s.transactionId,
+                "original_transaction_id" to s.originalTransactionId,
+            )
+        }
+        val events = p.envelopes().map { it.toEventPair() }
+        spy.events += events
+        // EXACT property sets (R49): a key the fixture does not list must be absent from the event.
+        val expected = fixtureJson.getJSONObject("expect").optJSONArray("events") ?: JSONArray()
+        for (i in 0 until minOf(expected.length(), events.size)) {
+            val want = expected.getJSONObject(i).optJSONObject("properties")?.keys()?.asSequence()?.toSet() ?: continue
+            val got = events[i].second.filterValues { it != null }.keys - "context"
+            assertEquals("[$fixtureName] event[$i] exact property keys", want.sorted(), got.sorted())
+        }
     }
 
     // ---------------------------------------------------------------------------------------------

@@ -916,9 +916,10 @@ class NativeBillingManager internal constructor(
             }
             Log.info("Restoring purchases (SUBS + INAPP)")
             val result = completion.run(PurchaseCompletion.Entry.RESTORE)
-            if (result.queued > 0) triggerDrain()
-            if (!result.queryOk) throw result.queryError ?: BillingError.ServerError("purchase query failed")
-            result.restoreError?.let { throw it }
+            if (!result.queryOk || result.restoreError != null) {
+                if (result.queued > 0) triggerDrain()
+                throw result.restoreError ?: result.queryError ?: BillingError.ServerError("purchase query failed")
+            }
             val entitlements = result.restored.map { it.entitlement }
             for (e in entitlements) {
                 if (e.productId in result.reportedProducts) continue

@@ -45,14 +45,18 @@ internal object AppAccountTokenResolver {
     /** Fixed namespace UUID — MUST match the iOS / server constant. */
     private val NAMESPACE: UUID = UUID.fromString("C1A85D8E-7B5B-4B5E-9F4F-1E7D5F4C8B2A")
 
+    private val CANONICAL_UUID = Regex("^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$")
+
     /**
      * Resolve a token for an arbitrary user-id string.
      * Returns `null` only if [userId] is empty.
      */
     fun token(forUserId: String): UUID? {
         if (forUserId.isEmpty()) return null
-        // Fast path: userId is already a UUID.
-        runCatching { return UUID.fromString(forUserId) }
+        // Fast path: userId is already a UUID — ONLY the canonical 8-4-4-4-12 form (SPEC-497 §13b.2
+        // derivation fixture). Java's lenient `UUID.fromString` also accepts short forms such as
+        // `1-2-3-4-5`, which Swift and the server hash instead; those now hash here too.
+        if (CANONICAL_UUID.matches(forUserId)) return UUID.fromString(forUserId)
         // Slow path: deterministic SHA-256(namespace || userId) → UUID.
         val md = MessageDigest.getInstance("SHA-256")
         val nsBytes = ByteBuffer.allocate(16)

@@ -143,7 +143,7 @@ internal class ApiClient(
             for (attempt in 0..retryDelays.size) {
                 try {
                     val request = Request.Builder()
-                        .url("${environment.baseUrl}$path")
+                        .url("$baseUrl$path")
                         .header("x-api-key", apiKey)
                         .header("Content-Type", "application/json")
                         .post(body.toRequestBody(jsonMediaType))

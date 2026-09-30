@@ -77,6 +77,9 @@ class PurchaseEventsEmittedOnceTest {
         )
         // The billing layer emits through the STATIC AppDNA.track — route it at our tracker.
         AppDNA.installEventTrackerForTest(tracker)
+        // SPEC-497: configure() assigns the ownership policy; these tests stand in for it (storeKit2 —
+        // the SDK owns billing), or the paywall would take the providerNotAvailable path.
+        AppDNA.billing.ownershipPolicy = BillingOwnership.policy(ai.appdna.sdk.BillingProvider.StoreKit2)
     }
 
     private fun emittedEvents(): List<Pair<String, JSONObject?>> =
@@ -88,6 +91,7 @@ class PurchaseEventsEmittedOnceTest {
     fun tearDown() {
         AppDNA.installEventTrackerForTest(null)
         AppDNA.billing.manager = null
+        AppDNA.billing.ownershipPolicy = BillingOwnershipPolicy.NotConfigured
         db.clearAll()
     }
 
