@@ -91,13 +91,16 @@ Needs the AppDNA server from the same release (purchase verification and push tr
   `verification_failed`. `productNotFound` now reaches you as the purchase error type. A purchase
   started while the Play connection is failing fails within 30 s with `serverError`.
 - **`TransactionInfo.transactionId`** — including `AppDNA.billing.purchase()`'s result — is the Play
-  order id, falling back to the **purchase token** (it fell back to the product id) when Play gives
-  no `orderId`. Grant idempotently by it.
+  order id, falling back to the **purchase token** when Play gives no `orderId`. Before,
+  `purchase()` always returned the product id, and the delegates fell back to the product id. Grant idempotently by it.
 - **`appAccountToken` derivation matches iOS and the server.** Only a canonical
   8-4-4-4-12 UUID user id is used as-is; any other id — including a dash-separated short form such
-  as `1-2-3-4-5`, which Java's lenient `UUID.fromString` used to accept verbatim — is hashed. A
+  as `1-2-3-4-5`, which Java's lenient `UUID.fromString` used to accept and zero-pad
+  (`00000001-0002-0003-0004-000000000005`) instead of hashing — is hashed. A
   purchase with a custom `PurchaseOptions.appAccountToken` is now verified and granted to the caller
-  unless another user owns it (it failed verification with 403 and Play refunded it after 3 days).
+  unless another user owns it. Before, the server refused every Android verify call with 401 (the SDK
+  sent no credential the route accepted), so the purchase was never acknowledged and Play refunded it
+  after 3 days.
 
 #### Added
 - `AppDNA.billing.setDelegate(delegate, deliversPurchases)` (the one-argument
@@ -157,9 +160,11 @@ Needs the AppDNA server from the same release (purchase verification and push tr
   (`reason: "not_configured"`, `error_type: "unknown"`), without `onPaywallRestoreStarted`. Before,
   `onPaywallRestoreStarted` fired first and the failure was an `IllegalStateException("Billing bridge
   not configured")` with no `error_type`.
-- A paywall restore tap under `RevenueCat`, `Adapty` or `None` no longer fires
-  `onPaywallRestoreStarted` before `onPaywallRestoreFailed(providerNotAvailable)` — as on iOS, and as
-  the purchase tap (no `onPaywallPurchaseStarted`).
+- A paywall restore tap under `RevenueCat`, `Adapty` or `None` is now refused with
+  `onPaywallRestoreFailed(providerNotAvailable)`, without `onPaywallRestoreStarted` — as on iOS, and as
+  the purchase tap (no `onPaywallPurchaseStarted`). Before, `onPaywallRestoreStarted` fired first; under
+  `RevenueCat` / `Adapty` AppDNA then ran a Play restore itself, and under `None` the restore failed
+  with `unknown`.
 - `AppDNA.shutdown()` while a paywall purchase or restore is waiting no longer reports it as failed:
   no `onPaywallPurchaseFailed` / `onPaywallRestoreFailed` and no `purchase_restore_failed`. A purchase
   that completes afterwards is delivered through the delivery queue. The one-shot
@@ -210,7 +215,7 @@ Needs the AppDNA server from the same release (purchase verification and push tr
   `handlePushTap` returns `false`, and nothing is tracked or routed.
 
 #### Fixed
-- **A lifetime purchase no longer disappears after an entitlement update**; `hasActiveSubscription()`
+- **A lifetime purchase (under `StoreKit2`) no longer disappears after an entitlement update**; `hasActiveSubscription()`
   counts it. Older cached entries without a type are read as lifetime when they are active Play
   entries without an expiry.
 - **Server-side refunds and renewals now reach the device.** The Firestore entitlement listener
