@@ -2337,6 +2337,23 @@ class SharedFixtureTest(
         sc.mgr.saveSnapshot(list("previous_snapshot").associateBy { it.productId })
         val previous = sc.mgr.loadLastSnapshot()
         val current = list("current").associateBy { it.productId }
+        // A `current` entry's `price` / `currency` is the price the store charged for the period. Android's
+        // diff reads it from the PriceResolver cache (the base plan's recurring price), not the snapshot, so
+        // it is seeded there — through the production `cacheFromPurchase` — for `lifecycle_renewed_carries_price`.
+        (setup.optJSONArray("current") ?: JSONArray()).let { a ->
+            for (i in 0 until a.length()) {
+                val o = a.getJSONObject(i)
+                if (!o.has("price") || o.isNull("price") || o.optStringOrNull("currency") == null) continue
+                sc.mgr.priceResolver.cacheFromPurchase(
+                    ai.appdna.sdk.billing.FakeBillingClient.productDetails(
+                        o.getString("product_id"),
+                        com.android.billingclient.api.BillingClient.ProductType.SUBS,
+                        Math.round(o.getDouble("price") * 1_000_000.0),
+                        o.getString("currency"),
+                    )
+                )
+            }
+        }
         sc.mgr.diffAndEmit(previous, current)
         sc.mgr.saveSnapshot(current)
         spy.state["snapshot_after"] = sc.mgr.loadLastSnapshot().values.map { s ->
