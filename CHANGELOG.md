@@ -116,7 +116,8 @@ Needs the AppDNA server from the same release (purchase verification and push tr
   `purchase_completed` and `subscription_started`; `is_consumable` on `purchase_completed`;
   `delivery_id` on `push_delivered` / `push_tapped`; `quantity` (only when > 1) on
   `purchase_completed`; `error_type` (and `reason: "not_configured"` on the refusal) on
-  `purchase_restore_failed`; `reason` on `purchase_restored`. `purchase_failed.reason` now carries
+  `purchase_restore_failed`; `reason: "item_already_owned"` on the `purchase_restored` a re-buy of an owned
+  item emits (a restore's `purchase_restored` carries no `reason`). `purchase_failed.reason` now carries
   the server's code for a verification failure.
 
 #### Changed — purchases reported late, consumables
@@ -243,10 +244,11 @@ Needs the AppDNA server from the same release (purchase verification and push tr
   - `LocationData`: the JVM signatures of its constructor, `copy`, the `componentN` functions and
     the getters of the fields that became nullable primitives (`getLatitude()`, `getLongitude()`,
     `getTimezone_offset()` now return boxed `Double` / `Integer`) all changed.
-  - `VerificationException` gains `httpStatus` and `serverError`. Its `(String)` and
-    `(String, Throwable)` constructors are kept (`@JvmOverloads`), but the synthetic
-    default-arguments constructor that Kotlin emits for a call using defaulted or named arguments
-    changed.
+  - `VerificationException` gains `httpStatus` and `serverError`. The `(String, Throwable)`
+    constructor is kept, and a `(String)` constructor is new for Java callers (`@JvmOverloads`;
+    before, Java could only pass both arguments). The synthetic default-arguments constructor that
+    Kotlin emits for a call using defaulted or named arguments (for example
+    `VerificationException("…")`) changed.
 
   A prebuilt library that uses either type must be recompiled, or it fails with `NoSuchMethodError`.
 - Every other addition is additive.
