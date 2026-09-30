@@ -477,6 +477,43 @@ class PurchaseCompletionConcurrencyTest {
     }
 
     /**
+     * `onPaywallPurchaseCompleted` fires ONCE per paywall purchase. The host's paywall delegate is both
+     * `AppDNA.paywall.listener` and the listener the paywall was presented with (the normal setup); the
+     * billing manager used to call it too, so it fired twice. NEGATIVE CONTROL: with the paywall-delegate
+     * block back in `NativeBillingManager.postPurchaseDelegates`, `completed` is recorded twice.
+     */
+    @Test fun `onPaywallPurchaseCompleted fires once per paywall purchase`() {
+        val s = scenario(inFlightPurchase)
+        s.setDelegate()
+        val paywallEvents = mutableListOf<String>()
+        val listener = object : AppDNAPaywallDelegate {
+            override fun onPaywallPurchaseCompleted(paywallId: String, productId: String, transaction: TransactionInfo) {
+                paywallEvents += "completed:$paywallId/$productId"
+            }
+        }
+        AppDNA.paywall.setDelegate(listener)
+        val paywall = ai.appdna.sdk.paywalls.PaywallConfigParser.parsePaywalls(mapOf("pw_buy" to mapOf(
+            "id" to "pw_buy", "name" to "t", "layout" to mapOf("type" to "stack"), "sections" to emptyList<Any>(),
+        )))["pw_buy"]!!
+        val pm = ai.appdna.sdk.paywalls.PaywallManager(
+            ai.appdna.sdk.config.RemoteConfigManager(null, ai.appdna.sdk.storage.LocalStorage(ctx), 3600L), pipe!!.tracker,
+        )
+        try {
+            pm.handlePurchase(
+                activity(), "pw_buy",
+                ai.appdna.sdk.paywalls.PaywallPlan(id = "l", product_id = "lifetime_unlock", name = "L", price = ""),
+                paywall, emptyMap(), listener,
+            )
+            s.idle(200)
+            assertEquals(1, events("purchase_completed"))
+            assertEquals(1, delivered(s))
+            assertEquals(listOf("completed:pw_buy/lifetime_unlock"), paywallEvents)
+        } finally {
+            pm.shutdown()
+        }
+    }
+
+    /**
      * SPEC-497 I4 m4 — a paywall purchase that SUCCEEDS with an `on_success.action` this SDK does not know
      * leaves the paywall on screen, so its CTA must stop spinning. NEGATIVE CONTROL: with the `else` branch
      * of `handlePostPurchaseSuccess` back to a no-op, the signal is unchanged.
@@ -639,7 +676,9 @@ class PurchaseCompletionConcurrencyTest {
         assertEquals(1, events("purchase_completed"))
         assertEquals("pw_1", pipe!!.props("purchase_completed").getString("paywall_id"))
         assertEquals(1, delivered(s))
-        assertEquals(listOf("pw_1/lifetime_unlock"), paywallCalls)
+        // A direct manager purchase (no PaywallManager on the stack) calls no paywall delegate: that call
+        // belongs to PaywallManager.handlePurchase alone (see the once-per-purchase test below).
+        assertEquals(emptyList<String>(), paywallCalls)
         assertEquals(emptyList<String>(), s.queueTokens())
     }
 

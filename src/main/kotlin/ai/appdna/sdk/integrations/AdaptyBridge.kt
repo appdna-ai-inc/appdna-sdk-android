@@ -23,8 +23,12 @@ import android.app.Activity
  * Like [RevenueCatBridge], the Adapty SDK is a `compileOnly` dependency so
  * AppDNA hosts that don't use Adapty pay no bytecode cost. Every call site
  * uses reflection (`Class.forName + Method.invoke`) to talk to the Adapty
- * singleton. Hosts that DO ship Adapty 2.x get full functionality and the
- * same auto-emitted analytics events as the iOS bridge.
+ * singleton. Checked against the Adapty Android SDK 2.11, 3.17 and 4.2 class
+ * files: activation uses `activate(Context, AdaptyConfig)` (the only form in
+ * 4.x; also in 2.11+ and 3.x) and falls back to the older
+ * `activate(Context, String)`; `restorePurchases` / `getProfile` take one
+ * `ResultCallback` in all three; `AdaptyProfile.accessLevels` is Adapty's own
+ * `ImmutableMap` (not a `java.util.Map`) in all three.
  *
  * Reflection rationale (same as RevenueCatBridge):
  *   - We can't import `com.adapty.*` because that would force a runtime
@@ -33,8 +37,8 @@ import android.app.Activity
  *     we wrap them in a `suspendCancellableCoroutine` so the bridge
  *     surface stays uniform with iOS (`async throws`).
  *
- * Risk: any breaking Adapty 2.x → 3.x rename will silently fail at runtime.
- * We log loudly on every miss so the host gets a clear signal.
+ * Risk: a future Adapty rename fails at runtime, not at compile time. We log
+ * loudly on every miss so the host gets a clear signal.
  *
  * **Direct-purchase limitation** (mirrors RevenueCatBridge): a fully
  * reflective Adapty purchase flow requires significant bridging code
@@ -58,6 +62,11 @@ internal class AdaptyBridge {
      * Mirrors iOS `AdaptyBridge.swift:24-32` — calls `Adapty.activate(apiKey)`.
      */
     fun configure(apiKey: String) {
+        if (apiKey.isBlank()) {
+            // Adapty cannot start without its key: say so instead of activating it with "".
+            Log.error("AdaptyBridge.configure: the Adapty API key is empty — Adapty is not activated. Pass your Adapty public SDK key in BillingProvider.Adapty(apiKey).")
+            return
+        }
         if (!isAdaptyPresent()) {
             Log.warning("Adapty SDK not available — billing operations will throw")
             return
@@ -68,18 +77,12 @@ internal class AdaptyBridge {
                     Log.warning("AdaptyBridge.configure: AppDNA not configured yet")
                     return
                 }
-            // Adapty.activate(context, apiKey) — Adapty 2.x SDK signature.
-            val adaptyCls = Class.forName("com.adapty.Adapty")
-            val activateMethod = adaptyCls.getMethod(
-                "activate",
-                android.content.Context::class.java,
-                String::class.java,
-            )
-            activateMethod.invoke(null, context, apiKey)
+            val form = activateReflectively(Class.forName("com.adapty.Adapty"), context, apiKey)
             configured = true
-            Log.info("Adapty bridge initialized")
+            Log.info("Adapty bridge initialized ($form)")
         } catch (e: Exception) {
-            Log.error("AdaptyBridge.configure failed: ${e.message}")
+            val cause = (e as? java.lang.reflect.InvocationTargetException)?.targetException ?: e
+            Log.error("AdaptyBridge.configure failed — Adapty is not activated: ${cause.javaClass.simpleName}: ${cause.message}")
         }
     }
 
@@ -234,7 +237,7 @@ internal class AdaptyBridge {
             kotlinx.coroutines.suspendCancellableCoroutine { cont ->
                 try {
                     val adaptyCls = Class.forName("com.adapty.Adapty")
-                    // Adapty 2.x callback interface — `ResultCallback<T>` with a
+                    // Adapty (2.x–4.x) callback interface — `ResultCallback<T>` with a
                     // single `onResult(AdaptyResult<T>)` method. We don't import
                     // it, so we resolve it reflectively via the method's
                     // parameter type lookup below.
@@ -322,9 +325,7 @@ internal class AdaptyBridge {
         if (profile == null) return emptyList()
         return try {
             val accessLevelsObj = profile.javaClass.getMethod("getAccessLevels").invoke(profile)
-                as? Map<String, Any>
-                ?: return emptyList()
-            accessLevelsObj.mapNotNull { (key, accessLevel) ->
+            accessLevelEntries(accessLevelsObj).mapNotNull { (key, accessLevel) ->
                 try {
                     val isActive = accessLevel.javaClass.getMethod("isActive").invoke(accessLevel) as? Boolean
                     if (isActive != true) return@mapNotNull null
@@ -344,6 +345,64 @@ internal class AdaptyBridge {
         } catch (e: Exception) {
             Log.warning("AdaptyBridge.profileToEntitlements failed: ${e.message}")
             emptyList()
+        }
+    }
+
+    internal companion object {
+        /**
+         * Activate Adapty through whichever entry point the linked version has:
+         *  1. `activate(Context, AdaptyConfig)` with `AdaptyConfig.Builder(apiKey).build()` — Adapty
+         *     2.11+, 3.x and 4.x (the only one 4.x has);
+         *  2. `activate(Context, String)` — older 2.x (and still present, deprecated, in 3.x).
+         * Returns which form was used. Throws when neither exists. [configClassName] is the
+         * `AdaptyConfig` class (a test passes its own), resolved with [adaptyCls]'s class loader.
+         */
+        fun activateReflectively(
+            adaptyCls: Class<*>,
+            context: android.content.Context,
+            apiKey: String,
+            configClassName: String = "com.adapty.models.AdaptyConfig",
+        ): String {
+            val configCls = try {
+                Class.forName(configClassName, true, adaptyCls.classLoader)
+            } catch (_: ClassNotFoundException) {
+                null
+            }
+            if (configCls != null) {
+                val activate = adaptyCls.methods.firstOrNull {
+                    it.name == "activate" && it.parameterTypes.size == 2 &&
+                        it.parameterTypes[0] == android.content.Context::class.java && it.parameterTypes[1] == configCls
+                }
+                if (activate != null) {
+                    val builderCls = Class.forName("${configCls.name}\$Builder", true, configCls.classLoader)
+                    val builder = builderCls.getConstructor(String::class.java).newInstance(apiKey)
+                    val config = builderCls.getMethod("build").invoke(builder)
+                    activate.invoke(null, context, config)
+                    return "AdaptyConfig"
+                }
+            }
+            adaptyCls.getMethod("activate", android.content.Context::class.java, String::class.java)
+                .invoke(null, context, apiKey)
+            return "apiKey"
+        }
+
+        /**
+         * `AdaptyProfile.accessLevels` as (key, access level) pairs. Adapty returns its own
+         * `com.adapty.utils.ImmutableMap` — NOT a `java.util.Map` — so a `Map` cast yields nothing
+         * (every Adapty user used to read as having no entitlement). Read it through its public
+         * `keySet()` (an `Iterable`) and `get(key)`; a plain `Map` is accepted too.
+         */
+        fun accessLevelEntries(accessLevels: Any?): List<Pair<String, Any>> {
+            if (accessLevels == null) return emptyList()
+            if (accessLevels is Map<*, *>) {
+                return accessLevels.mapNotNull { (k, v) -> if (k is String && v != null) k to v else null }
+            }
+            val keys = accessLevels.javaClass.getMethod("keySet").invoke(accessLevels) as? Iterable<*> ?: return emptyList()
+            val get = accessLevels.javaClass.methods.first { it.name == "get" && it.parameterTypes.size == 1 }
+            return keys.mapNotNull { k ->
+                val v = if (k is String) get.invoke(accessLevels, k) else null
+                if (k is String && v != null) k to v else null
+            }
         }
     }
 

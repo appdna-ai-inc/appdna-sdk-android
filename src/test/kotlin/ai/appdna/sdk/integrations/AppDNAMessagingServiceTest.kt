@@ -87,6 +87,53 @@ class AppDNAMessagingServiceTest {
         assertEquals("d1", tap.getStringExtra("delivery_id"))
     }
 
+    /** An FCM message with a `notification` block, as FCM hands it to the service (foreground only). */
+    private fun notificationMsg(data: Map<String, String>, title: String, body: String): RemoteMessage {
+        val b = android.os.Bundle()
+        data.forEach { (k, v) -> b.putString(k, v) }
+        b.putString("gcm.n.e", "1")
+        b.putString("gcm.n.title", title)
+        b.putString("gcm.n.body", body)
+        return RemoteMessage(b)
+    }
+
+    /**
+     * A marked message with a `notification` block reaches the service only in the foreground, where
+     * FCM does not display it — so the SDK does, with the notification block's title and body, once.
+     * NEGATIVE CONTROL: with the old `if (message.notification != null) return` back, nothing is posted.
+     */
+    @Test
+    fun `a marked notification message received in the foreground is displayed once`() {
+        val m = notificationMsg(mapOf("appdna" to "1", "push_id" to "p1", "delivery_id" to "d1"), "Hello", "World")
+        assertTrue("the test message has a notification block", m.notification != null)
+        service.onMessageReceived(m)
+        idle()
+        assertEquals(listOf("push_delivered"), h.events().map { it.first })
+        assertEquals(1, notifications().size)
+        val n = notifications()[0]
+        assertEquals("Hello", n.extras.getCharSequence(Notification.EXTRA_TITLE)?.toString())
+        assertEquals("World", n.extras.getCharSequence(Notification.EXTRA_TEXT)?.toString())
+        assertEquals(AppDNAMessagingService.DEFAULT_CHANNEL_ID, n.channelId)
+        // Delivered again (FCM redelivery / the host also forwarding it): not displayed twice.
+        service.onMessageReceived(m)
+        idle()
+        assertEquals(1, notifications().size)
+    }
+
+    /**
+     * A host that displays the message itself forwards it through `handleMessageData` first; the SDK's
+     * service then sees a duplicate and does not display it a second time.
+     */
+    @Test
+    fun `a notification message the host already handled is not displayed by the service`() {
+        val data = mapOf("appdna" to "1", "push_id" to "p2", "delivery_id" to "d2")
+        assertTrue(ai.appdna.sdk.AppDNA.push.handleMessageData(data))
+        service.onMessageReceived(notificationMsg(data, "Hello", "World"))
+        idle()
+        assertTrue(notifications().isEmpty())
+        assertEquals(1, h.events().size)
+    }
+
     @Test
     fun `two notifications with a same-id button keep their own pending intents and extras`() {
         val actions = """[{"id":"view","label":"View","type":"deep_link","value":"x://v"}]"""

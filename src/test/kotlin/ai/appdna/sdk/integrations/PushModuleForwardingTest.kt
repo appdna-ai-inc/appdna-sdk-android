@@ -272,6 +272,25 @@ class PushModuleForwardingTest {
     }
 
     /**
+     * `handleMessage` of a marked message with a `notification` block (a host service sees one only in
+     * the foreground, where FCM does not display it) posts it once, with the block's title / body.
+     * NEGATIVE CONTROL: with the old `if (message.notification == null)` guard back, nothing is posted.
+     */
+    @Test
+    fun `handleMessage displays a foreground notification message once`() {
+        val b = android.os.Bundle()
+        mapOf("appdna" to "1", "push_id" to "pn", "delivery_id" to "dn").forEach { (k, v) -> b.putString(k, v) }
+        b.putString("gcm.n.e", "1"); b.putString("gcm.n.title", "Hi"); b.putString("gcm.n.body", "There")
+        val msg = com.google.firebase.messaging.RemoteMessage(b)
+        assertTrue(AppDNA.push.handleMessage(msg))
+        assertTrue(AppDNA.push.handleMessage(msg))
+        idle()
+        assertEquals(1, posted())
+        val n = shadowOf(ctx.getSystemService(NotificationManager::class.java)).allNotifications.single()
+        assertEquals("Hi", n.extras.getCharSequence(android.app.Notification.EXTRA_TITLE)?.toString())
+    }
+
+    /**
      * Round 2 A2: `handleMessage` of a data-only message before configure DISPLAYS it; the same message
      * forwarded after configure tracks it and fires `onPushReceived` once, but is NOT displayed again.
      * NEGATIVE CONTROL: the minor-32 code skipped the claim before configure, so the second forward

@@ -87,9 +87,12 @@ internal class BillingScenario(
     /** Runs inside `onPurchaseCompleted` (on Main), e.g. to advance a clock or run long. */
     var delegateHook: (() -> Unit)? = null
 
+    /** Every TransactionInfo `onPurchaseCompleted` received, in order. */
+    val deliveredTransactions = mutableListOf<TransactionInfo>()
     val delegate = object : AppDNABillingDelegate {
         override fun onPurchaseCompleted(productId: String, transaction: TransactionInfo) {
             delegateLog += "onPurchaseCompleted" to mapOf("productId" to productId, "transactionId" to transaction.transactionId)
+            deliveredTransactions += transaction
             delegateHook?.invoke()
             if (delegateThrows) throw IllegalStateException("host delegate threw")
         }
@@ -234,6 +237,7 @@ internal class BillingScenario(
         put("is_trial", reply.optBoolean("is_trial", false))
         put("original_transaction_id", reply.opt("original_transaction_id") ?: JSONObject.NULL)
         put("consume", reply.optBoolean("consume", false))
+        reply.optStr("environment")?.let { put("environment", it) }
         put("token", token)
     }
 
