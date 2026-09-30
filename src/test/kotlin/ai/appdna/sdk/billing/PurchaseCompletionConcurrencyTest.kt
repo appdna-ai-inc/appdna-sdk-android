@@ -477,6 +477,42 @@ class PurchaseCompletionConcurrencyTest {
     }
 
     /**
+     * SPEC-497 I4 m4 — a paywall purchase that SUCCEEDS with an `on_success.action` this SDK does not know
+     * leaves the paywall on screen, so its CTA must stop spinning. NEGATIVE CONTROL: with the `else` branch
+     * of `handlePostPurchaseSuccess` back to a no-op, the signal is unchanged.
+     */
+    @Test fun `a paywall purchase that succeeds with an unknown on_success action re-enables the CTA`() {
+        val s = scenario(inFlightPurchase)
+        s.setDelegate()
+        val paywallEvents = mutableListOf<String>()
+        val listener = object : AppDNAPaywallDelegate {
+            override fun onPaywallPurchaseCompleted(paywallId: String, productId: String, transaction: TransactionInfo) { paywallEvents += "completed" }
+        }
+        val paywall = ai.appdna.sdk.paywalls.PaywallConfigParser.parsePaywalls(mapOf("pw_buy" to mapOf(
+            "id" to "pw_buy", "name" to "t", "layout" to mapOf("type" to "stack"), "sections" to emptyList<Any>(),
+            "post_purchase" to mapOf("on_success" to mapOf("action" to "a_future_action", "delay_ms" to 0)),
+        )))["pw_buy"]!!
+        assertEquals("a_future_action", paywall.post_purchase?.on_success?.action)
+        val pm = ai.appdna.sdk.paywalls.PaywallManager(
+            ai.appdna.sdk.config.RemoteConfigManager(null, ai.appdna.sdk.storage.LocalStorage(ctx), 3600L), pipe!!.tracker,
+        )
+        try {
+            val resetsBefore = ai.appdna.sdk.paywalls.PaywallActivity.purchaseEndedSignal.get()
+            pm.handlePurchase(
+                activity(), "pw_buy",
+                ai.appdna.sdk.paywalls.PaywallPlan(id = "l", product_id = "lifetime_unlock", name = "L", price = ""),
+                paywall, emptyMap(), listener,
+            )
+            s.idle(200)
+            assertEquals(listOf("completed"), paywallEvents)
+            assertTrue("the purchase-ended signal was bumped",
+                ai.appdna.sdk.paywalls.PaywallActivity.purchaseEndedSignal.get() > resetsBefore)
+        } finally {
+            pm.shutdown()
+        }
+    }
+
+    /**
      * SPEC-497 I4 R8 m2 — `AppDNA.shutdown()` called OFF Main during a paywall purchase. `destroy()` resolves
      * the purchase `Failed("shutdown")` and that resumption is dispatched to Main; the test runs Main right
      * there (inside `endConnection`, i.e. after `destroy()` resumed the caller and before shutdown goes on),

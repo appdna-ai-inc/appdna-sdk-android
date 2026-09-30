@@ -309,7 +309,10 @@ class NativeBillingManager internal constructor(
                     val owner = purchaseScopeOwner
                     scope.launch { completion.handleItemAlreadyOwned(owner) }
                 } else {
-                    Log.warning("Item already owned for a purchase with no live caller — ignored")
+                    // I4 m2 — the caller is gone, but Play says the product is owned: run the ON_START
+                    // rescue now so an owned, unreported purchase is not left until the next foreground.
+                    Log.warning("Item already owned for a purchase with no live caller — running the owned-purchase rescue")
+                    rescueOwnedPurchases()
                 }
             }
             BillingClient.BillingResponseCode.ITEM_NOT_OWNED -> failAndResume("Item not owned", "item_not_owned", billingResult.debugMessage)
@@ -511,6 +514,15 @@ class NativeBillingManager internal constructor(
             ProcessLifecycleOwner.get().lifecycle.removeObserver(foregroundObserver)
         } catch (_: Exception) { /* best-effort */ }
         foregroundObserverRegistered = false
+    }
+
+    /**
+     * SPEC-497 I4 m2 — an `ITEM_ALREADY_OWNED` that no live purchase can act on (its caller was cancelled
+     * or its scope taken over) still means Play holds an owned purchase that may be unreported. Run the
+     * ON_START reconcile — the same rescue a foreground entry runs — instead of waiting for the next one.
+     */
+    internal fun rescueOwnedPurchases() {
+        scope.launch { reconcileSubscriptionState() }
     }
 
     /** Drain trigger (i)–(iv): delivery happens only in [PurchaseCompletion.drainDeliveries]. */

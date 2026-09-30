@@ -115,11 +115,12 @@ internal class BillingConnectionManager(
                 isConnecting.set(false)
                 if (result.responseCode == BillingClient.BillingResponseCode.OK) {
                     Log.info("Billing connection established")
-                    isConnected = true
                     retryAttempt = 0
 
-                    // Dispatch pending callbacks
+                    // Dispatch pending callbacks. SPEC-497 I4 m7 — `isConnected` flips under the same lock
+                    // `awaitConnectedClient` registers under, so a waiter either sees it or is dispatched.
                     synchronized(pendingCallbacks) {
+                        isConnected = true
                         val callbacks = ArrayList(pendingCallbacks)
                         pendingCallbacks.clear()
                         callbacks.forEach { it(client) }
@@ -228,7 +229,16 @@ internal class BillingConnectionManager(
             val callback: (BillingClient?) -> Unit = { connectedClient ->
                 continuation.resume(connectedClient) {}
             }
-            synchronized(pendingCallbacks) { pendingCallbacks.add(callback) }
+            beforeWaiterRegistered?.invoke()
+            // SPEC-497 I4 m7 — check-and-add atomically: the connection may have come up since the fast-path
+            // check above, after its dispatch emptied the list; a callback added then would never be called.
+            val connectedNow = synchronized(pendingCallbacks) {
+                if (isConnected) true else { pendingCallbacks.add(callback); false }
+            }
+            if (connectedNow) {
+                continuation.resume(client) {}
+                return@suspendCancellableCoroutine
+            }
             // SPEC-497 R9 — a cancelled waiter (a cancelled caller, or `withTimeoutOrNull` giving up) takes
             // its callback with it, so a device that never connects does not accumulate dead waiters.
             continuation.invokeOnCancellation {
@@ -243,6 +253,9 @@ internal class BillingConnectionManager(
             }
         }
     }
+
+    /** Test seam (I4 m7) — runs between the fast-path `isConnected` check and the waiter registration. */
+    @Volatile internal var beforeWaiterRegistered: (() -> Unit)? = null
 
     /** How many [awaitConnectedClient] callers are parked (observed by tests). */
     internal val pendingWaiterCount: Int

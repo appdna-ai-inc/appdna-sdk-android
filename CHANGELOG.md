@@ -151,13 +151,16 @@ Needs the AppDNA server from the same release (purchase verification and push tr
 - A `purchase()` whose calling coroutine is cancelled before Play's sheet opens (while it waits for
   the Play connection or the product lookup) is cleared as it is cancelled and never launches the
   sheet; the next `purchase()` starts normally. A late Play answer for a cancelled purchase never
-  resolves, relaunches or clears a newer one.
+  resolves, relaunches or clears a newer one while the newer purchase is still waiting for the Play
+  connection or its product lookup (before it opens its own Play sheet). A late `ITEM_ALREADY_OWNED` with
+  no purchase to resolve now runs the owned-purchase rescue at once instead of waiting for the next
+  foreground.
 - A refused purchase or restore under `RevenueCat` / `Adapty` — the direct API and the paywall tap
   alike — carries the same message as on iOS: "RevenueCat: purchases are made by RevenueCat in your
   app" ("Adapty: …" for Adapty).
 - The paywall's purchase button is enabled again after a failed, cancelled or pending purchase when
   the paywall has no `on_failure` action, after a successful purchase when it has no `on_success`
-  action (the paywall stays up for your app to close), and when the purchase is cancelled by
+  action or one this SDK version does not know (the paywall stays up for your app to close), and when the purchase is cancelled by
   `shutdown()` (it stayed disabled with its spinner).
 - A free-trial purchase reports `is_trial: true` and price 0 (from the verify / restore reply).
 - A renewal is also detected by the Play order id's `..N` suffix, so new `subscription_renewed`

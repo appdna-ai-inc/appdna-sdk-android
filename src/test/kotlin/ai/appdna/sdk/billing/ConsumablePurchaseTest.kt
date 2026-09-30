@@ -321,6 +321,59 @@ class ConsumablePurchaseTest {
     }
 
     /**
+     * SPEC-497 I4 m2 — A's caller is cancelled with its sheet up and Play then answers ITEM_ALREADY_OWNED
+     * through the listener, with no live caller. The owned, unreported consumable Play refers to is rescued
+     * right away (reported once, consumed, queued) — not left until the next ON_START. NEGATIVE CONTROL:
+     * without `rescueOwnedPurchases()` in the listener's no-live-caller branch, nothing is reported or
+     * consumed — this test fails.
+     */
+    @Test fun `a listener ITEM_ALREADY_OWNED with no live caller rescues the owned consumable at once`() {
+        val s = scenario("""{
+          "product_details":{"coins_100":{"price_micros":990000,"currency":"USD","product_type":"inapp"}},
+          "verify_replies":{"tok_r":{"status":200,"consume":true,"expires_at":null,"is_trial":false}}
+        }""")
+        s.fake.autoDeliver = false
+        var first: PurchaseResult? = null
+        val job = kotlinx.coroutines.MainScope().launch { first = s.mgr.purchase(activity(), "coins_100") }
+        s.idle()
+        assertEquals(1, s.mgr.launchCount)
+        job.cancel()
+        s.idle()
+        assertEquals(false, s.mgr.hasLiveContinuation())
+
+        // Play holds an owned, unreported unit of the product and answers the dead sheet ITEM_ALREADY_OWNED.
+        s.fake.addOwned("inapp", FakeBillingClient.purchase("coins_100", "tok_r"))
+        s.fake.answer(com.android.billingclient.api.BillingClient.BillingResponseCode.ITEM_ALREADY_OWNED)
+        s.idle(200)
+        assertEquals(null, first)
+        assertEquals("rescued without waiting for ON_START", 1, pipe.count("purchase_completed"))
+        assertEquals(listOf("tok_r"), s.fake.consumeCalls)
+        assertEquals(listOf("tok_r"), s.queueTokens())
+        assertEquals("never relaunched", 1, s.mgr.launchCount)
+    }
+
+    /**
+     * SPEC-497 I4 m2 — `handleItemAlreadyOwned` whose owner lost the scope before it ran (the pre-`run()`
+     * owner check) resolves nothing but rescues the owned consumable. NEGATIVE CONTROL: without
+     * `rescueOwnedPurchases()` in that early return, nothing is reported or consumed — this test fails.
+     */
+    @Test fun `an ITEM_ALREADY_OWNED handler that lost its scope before run rescues the owned consumable`() {
+        val s = scenario("""{
+          "product_details":{"coins_100":{"price_micros":990000,"currency":"USD","product_type":"inapp"}},
+          "owned_purchases":[{"product_id":"coins_100","token":"tok_h","order_id":"GPA.h","acknowledged":false,"product_type":"inapp","purchase_state":"PURCHASED"}],
+          "verify_replies":{"tok_h":{"status":200,"consume":true,"expires_at":null,"is_trial":false}}
+        }""")
+        assertEquals(false, s.mgr.ownsScope(42L))
+        s.mgr.scope.launch { s.mgr.completion.handleItemAlreadyOwned(42L) }
+        s.idle(200)
+        assertEquals(1, pipe.count("purchase_completed"))
+        assertEquals(listOf("tok_h"), s.fake.consumeCalls)
+        assertEquals(0, pipe.count("purchase_restored"))
+        assertEquals(0, pipe.count("purchase_failed"))
+        assertEquals(0, s.mgr.launchCount)
+    }
+
+    /**
      * SPEC-497 R9 — a cancelled `awaitConnectedClient` waiter takes its callback with it. NEGATIVE CONTROL:
      * without `invokeOnCancellation` in `awaitConnectedClient`, the count stays 1 — this test fails.
      */

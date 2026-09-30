@@ -566,11 +566,14 @@ internal class PurchaseCompletion(
      * SPEC-497 R9 — [owner] is the purchase scope's owner when Play answered. [run] can wait up to 30 s
      * per step; if that purchase's caller is cancelled meanwhile and a newer purchase takes the scope, this
      * handler must not resolve, relaunch or clear the newer one. So it acts only while [owner] still owns
-     * the scope; otherwise it tracks nothing (as for a lost scope in `purchase()`) and only drains.
+     * the scope; otherwise it tracks nothing (as for a lost scope in `purchase()`) and only drains — or, when
+     * the scope was lost before [run], runs the owned-purchase rescue (I4 m2).
      */
     suspend fun handleItemAlreadyOwned(owner: Long) {
         if (!mgr.ownsScope(owner)) {
-            Log.warning("ITEM_ALREADY_OWNED: the purchase scope changed before the handler ran — ignored")
+            // I4 m2 — nothing to resolve, but the owned purchase may be unreported: rescue it now.
+            Log.warning("ITEM_ALREADY_OWNED: the purchase scope changed before the handler ran — running the owned-purchase rescue")
+            mgr.rescueOwnedPurchases()
             return
         }
         if (!mgr.ownsTransactions) {

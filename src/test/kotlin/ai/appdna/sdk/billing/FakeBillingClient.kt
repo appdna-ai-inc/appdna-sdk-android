@@ -83,7 +83,12 @@ internal class FakeBillingClient(private val listener: PurchasesUpdatedListener)
     /** The setup answer (BILLING_UNAVAILABLE simulates a device without Play billing). */
     var setupCode: Int = BillingResponseCode.OK
 
+    /** I4 m7 — when true, [startConnection] keeps its listener in [heldSetupListener] and does not answer. */
+    @Volatile var holdSetup: Boolean = false
+    @Volatile var heldSetupListener: BillingClientStateListener? = null
+
     override fun startConnection(listener: BillingClientStateListener) {
+        if (holdSetup) { heldSetupListener = listener; return }
         connected = setupCode == BillingResponseCode.OK
         listener.onBillingSetupFinished(result(setupCode))
     }
