@@ -237,6 +237,35 @@ Needs the AppDNA server from the same release (purchase verification and push tr
   Android SDK. The Flutter plugin that wraps it now ships a `consumer-rules.pro`, so an
   R8-minified Flutter release build keeps the plugin's classes.
 
+#### Fixed — billing, push, onboarding, maps
+- `onPaywallPurchaseCompleted` fires **once** per paywall purchase. It fired twice when your paywall
+  delegate was also the one the paywall was presented with (the billing layer called it too).
+- `EntitlementCache` counts `billing_retry` as active, like the server: `hasActiveSubscription()` and
+  `isEntitled` are true while the store is still retrying a renewal payment.
+- `subscription_renewed` carries `price` and `currency` (the base plan's recurring price, the same
+  names as `purchase_completed`) when Play returns the product's price.
+- `TransactionInfo.environment` is `"sandbox"` for a Play test purchase — the value the AppDNA server
+  decided when it verified the purchase (it was `"production"` for every purchase). It stays
+  `"production"` when there is no verified answer (an older server, an already-owned re-tap,
+  RevenueCat / Adapty).
+- An AppDNA push with a `notification` block that arrives while the app is in the **foreground** is
+  now displayed (by the SDK's service and by `AppDNA.push.handleMessage`), with the same channel and
+  look as a data-only message. FCM displays such a message itself only in the background, so it was
+  never shown in the foreground. A message already forwarded is not shown twice.
+- `social_login`: a form field with the id `action` or `provider` can no longer replace the SDK's own
+  `action: "social_login"` / `provider` in the step data.
+- Adapty: activated with `Adapty.activate(context, AdaptyConfig)` (Adapty 2.11+, 3.x, 4.x), falling
+  back to `activate(context, apiKey)`; before, only the latter was tried, so Adapty 4.x was never
+  activated. Adapty's access levels are now read (they are Adapty's own `ImmutableMap`, which the
+  bridge read as empty). An empty Adapty key is refused with an error log instead of silently.
+- `destroy()` / `AppDNA.shutdown()` called off the main thread now detaches the billing manager's
+  process-lifecycle observer (the removal was rejected off Main and the old manager leaked).
+- The billing ledger logs an unreadable value and keeps it under `<key>.corrupt` instead of silently
+  reading it as empty and overwriting it.
+- An interactive Google map that has not finished loading after 15 s logs an error naming the usual
+  cause (the key's Google Cloud project without "Maps SDK for Android", or an app restriction without
+  this app). It stays a map; it is not swapped for the still image.
+
 #### Source / binary compatibility
 - **`LocationData`'s fields other than `formatted_address` are nullable** (`city`, `state`,
   `latitude`, `timezone`, `timezone_offset`, `raw_query`, …): a Kotlin **source change** for code

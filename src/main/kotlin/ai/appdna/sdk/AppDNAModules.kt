@@ -87,8 +87,20 @@ data class TransactionInfo(
     val transactionId: String,
     val productId: String,
     val purchaseDate: String,
-    val environment: String = "production"
-)
+    /**
+     * `"sandbox"` for a Play test purchase (a license tester's), `"production"` otherwise — as the
+     * AppDNA server decided it when it verified the purchase (`billingProvider: StoreKit2`). Play's
+     * client library exposes no such flag, so it is `"production"` whenever no verified answer exists:
+     * an older server, a purchase resolved without a verify (an already-owned re-tap), and the
+     * RevenueCat / Adapty bridges.
+     */
+    val environment: String = DEFAULT_ENVIRONMENT
+) {
+    companion object {
+        /** The value used when the environment is not known. */
+        const val DEFAULT_ENVIRONMENT = "production"
+    }
+}
 
 /**
  * Survey response entry.
@@ -549,7 +561,7 @@ class BillingModule internal constructor() {
                     // RN `purchase()` facade return ISO on Android but epoch-millis on iOS, breaking the
                     // mapper's stated epoch-millis contract.
                     purchaseDate = System.currentTimeMillis().toString(),
-                    environment = "production",
+                    environment = result.environment ?: TransactionInfo.DEFAULT_ENVIRONMENT,
                 )
             }
             is PurchaseResult.Cancelled -> throw PurchaseCancelledException(productId)

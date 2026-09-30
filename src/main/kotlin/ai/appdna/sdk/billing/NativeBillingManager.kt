@@ -66,8 +66,13 @@ sealed class PurchaseResult {
         internal var transactionId: String? = null
             private set
 
-        internal constructor(entitlement: Entitlement, transactionId: String?) : this(entitlement) {
+        /** The server-verified environment (`"production"` / `"sandbox"`); null when not known. */
+        internal var environment: String? = null
+            private set
+
+        internal constructor(entitlement: Entitlement, transactionId: String?, environment: String? = null) : this(entitlement) {
             this.transactionId = transactionId
+            this.environment = environment
         }
     }
     /** User cancelled the purchase flow. */

@@ -447,6 +447,7 @@ internal class PurchaseCompletion(
             quantity = op.purchase.quantity,
             ownerToken = ownerTokenFor(op, entry, continuation != null),
             queuedAt = clock(),
+            environment = verified.environment,
         )
         val classCache = ledger.classCache()
         if (op.productType == "inapp") {
@@ -482,9 +483,12 @@ internal class PurchaseCompletion(
         // 5. the live caller (Q6) — resumed with Purchased; exactly one delivery between the inline call
         //    and the cancellation handler's enqueue.
         if (continuation != null) {
-            val txInfo = TransactionInfo(transactionId = txId, productId = productId, purchaseDate = op.purchase.purchaseTime.toString())
+            val txInfo = TransactionInfo(
+                transactionId = txId, productId = productId, purchaseDate = op.purchase.purchaseTime.toString(),
+                environment = verified.environment ?: TransactionInfo.DEFAULT_ENVIRONMENT,
+            )
             val decided = AtomicInteger(0) // 1 = inline call, 2 = enqueued by the cancellation handler
-            continuation.resume(PurchaseResult.Purchased(verified.entitlement, txId)) { _ ->
+            continuation.resume(PurchaseResult.Purchased(verified.entitlement, txId, verified.environment)) { _ ->
                 if (decided.compareAndSet(0, 2)) {
                     mgr.scope.launch {
                         purchaseCompletionMutex.withLock {
@@ -856,7 +860,10 @@ internal class PurchaseCompletion(
             val result = try {
                 delegate.onPurchaseCompleted(
                     entry.productId,
-                    TransactionInfo(transactionId = entry.transactionId, productId = entry.productId, purchaseDate = entry.purchaseTime.toString()),
+                    TransactionInfo(
+                        transactionId = entry.transactionId, productId = entry.productId, purchaseDate = entry.purchaseTime.toString(),
+                        environment = entry.environment ?: TransactionInfo.DEFAULT_ENVIRONMENT,
+                    ),
                 )
                 DelegateOutcome.DELIVERED
             } catch (t: Throwable) {

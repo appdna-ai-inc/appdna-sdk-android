@@ -67,6 +67,9 @@ sealed class BillingProvider(val type: String) {
          * [Adapty]. Returns null on anything else, so a caller can decide between a default and an
          * error rather than having one chosen for it.
          */
+        internal const val ADAPTY_NO_KEY_MESSAGE =
+            "billingProvider adapty has an empty apiKey — refused; the default billing provider is used instead. Pass your Adapty public SDK key."
+
         @JvmStatic
         fun fromWire(value: Any?): BillingProvider? = when (value) {
             is BillingProvider -> value
@@ -75,13 +78,22 @@ sealed class BillingProvider(val type: String) {
                 "revenueCat" -> RevenueCat
                 "none" -> None
                 // A bare "adapty" carries no apiKey, so it cannot be honored.
+                "adapty" -> {
+                    Log.error(ADAPTY_NO_KEY_MESSAGE)
+                    null
+                }
                 else -> null
             }
             is Map<*, *> -> {
                 val type = value["type"] as? String
                 val apiKey = value["apiKey"] as? String
                 when {
-                    type == "adapty" && !apiKey.isNullOrEmpty() -> Adapty(apiKey)
+                    type == "adapty" && !apiKey.isNullOrBlank() -> Adapty(apiKey)
+                    type == "adapty" -> {
+                        // Refused, and said so: the caller falls back to its default (storeKit2).
+                        Log.error(ADAPTY_NO_KEY_MESSAGE)
+                        null
+                    }
                     type == "storeKit2" -> StoreKit2
                     type == "revenueCat" -> RevenueCat
                     type == "none" -> None
