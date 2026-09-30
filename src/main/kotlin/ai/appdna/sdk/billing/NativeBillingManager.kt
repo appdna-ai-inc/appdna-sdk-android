@@ -201,6 +201,14 @@ class NativeBillingManager internal constructor(
      */
     @Volatile internal var purchaseInFlight: Boolean = false
 
+    /**
+     * SPEC-497 I4 R8 M1 — which [purchase] call owns the purchase scope (0 = none). Minted when the
+     * in-flight flag is set and reset by [clearPurchaseScope], so a call that loses its scope (cancelled,
+     * [destroy]) never clears — or acts on — the scope of a newer purchase.
+     */
+    @Volatile private var purchaseScopeOwner: Long = 0L
+    private var purchaseScopeSeq: Long = 0L
+
     /** §13a.2 ITEM_ALREADY_OWNED — the purchase's Activity, weakly held so a relaunch can reuse it. */
     private var purchaseActivity: java.lang.ref.WeakReference<Activity>? = null
     private var lastFlowParams: BillingFlowParams? = null
@@ -241,6 +249,7 @@ class NativeBillingManager internal constructor(
         currentPaywallId = null
         currentExperimentId = null
         purchaseInFlight = false
+        purchaseScopeOwner = 0L
         purchaseActivity = null
         lastFlowParams = null
         relaunchUsed = false
@@ -733,6 +742,8 @@ class NativeBillingManager internal constructor(
         }
         Log.info("Starting purchase for product: $productId")
         purchaseInFlight = true
+        val scopeId = ++purchaseScopeSeq
+        purchaseScopeOwner = scopeId
         pendingProductId = productId
         purchaseActivity = java.lang.ref.WeakReference(activity)
         relaunchUsed = false
@@ -743,73 +754,103 @@ class NativeBillingManager internal constructor(
             "experiment_id" to (currentExperimentId ?: ""),
         ).withPaywallMetadata())
 
-        val client = withTimeoutOrNull(PurchaseCompletion.WAIT_MS) { connectionManager.awaitConnectedClient() }
-            ?: return failPurchase("BillingClient not connected", "billing_client_not_connected", productId, errorType = "serverError")
+        // I4 R8 M1 — every exit clears the scope (R40). The returns below clear it themselves
+        // ([failPurchase], [resumePurchase]); an exception — above all the caller's cancellation while
+        // this call waits for the connection or the product query, before the continuation (and its
+        // `invokeOnCancellation`) exists — is caught here. Guarded by [purchaseScopeOwner]: a scope already
+        // cleared (e.g. by `invokeOnCancellation` or [destroy]) and reused by a newer purchase is left alone.
+        try {
+            val client = withTimeoutOrNull(PurchaseCompletion.WAIT_MS) { connectionManager.awaitConnectedClient() }
+            if (purchaseScopeOwner != scopeId) return scopeLost(productId)
+            if (client == null) {
+                return failPurchase("BillingClient not connected", "billing_client_not_connected", productId, errorType = "serverError")
+            }
 
-        val resolved = coroutineScope {
-            val subsDeferred = async { queryProductDetails(client, productId, BillingClient.ProductType.SUBS) }
-            val inappDeferred = async { queryProductDetails(client, productId, BillingClient.ProductType.INAPP) }
-            subsDeferred.await() ?: inappDeferred.await()
-        } ?: return failPurchase("Product not found: $productId", "product_not_found", productId, errorType = "productNotFound")
+            val resolved = coroutineScope {
+                val subsDeferred = async { queryProductDetails(client, productId, BillingClient.ProductType.SUBS) }
+                val inappDeferred = async { queryProductDetails(client, productId, BillingClient.ProductType.INAPP) }
+                subsDeferred.await() ?: inappDeferred.await()
+            }
+            if (purchaseScopeOwner != scopeId) return scopeLost(productId)
+            if (resolved == null) {
+                return failPurchase("Product not found: $productId", "product_not_found", productId, errorType = "productNotFound")
+            }
 
-        val productDetails = resolved.productDetails
-        val productType = resolved.productType
-        pendingProductType = if (productType == BillingClient.ProductType.SUBS) "subs" else "inapp"
+            val productDetails = resolved.productDetails
+            val productType = resolved.productType
+            pendingProductType = if (productType == BillingClient.ProductType.SUBS) "subs" else "inapp"
 
-        // Round-34 — warm the price cache so the purchase event carries price/currency.
-        try { priceResolver.cacheFromPurchase(productDetails) } catch (_: Throwable) { /* best-effort */ }
+            // Round-34 — warm the price cache so the purchase event carries price/currency.
+            try { priceResolver.cacheFromPurchase(productDetails) } catch (_: Throwable) { /* best-effort */ }
 
-        val selectedOffer = if (productType == BillingClient.ProductType.SUBS) {
-            val token = options?.offerToken
-            val offers = productDetails.subscriptionOfferDetails
-            if (token != null) offers?.find { it.offerToken == token }
-            // Round-10 #1 — with no named offer prefer the base plan (no offerId), never an arbitrary one.
-            else offers?.firstOrNull { it.offerId == null } ?: offers?.firstOrNull()
-        } else null
+            val selectedOffer = if (productType == BillingClient.ProductType.SUBS) {
+                val token = options?.offerToken
+                val offers = productDetails.subscriptionOfferDetails
+                if (token != null) offers?.find { it.offerToken == token }
+                // Round-10 #1 — with no named offer prefer the base plan (no offerId), never an arbitrary one.
+                else offers?.firstOrNull { it.offerId == null } ?: offers?.firstOrNull()
+            } else null
 
-        val flowParamsBuilder = BillingFlowParams.newBuilder()
-            .setProductDetailsParamsList(listOf(
-                BillingFlowParams.ProductDetailsParams.newBuilder()
-                    .setProductDetails(productDetails)
-                    .apply { selectedOffer?.let { setOfferToken(it.offerToken) } }
-                    .build()
-            ))
+            val flowParamsBuilder = BillingFlowParams.newBuilder()
+                .setProductDetailsParamsList(listOf(
+                    BillingFlowParams.ProductDetailsParams.newBuilder()
+                        .setProductDetails(productDetails)
+                        .apply { selectedOffer?.let { setOfferToken(it.offerToken) } }
+                        .build()
+                ))
 
-        // SPEC-070-A A.28 — the host's token, else the current user's derived token (cross-account leak).
-        val resolvedToken = options?.appAccountToken ?: currentUserToken()
-        if (resolvedToken != null) {
-            flowParamsBuilder.setObfuscatedAccountId(resolvedToken.toString())
-        } else {
-            Log.warning("NativeBillingManager.purchase: no appAccountToken — host should call AppDNA.identify(userId:) BEFORE purchase to avoid cross-account entitlement leaks.")
-        }
-        val flowParams = flowParamsBuilder.build()
-        lastFlowParams = flowParams
+            // SPEC-070-A A.28 — the host's token, else the current user's derived token (cross-account leak).
+            val resolvedToken = options?.appAccountToken ?: currentUserToken()
+            if (resolvedToken != null) {
+                flowParamsBuilder.setObfuscatedAccountId(resolvedToken.toString())
+            } else {
+                Log.warning("NativeBillingManager.purchase: no appAccountToken — host should call AppDNA.identify(userId:) BEFORE purchase to avoid cross-account entitlement leaks.")
+            }
+            val flowParams = flowParamsBuilder.build()
+            lastFlowParams = flowParams
 
-        return suspendCancellableCoroutine { continuation ->
-            purchaseContinuation = continuation
-            continuation.invokeOnCancellation {
-                // A cancelled caller: a later report for this purchase has no live caller, so it is queued.
-                if (purchaseContinuation === continuation) {
-                    purchaseContinuation = null
-                    clearPurchaseScope()
+            return suspendCancellableCoroutine { continuation ->
+                purchaseContinuation = continuation
+                continuation.invokeOnCancellation {
+                    // A cancelled caller: a later report for this purchase has no live caller, so it is queued.
+                    if (purchaseContinuation === continuation) {
+                        purchaseContinuation = null
+                        clearPurchaseScope()
+                    }
+                }
+                launchCount++
+                val launchResult = client.launchBillingFlow(activity, flowParams)
+                when (launchResult.responseCode) {
+                    BillingClient.BillingResponseCode.OK -> Unit
+                    // R24: the SYNCHRONOUS ITEM_ALREADY_OWNED goes to the same handler, before anything is cleared.
+                    BillingClient.BillingResponseCode.ITEM_ALREADY_OWNED ->
+                        scope.launch { completion.handleItemAlreadyOwned() }
+                    else -> resumePurchase(
+                        failPurchase(
+                            "Failed to launch billing flow: ${launchResult.debugMessage}",
+                            "launch_billing_flow_failed",
+                            productId,
+                        ),
+                    )
                 }
             }
-            launchCount++
-            val launchResult = client.launchBillingFlow(activity, flowParams)
-            when (launchResult.responseCode) {
-                BillingClient.BillingResponseCode.OK -> Unit
-                // R24: the SYNCHRONOUS ITEM_ALREADY_OWNED goes to the same handler, before anything is cleared.
-                BillingClient.BillingResponseCode.ITEM_ALREADY_OWNED ->
-                    scope.launch { completion.handleItemAlreadyOwned() }
-                else -> resumePurchase(
-                    failPurchase(
-                        "Failed to launch billing flow: ${launchResult.debugMessage}",
-                        "launch_billing_flow_failed",
-                        productId,
-                    ),
-                )
+        } catch (t: Throwable) {
+            if (purchaseScopeOwner == scopeId) {
+                purchaseContinuation = null
+                clearPurchaseScope()
             }
+            throw t
         }
+    }
+
+    /**
+     * I4 R8 M1 — this [purchase] lost its scope while it waited ([destroy] resolved the purchase as
+     * `shutdown`, or it was otherwise cleared): stop without launching the sheet and without touching the
+     * scope, which may already belong to a newer purchase. Nothing is tracked, as for [destroy].
+     */
+    private fun scopeLost(productId: String): PurchaseResult {
+        Log.warning("NativeBillingManager.purchase($productId): the purchase scope was cleared while waiting — not launching")
+        return PurchaseResult.Failed("shutdown")
     }
 
     /**
@@ -912,7 +953,7 @@ class NativeBillingManager internal constructor(
     internal suspend fun restoreDetailed(trackFailure: Boolean): RestoreDetail {
         try {
             if (!ownsTransactions) {
-                throw BillingError.ProviderNotAvailable("$providerName: restore purchases through $providerName")
+                throw BillingError.ProviderNotAvailable(BillingOwnership.restoreRefusalMessage(providerName))
             }
             Log.info("Restoring purchases (SUBS + INAPP)")
             val result = completion.run(PurchaseCompletion.Entry.RESTORE)

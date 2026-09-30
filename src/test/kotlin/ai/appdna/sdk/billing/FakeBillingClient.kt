@@ -83,7 +83,13 @@ internal class FakeBillingClient(private val listener: PurchasesUpdatedListener)
         listener.onBillingSetupFinished(result(setupCode))
     }
 
-    override fun endConnection() { connected = false }
+    /** I4 R8 m2 — runs inside [endConnection] (on the caller's thread), e.g. to interleave Main work. */
+    @Volatile var onEndConnection: (() -> Unit)? = null
+
+    override fun endConnection() {
+        connected = false
+        onEndConnection?.invoke()
+    }
     override fun isReady(): Boolean = connected
     override fun getConnectionState(): Int = if (connected) ConnectionState.CONNECTED else ConnectionState.DISCONNECTED
     override fun isFeatureSupported(feature: String): BillingResult = result(BillingResponseCode.OK)
@@ -119,10 +125,26 @@ internal class FakeBillingClient(private val listener: PurchasesUpdatedListener)
         listener.onQueryPurchasesResponse(result(BillingResponseCode.OK), owned[skuType].orEmpty().toList())
     }
 
+    /**
+     * I4 R8 M1 — a product query that PARKS: while [productQueryGate] is set and not completed, every
+     * `queryProductDetailsAsync` answer is held and delivered on Main once it completes.
+     */
+    @Volatile var productQueryGate: kotlinx.coroutines.CompletableDeferred<Unit>? = null
+    @Volatile var productQueriesParked = 0
+
     override fun queryProductDetailsAsync(params: QueryProductDetailsParams, listener: ProductDetailsResponseListener) {
         val requested = requestedProducts(params)
-        val out = requested.mapNotNull { (id, type) -> productDetails[id]?.takeIf { it.productType == type } }
-        listener.onProductDetailsResponse(result(BillingResponseCode.OK), out)
+        val answer = {
+            val out = requested.mapNotNull { (id, type) -> productDetails[id]?.takeIf { it.productType == type } }
+            listener.onProductDetailsResponse(result(BillingResponseCode.OK), out)
+        }
+        val gate = productQueryGate
+        if (gate != null && !gate.isCompleted) {
+            productQueriesParked++
+            gate.invokeOnCompletion { main.post { answer() } }
+            return
+        }
+        answer()
     }
 
     // -- purchase ------------------------------------------------------------------------------

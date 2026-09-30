@@ -48,6 +48,17 @@ internal data class BillingOwnershipPolicy(
 
 /** The one pure seam (§2 principle 5): production and the fixture runner both call it. */
 internal object BillingOwnership {
+    /**
+     * SPEC-497 I4 R8 m4 — the message of a REFUSED restore, word for word the iOS
+     * `BillingOwnershipPolicy.refusalMessage` (§3.2 rule 2: a non-owning provider's restore throws the
+     * same error as its purchase), so hosts on both platforms see one string.
+     */
+    fun restoreRefusalMessage(providerName: String): String = when (providerName) {
+        "revenueCat" -> "RevenueCat: purchases are made by RevenueCat in your app"
+        "adapty" -> "Adapty: purchases are made by Adapty in your app"
+        else -> "No billing provider configured"
+    }
+
     fun policy(provider: BillingProvider): BillingOwnershipPolicy = when (provider) {
         is BillingProvider.StoreKit2 -> BillingOwnershipPolicy(
             ownsTransactions = true,

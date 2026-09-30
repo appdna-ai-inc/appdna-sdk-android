@@ -132,6 +132,104 @@ class ConsumablePurchaseTest {
         assertEquals(1, pipe.count("purchase_started"))
     }
 
+    /**
+     * SPEC-497 I4 R8 M1 — the caller is cancelled while `purchase()` waits for the billing connection,
+     * BEFORE the continuation (and its `invokeOnCancellation`) exists. R40: the in-flight flag is cleared
+     * on every exit, so the next `purchase()` launches. NEGATIVE CONTROL: without the `catch` around the
+     * body of `purchase()`, `purchaseInFlight` stays true and the second call fails `purchase_in_progress`
+     * with no launch — this test fails.
+     */
+    @Test fun `a caller cancelled during the connection wait does not block the next purchase`() {
+        val s = scenario("""{
+          "billing_setup_code":"SERVICE_UNAVAILABLE",
+          "product_details":{"lifetime_unlock":{"price_micros":4990000,"currency":"USD","product_type":"inapp"}}
+        }""")
+        s.fake.autoDeliver = false
+        var first: PurchaseResult? = null
+        val job = kotlinx.coroutines.MainScope().launch { first = s.mgr.purchase(activity(), "lifetime_unlock") }
+        s.idle()
+        assertTrue("the first purchase waits for the connection", s.mgr.purchaseInFlight)
+        assertEquals(0, s.mgr.launchCount)
+
+        job.cancel()
+        s.idle()
+        assertEquals(null, first)
+        assertEquals("the cancelled caller cleared its scope", false, s.mgr.purchaseInFlight)
+        assertEquals(null, s.mgr.pendingProductId)
+
+        // Play comes back; the second purchase connects and launches.
+        s.fake.setupCode = com.android.billingclient.api.BillingClient.BillingResponseCode.OK
+        shadowOf(Looper.getMainLooper()).idleFor(3, TimeUnit.SECONDS)
+        var second: PurchaseResult? = null
+        s.mgr.scope.launch { second = s.mgr.purchase(activity(), "lifetime_unlock") }
+        s.idle()
+        assertEquals("the second purchase launched", 1, s.mgr.launchCount)
+        assertEquals("it waits for Play (no purchase_in_progress)", null, second)
+        assertEquals(0, pipe.events().count { it.first == "purchase_failed" && it.second.optString("reason") == "purchase_in_progress" })
+        assertEquals("lifetime_unlock", s.mgr.pendingProductId)
+    }
+
+    /**
+     * SPEC-497 I4 R8 M1 — the same, with the caller cancelled while `purchase()` waits for the SUBS / INAPP
+     * product query. NEGATIVE CONTROL: without the `catch` in `purchase()`, the second call fails
+     * `purchase_in_progress` — this test fails.
+     */
+    @Test fun `a caller cancelled during the product query does not block the next purchase`() {
+        val s = scenario("""{"product_details":{"lifetime_unlock":{"price_micros":4990000,"currency":"USD","product_type":"inapp"}}}""")
+        s.fake.autoDeliver = false
+        val gate = kotlinx.coroutines.CompletableDeferred<Unit>()
+        s.fake.productQueryGate = gate
+        var first: PurchaseResult? = null
+        val job = kotlinx.coroutines.MainScope().launch { first = s.mgr.purchase(activity(), "lifetime_unlock") }
+        s.idle()
+        assertTrue("the first purchase is parked in the product query", s.fake.productQueriesParked > 0)
+        assertTrue(s.mgr.purchaseInFlight)
+
+        job.cancel()
+        s.idle()
+        gate.complete(Unit)
+        s.idle()
+        assertEquals(null, first)
+        assertEquals(false, s.mgr.purchaseInFlight)
+        assertEquals(0, s.mgr.launchCount)
+
+        var second: PurchaseResult? = null
+        s.mgr.scope.launch { second = s.mgr.purchase(activity(), "lifetime_unlock") }
+        s.idle()
+        assertEquals("the second purchase launched", 1, s.mgr.launchCount)
+        assertEquals(null, second)
+        assertEquals(0, pipe.events().count { it.first == "purchase_failed" && it.second.optString("reason") == "purchase_in_progress" })
+    }
+
+    /**
+     * SPEC-497 I4 R8 M1 — a purchase that LOST its scope while parked (here: resolved from outside, as
+     * `destroy()` does) never touches the scope of the newer purchase that took it over: it stops without
+     * launching, and the newer purchase keeps its flag, its product and its launch.
+     */
+    @Test fun `a purchase that lost its scope while waiting leaves the newer purchase alone`() {
+        val s = scenario("""{"product_details":{"lifetime_unlock":{"price_micros":4990000,"currency":"USD","product_type":"inapp"},
+          "coins":{"price_micros":990000,"currency":"USD","product_type":"inapp"}}}""")
+        s.fake.autoDeliver = false
+        val gate = kotlinx.coroutines.CompletableDeferred<Unit>()
+        s.fake.productQueryGate = gate
+        var first: PurchaseResult? = null
+        s.mgr.scope.launch { first = s.mgr.purchase(activity(), "lifetime_unlock") }
+        s.idle()
+        s.mgr.resumePurchase(PurchaseResult.Failed("shutdown")) // clears the scope; no continuation yet
+        assertEquals(false, s.mgr.purchaseInFlight)
+
+        var second: PurchaseResult? = null
+        s.mgr.scope.launch { second = s.mgr.purchase(activity(), "coins") }
+        s.idle()
+        gate.complete(Unit)
+        s.idle()
+        assertEquals(PurchaseResult.Failed("shutdown"), first)
+        assertEquals("only the newer purchase launched", 1, s.mgr.launchCount)
+        assertEquals(null, second)
+        assertTrue("the newer purchase still owns the scope", s.mgr.purchaseInFlight)
+        assertEquals("coins", s.mgr.pendingProductId)
+    }
+
     @Test fun `destroy during a purchase resolves Failed shutdown`() {
         val s = scenario("""{"product_details":{"lifetime_unlock":{"price_micros":4990000,"currency":"USD","product_type":"inapp"}}}""")
         s.fake.autoDeliver = false

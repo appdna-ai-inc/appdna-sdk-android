@@ -499,6 +499,21 @@ class PaywallActivity : ComponentActivity() {
          * `NotificationCenter.default.post(.paywallPurchaseSuccess, ...)`.
          */
         @Volatile internal var postPurchaseOverlay: PostPurchaseOverlayState? = null
+
+        /**
+         * SPEC-497 I4 R8 m5 — bumped by [PaywallManager] when a paywall purchase ends without success
+         * (a failure, a user cancel, a pending approval, or the purchase coroutine cancelled — e.g.
+         * `shutdown()` with the paywall on screen). A live paywall re-enables its CTA (`isPurchasing =
+         * false`) when it sees the value change. Before this, only a drained `retry` / `show_error`
+         * overlay reset it, so a failure with no `on_failure` config — or a cancelled purchase — left the
+         * CTA spinning and disabled for good.
+         */
+        internal val purchaseEndedSignal = java.util.concurrent.atomic.AtomicLong(0L)
+
+        @JvmStatic
+        internal fun signalPurchaseEnded() {
+            purchaseEndedSignal.incrementAndGet()
+        }
     }
 }
 
@@ -567,10 +582,18 @@ fun PaywallScreen(
     var postPurchaseOverlay by remember { mutableStateOf<PostPurchaseOverlayState?>(null) }
     val coroutineScope = rememberCoroutineScope()
     LaunchedEffect(Unit) {
+        // SPEC-497 I4 R8 m5 — the purchase-ended signal as of this composition; a later bump re-enables
+        // the CTA (see [PaywallActivity.signalPurchaseEnded]).
+        var seenPurchaseEnded = PaywallActivity.purchaseEndedSignal.get()
         // Poll the companion-object slot for new overlay payloads. Cheap
         // (one variable read per frame) — and we only enter this loop while
         // the paywall composition is alive.
         while (true) {
+            val purchaseEnded = PaywallActivity.purchaseEndedSignal.get()
+            if (purchaseEnded != seenPurchaseEnded) {
+                seenPurchaseEnded = purchaseEnded
+                isPurchasing = false
+            }
             val pending = PaywallActivity.postPurchaseOverlay
             if (pending != null && pending != postPurchaseOverlay) {
                 postPurchaseOverlay = pending

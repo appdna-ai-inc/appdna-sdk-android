@@ -385,6 +385,7 @@ class PurchaseCompletionConcurrencyTest {
      */
     @Test fun `a paywall purchase cancelled by shutdown - no onPaywallPurchaseFailed`() {
         val s = scenario(inFlightPurchase)
+        s.setDelegate()
         s.fake.autoDeliver = false // Play never answers: the purchase waits for its result
         val paywallEvents = mutableListOf<String>()
         val listener = object : AppDNAPaywallDelegate {
@@ -410,11 +411,89 @@ class PurchaseCompletionConcurrencyTest {
             assertEquals("the purchase launched and waits for Play", 1, s.fake.launchCount)
             assertEquals(listOf("started"), paywallEvents)
 
+            val resetsBefore = ai.appdna.sdk.paywalls.PaywallActivity.purchaseEndedSignal.get()
             pm.shutdown()
             s.idle()
             assertEquals("no onPaywallPurchaseFailed / Completed", listOf("started"), paywallEvents)
             assertEquals(0, events("purchase_failed"))
+            // I4 R8 m5 — the cancelled purchase re-enables a paywall still on screen. NEGATIVE CONTROL:
+            // without `signalPurchaseEnded()` in the CancellationException catch, the signal is unchanged.
+            assertTrue("the purchase-ended signal was bumped",
+                ai.appdna.sdk.paywalls.PaywallActivity.purchaseEndedSignal.get() > resetsBefore)
+
+            // I4 R8 m1 — D-R40-1 after the cancel: Play completes the purchase later. The cancelled caller
+            // is gone (and its paywall attribution with it), so the report is queued and delivered by the
+            // drain: exactly one purchase_completed and one onPurchaseCompleted, and no paywall callback.
+            // NEGATIVE CONTROL: with the purchase scope NOT cleared on cancellation, the report resolves
+            // no caller but keeps the paywall id — the paywall delegate's Completed fires; with the queue
+            // write removed, no onPurchaseCompleted — either way this fails.
+            s.fake.deliver(s.fake.listenerPurchase!!, "inapp")
+            s.idle()
+            assertEquals(1, delivered(s))
+            assertEquals(1, events("purchase_completed"))
+            assertEquals(listOf("started"), paywallEvents)
+            assertEquals(emptyList<String>(), paywallCalls)
         } finally {
+            pm.shutdown()
+        }
+    }
+
+    /**
+     * SPEC-497 I4 R8 m2 — `AppDNA.shutdown()` called OFF Main during a paywall purchase. `destroy()` resolves
+     * the purchase `Failed("shutdown")` and that resumption is dispatched to Main; the test runs Main right
+     * there (inside `endConnection`, i.e. after `destroy()` resumed the caller and before shutdown goes on),
+     * as a real Main thread may. With the paywall scope cancelled FIRST, the paywall caller is already gone
+     * and nothing reaches `onPaywallPurchaseFailed`. NEGATIVE CONTROL: with `paywallManager.shutdown()`
+     * back after `billing.manager.destroy()`, Main runs the resumed purchase and the delegate gets
+     * `failed:unknown` — this test fails.
+     */
+    @Test fun `AppDNA shutdown off Main during a paywall purchase - no onPaywallPurchaseFailed`() {
+        val s = scenario(inFlightPurchase)
+        s.fake.autoDeliver = false
+        val paywallEvents = mutableListOf<String>()
+        val listener = object : AppDNAPaywallDelegate {
+            override fun onPaywallPurchaseStarted(paywallId: String, productId: String) { paywallEvents += "started" }
+            override fun onPaywallPurchaseCompleted(paywallId: String, productId: String, transaction: TransactionInfo) { paywallEvents += "completed" }
+            override fun onPaywallPurchaseFailed(paywallId: String, error: Throwable, errorType: String, productId: String?) {
+                paywallEvents += "failed:$errorType"
+            }
+        }
+        val paywall = ai.appdna.sdk.paywalls.PaywallConfigParser.parsePaywalls(mapOf("pw_buy" to mapOf(
+            "id" to "pw_buy", "name" to "t", "layout" to mapOf("type" to "stack"), "sections" to emptyList<Any>(),
+        )))["pw_buy"]!!
+        val pm = ai.appdna.sdk.paywalls.PaywallManager(
+            ai.appdna.sdk.config.RemoteConfigManager(null, ai.appdna.sdk.storage.LocalStorage(ctx), 3600L), pipe!!.tracker,
+        )
+        AppDNA.paywallManager = pm
+        try {
+            pm.handlePurchase(
+                activity(), "pw_buy",
+                ai.appdna.sdk.paywalls.PaywallPlan(id = "l", product_id = "lifetime_unlock", name = "L", price = ""),
+                paywall, emptyMap(), listener,
+            )
+            s.idle()
+            assertEquals(1, s.fake.launchCount)
+            assertEquals(listOf("started"), paywallEvents)
+
+            // Inside destroy(): after the in-flight purchase was resolved, let Main run what it was handed.
+            val atEndConnection = java.util.concurrent.CountDownLatch(1)
+            val mainRan = java.util.concurrent.CountDownLatch(1)
+            s.fake.onEndConnection = {
+                atEndConnection.countDown()
+                mainRan.await(10, java.util.concurrent.TimeUnit.SECONDS)
+            }
+            val t = Thread { AppDNA.shutdown() }
+            t.start()
+            assertTrue("shutdown reached destroy()", atEndConnection.await(10, java.util.concurrent.TimeUnit.SECONDS))
+            s.idle()
+            mainRan.countDown()
+            t.join(10_000)
+            s.idle()
+            assertEquals("no onPaywallPurchaseFailed", listOf("started"), paywallEvents)
+            assertEquals(0, events("purchase_failed"))
+        } finally {
+            s.fake.onEndConnection = null
+            AppDNA.paywallManager = null
             pm.shutdown()
         }
     }

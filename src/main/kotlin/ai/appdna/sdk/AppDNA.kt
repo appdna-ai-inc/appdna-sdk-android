@@ -2434,6 +2434,15 @@ object AppDNA {
                 if (ctx != null) ai.appdna.sdk.background.ConfigRefreshWorker.cancel(ctx)
             } catch (_: Throwable) { /* WorkManager may not be initialized */ }
 
+            // SPEC-497 I4 R8 m2 — cancel the paywall scope BEFORE destroying billing. `destroy()` resolves
+            // a purchase in flight as `Failed("shutdown")`; called off Main, that resumption can run on Main
+            // before a later `paywallManager.shutdown()` cancels the paywall's purchase coroutine, and the
+            // paywall then reports `onPaywallPurchaseFailed` for a purchase that was only cancelled.
+            // Cancelling first means the paywall caller is gone (its `invokeOnCancellation` clears the
+            // purchase scope) when `destroy()` runs, so `Failed("shutdown")` reaches nobody. Safe: the
+            // paywall shutdown only cancels its own scope, and nothing below depends on it being alive.
+            try { paywallManager?.shutdown() } catch (_: Throwable) {}
+
             // SPEC-070-A H.24: release the native billing handles. The wrapper
             // [BillingModule] does NOT itself own a BillingClient — its scope
             // is independent of the underlying [NativeBillingManager], so we
@@ -2461,8 +2470,8 @@ object AppDNA {
             try { pushTokenManager?.shutdown() } catch (_: Throwable) {}
 
             // SPEC-070-A audit Round 2 finding 6: cancel paywall + deferred
-            // deep-link scopes so they don't outlive shutdown.
-            try { paywallManager?.shutdown() } catch (_: Throwable) {}
+            // deep-link scopes so they don't outlive shutdown. (The paywall scope is cancelled above,
+            // before billing is destroyed — SPEC-497 I4 R8 m2.)
             try { deferredDeepLinkManager?.shutdown() } catch (_: Throwable) {}
 
             // SPEC-070-A final audit pass B F1 — release the

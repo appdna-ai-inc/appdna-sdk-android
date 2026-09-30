@@ -56,7 +56,10 @@ class PaywallNoProviderTest {
     }
 
     @Test fun `none - one purchase_failed, providerNotAvailable, no started`() {
+        val resetsBefore = ai.appdna.sdk.paywalls.PaywallActivity.purchaseEndedSignal.get()
         tap(BillingProvider.None)
+        // I4 R8 m5 — a failure with no `on_failure` config still re-enables the paywall's CTA.
+        assertTrue(ai.appdna.sdk.paywalls.PaywallActivity.purchaseEndedSignal.get() > resetsBefore)
         assertEquals(listOf("purchase_failed"), pipe!!.names())
         assertEquals("providerNotAvailable", pipe!!.props("purchase_failed").getString("error_type"))
         assertEquals(listOf("failed:providerNotAvailable:pro_monthly"), calls)
@@ -146,6 +149,8 @@ class PaywallNoProviderTest {
         assertEquals(listOf("purchase_restore_failed"), pipe!!.names())
         assertEquals("providerNotAvailable", pipe!!.props("purchase_restore_failed").getString("error_type"))
         assertEquals("pw", pipe!!.props("purchase_restore_failed").getString("paywall_id"))
+        // I4 R8 m4 — word for word the iOS `refusalMessage` (was "revenueCat: restore purchases through revenueCat").
+        assertEquals("RevenueCat: purchases are made by RevenueCat in your app", pipe!!.props("purchase_restore_failed").getString("error"))
         assertEquals("no billing flow", 0, sc!!.fake.launchCount)
         assertEquals(false, AppDNA.paywall.skipNextAutoDismissOnRestore)
     }
@@ -160,6 +165,7 @@ class PaywallNoProviderTest {
         restoreTap(BillingProvider.None)
         assertEquals(listOf("failed:providerNotAvailable"), restoreCalls)
         assertEquals(listOf("purchase_restore_failed"), pipe!!.names())
+        assertEquals("No billing provider configured", pipe!!.props("purchase_restore_failed").getString("error"))
     }
 
     /**
@@ -183,6 +189,13 @@ class PaywallNoProviderTest {
     @Test fun `restore tap under storeKit2 - started fires`() {
         restoreTap(BillingProvider.StoreKit2, ownsTransactions = true)
         assertEquals("started", restoreCalls.firstOrNull())
+    }
+
+    /** I4 R8 m4 — the refused-restore message is the iOS `BillingOwnershipPolicy.refusalMessage`, per provider. */
+    @Test fun `restore refusal message matches iOS for every provider`() {
+        assertEquals("RevenueCat: purchases are made by RevenueCat in your app", BillingOwnership.restoreRefusalMessage("revenueCat"))
+        assertEquals("Adapty: purchases are made by Adapty in your app", BillingOwnership.restoreRefusalMessage("adapty"))
+        assertEquals("No billing provider configured", BillingOwnership.restoreRefusalMessage("none"))
     }
 
     @Test fun `PurchaseFailedException carries the verification error type`() {

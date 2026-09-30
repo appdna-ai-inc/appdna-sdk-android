@@ -70,6 +70,8 @@ class NonOwningBillingManagerTest {
         val s = scenario(owns = false)
         val r = s.drive { s.mgr.restorePurchases() }
         assertTrue(r.exceptionOrNull() is BillingError.ProviderNotAvailable)
+        // I4 R8 m4 — the iOS wording, on both platforms.
+        assertEquals("RevenueCat: purchases are made by RevenueCat in your app", r.exceptionOrNull()?.message)
         assertEquals(1, pipe!!.count("purchase_restore_failed"))
     }
 

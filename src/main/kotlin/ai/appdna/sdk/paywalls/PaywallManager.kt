@@ -399,6 +399,8 @@ internal class PaywallManager(
                 // SPEC-497 (I4 r7 m1): a cancelled paywall scope (`shutdown()` mid-purchase) is not a failed
                 // purchase — no onPaywallPurchaseFailed, no failure routing. The purchase itself is not lost:
                 // if Play completes it, D-R40-1 reports and delivers it through the delivery queue.
+                // I4 R8 m5: a paywall still on screen re-enables its CTA.
+                PaywallActivity.signalPurchaseEnded()
                 throw e
             } catch (e: PurchaseCancelledException) {
                 // No `purchase_canceled` emit here — NativeBillingManager's USER_CANCELED branch
@@ -530,6 +532,9 @@ internal class PaywallManager(
         paywallId: String,
         listener: AppDNAPaywallDelegate?,
     ) {
+        // SPEC-497 I4 R8 m5 — every failed / cancelled / pending purchase re-enables the paywall's CTA,
+        // whatever `on_failure` says (with no config, nothing else ever did).
+        PaywallActivity.signalPurchaseEnded()
         if (config == null) return
         when (config.action) {
             "dismiss" -> {
@@ -587,9 +592,9 @@ internal class PaywallManager(
         val refusal: Exception? = when {
             !policy.isConfigured -> IllegalStateException(ai.appdna.sdk.billing.BillingOwnershipPolicy.NOT_CONFIGURED_MESSAGE)
             nativeMgr == null -> ai.appdna.sdk.billing.BillingError.ProviderNotAvailable("No billing provider configured")
-            !policy.sdkCanRestore -> nativeMgr.providerName.let { provider ->
-                ai.appdna.sdk.billing.BillingError.ProviderNotAvailable("$provider: restore purchases through $provider")
-            }
+            !policy.sdkCanRestore -> ai.appdna.sdk.billing.BillingError.ProviderNotAvailable(
+                ai.appdna.sdk.billing.BillingOwnership.restoreRefusalMessage(nativeMgr.providerName),
+            )
             else -> null
         }
         if (refusal != null || nativeMgr == null) {
