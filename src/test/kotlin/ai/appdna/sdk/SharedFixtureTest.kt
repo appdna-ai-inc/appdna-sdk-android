@@ -250,6 +250,10 @@ class SharedFixtureTest(
             "map_interactive_plan" -> runMapInteractivePlan(action, spy)
             // SPEC-497 §13h.3 — getLocationData over the stored answer.
             "location_data_from_answer" -> runLocationDataFromAnswer(action, spy)
+            // SPEC-497 §13h — what a location field stores (the one rule both writers use), read back.
+            "location_answer_from_input" -> runLocationAnswerFromInput(action, spy)
+            // SPEC-497 §4.2 — the core rule every wrapper bridge's auth gate and decoder use.
+            "bridge_step_advance_reply" -> runBridgeStepAdvanceReply(action, spy)
             // SPEC-497 billing (A1, C1, C2, D-R40-1, C5) — the REAL billing core, FakeBillingClient-driven.
             "billing_ownership" -> runBillingOwnership(action, spy)
             "purchase_completion_plan" -> runPurchaseCompletionPlan(action, spy)
@@ -1894,6 +1898,71 @@ class SharedFixtureTest(
             store.clearAll()
         }
     }
+    /**
+     * The stored answer is built by the REAL `LocationAnswer` (a selection first goes through the REAL
+     * `parseLocationSuggestion`, the parser both location writers use), stored in the REAL
+     * SessionDataStore and read back through `AppDNA.getLocationData`. Both outputs strict.
+     */
+    private fun runLocationAnswerFromInput(action: JSONObject, spy: Spy) {
+        val fieldId = action.getString("field_id")
+        val input = action.getJSONObject("input")
+        val stored: Any = when (val kind = input.getString("kind")) {
+            "typed" -> ai.appdna.sdk.onboarding.LocationAnswer.typed(input.getString("text"))
+            "selected" -> ai.appdna.sdk.onboarding.LocationAnswer.selection(
+                ai.appdna.sdk.onboarding.parseLocationSuggestion(input.getJSONObject("suggestion")),
+                if (input.isNull("typed_query")) null else input.optString("typed_query"),
+            )
+            else -> unsupported("location_answer_from_input input.kind $kind")
+        }
+        val stateAfter = fixtureJson.getJSONObject("expect").optJSONObject("state_after")
+        assertStrictJson("[$fixtureName] stored_answer", stateAfter?.opt("stored_answer"), stored, "$")
+        spy.state["stored_answer"] = stored
+
+        ai.appdna.sdk.core.SessionDataStore.initialize(ctx)
+        val store = ai.appdna.sdk.core.SessionDataStore.instance!!
+        try {
+            store.setOnboardingResponses(mapOf("step_location" to mapOf(fieldId to stored)))
+            val loc = AppDNA.getLocationData(fieldId)
+            val actual: Map<String, Any?>? = loc?.let {
+                linkedMapOf(
+                    "formatted_address" to it.formatted_address,
+                    "city" to it.city,
+                    "state" to it.state,
+                    "state_code" to it.state_code,
+                    "country" to it.country,
+                    "country_code" to it.country_code,
+                    "latitude" to it.latitude,
+                    "longitude" to it.longitude,
+                    "timezone" to it.timezone,
+                    "timezone_offset" to it.timezone_offset,
+                    "postal_code" to it.postal_code,
+                    "raw_query" to it.raw_query,
+                )
+            }
+            assertStrictJson("[$fixtureName] location_data", stateAfter?.opt("location_data"), actual, "$")
+            spy.state["location_data"] = actual
+        } finally {
+            store.clearAll()
+        }
+    }
+
+    /** `StepAdvanceResult.isExplicitBridgeDecision` / `bridgeSkipTarget` per case — the wrappers' one rule. */
+    private fun runBridgeStepAdvanceReply(action: JSONObject, spy: Spy) {
+        val cases = action.optJSONArray("cases") ?: unsupported("bridge_step_advance_reply without action.cases")
+        spy.state["decisions"] = (0 until cases.length()).map { i ->
+            val c = cases.getJSONObject(i)
+            val reply: Any? = when (val r = c.opt("reply")) {
+                null, JSONObject.NULL -> null
+                is JSONObject -> r.asMap()
+                else -> r
+            }
+            mapOf(
+                "explicit" to StepAdvanceResult.isExplicitBridgeDecision(reply),
+                "skip_target" to StepAdvanceResult.bridgeSkipTarget(reply),
+            )
+        }
+    }
+
     // ---------------------------------------------------------------------------------------------
     // push_payload — REAL PushPayloadParser + PushTokenManager
     // ---------------------------------------------------------------------------------------------

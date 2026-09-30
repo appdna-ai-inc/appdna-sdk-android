@@ -12533,7 +12533,7 @@ private fun FormInputLocationPlaceholder(
             value = text,
             onValueChange = { newText ->
                 text = newText
-                inputValues[fieldId] = newText
+                inputValues[fieldId] = LocationAnswer.typed(newText)
                 // Debounce API calls — wait 300ms after last keystroke
                 debounceJob?.cancel()
                 if (newText.length >= 3) {
@@ -12603,9 +12603,11 @@ private fun FormInputLocationPlaceholder(
                             .fillMaxWidth()
                             .then(if (ddRowHeight != null) Modifier.height(ddRowHeight.dp) else Modifier)
                             .clickable {
+                                // SPEC-497 §13h — the text the user typed is the raw_query.
+                                val typed = text
                                 text = suggestion.address
                                 showSuggestions = false
-                                inputValues[fieldId] = suggestion.toStoredAnswer()
+                                inputValues[fieldId] = LocationAnswer.selection(suggestion, typed)
                             }
                             .padding(horizontal = 12.dp, vertical = 8.dp),
                         verticalAlignment = Alignment.CenterVertically,
@@ -12662,74 +12664,7 @@ private fun FormInputLocationPlaceholder(
     }
 }
 
-/**
- * Data class for geocoding autocomplete suggestion.
- *
- * SPEC-497 §13h.2 (D2) — carries city / state / country / timezone (+ codes and postal code) as
- * `LocationFieldComposable` already parses them, so a selection stores the full location.
- */
-internal data class LocationSuggestion(
-    val address: String,
-    /** Null when the lookup had no finite coordinate: the stored answer then omits it. */
-    val latitude: Double?,
-    val longitude: Double?,
-    val city: String? = null,
-    val state: String? = null,
-    val stateCode: String? = null,
-    val country: String? = null,
-    val countryCode: String? = null,
-    val timezone: String? = null,
-    val postalCode: String? = null,
-) {
-    /**
-     * The one stored shape a selection writes on both platforms (§13h.2):
-     * `{formatted_address, city, state, country, latitude, longitude, timezone}` plus
-     * `state_code` / `country_code` / `postal_code` when the lookup has them. `address` stays as an
-     * alias of `formatted_address` for hosts that read the older key.
-     */
-    fun toStoredAnswer(): Map<String, Any> = buildMap {
-        put("formatted_address", address)
-        put("address", address)
-        city?.let { put("city", it) }
-        state?.let { put("state", it) }
-        country?.let { put("country", it) }
-        latitude?.let { put("latitude", it) }
-        longitude?.let { put("longitude", it) }
-        timezone?.let { put("timezone", it) }
-        stateCode?.let { put("state_code", it) }
-        countryCode?.let { put("country_code", it) }
-        postalCode?.let { put("postal_code", it) }
-    }
-}
-
-/**
- * One autocomplete item → [LocationSuggestion]; blank strings are absent. A missing, null, non-numeric
- * or non-finite `latitude` / `longitude` is null — never 0.0, a real point off the coast of Africa that
- * a selection would store and a map would pin (I4 minor 38). The suggestion itself is KEPT, as on iOS
- * (`LocationFieldView` stores each coordinate only when present): impl audit round 2, A3. A real
- * 0.0 / 0.0 from the server is a coordinate — the spec (§13h.2) treats only a non-finite or non-numeric
- * value as missing.
- */
-internal fun parseLocationSuggestion(item: org.json.JSONObject): LocationSuggestion? {
-    fun opt(key: String): String? =
-        if (item.isNull(key)) null else item.optString(key).takeIf { it.isNotBlank() }
-    return LocationSuggestion(
-        address = item.optString("formatted_address", ""),
-        latitude = suggestionCoordinate(item, "latitude"),
-        longitude = suggestionCoordinate(item, "longitude"),
-        city = opt("city"),
-        state = opt("state"),
-        stateCode = opt("state_code"),
-        country = opt("country"),
-        countryCode = opt("country_code"),
-        timezone = opt("timezone"),
-        postalCode = opt("postal_code"),
-    )
-}
-
-/** An autocomplete item's coordinate: a finite number, else null (absent, null, non-numeric, NaN). */
-internal fun suggestionCoordinate(item: org.json.JSONObject, key: String): Double? =
-    if (!item.has(key) || item.isNull(key)) null else item.optDouble(key, Double.NaN).takeIf { it.isFinite() }
+// LocationSuggestion, parseLocationSuggestion and LocationAnswer live in LocationAnswer.kt.
 
 /** Fetch location suggestions from the AppDNA backend geocoding API.
  *
