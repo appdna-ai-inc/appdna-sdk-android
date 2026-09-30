@@ -316,9 +316,7 @@ class PurchaseCompletionRequiredCasesTest {
             override fun onPaywallRestoreCompleted(paywallId: String, productIds: List<String>) { restored += productIds }
         }
         val pm = PaywallManager(ai.appdna.sdk.config.RemoteConfigManager(null, LocalStorage(ctx), 3600L), pipe!!.tracker)
-        PaywallManager::class.java.getDeclaredMethod("handleRestore", String::class.java, AppDNAPaywallDelegate::class.java)
-            .apply { isAccessible = true }
-            .invoke(pm, "pw_restore", listener)
+        pm.handleRestore("pw_restore", listener)
         s.idle(200)
 
         assertEquals(1, events("purchase_completed")) // reported by this restore

@@ -351,10 +351,7 @@ class PurchaseCompletionConcurrencyTest {
             ai.appdna.sdk.config.RemoteConfigManager(null, ai.appdna.sdk.storage.LocalStorage(ctx), 3600L), pipe!!.tracker,
         )
         try {
-            ai.appdna.sdk.paywalls.PaywallManager::class.java
-                .getDeclaredMethod("handleRestore", String::class.java, AppDNAPaywallDelegate::class.java)
-                .apply { isAccessible = true }
-                .invoke(pm, "pw_cancel", listener)
+            pm.handleRestore("pw_cancel", listener)
             s.idle()
             assertEquals("the paywall restore is parked in the verify gate", listOf("tok_pr"), parked)
             assertTrue(s.mgr.completion.purchaseCompletionMutex.isLocked)
