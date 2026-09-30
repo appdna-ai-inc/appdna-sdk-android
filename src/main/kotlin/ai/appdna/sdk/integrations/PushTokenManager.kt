@@ -133,11 +133,18 @@ internal class PushTokenManager(
     /**
      * Track that a push notification was delivered.
      */
-    fun trackDelivered(pushId: String) {
-        eventTracker.track("push_delivered", mapOf("push_id" to pushId))
+    fun trackDelivered(pushId: String, deliveryId: String? = null) {
+        // SPEC-497 §8.2 — the per-token delivery id rides along when the payload carries one, so the
+        // server updates THAT delivery row (and counts only a real status transition).
+        val props = mutableMapOf<String, Any>("push_id" to pushId)
+        deliveryId?.takeIf { it.isNotBlank() }?.let { props["delivery_id"] = it }
+        eventTracker.track("push_delivered", props)
         scope.launch {
             try {
-                val body = JSONObject().apply { put("push_id", pushId) }
+                val body = JSONObject().apply {
+                    put("push_id", pushId)
+                    deliveryId?.takeIf { it.isNotBlank() }?.let { put("delivery_id", it) }
+                }
                 apiClient?.post("/api/v1/push/delivered", body.toString())
             } catch (e: Exception) {
                 Log.warning("Failed to track push delivered: ${e.message}")
@@ -148,13 +155,17 @@ internal class PushTokenManager(
     /**
      * Track that a push notification was tapped.
      */
-    fun trackTapped(pushId: String, action: String? = null) {
-        val props = mutableMapOf("push_id" to pushId)
+    fun trackTapped(pushId: String, action: String? = null, deliveryId: String? = null) {
+        val props = mutableMapOf<String, Any>("push_id" to pushId)
         action?.let { props["action"] = it }
+        deliveryId?.takeIf { it.isNotBlank() }?.let { props["delivery_id"] = it }
         eventTracker.track("push_tapped", props)
         scope.launch {
             try {
-                val body = JSONObject().apply { put("push_id", pushId) }
+                val body = JSONObject().apply {
+                    put("push_id", pushId)
+                    deliveryId?.takeIf { it.isNotBlank() }?.let { put("delivery_id", it) }
+                }
                 apiClient?.post("/api/v1/push/tapped", body.toString())
             } catch (e: Exception) {
                 Log.warning("Failed to track push tapped: ${e.message}")

@@ -89,6 +89,29 @@ internal object PushPayloadParser {
     }
 
     /**
+     * SPEC-497 §9.2 — the push-tap ROUTING LADDER, one function for every Android tap entry point
+     * (`AppDNA.handlePushTap(intent)` and `AppDNA.push.handleTapData(data, actionId)`), so both
+     * route identically. First match wins:
+     *   (0) a tapped BUTTON (`actionId` matches an entry of `actions`) → that button's own action;
+     *   (1) the canonical `action` (a JSON string `{type, value}`);
+     *   (2) the flat `action_type` / `action_value`;
+     *   (3) `screen_id` → `show_screen`;
+     *   (4) `deep_link` → `deep_link`.
+     * Returns null when nothing routes. Pure.
+     */
+    fun resolveTapAction(data: Map<String, String>, actionId: String?): PushAction? {
+        if (!actionId.isNullOrBlank()) {
+            val button = parseActionButtons(data).firstOrNull { it.id == actionId }
+            val value = button?.value
+            if (button != null && !value.isNullOrBlank()) return PushAction(button.type, value)
+        }
+        parseCanonicalAction(data)?.let { if (it.value.isNotBlank()) return it }
+        data["screen_id"]?.takeIf { it.isNotBlank() }?.let { return PushAction("show_screen", it) }
+        data["deep_link"]?.takeIf { it.isNotBlank() }?.let { return PushAction("deep_link", it) }
+        return null
+    }
+
+    /**
      * Build the [PushPayload] handed to `AppDNAPushDelegate.onPushReceived`.
      *
      * SPEC-070-B — the payload now carries the full `actions` list. Previously a host could see the
