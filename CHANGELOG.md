@@ -70,8 +70,9 @@ Needs the AppDNA server from the same release (purchase verification and push tr
   single source. `Adapty` keeps them.
 - **`restorePurchases()` now throws on failure** (it returned `[]`): `providerNotAvailable` under
   `RevenueCat`, `Adapty` or `None` (restore through your provider); on `StoreKit2`, `networkError`
-  when the restore call fails on the network and `serverError` for a failed Play query or a non-2xx
-  reply. Entitlements stay unchanged and `onRestoreCompleted([])` no longer fires;
+  when the restore call fails on the network or Play's query fails with `NETWORK_ERROR` /
+  `SERVICE_UNAVAILABLE`, and `serverError` for any other failed Play query, no Play connection within
+  30 s, or a non-2xx reply. Entitlements stay unchanged and `onRestoreCompleted([])` no longer fires;
   `purchase_restore_failed` is tracked on every failed restore after `configure` (a cancelled
   coroutine's `CancellationException` is rethrown untracked). The Java `restorePurchasesAsync()`
   now completes exceptionally.
@@ -158,17 +159,17 @@ Needs the AppDNA server from the same release (purchase verification and push tr
 - A refused purchase or restore under `RevenueCat` / `Adapty` — the direct API and the paywall tap
   alike — carries the same message as on iOS: "RevenueCat: purchases are made by RevenueCat in your
   app" ("Adapty: …" for Adapty).
-- The paywall's purchase button is enabled again after a failed, cancelled or pending purchase when
-  the paywall has no `on_failure` action, after a successful purchase when it has no `on_success`
-  action or one this SDK version does not know (the paywall stays up for your app to close), and when the purchase is cancelled by
-  `shutdown()` (it stayed disabled with its spinner).
+- The paywall's purchase button is enabled again after every failed, cancelled or pending purchase
+  (whatever its `on_failure` action), after a successful purchase when it has no `on_success` action
+  or one this SDK version does not know (the paywall stays up for your app to close), and when the
+  purchase is cancelled by `shutdown()` (it stayed disabled with its spinner).
 - A free-trial purchase reports `is_trial: true` and price 0 (from the verify / restore reply).
 - A renewal is also detected by the Play order id's `..N` suffix, so new `subscription_renewed`
   events appear, including on a trial conversion (known: a same-product base-plan change counts as a
   renewal, and a 7-day trial conversion found this way is timed when the device notices it — mostly in
   the d30 trial-to-paid window rather than d7).
 - `reset()` and `identify` with a different user clear the cached entitlements (they refill from the
-  next refresh / snapshot); `onEntitlementsChanged([])` fires.
+  next refresh / snapshot); `onEntitlementsChanged([])` fires if the cache held any entitlements.
 - A Play subscription **on hold** or **pending** reads as `on_hold` / `pending` server-side and is
   not entitled until paid.
 
