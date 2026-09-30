@@ -52,4 +52,14 @@ class EventQueueTest {
         assertEquals(cap, q.size)
         assertTrue("queue is bounded by cap", q.size <= cap)
     }
+
+    /** SPEC-497 impl audit round 2 A8: an interval of 0 or less can no longer spin the auto-flush loop. */
+    @Test
+    fun `auto-flush interval is at least one second and saturates instead of overflowing`() {
+        assertEquals(1_000L, EventQueue.autoFlushIntervalMs(0))
+        assertEquals(1_000L, EventQueue.autoFlushIntervalMs(-5))
+        assertEquals(1_000L, EventQueue.autoFlushIntervalMs(Long.MIN_VALUE))
+        assertEquals(30_000L, EventQueue.autoFlushIntervalMs(30))
+        assertEquals(Long.MAX_VALUE, EventQueue.autoFlushIntervalMs(Long.MAX_VALUE))
+    }
 }

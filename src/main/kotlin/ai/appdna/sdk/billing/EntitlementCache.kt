@@ -184,6 +184,10 @@ internal class EntitlementCache(
 
     // -- Firestore Real-Time Sync --
 
+    /** How many times a listener registration was attempted for the current identity, and where (tests). */
+    @Volatile internal var observeStarts: Int = 0
+    @Volatile internal var lastObservedPath: String? = null
+
     /**
      * Start observing entitlement changes from Firestore.
      *
@@ -202,10 +206,6 @@ internal class EntitlementCache(
      * @param appId The app ID.
      * @param userId The user ID.
      */
-    /** How many times a listener registration was attempted for the current identity, and where (tests). */
-    @Volatile internal var observeStarts: Int = 0
-    @Volatile internal var lastObservedPath: String? = null
-
     @Synchronized
     fun startObserving(orgId: String, appId: String, userId: String) {
         stopObserving()

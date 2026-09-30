@@ -12670,8 +12670,9 @@ private fun FormInputLocationPlaceholder(
  */
 internal data class LocationSuggestion(
     val address: String,
-    val latitude: Double,
-    val longitude: Double,
+    /** Null when the lookup had no finite coordinate: the stored answer then omits it. */
+    val latitude: Double?,
+    val longitude: Double?,
     val city: String? = null,
     val state: String? = null,
     val stateCode: String? = null,
@@ -12692,8 +12693,8 @@ internal data class LocationSuggestion(
         city?.let { put("city", it) }
         state?.let { put("state", it) }
         country?.let { put("country", it) }
-        put("latitude", latitude)
-        put("longitude", longitude)
+        latitude?.let { put("latitude", it) }
+        longitude?.let { put("longitude", it) }
         timezone?.let { put("timezone", it) }
         stateCode?.let { put("state_code", it) }
         countryCode?.let { put("country_code", it) }
@@ -12702,21 +12703,20 @@ internal data class LocationSuggestion(
 }
 
 /**
- * One autocomplete item → [LocationSuggestion]; blank strings are absent. An item without a finite
- * `latitude` AND `longitude` is dropped (null) — it used to become 0.0 / 0.0, a real point off the
- * coast of Africa that a selection would store and a map would pin (I4 minor 38).
+ * One autocomplete item → [LocationSuggestion]; blank strings are absent. A missing, null, non-numeric
+ * or non-finite `latitude` / `longitude` is null — never 0.0, a real point off the coast of Africa that
+ * a selection would store and a map would pin (I4 minor 38). The suggestion itself is KEPT, as on iOS
+ * (`LocationFieldView` stores each coordinate only when present): impl audit round 2, A3. A real
+ * 0.0 / 0.0 from the server is a coordinate — the spec (§13h.2) treats only a non-finite or non-numeric
+ * value as missing.
  */
 internal fun parseLocationSuggestion(item: org.json.JSONObject): LocationSuggestion? {
     fun opt(key: String): String? =
         if (item.isNull(key)) null else item.optString(key).takeIf { it.isNotBlank() }
-    fun coord(key: String): Double? =
-        if (!item.has(key) || item.isNull(key)) null else item.optDouble(key, Double.NaN).takeIf { it.isFinite() }
-    val lat = coord("latitude") ?: return null
-    val lng = coord("longitude") ?: return null
     return LocationSuggestion(
         address = item.optString("formatted_address", ""),
-        latitude = lat,
-        longitude = lng,
+        latitude = suggestionCoordinate(item, "latitude"),
+        longitude = suggestionCoordinate(item, "longitude"),
         city = opt("city"),
         state = opt("state"),
         stateCode = opt("state_code"),
@@ -12726,6 +12726,10 @@ internal fun parseLocationSuggestion(item: org.json.JSONObject): LocationSuggest
         postalCode = opt("postal_code"),
     )
 }
+
+/** An autocomplete item's coordinate: a finite number, else null (absent, null, non-numeric, NaN). */
+internal fun suggestionCoordinate(item: org.json.JSONObject, key: String): Double? =
+    if (!item.has(key) || item.isNull(key)) null else item.optDouble(key, Double.NaN).takeIf { it.isFinite() }
 
 /** Fetch location suggestions from the AppDNA backend geocoding API.
  *

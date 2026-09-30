@@ -568,6 +568,10 @@ object AppDNA {
     // Last tap handled by handlePushTap / push.handleTapData — its `delivery_id ?: push_id`, persisted
     // to dedup re-delivery across Activity re-creation / process death (SPEC-497 §9.2, PushIdempotency).
     internal const val KEY_LAST_HANDLED_PUSH_TAP = "appdna.last_handled_push_tap_id"
+    // The last [PushIdempotency.TAP_CAP] handled taps (a JSON array, oldest first) — one key was not
+    // enough: tap A, tap B, process death, the Activity restored with intent A re-fired A (impl audit
+    // round 2, A1). The single key above is still read, for a tap handled by an older SDK version.
+    internal const val KEY_HANDLED_PUSH_TAPS = "appdna.handled_push_tap_ids"
     // SPEC-428 CL-10/CL-1: pre-init overflow drops can't touch the persisted DroppedEventsCounter yet
     // (no app Context before configure()), so accrue them in memory and fold into the durable counter
     // once configure() initializes it.

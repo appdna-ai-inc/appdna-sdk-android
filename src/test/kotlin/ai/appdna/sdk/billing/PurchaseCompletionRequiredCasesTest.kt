@@ -124,6 +124,7 @@ class PurchaseCompletionRequiredCasesTest {
         s.delegateHook = { SystemClock.sleep(31_000) }
         s.setDelegate(); s.idle()
         assertEquals(1, delivered(s))
+        assertEquals("the call ran past the 30 s bound", 1, s.mgr.completion.delegateTimeouts.get())
         assertEquals("removed, not re-queued", emptyList<String>(), s.queueTokens())
         s.delegateHook = null
         s.mgr.triggerDrain(); s.idle()

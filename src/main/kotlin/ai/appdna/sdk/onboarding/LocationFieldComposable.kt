@@ -201,9 +201,10 @@ fun LocationFieldComposable(
                                 val payload = mutableMapOf<String, Any>(
                                     "formatted_address" to suggestion.address,
                                     "address" to suggestion.address,
-                                    "latitude" to suggestion.latitude,
-                                    "longitude" to suggestion.longitude,
                                 )
+                                // A coordinate the lookup lacks is omitted, never stored as 0.0 (A3).
+                                suggestion.latitude?.let { payload["latitude"] = it }
+                                suggestion.longitude?.let { payload["longitude"] = it }
                                 suggestion.city?.let { payload["city"] = it }
                                 suggestion.state?.let { payload["state"] = it }
                                 suggestion.stateCode?.let { payload["state_code"] = it }
@@ -262,8 +263,8 @@ fun LocationFieldComposable(
  */
 internal data class LocationSuggestionData(
     val address: String,
-    val latitude: Double,
-    val longitude: Double,
+    val latitude: Double?,
+    val longitude: Double?,
     val city: String? = null,
     val state: String? = null,
     val stateCode: String? = null,
@@ -334,8 +335,8 @@ private suspend fun fetchLocationSuggestions(
             val item = results.optJSONObject(i) ?: return@mapNotNull null
             LocationSuggestionData(
                 address = item.optString("formatted_address", ""),
-                latitude = item.optDouble("latitude", 0.0),
-                longitude = item.optDouble("longitude", 0.0),
+                latitude = suggestionCoordinate(item, "latitude"),
+                longitude = suggestionCoordinate(item, "longitude"),
                 city = item.optString("city").takeIf { it.isNotBlank() },
                 state = item.optString("state").takeIf { it.isNotBlank() },
                 stateCode = item.optString("state_code").takeIf { it.isNotBlank() },
