@@ -11,8 +11,12 @@ Wraps iOS 1.0.82. Ships SPEC-495 (maps) and SPEC-496 (host data, including P1b "
 ### Added
 - **Maps (SPEC-495).** A `map` block can use Google as well as Mapbox (the customer's own key,
   delivered like the Mapbox token), draw a real pannable map through the bundled Google Maps SDK
-  where the app can, style with Google map types / styled-map JSON, and be placed as a fullscreen
-  backdrop or anchored to the top or bottom of the step instead of inline.
+  where the app can (it needs your key in the `com.google.android.geo.API_KEY` manifest meta-data;
+  without it the map is static), style with Google map types / styled-map JSON, and be placed as a
+  fullscreen backdrop or anchored to the top or bottom of the step instead of inline. The route line is
+  the encoded polyline (Google, precision 5), otherwise straight segments between the stops. With
+  auto-fit on (the default) the camera fits the route and its stops, and a single point uses zoom 15;
+  with auto-fit off it centres on the authored centre at the authored zoom.
 - **Host data for every element (SPEC-496).** `{{hook_data.…}}`, `data_templates` and bindings
   resolve on the raw step JSON for every onboarding field; an `input_select` `repeat` generates its
   options from a host list, with a pending state until `onBeforeStepRender` answers.
@@ -204,10 +208,6 @@ Needs the AppDNA server from the same release (purchase verification and push tr
 - **Upgrade note:** a notification that the previous SDK version posted and that is still in the
   tray when the app updates carries no `appdna` extra, so tapping it after the upgrade is ignored:
   `handlePushTap` returns `false`, and nothing is tracked or routed.
-
-#### Changed — onboarding
-- Interactive map: draws the route polyline and fits the camera to the route and stops; with fit off
-  it centres on the authored centre (not the first stop); a single point under fit uses zoom 15.
 
 #### Fixed
 - **A lifetime purchase no longer disappears after an entitlement update**; `hasActiveSubscription()`
