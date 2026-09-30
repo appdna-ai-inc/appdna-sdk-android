@@ -44,6 +44,7 @@ class VerifyTimeoutRealClientTest {
     }
 
     @Test fun `a stalled verify - the call is cancelled at 30 s, the lock is released and the purchase resolves Failed networkError`() {
+        TestHttpServer.settleIoDispatcher()
         val srv = TestHttpServer { _, _ -> null }.also { server = it } // accept, read, never answer
         pipe = BillingTestPipeline(ctx, "verify_timeout_real")
         val s = BillingScenario(ctx, JSONObject("""{

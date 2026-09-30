@@ -65,6 +65,7 @@ class BillingBootstrapTest {
     private val bootstrapReply = """{"orgId":"org_t","appId":"app_t","firestorePath":"orgs/org_t/apps/app_t"}"""
 
     @Test fun `a cold configure with a persisted identity registers the entitlement listener once the bootstrap resolves`() {
+        TestHttpServer.settleIoDispatcher()
         val srv = TestHttpServer { path, _ ->
             if (path.startsWith("/api/v1/sdk/bootstrap")) 200 to bootstrapReply else 200 to "{}"
         }.also { server = it }
@@ -85,6 +86,7 @@ class BillingBootstrapTest {
 
     @Test fun `a purchase while the bootstrap is still pending uses storeKit2 once billing has its manager`() {
         // /sdk/bootstrap never answers: configure() has returned, the bootstrap is in flight.
+        TestHttpServer.settleIoDispatcher()
         val srv = TestHttpServer { path, _ ->
             if (path.startsWith("/api/v1/sdk/bootstrap")) null else 200 to "{}"
         }.also { server = it }
@@ -114,6 +116,7 @@ class BillingBootstrapTest {
     }
 
     @Test fun `after shutdown a purchase fails unknown with the not-configured message`() {
+        TestHttpServer.settleIoDispatcher()
         val srv = TestHttpServer { path, _ ->
             if (path.startsWith("/api/v1/sdk/bootstrap")) 200 to bootstrapReply else 200 to "{}"
         }.also { server = it }

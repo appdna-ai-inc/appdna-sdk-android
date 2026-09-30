@@ -233,6 +233,7 @@ class PushModuleForwardingTest {
     /** Minor 34: `delivery_id` reaches the `/push/delivered` and `/push/tapped` REQUEST BODIES. */
     @Test
     fun `delivery_id is in the push delivered and tapped request bodies`() {
+        ai.appdna.sdk.network.TestHttpServer.settleIoDispatcher()
         val srv = ai.appdna.sdk.network.TestHttpServer { _, _ -> 200 to "{}" }
         try {
             h.close()

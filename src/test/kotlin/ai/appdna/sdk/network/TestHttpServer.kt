@@ -10,6 +10,7 @@ import java.util.Collections
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 import kotlin.concurrent.thread
+import kotlinx.coroutines.launch
 
 /**
  * A tiny loopback HTTP/1.1 server for JVM tests (the Android test deps have no MockWebServer).
@@ -20,6 +21,7 @@ import kotlin.concurrent.thread
  * - [connectionClosedByClient] counts down when a stalled request's connection is closed by the client
  *   (a cancelled OkHttp call closes its socket) — the observable proof that the call was cancelled.
  */
+@OptIn(kotlinx.coroutines.DelicateCoroutinesApi::class)
 internal class TestHttpServer(
     private val respond: (path: String, body: String) -> Pair<Int, String>?,
 ) : AutoCloseable {
@@ -108,6 +110,30 @@ internal class TestHttpServer(
     fun awaitRequest(seconds: Long = 10): Boolean = requestSeen.await(seconds, TimeUnit.SECONDS)
 
     companion object {
+        /**
+         * Wait until `Dispatchers.IO` is responsive again. The Robolectric test JVM is shared by up to
+         * 250 tests (`forkEvery`), and earlier classes leave a backlog of event-database work on the IO
+         * pool (seen: every worker inside Robolectric's native SQLite / `ShadowCloseGuard`). The code
+         * under test does its HTTP on that pool, so a real-network test first lets the backlog drain —
+         * otherwise it measures the previous tests, not the SDK. Returns the time spent (ms).
+         */
+        fun settleIoDispatcher(maxSeconds: Long = 180): Long {
+            val started = System.nanoTime()
+            val deadline = started + TimeUnit.SECONDS.toNanos(maxSeconds)
+            var fastRounds = 0
+            while (fastRounds < 3 && System.nanoTime() < deadline) {
+                val t0 = System.nanoTime()
+                val done = CountDownLatch(1)
+                kotlinx.coroutines.GlobalScope.launch(kotlinx.coroutines.Dispatchers.IO) { done.countDown() }
+                done.await(maxSeconds, TimeUnit.SECONDS)
+                fastRounds = if (System.nanoTime() - t0 < TimeUnit.MILLISECONDS.toNanos(50)) fastRounds + 1 else 0
+                Thread.sleep(20)
+            }
+            val ms = TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - started)
+            if (ms > 1_000) println("TestHttpServer: waited ${ms} ms for Dispatchers.IO to drain earlier tests' work")
+            return ms
+        }
+
         /** What the coroutine worker threads are doing — for a failure message when a request never came. */
         fun workerDiagnostics(): String {
             val workers = Thread.getAllStackTraces().filterKeys { it.name.startsWith("DefaultDispatcher-worker") }
