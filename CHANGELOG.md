@@ -137,6 +137,16 @@ Needs the AppDNA server from the same release (purchase verification and push tr
 - A paywall tap made after `configure` but before billing has initialised reports `errorType`
   `unknown` with "AppDNA SDK not configured yet — call configure() first" (not
   `providerNotAvailable`, which now means only "this provider does not buy through AppDNA").
+  A paywall **restore** tap in that window, or after `shutdown()`, fails the same way:
+  `onPaywallRestoreFailed` with that `unknown` error and one `purchase_restore_failed`
+  (`reason: "not_configured"`, `error_type: "unknown"`) — it was `providerNotAvailable`.
+- A paywall restore tap under `RevenueCat`, `Adapty` or `None` no longer fires
+  `onPaywallRestoreStarted` before `onPaywallRestoreFailed(providerNotAvailable)` — as on iOS, and as
+  the purchase tap (no `onPaywallPurchaseStarted`).
+- `AppDNA.shutdown()` while a paywall purchase or restore is waiting no longer reports it as failed:
+  no `onPaywallPurchaseFailed` / `onPaywallRestoreFailed` and no `purchase_restore_failed`. A purchase
+  that completes afterwards is delivered through the delivery queue. The one-shot
+  `skipNextAutoDismissOnRestore` flag is cleared when such a restore is cancelled.
 - A free-trial purchase reports `is_trial: true` and price 0 (from the verify / restore reply).
 - A renewal is also detected by the Play order id's `..N` suffix, so new `subscription_renewed`
   events appear, including on a trial conversion (known: a same-product base-plan change counts as a

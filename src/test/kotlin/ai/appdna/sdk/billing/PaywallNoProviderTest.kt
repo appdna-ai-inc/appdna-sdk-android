@@ -36,6 +36,7 @@ class PaywallNoProviderTest {
         sc?.teardown(); pipe?.close()
         AppDNA.billing.manager = null
         AppDNA.billing.ownershipPolicy = BillingOwnershipPolicy.NotConfigured
+        AppDNA.paywall.skipNextAutoDismissOnRestore = false
     }
 
     private fun tap(provider: BillingProvider?) {
@@ -105,6 +106,83 @@ class PaywallNoProviderTest {
         AppDNA.billing.ownershipPolicy = BillingOwnership.policy(BillingProvider.None)
         try { AppDNA.billing.restorePurchases(); fail() } catch (e: BillingError.ProviderNotAvailable) { }
         assertEquals(1, pipe!!.count("purchase_restore_failed"))
+    }
+
+    // -- the paywall RESTORE button (I3 r7 m1 + m5) ------------------------------------------------
+
+    private val restoreCalls = mutableListOf<String>()
+
+    private fun restoreTap(provider: BillingProvider?, ownsTransactions: Boolean = false) {
+        pipe = BillingTestPipeline(ctx, "restore_tap")
+        if (provider != null && provider !is BillingProvider.None) {
+            sc = BillingScenario(ctx, JSONObject(), ownsTransactions = ownsTransactions)
+        }
+        AppDNA.billing.ownershipPolicy = if (provider == null) BillingOwnershipPolicy.NotConfigured else BillingOwnership.policy(provider)
+        AppDNA.paywall.skipNextAutoDismissOnRestore = true
+        val delegate = object : AppDNAPaywallDelegate {
+            override fun onPaywallRestoreStarted(paywallId: String) { restoreCalls += "started" }
+            override fun onPaywallRestoreCompleted(paywallId: String, productIds: List<String>) { restoreCalls += "completed" }
+            override fun onPaywallRestoreFailed(paywallId: String, error: Throwable) {
+                restoreCalls += "failed:${billingErrorType(error)}"
+            }
+        }
+        val pm = PaywallManager(ai.appdna.sdk.config.RemoteConfigManager(null, LocalStorage(ctx), 3600L), pipe!!.tracker)
+        try {
+            pm.handleRestore("pw", delegate)
+            repeat(20) { org.robolectric.Shadows.shadowOf(android.os.Looper.getMainLooper()).idle() }
+        } finally {
+            pm.shutdown()
+        }
+    }
+
+    /**
+     * I3 r7 m1 — under a provider that owns restoring, the tap is refused BEFORE `onPaywallRestoreStarted`,
+     * as on iOS and as the purchase tap is. NEGATIVE CONTROL: with the policy gate removed from
+     * `handleRestore`, Started fires first (`["started", "failed:providerNotAvailable"]`) — this fails.
+     */
+    @Test fun `restore tap under revenueCat - no started, one purchase_restore_failed, providerNotAvailable`() {
+        restoreTap(BillingProvider.RevenueCat)
+        assertEquals(listOf("failed:providerNotAvailable"), restoreCalls)
+        assertEquals(listOf("purchase_restore_failed"), pipe!!.names())
+        assertEquals("providerNotAvailable", pipe!!.props("purchase_restore_failed").getString("error_type"))
+        assertEquals("pw", pipe!!.props("purchase_restore_failed").getString("paywall_id"))
+        assertEquals("no billing flow", 0, sc!!.fake.launchCount)
+        assertEquals(false, AppDNA.paywall.skipNextAutoDismissOnRestore)
+    }
+
+    @Test fun `restore tap under adapty - no started, providerNotAvailable`() {
+        restoreTap(BillingProvider.Adapty("k"))
+        assertEquals(listOf("failed:providerNotAvailable"), restoreCalls)
+        assertEquals(1, pipe!!.count("purchase_restore_failed"))
+    }
+
+    @Test fun `restore tap under none - no started, providerNotAvailable`() {
+        restoreTap(BillingProvider.None)
+        assertEquals(listOf("failed:providerNotAvailable"), restoreCalls)
+        assertEquals(listOf("purchase_restore_failed"), pipe!!.names())
+    }
+
+    /**
+     * I3 r7 m5 — a restore tap before billing is configured (or after `shutdown()`, which puts the policy
+     * back to `NotConfigured`) fails with the same `unknown` "not configured yet" error as the purchase tap
+     * in the same window (§3.2 rule 3, R65–R67). NEGATIVE CONTROL: without the `isConfigured` check, the tap
+     * fails `providerNotAvailable` (no manager) — this fails.
+     */
+    @Test fun `restore tap before billing is configured - unknown not-configured, no started`() {
+        restoreTap(null)
+        assertEquals(listOf("failed:unknown"), restoreCalls)
+        assertEquals(listOf("purchase_restore_failed"), pipe!!.names())
+        val props = pipe!!.props("purchase_restore_failed")
+        assertEquals("unknown", props.getString("error_type"))
+        assertEquals(BillingOwnershipPolicy.NOT_CONFIGURED_MESSAGE, props.getString("error"))
+        assertEquals("not_configured", props.getString("reason"))
+        assertEquals(false, AppDNA.paywall.skipNextAutoDismissOnRestore)
+    }
+
+    /** Positive control: under `storeKit2` the restore starts (Started fires, then it completes). */
+    @Test fun `restore tap under storeKit2 - started fires`() {
+        restoreTap(BillingProvider.StoreKit2, ownsTransactions = true)
+        assertEquals("started", restoreCalls.firstOrNull())
     }
 
     @Test fun `PurchaseFailedException carries the verification error type`() {

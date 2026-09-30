@@ -359,14 +359,65 @@ class PurchaseCompletionConcurrencyTest {
             assertEquals("the paywall restore is parked in the verify gate", listOf("tok_pr"), parked)
             assertTrue(s.mgr.completion.purchaseCompletionMutex.isLocked)
 
+            // I4 r7 m2 — the host set the one-shot skip flag for THIS restore; the cancellation must clear
+            // it, or it leaks into the next paywall's restore. NEGATIVE CONTROL: without the clear in the
+            // `CancellationException` catch of `handleRestore`, the flag is still true and this fails.
+            AppDNA.paywall.skipNextAutoDismissOnRestore = true
             pm.shutdown()
             s.idle()
             assertEquals(0, events("purchase_restore_failed"))
             assertEquals(0, events("purchase_restored"))
             assertEquals("no onPaywallRestoreFailed / Completed", listOf("started"), paywallEvents)
             assertFalse(s.mgr.completion.purchaseCompletionMutex.isLocked)
+            assertFalse("the skip flag is cleared by the cancelled restore", AppDNA.paywall.skipNextAutoDismissOnRestore)
         } finally {
+            AppDNA.paywall.skipNextAutoDismissOnRestore = false
             gate.complete(Unit)
+            pm.shutdown()
+        }
+    }
+
+    /**
+     * SPEC-497 I4 r7 m1 — the PAYWALL purchase is waiting for Play's result and the paywall scope is
+     * cancelled (`PaywallManager.shutdown()`, as `AppDNA.shutdown()` does). A cancellation is not a failed
+     * purchase: no `onPaywallPurchaseFailed` and no `purchase_failed` (the purchase may still complete, and
+     * D-R40-1 then reports it through the delivery queue — a failure callback first would contradict it).
+     * NEGATIVE CONTROL: without the `catch (e: CancellationException) { throw e }` ahead of the
+     * `PurchaseCancelledException` catch in `handlePurchase`, the catch-all hands the cancellation to
+     * `onPaywallPurchaseFailed` — this test fails.
+     */
+    @Test fun `a paywall purchase cancelled by shutdown - no onPaywallPurchaseFailed`() {
+        val s = scenario(inFlightPurchase)
+        s.fake.autoDeliver = false // Play never answers: the purchase waits for its result
+        val paywallEvents = mutableListOf<String>()
+        val listener = object : AppDNAPaywallDelegate {
+            override fun onPaywallPurchaseStarted(paywallId: String, productId: String) { paywallEvents += "started" }
+            override fun onPaywallPurchaseCompleted(paywallId: String, productId: String, transaction: TransactionInfo) { paywallEvents += "completed" }
+            override fun onPaywallPurchaseFailed(paywallId: String, error: Throwable, errorType: String, productId: String?) {
+                paywallEvents += "failed:$errorType"
+            }
+        }
+        val paywall = ai.appdna.sdk.paywalls.PaywallConfigParser.parsePaywalls(mapOf("pw_buy" to mapOf(
+            "id" to "pw_buy", "name" to "t", "layout" to mapOf("type" to "stack"), "sections" to emptyList<Any>(),
+        )))["pw_buy"]!!
+        val pm = ai.appdna.sdk.paywalls.PaywallManager(
+            ai.appdna.sdk.config.RemoteConfigManager(null, ai.appdna.sdk.storage.LocalStorage(ctx), 3600L), pipe!!.tracker,
+        )
+        try {
+            pm.handlePurchase(
+                activity(), "pw_buy",
+                ai.appdna.sdk.paywalls.PaywallPlan(id = "l", product_id = "lifetime_unlock", name = "L", price = ""),
+                paywall, emptyMap(), listener,
+            )
+            s.idle()
+            assertEquals("the purchase launched and waits for Play", 1, s.fake.launchCount)
+            assertEquals(listOf("started"), paywallEvents)
+
+            pm.shutdown()
+            s.idle()
+            assertEquals("no onPaywallPurchaseFailed / Completed", listOf("started"), paywallEvents)
+            assertEquals(0, events("purchase_failed"))
+        } finally {
             pm.shutdown()
         }
     }

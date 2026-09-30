@@ -395,6 +395,11 @@ internal class PaywallManager(
                     paywallId = paywallId,
                     listener = listener,
                 )
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                // SPEC-497 (I4 r7 m1): a cancelled paywall scope (`shutdown()` mid-purchase) is not a failed
+                // purchase — no onPaywallPurchaseFailed, no failure routing. The purchase itself is not lost:
+                // if Play completes it, D-R40-1 reports and delivers it through the delivery queue.
+                throw e
             } catch (e: PurchaseCancelledException) {
                 // No `purchase_canceled` emit here — NativeBillingManager's USER_CANCELED branch
                 // already emitted exactly one, with these same property names.
@@ -566,8 +571,41 @@ internal class PaywallManager(
      * [AppDNA.billing.restorePurchases]; on completion fires
      * `onPaywallRestoreCompleted(productIds)`; on failure fires
      * `onPaywallRestoreFailed(error)`.
+     *
+     * A restore the SDK cannot run is refused BEFORE `onPaywallRestoreStarted`, as [handlePurchase]
+     * refuses a purchase before `onPaywallPurchaseStarted` (SPEC-497 §3.2 rule 5, §3.3):
+     * - before `configure` has chosen a policy (or after `shutdown()`): the `unknown` "not configured
+     *   yet" error (§3.2 rule 3, R65–R67; I3 r7 m5);
+     * - no billing, or a provider that owns restoring (`revenueCat` / `adapty` / `none`):
+     *   `providerNotAvailable` (I3 r7 m1 — iOS never fired Started here, Android did).
+     *
+     * `internal` (not private) so a test can drive the refusal paths directly.
      */
-    private fun handleRestore(paywallId: String, listener: AppDNAPaywallDelegate?) {
+    internal fun handleRestore(paywallId: String, listener: AppDNAPaywallDelegate?) {
+        val policy = AppDNA.billing.ownershipPolicy
+        val nativeMgr = AppDNA.billing.manager
+        val refusal: Exception? = when {
+            !policy.isConfigured -> IllegalStateException(ai.appdna.sdk.billing.BillingOwnershipPolicy.NOT_CONFIGURED_MESSAGE)
+            nativeMgr == null -> ai.appdna.sdk.billing.BillingError.ProviderNotAvailable("No billing provider configured")
+            !policy.sdkCanRestore -> nativeMgr.providerName.let { provider ->
+                ai.appdna.sdk.billing.BillingError.ProviderNotAvailable("$provider: restore purchases through $provider")
+            }
+            else -> null
+        }
+        if (refusal != null || nativeMgr == null) {
+            val e = refusal ?: ai.appdna.sdk.billing.BillingError.ProviderNotAvailable("No billing provider configured")
+            val props = mutableMapOf<String, Any>(
+                "paywall_id" to paywallId,
+                "error" to (e.message ?: "unknown"),
+                "error_type" to ai.appdna.sdk.billing.billingErrorType(e),
+            )
+            if (!policy.isConfigured) props["reason"] = "not_configured"
+            eventTracker.track("purchase_restore_failed", ai.appdna.sdk.billing.BillingEventProps.marked(props))
+            listener?.onPaywallRestoreFailed(paywallId = paywallId, error = e)
+            AppDNA.paywall.skipNextAutoDismissOnRestore = false
+            Log.error("Restore refused for paywall $paywallId: ${e.message}")
+            return
+        }
         listener?.onPaywallRestoreStarted(paywallId = paywallId)
         scope.launch {
             try {
@@ -577,9 +615,6 @@ internal class PaywallManager(
                 // `BillingModule.restorePurchases()` is fire-and-forget
                 // (Unit); for the delegate completion we want the typed
                 // `List<Entitlement>` so we can pass productIds.
-                // SPEC-497 R37 SDK major 2: no billing → providerNotAvailable (was IllegalStateException).
-                val nativeMgr = AppDNA.billing.manager
-                    ?: throw ai.appdna.sdk.billing.BillingError.ProviderNotAvailable("No billing provider configured")
                 // trackFailure = false: this path emits its own purchase_restore_failed (with paywall_id),
                 // so a failure is tracked exactly once (R36).
                 val detail = nativeMgr.restoreDetailed(trackFailure = false)
@@ -615,7 +650,9 @@ internal class PaywallManager(
                 }
             } catch (e: kotlinx.coroutines.CancellationException) {
                 // SPEC-497 (I3 r6 m3): a cancelled paywall scope (`shutdown()`) is not a failed restore —
-                // no purchase_restore_failed, no onPaywallRestoreFailed.
+                // no purchase_restore_failed, no onPaywallRestoreFailed. The one-shot skip flag is still
+                // cleared (I4 r7 m2): the restore it was set for is over, so it must not leak into the next.
+                AppDNA.paywall.skipNextAutoDismissOnRestore = false
                 throw e
             } catch (e: Exception) {
                 eventTracker.track(
