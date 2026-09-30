@@ -124,6 +124,49 @@ internal class ApiClient(
     }
 
     /**
+     * SPEC-497 §13a.2 "Verify result plumbing" (S5-M1) — [post] with the outcome kept: the HTTP status
+     * (null = a network error after the retries), the body, and the server's error code. Same retry
+     * policy as [post]: network errors and 5xx are retried with [retryDelays]; every 4xx is terminal on
+     * the first answer. [post] itself is unchanged for its other callers.
+     */
+    suspend fun postForResult(path: String, body: String): ApiResult {
+        return withContext(Dispatchers.IO) {
+            var lastStatus: Int? = null
+            var lastBody: String? = null
+            for (attempt in 0..retryDelays.size) {
+                try {
+                    val request = Request.Builder()
+                        .url("${environment.baseUrl}$path")
+                        .header("x-api-key", apiKey)
+                        .header("Content-Type", "application/json")
+                        .post(body.toRequestBody(jsonMediaType))
+                        .build()
+                    client.newCall(request).execute().use { response ->
+                        val raw = response.body?.string()
+                        if (response.isSuccessful) {
+                            return@withContext ApiResult(response.code, raw, null)
+                        }
+                        val code = raw?.let { decodeErrorCode(it) }
+                        if (response.code in 400..499) {
+                            Log.warning("API request failed (${response.code}): $path code=${code ?: "n/a"}")
+                            return@withContext ApiResult(response.code, raw, code)
+                        }
+                        Log.warning("API request failed (${response.code}): $path")
+                        lastStatus = response.code
+                        lastBody = raw
+                    }
+                } catch (e: IOException) {
+                    Log.warning("API request error: ${e.message}")
+                    lastStatus = null
+                    lastBody = null
+                }
+                if (attempt < retryDelays.size) delay(retryDelays[attempt])
+            }
+            ApiResult(lastStatus, lastBody, lastBody?.let { decodeErrorCode(it) })
+        }
+    }
+
+    /**
      * SPEC-067: POST a JSON body with gzip compression for event ingestion.
      * Returns the response body string, or null on failure.
      */
@@ -388,8 +431,9 @@ internal class ApiClient(
             val raw = response.peekBody(8 * 1024).string()
             if (raw.isBlank()) return null to null
             val obj = JSONObject(raw)
-            val code = obj.optString("error_code", "").ifEmpty { null }
+            val code = decodeErrorCode(raw)
             val msg = obj.optString("message", "").ifEmpty { null }
+                ?: obj.optJSONObject("error")?.optString("message", "")?.ifEmpty { null }
             code to msg
         } catch (_: Throwable) {
             null to null
@@ -523,4 +567,27 @@ internal enum class EventUploadDisposition {
      * Android pauses via `bumpFailureCounter()`.
      */
     DROP_PERMANENT,
+}
+
+/**
+ * SPEC-497 §13a.2 — the outcome of a [ApiClient.postForResult] call. `status == null` is a network
+ * error after the retries; `errorCode` is the server's error code (see [decodeErrorCode]).
+ */
+internal data class ApiResult(val status: Int?, val body: String?, val errorCode: String?) {
+    val isSuccess: Boolean get() = status != null && status in 200..299
+}
+
+/**
+ * The server's error code from an error body, in this order: a top-level `error_code` string (kept
+ * first so nothing that relied on it changes); `error` when it is a string; `error.code` when `error`
+ * is an object — the `{ error: { code, message } }` shape `withErrorHandler` answers an `AppError` with.
+ * Pure, so it is unit-testable without a server.
+ */
+internal fun decodeErrorCode(raw: String): String? = try {
+    val obj = JSONObject(raw)
+    obj.optString("error_code", "").ifEmpty { null }
+        ?: (obj.opt("error") as? String)?.ifEmpty { null }
+        ?: obj.optJSONObject("error")?.optString("code", "")?.ifEmpty { null }
+} catch (_: Throwable) {
+    null
 }

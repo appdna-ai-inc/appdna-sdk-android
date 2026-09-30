@@ -112,6 +112,24 @@ internal class LocalStorage(val context: Context) {
         storeFor(key).edit().putLong(key, value).apply()
     }
 
+    /**
+     * SPEC-497 §13a.2 (Q1) — write several keys in ONE `edit()` finished with `commit()`, so they are on
+     * disk together when this returns: a crash can never persist the reported set without its delivery
+     * queue entry, or the other way round. A `null` value removes the key. Only non-sensitive keys go
+     * through here (the billing ledger); a sensitive key would split the write across two files.
+     *
+     * It is the ONLY writer of `appdna.reported_purchase_tokens`, `appdna.pending_deliveries_v1`,
+     * `appdna.verify_attempted_v1` and `appdna.purchase_class_cache_v1`.
+     */
+    fun setStringsSync(values: Map<String, String?>): Boolean {
+        require(values.keys.none { isSensitive(it) }) { "setStringsSync writes non-sensitive keys only" }
+        val editor = plaintextPrefs.edit()
+        for ((k, v) in values) {
+            if (v == null) editor.remove(k) else editor.putString(k, v)
+        }
+        return editor.commit()
+    }
+
     fun remove(key: String) {
         // Remove from both stores defensively — the value may have been written
         // to the plaintext file before migration ran.

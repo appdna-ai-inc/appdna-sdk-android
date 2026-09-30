@@ -69,5 +69,10 @@ fun billingErrorType(t: Throwable): String = when (t) {
     // BillingError; they map onto the same discriminators.
     is ai.appdna.sdk.PurchaseCancelledException -> "userCancelled"
     is ai.appdna.sdk.PurchasePendingException -> "pending"
+    // SPEC-497 §13a.2 (round-6 SDK minor 1): a server refusal is a verification failure, the value iOS
+    // and the RN error-code table already document — not "unknown".
+    is VerificationException -> "verificationFailed"
+    // §13a.3 (V7-S1): the typed failure travels on the exception BillingModule.purchase throws.
+    is ai.appdna.sdk.PurchaseFailedException -> t.errorType ?: "unknown"
     else -> "unknown"
 }

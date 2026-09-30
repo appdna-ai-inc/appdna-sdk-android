@@ -3,226 +3,213 @@ package ai.appdna.sdk.billing
 import ai.appdna.sdk.AppDNA
 import ai.appdna.sdk.Log
 import ai.appdna.sdk.network.ApiClient
+import ai.appdna.sdk.network.ApiResult
 import org.json.JSONArray
 import org.json.JSONObject
+import java.io.IOException
+
+/**
+ * SPEC-497 §13b.2 — one verified purchase as the server's reply DTO describes it
+ * (`{entitled, product_id, product_type, store, status, expires_at, is_trial, original_transaction_id,
+ * consume}`). The public [Entitlement] is unchanged; the extra facts ride beside it.
+ */
+internal data class VerifiedPurchase(
+    val entitlement: Entitlement,
+    /** `"subs"` / `"inapp"`, or null when an older server did not say. */
+    val productType: String?,
+    /** C1: the server's `Product.type == 'consumable'` decision. */
+    val consume: Boolean,
+    val originalTransactionId: String?,
+    val entitled: Boolean,
+    /** The purchase token the item belongs to (restore items), when the reply carries it. */
+    val token: String? = null,
+)
+
+/** One owned purchase sent to `/billing/restore`. */
+internal data class RestoreTransaction(val token: String, val productId: String, val productType: String?)
 
 /**
  * Handles server-side receipt verification and purchase restoration.
  *
- * Communicates with the AppDNA backend billing endpoints:
- * - POST /api/v1/billing/verify — Verify a single purchase receipt
- * - POST /api/v1/billing/restore — Restore and verify multiple purchases
- * - GET  /api/v1/billing/entitlements — Fetch current active entitlements
+ * - POST /api/v1/billing/verify — verify one purchase
+ * - POST /api/v1/billing/restore — verify the owned purchases
+ * - GET  /api/v1/billing/entitlements — the server's view of the user's entitlements
+ *
+ * SPEC-497: every call sends `billing_owner` (LD-R4-1, from the ownership policy this verifier is built
+ * with) and `product_type`; failures keep their HTTP status and the server's error code
+ * ([VerificationException.httpStatus] / [VerificationException.serverError]) so `PurchaseCompletion`
+ * can tell a terminal refusal from a retryable one.
  */
 internal class ReceiptVerifier(
-    private val apiClient: ApiClient
+    private val apiClient: ApiClient?,
+    private val billingOwner: String = "sdk",
+    private val post: suspend (String, String) -> ApiResult = { path, body ->
+        apiClient?.postForResult(path, body) ?: ApiResult(null, null, null)
+    },
+    private val currentUserId: () -> String? = { AppDNA.getIdentityRef()?.userId },
 ) {
 
     /**
-     * Verify a purchase with the backend and return the resulting entitlement.
+     * Verify a purchase and return the server's reply.
      *
-     * @param purchaseToken The Google Play purchase token.
-     * @param productId The product ID purchased.
-     * @param platform The platform identifier ("android").
-     * @param paywallId Optional paywall ID for attribution.
-     * @param experimentId Optional experiment ID for attribution.
-     * @return The verified Entitlement.
-     * @throws VerificationException if the server rejects or cannot verify the receipt.
+     * @throws VerificationException for every non-2xx reply (with `httpStatus` and the server's code)
+     *   and for a network error after the retries (`httpStatus == null`).
      */
     suspend fun verify(
         purchaseToken: String,
         productId: String,
+        productType: String? = null,
         platform: String = "android",
         paywallId: String? = null,
-        experimentId: String? = null
-    ): Entitlement {
+        experimentId: String? = null,
+    ): VerifiedPurchase {
         val body = JSONObject().apply {
             put("platform", platform)
             put("transaction", JSONObject().apply {
                 put("token", purchaseToken)
                 put("productId", productId)
             })
+            if (productType != null) put("product_type", productType)
+            put("billing_owner", billingOwner)
             if (paywallId != null) put("paywall_id", paywallId)
             if (experimentId != null) put("experiment_id", experimentId)
-            // Cross-account-leak defence (primary, server-side). Mirrors
-            // iOS Billing/ReceiptVerifier.swift. The backend decodes the
-            // purchase's `obfuscatedAccountId` and compares to this userId.
-            // Decision matrix the backend MUST implement (mirrors
-            // `EntitlementOwnerFilter`):
-            //   tagged + matches userId   → grant
-            //   tagged + mismatch         → deny (cross-account leak attempt)
-            //   untagged                  → grant + claim ownership for userId
-            //                               (migration-tolerant; the claim is
-            //                                persisted so a later user-switch
-            //                                doesn't silently re-grant)
-            // TODO(backend): enforce the above on `/verify` + `/restore`
-            // once this SDK version is in the wild.
-            AppDNA.getIdentityRef()?.userId?.let { put("app_user_id", it) }
+            // The server decodes the purchase's obfuscatedAccountId and compares it with the derived
+            // token of this user (tagged + match → grant; tagged + mismatch → 403 unless no other user
+            // owns it, LD-R76-1; untagged → grant and claim). Anonymous → no app_user_id.
+            currentUserId()?.let { put("app_user_id", it) }
         }
-
         Log.debug("Verifying receipt for product: $productId")
-
-        val response = apiClient.post("/api/v1/billing/verify", body.toString())
-            ?: throw VerificationException("No response from server during verification")
-
+        val result = post("/api/v1/billing/verify", body.toString())
+        if (!result.isSuccess) {
+            throw VerificationException(
+                message = if (result.status == null) "No response from server during verification"
+                else "Verification failed (HTTP ${result.status})${result.errorCode?.let { ": $it" } ?: ""}",
+                httpStatus = result.status,
+                serverError = result.errorCode,
+            )
+        }
         return try {
-            val json = JSONObject(response)
-            val data = json.optJSONObject("data")
-                ?: throw VerificationException("Missing 'data' in verification response")
-            // SPEC-070-A audit Round 2 finding 1: backend returns
-            // `{ data: { entitled, subscription: <entity> } }` — must unwrap
-            // `subscription` before parsing, otherwise every verify response
-            // returns an Entitlement with productId="" and expiresAt=null.
-            // iOS reference: Billing/ReceiptVerifier.swift:7-23.
-            val subscription = data.optJSONObject("subscription") ?: data
-            parseEntitlement(subscription)
-        } catch (e: VerificationException) {
-            throw e
+            parseVerifyReply(JSONObject(result.body ?: ""))
         } catch (e: Exception) {
             Log.error("Failed to parse verification response: ${e.message}")
-            throw VerificationException("Failed to parse verification response: ${e.message}", e)
+            throw VerificationException("Failed to parse verification response: ${e.message}", e, result.status)
         }
     }
 
     /**
-     * Restore purchases by sending all known purchase tokens to the backend.
+     * Send the owned purchases to `/billing/restore` and return the server's items.
      *
-     * @param transactions List of maps with "token" and "productId" keys.
-     * @return List of active Entitlements restored.
+     * Error typing (§13b.2 "Restore error contract", R37): a network error → [BillingError.NetworkError];
+     * a non-2xx reply (503 `store_unavailable`, 422 `store_credentials_missing`, …) or an unparseable
+     * body → [BillingError.ServerError].
      */
-    suspend fun restore(
-        transactions: List<Map<String, String>>
-    ): List<Entitlement> {
-        if (transactions.isEmpty()) {
-            Log.debug("No transactions to restore")
-            return emptyList()
-        }
-
-        val transactionsArray = JSONArray().apply {
-            transactions.forEach { tx ->
-                put(JSONObject().apply {
-                    put("token", tx["token"])
-                    put("productId", tx["productId"])
-                })
-            }
-        }
-
+    suspend fun restore(transactions: List<RestoreTransaction>): List<VerifiedPurchase> {
+        if (transactions.isEmpty()) return emptyList()
         val body = JSONObject().apply {
             put("platform", "android")
-            put("transactions", transactionsArray)
-            // Same cross-account-leak gate as `verify` above — see the
-            // comment there for the server-side decision matrix.
-            AppDNA.getIdentityRef()?.userId?.let { put("app_user_id", it) }
+            put("transactions", JSONArray().apply {
+                transactions.forEach { tx ->
+                    put(JSONObject().apply {
+                        put("token", tx.token)
+                        put("productId", tx.productId)
+                        if (tx.productType != null) put("product_type", tx.productType)
+                    })
+                }
+            })
+            put("billing_owner", billingOwner)
+            currentUserId()?.let { put("app_user_id", it) }
         }
-
         Log.debug("Restoring ${transactions.size} purchases")
-
-        val response = apiClient.post("/api/v1/billing/restore", body.toString())
-            ?: throw VerificationException("No response from server during restore")
-
+        val result = post("/api/v1/billing/restore", body.toString())
+        if (result.status == null) throw BillingError.NetworkError(IOException("no response"))
+        if (!result.isSuccess) {
+            throw BillingError.ServerError("restore failed (HTTP ${result.status})${result.errorCode?.let { ": $it" } ?: ""}")
+        }
         return try {
-            val json = JSONObject(response)
-            val dataArray = json.optJSONArray("data")
-                ?: throw VerificationException("Missing 'data' in restore response")
-            val entitlements = mutableListOf<Entitlement>()
+            val dataArray = JSONObject(result.body ?: "").optJSONArray("data")
+                ?: throw IllegalStateException("Missing 'data' in restore response")
+            val out = mutableListOf<VerifiedPurchase>()
             for (i in 0 until dataArray.length()) {
                 val item = dataArray.optJSONObject(i) ?: continue
-                entitlements.add(parseEntitlement(item))
+                out.add(parseItem(item))
             }
-            Log.info("Restored ${entitlements.size} entitlements")
-            entitlements
-        } catch (e: VerificationException) {
-            throw e
+            Log.info("Restored ${out.size} items")
+            out
         } catch (e: Exception) {
-            Log.error("Failed to parse restore response: ${e.message}")
-            throw VerificationException("Failed to parse restore response: ${e.message}", e)
+            throw BillingError.ServerError("restore reply unparseable: ${e.message}")
         }
     }
 
     /**
-     * Fetch current active entitlements from the server.
-     *
-     * @return List of currently active Entitlements, or empty if none.
+     * Fetch the server's current entitlements for the identified user. No user → empty (the server's
+     * SDK path answers `{has_active_subscription:false, subscriptions:[]}` without a user anyway).
      */
     suspend fun fetchEntitlements(): List<Entitlement> {
-        Log.debug("Fetching entitlements from server")
-
-        val response = apiClient.get("/api/v1/billing/entitlements")
-            ?: return emptyList()
-
+        val client = apiClient ?: return emptyList()
+        val userId = currentUserId() ?: return emptyList()
+        val path = "/api/v1/billing/entitlements?app_user_id=" + java.net.URLEncoder.encode(userId, "UTF-8")
+        val response = client.get(path) ?: return emptyList()
         return try {
             val data = response.optJSONObject("data") ?: return emptyList()
             val subscriptions = data.optJSONArray("subscriptions") ?: return emptyList()
-            val entitlements = mutableListOf<Entitlement>()
-            for (i in 0 until subscriptions.length()) {
-                val item = subscriptions.optJSONObject(i) ?: continue
-                entitlements.add(parseEntitlement(item))
-            }
-            entitlements
+            (0 until subscriptions.length()).mapNotNull { subscriptions.optJSONObject(it) }
+                .map { parseItem(it).entitlement }
         } catch (e: Exception) {
             Log.error("Failed to parse entitlements response: ${e.message}")
             emptyList()
         }
     }
 
-    /**
-     * Parse a JSON object into an Entitlement data class.
-     *
-     * SPEC-070-A A.13: backend `ReceiptValidationService.ts:96-119`
-     * (`VerificationResult` shape, see `SubscriptionService.ts:6-38`)
-     * returns **camelCase** fields. Snake_case keys are kept as fallbacks
-     * so older shipped clients still parse responses from any future
-     * mixed-shape rollout, and so disk-cached entitlements written under
-     * the previous schema rehydrate correctly.
-     */
-    private fun parseEntitlement(json: JSONObject): Entitlement {
-        // productId — camelCase primary, product_id fallback
-        val productId = json.optStringOrNull("productId")
-            ?: json.optStringOrNull("product_id")
-            ?: ""
-
-        // store — same key on both sides, but legacy server sometimes
-        // omitted it for Google Play; default preserved.
-        val store = json.optStringOrNull("store") ?: "google_play"
-
-        // status — same key on both sides.
-        val status = json.optStringOrNull("status") ?: "unknown"
-
-        // expiresAt — backend returns ISO-formatted `currentPeriodEnd`
-        // (Date serialised by JSON.stringify -> "2026-05-06T12:00:00Z").
-        // Older payload sometimes called it `expires_at`. Accept both.
-        val expiresAt = json.optStringOrNull("currentPeriodEnd")
-            ?: json.optStringOrNull("expires_at")
-
-        // isTrial — backend uses `isTrialPeriod`. Snake_case kept as fallback.
-        val isTrial = when {
-            json.has("isTrialPeriod") -> json.optBoolean("isTrialPeriod", false)
-            json.has("is_trial") -> json.optBoolean("is_trial", false)
-            else -> status == "trialing"
+    companion object {
+        /**
+         * The `/billing/verify` reply → [VerifiedPurchase]. Accepts the SPEC-497 DTO under `data`, and the
+         * legacy `{ data: { entitled, subscription: <entity> } }` shape of older servers.
+         */
+        fun parseVerifyReply(json: JSONObject): VerifiedPurchase {
+            val data = json.optJSONObject("data")
+                ?: throw VerificationException("Missing 'data' in verification response")
+            val legacy = data.optJSONObject("subscription")
+            val item = parseItem(legacy ?: data)
+            return if (legacy != null && data.has("entitled")) item.copy(entitled = data.optBoolean("entitled", true)) else item
         }
 
-        // offerType — nested under `offerApplied.offer_type` per backend
-        // `SubscriptionService.ts:27-30`. Top-level `offer_type` kept as
-        // legacy fallback.
-        val offerType = json.optJSONObject("offerApplied")?.optStringOrNull("offer_type")
-            ?: json.optStringOrNull("offer_type")
-
-        return Entitlement(
-            productId = productId,
-            store = store,
-            status = status,
-            expiresAt = expiresAt,
-            isTrial = isTrial,
-            offerType = offerType
-        )
+        /** One reply item (verify `data`, a restore `data[]` element, an `/entitlements` subscription). */
+        fun parseItem(json: JSONObject): VerifiedPurchase {
+            val productId = json.optStringOrNull("product_id") ?: json.optStringOrNull("productId") ?: ""
+            val store = json.optStringOrNull("store") ?: "google_play"
+            val status = json.optStringOrNull("status") ?: "unknown"
+            val expiresAt = json.optStringOrNull("expires_at") ?: json.optStringOrNull("currentPeriodEnd")
+            val isTrial = when {
+                json.has("is_trial") && !json.isNull("is_trial") -> json.optBoolean("is_trial", false)
+                json.has("isTrialPeriod") -> json.optBoolean("isTrialPeriod", false)
+                else -> status == "trialing"
+            }
+            val offerType = json.optJSONObject("offerApplied")?.optStringOrNull("offer_type")
+                ?: json.optStringOrNull("offer_type")
+            val productType = json.optStringOrNull("product_type")?.takeIf { it == "subs" || it == "inapp" }
+            return VerifiedPurchase(
+                entitlement = Entitlement(
+                    productId = productId,
+                    store = store,
+                    status = status,
+                    expiresAt = expiresAt,
+                    isTrial = isTrial,
+                    offerType = offerType,
+                ),
+                productType = productType,
+                consume = json.optBoolean("consume", false),
+                originalTransactionId = json.optStringOrNull("original_transaction_id")
+                    ?: json.optStringOrNull("originalTransactionId"),
+                entitled = if (json.has("entitled")) json.optBoolean("entitled", true) else true,
+                token = json.optStringOrNull("token") ?: json.optStringOrNull("purchase_token"),
+            )
+        }
     }
 }
 
 /**
- * `JSONObject.optString` returns the literal string "null" when a JSON
- * `null` value is present — and an empty string when the key is missing.
- * This helper turns both into a real Kotlin `null` so absent / explicit-null
- * fields don't sneak through as bogus strings.
+ * `JSONObject.optString` returns the literal string "null" when a JSON `null` value is present — and
+ * an empty string when the key is missing. This turns both into a real Kotlin `null`.
  */
 private fun JSONObject.optStringOrNull(key: String): String? {
     if (!has(key) || isNull(key)) return null
@@ -232,8 +219,31 @@ private fun JSONObject.optStringOrNull(key: String): String? {
 
 /**
  * Exception thrown when receipt verification fails.
+ *
+ * SPEC-497 §13a.2: [httpStatus] (null = no response) and [serverError] (the server's error code, e.g.
+ * `store_credentials_missing`, `provider_owned`, `token_owned_by_other_app`) are kept so the caller can
+ * classify the failure; both default to null so every existing constructor call compiles.
  */
-class VerificationException(
+class VerificationException @JvmOverloads constructor(
     message: String,
-    cause: Throwable? = null
-) : Exception(message, cause)
+    cause: Throwable? = null,
+    val httpStatus: Int? = null,
+    val serverError: String? = null,
+) : Exception(message, cause) {
+}
+
+/**
+ * SPEC-497 §13a.2 "Failure handling" — the per-status class of a verify outcome.
+ * `Terminal`: 400, 403, 409, 422 and any other 4xx except 401/429 — never retried.
+ * `Retryable`: 401, 429, 5xx, a network error (no status) or a timeout — retried at the next ON_START.
+ */
+internal enum class VerifyOutcomeClass { Ok, Terminal, Retryable }
+
+internal fun classifyVerifyStatus(status: Int?): VerifyOutcomeClass = when {
+    status == null -> VerifyOutcomeClass.Retryable
+    status in 200..299 -> VerifyOutcomeClass.Ok
+    status == 401 || status == 429 -> VerifyOutcomeClass.Retryable
+    status >= 500 -> VerifyOutcomeClass.Retryable
+    status in 400..499 -> VerifyOutcomeClass.Terminal
+    else -> VerifyOutcomeClass.Retryable
+}
