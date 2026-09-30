@@ -307,6 +307,17 @@ class PushModule internal constructor() {
                 }
             }
         }
+        // SPEC-497 §17 item 28 — create a custom sound's channel on first sight, so a later push FCM
+        // displays itself (app in the background, `android.notification.channel_id`) plays it too.
+        if (!data["sound"].isNullOrBlank()) {
+            ctx?.let {
+                try {
+                    ai.appdna.sdk.integrations.PushSoundChannels.ensureChannel(it, data)
+                } catch (e: Throwable) {
+                    Log.warning("Push sound channel: ${e.message}")
+                }
+            }
+        }
         val delegate = delegate()
         if (delegate != null) {
             val payload = PushPayloadParser.buildPayload(data, fallbackTitle, fallbackBody)

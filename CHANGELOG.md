@@ -9,6 +9,13 @@ the project uses [Semantic Versioning](https://semver.org/).
 Wraps iOS 1.0.82. Ships maps and host data (including "Show more").
 
 ### Added
+- **Push action buttons and custom sound from the Console.** A notification the SDK builds shows the
+  push's buttons. A button that opens the app routes its own action through `handlePushTap`
+  (`open_url` now routes like `deep_link`). `dismiss` and buttons set not to open the app go to the
+  new `PushActionReceiver`, which is declared in the SDK manifest. A text-reply button delivers its
+  text as `data["reply_text"]` in `onPushTapped`. The notification is removed when one of its buttons
+  is tapped. A custom sound plays from `res/raw/<name>` on its own `appdna_sound_<name>` channel, which
+  the SDK creates the first time it sees the sound.
 - **Maps.** A `map` block can use Google as well as Mapbox (the customer's own key,
   delivered like the Mapbox token), draw a real pannable map through the bundled Google Maps SDK
   where the app can (it needs your key in the `com.google.android.geo.API_KEY` manifest meta-data;
@@ -36,6 +43,8 @@ Wraps iOS 1.0.82. Ships maps and host data (including "Show more").
   when the same view is reused for a new presentation.
 
 ### Fixed
+- `push_dismissed` was never tracked: `PushDismissReceiver` was not declared in the manifest, so the
+  notification's delete intent reached no receiver. It is declared now.
 - A throwing `onElementInteraction` no longer crashes the app; it is treated as `null`.
 
 ### Binary compatibility

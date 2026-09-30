@@ -1801,6 +1801,16 @@ object AppDNA {
             @Suppress("DEPRECATION")
             (extras.get(k) as? String)?.let { data[k] = it }
         }
+        // SPEC-497 §17 item 28 — a button tap: the typed text of a `text_reply` button reaches
+        // `onPushTapped` as `data["reply_text"]`, and the notification is removed (a button tap does
+        // not auto-cancel it). Only for AppDNA pushes.
+        if (push.isAppDNAMessage(data) || isLegacyTapIntent(extras)) {
+            data.remove(ai.appdna.sdk.integrations.PushNotificationActions.EXTRA_NOTIFICATION_ID)
+            ai.appdna.sdk.integrations.PushNotificationActions.replyText(intent)?.let {
+                data[ai.appdna.sdk.integrations.PushNotificationActions.REPLY_DATA_KEY] = it
+            }
+            ai.appdna.sdk.integrations.PushNotificationActions.cancelFor(push.context, intent)
+        }
         val legacy = isLegacyTapIntent(extras)
         val handled = if (legacy) push.handleLegacyTap(data, data["action_id"]) else push.handleTap(data, data["action_id"])
         if (handled && legacy) {

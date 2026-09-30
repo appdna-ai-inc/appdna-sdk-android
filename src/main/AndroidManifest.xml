@@ -160,5 +160,17 @@
             </intent-filter>
         </service>
 
+        <!--
+            Push notification broadcasts (explicit PendingIntents; an explicit broadcast reaches only a
+            receiver declared in the manifest). PushActionReceiver handles the action buttons that do not
+            open the app (dismiss, foreground: false); PushDismissReceiver tracks push_dismissed.
+        -->
+        <receiver
+            android:name="ai.appdna.sdk.integrations.PushActionReceiver"
+            android:exported="false" />
+        <receiver
+            android:name="ai.appdna.sdk.integrations.PushDismissReceiver"
+            android:exported="false" />
+
     </application>
 </manifest>
