@@ -72,7 +72,8 @@ Needs the AppDNA server from the same release (purchase verification and push tr
   `RevenueCat`, `Adapty` or `None` (restore through your provider); on `StoreKit2`, `networkError`
   when the restore call fails on the network and `serverError` for a failed Play query or a non-2xx
   reply. Entitlements stay unchanged and `onRestoreCompleted([])` no longer fires;
-  `purchase_restore_failed` is tracked on every failed restore. The Java `restorePurchasesAsync()`
+  `purchase_restore_failed` is tracked on every failed restore after `configure` (a cancelled
+  coroutine's `CancellationException` is rethrown untracked). The Java `restorePurchasesAsync()`
   now completes exceptionally.
 - The SDK sends **`billing_owner`** on its verify and restore calls. An app with a connected
   RevenueCat or Adapty integration that still runs an older SDK on `StoreKit2` gets its
