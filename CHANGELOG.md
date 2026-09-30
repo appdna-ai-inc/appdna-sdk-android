@@ -139,7 +139,8 @@ Needs the AppDNA server from the same release (purchase verification and push tr
 - A free-trial purchase reports `is_trial: true` and price 0 (from the verify / restore reply).
 - A renewal is also detected by the Play order id's `..N` suffix, so new `subscription_renewed`
   events appear, including on a trial conversion (known: a same-product base-plan change counts as a
-  renewal).
+  renewal, and a 7-day trial conversion found this way is timed when the device notices it — mostly in
+  the d30 trial-to-paid window rather than d7).
 - `reset()` and `identify` with a different user clear the cached entitlements (they refill from the
   next refresh / snapshot); `onEntitlementsChanged([])` fires.
 - A Play subscription **on hold** or **pending** reads as `on_hold` / `pending` server-side and is
@@ -178,6 +179,11 @@ Needs the AppDNA server from the same release (purchase verification and push tr
 - Location autocomplete drops suggestions that come back without coordinates.
 - The event queue no longer spins the IO thread pool when `flushInterval` is set to a very large
   value (the auto-flush delay overflowed).
+
+#### Cross-platform notes (group D)
+- The iOS permission-API and `NSLocationWhenInUseUsageDescription` change (D3) does not apply to this
+  Android SDK. The Flutter plugin that wraps it now ships a `consumer-rules.pro` (D1), so an
+  R8-minified Flutter release build keeps the plugin's classes.
 
 #### Source / binary compatibility
 - **`LocationData`'s fields other than `formatted_address` are nullable** (`city`, `state`,
