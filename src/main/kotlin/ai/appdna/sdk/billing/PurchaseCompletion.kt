@@ -11,10 +11,12 @@ import com.android.billingclient.api.Purchase
 import com.android.billingclient.api.PurchasesResult
 import com.android.billingclient.api.QueryPurchasesParams
 import com.android.billingclient.api.queryPurchasesAsync
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
 import java.util.concurrent.atomic.AtomicInteger
 import kotlin.coroutines.resume
@@ -353,6 +355,8 @@ internal class PurchaseCompletion(
                 return PurchaseLedger.CLASS_UNKNOWN
             }
             return null
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e // a cancelled scope is not a retryable verify failure (A9)
         } catch (e: Exception) {
             Log.warning("PurchaseCompletion: classification verify failed for ${op.productId}: ${e.message}")
             return null
@@ -407,6 +411,10 @@ internal class PurchaseCompletion(
                     experimentId = if (live) mgr.currentExperimentId else null,
                 )
             } ?: throw BillingError.NetworkError(java.io.IOException("verification timed out after 30 s"))
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            // A cancelled scope is not a verify failure (impl audit round 2, A9): no purchase_failed, no
+            // Failed for the caller — the token stays for the next rescue, as after a process death.
+            throw e
         } catch (e: Exception) {
             result.notCompleted += op.token
             Log.warning("PurchaseCompletion: verify failed for $productId (${e.message}) — left for the next rescue")
@@ -630,6 +638,8 @@ internal class PurchaseCompletion(
             withTimeoutOrNull(WAIT_MS) {
                 mgr.receiptVerifier.restore(send.map { RestoreTransaction(it.token, it.productId, it.productType) })
             } ?: throw BillingError.NetworkError(java.io.IOException("restore timed out after 30 s"))
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e // a cancelled scope is not a restore failure (A9)
         } catch (e: Exception) {
             result.restoreError = e
             return
@@ -747,24 +757,28 @@ internal class PurchaseCompletion(
                 val d = ledger.deliveries().firstOrNull { it.purchaseToken == token }
                 if (d == null || token in inFlight || !deliverable(d)) null else { inFlight += token; d }
             } ?: continue
-            delegateCallGate?.let { gate ->
-                try {
-                    gate(token)
-                } catch (e: Throwable) {
-                    purchaseCompletionMutex.withLock { inFlight -= token }
-                    throw e
-                }
-            }
-            val delegate = AppDNA.billing.deliveringDelegate()
-            if (delegate == null) {
-                purchaseCompletionMutex.withLock { inFlight -= token }
-                return // no delivering delegate: everything stays queued for the next trigger
-            }
-            val outcome = callDelegateBounded(delegate, entry)
-            purchaseCompletionMutex.withLock {
-                inFlight -= token
-                if (outcome == DelegateOutcome.DELIVERED) {
-                    ledger.write(deliveries = ledger.deliveries().filter { it.purchaseToken != token })
+            val call = DelegateCall()
+            var outcome: DelegateOutcome? = null
+            try {
+                delegateCallGate?.invoke(token)
+                val delegate = AppDNA.billing.deliveringDelegate()
+                    ?: return // no delivering delegate: everything stays queued for the next trigger
+                outcome = callDelegateBounded(delegate, entry, call)
+            } finally {
+                // Impl audit round 2 (A5): ALWAYS unmark — a cancelled drain (or a throwing gate) used to
+                // leave the token in-flight, so no later drain in this process would deliver it. A drain
+                // ended before an outcome abandons a call that has not started (compare-and-set: the
+                // posted call can no longer run, the entry stays queued); a call that already started
+                // counts as delivered — removed — unless it threw, so it is never ALSO left queued.
+                val delivered = outcome == DelegateOutcome.DELIVERED ||
+                    (outcome == null && !call.abandonIfNotStarted() && !call.threw())
+                withContext(NonCancellable) {
+                    purchaseCompletionMutex.withLock {
+                        inFlight -= token
+                        if (delivered) {
+                            ledger.write(deliveries = ledger.deliveries().filter { it.purchaseToken != token })
+                        }
+                    }
                 }
             }
             if (outcome == DelegateOutcome.NOT_STARTED) return // Main is wedged: the next trigger retries
@@ -773,15 +787,32 @@ internal class PurchaseCompletion(
 
     private enum class DelegateOutcome { DELIVERED, THREW, NOT_STARTED }
 
+    /** One drain delegate call's state, shared between the drain and the call posted to Main. */
+    private class DelegateCall {
+        val state = AtomicInteger(0) // 0 = not started, 1 = started, 2 = abandoned
+        val done = kotlinx.coroutines.CompletableDeferred<Boolean>() // true = threw
+
+        /** True when the call had not started and now never will. */
+        fun abandonIfNotStarted(): Boolean = state.compareAndSet(0, 2)
+
+        /** The started call has already finished by throwing. */
+        @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
+        fun threw(): Boolean = done.isCompleted && done.getCompleted()
+    }
+
     /**
      * Q3(b): call `onPurchaseCompleted` on Main, bounded by 30 s. Success, a timeout and a late return
      * all count as DELIVERED (the call started; the docs say to grant idempotently by `transactionId`);
      * only a throw keeps the entry queued. A call that never even started (Main busy for 30 s) is
      * abandoned — it can no longer run — and stays queued.
      */
-    private suspend fun callDelegateBounded(delegate: ai.appdna.sdk.AppDNABillingDelegate, entry: PendingDelivery): DelegateOutcome {
-        val state = AtomicInteger(0) // 0 = not started, 1 = started, 2 = abandoned
-        val done = kotlinx.coroutines.CompletableDeferred<Boolean>() // true = threw
+    private suspend fun callDelegateBounded(
+        delegate: ai.appdna.sdk.AppDNABillingDelegate,
+        entry: PendingDelivery,
+        call: DelegateCall,
+    ): DelegateOutcome {
+        val state = call.state
+        val done = call.done
         mainHandler.post {
             if (!state.compareAndSet(0, 1)) return@post
             val threw = try {

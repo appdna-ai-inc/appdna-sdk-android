@@ -6,6 +6,7 @@ import androidx.test.core.app.ApplicationProvider
 import org.json.JSONObject
 import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -97,15 +98,29 @@ class LocationDataFromAnswerTest {
         assertEquals("RR", read.country_code)
     }
 
+    /**
+     * Impl audit round 2 A3 (iOS parity): a suggestion without coordinates is KEPT, and its stored
+     * answer omits the missing coordinate — never 0.0.
+     */
     @Test
-    fun aSuggestionWithoutCoordinatesIsDroppedNotPinnedAtZero() {
-        assertNull(parseLocationSuggestion(JSONObject("""{"formatted_address":"Q"}""")))
-        assertNull(parseLocationSuggestion(JSONObject("""{"formatted_address":"Q","latitude":1.5}""")))
-        assertNull(parseLocationSuggestion(JSONObject("""{"formatted_address":"Q","latitude":null,"longitude":2.0}""")))
-        assertNull(parseLocationSuggestion(JSONObject("""{"formatted_address":"Q","latitude":"x","longitude":2.0}""")))
-        // A real 0.0 is still a coordinate.
+    fun aSuggestionWithoutCoordinatesIsKeptAndStoresNoCoordinate() {
+        val none = parseLocationSuggestion(JSONObject("""{"formatted_address":"Q","city":"Q"}"""))!!
+        assertNull(none.latitude)
+        assertNull(none.longitude)
+        val stored = none.toStoredAnswer()
+        assertEquals(mapOf("formatted_address" to "Q", "address" to "Q", "city" to "Q"), stored)
+        assertNull(locationDataFromAnswer(stored)!!.latitude)
+
+        val latOnly = parseLocationSuggestion(JSONObject("""{"formatted_address":"Q","latitude":1.5}"""))!!
+        assertEquals(1.5, latOnly.latitude!!, 0.0)
+        assertNull(latOnly.longitude)
+        assertFalse(latOnly.toStoredAnswer().containsKey("longitude"))
+        assertNull(parseLocationSuggestion(JSONObject("""{"formatted_address":"Q","latitude":null,"longitude":2.0}"""))!!.latitude)
+        assertNull(parseLocationSuggestion(JSONObject("""{"formatted_address":"Q","latitude":"x","longitude":2.0}"""))!!.latitude)
+        // A real 0.0 is still a coordinate (the spec treats only non-finite / non-numeric as missing).
         val zero = parseLocationSuggestion(JSONObject("""{"formatted_address":"Q","latitude":0.0,"longitude":0.0}"""))!!
-        assertEquals(0.0, zero.latitude, 0.0)
-        assertEquals(0.0, zero.longitude, 0.0)
+        assertEquals(0.0, zero.latitude!!, 0.0)
+        assertEquals(0.0, zero.longitude!!, 0.0)
+        assertEquals(0.0, zero.toStoredAnswer()["latitude"])
     }
 }

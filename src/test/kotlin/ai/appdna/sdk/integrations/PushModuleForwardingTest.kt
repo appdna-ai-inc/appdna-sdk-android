@@ -195,9 +195,12 @@ class PushModuleForwardingTest {
         assertFalse(PushIdempotency.claimTap(storage, "race_key"))
     }
 
-    /** Minor 32: a delivery seen before configure is not claimed, so the forward after configure tracks. */
+    /**
+     * Minor 32 + round 2 A2: a delivery seen before configure is claimed for display but marked
+     * untracked, so the forward after configure tracks it — once — and fires `onPushReceived` once.
+     */
     @Test
-    fun `a delivery with no push manager is not claimed - the same message forwarded after configure is tracked`() {
+    fun `a delivery with no push manager - the same message forwarded after configure is tracked and received once`() {
         val mgr = AppDNA.push.manager
         AppDNA.push.manager = null
         assertTrue(AppDNA.push.handleMessageData(marked))
@@ -208,6 +211,73 @@ class PushModuleForwardingTest {
         idle()
         assertEquals(listOf("push_delivered"), h.events().map { it.first })
         assertEquals("d1", h.events().single().second.getString("delivery_id"))
+        assertEquals("onPushReceived fires once", 1, h.received.size)
+        // A third forward is a plain duplicate.
+        assertTrue(AppDNA.push.handleMessageData(marked))
+        idle()
+        assertEquals(1, h.events().size)
+        assertEquals(1, h.received.size)
+    }
+
+    /**
+     * Round 2 A2: `handleMessage` of a data-only message before configure DISPLAYS it; the same message
+     * forwarded after configure tracks it and fires `onPushReceived` once, but is NOT displayed again.
+     * NEGATIVE CONTROL: the minor-32 code skipped the claim before configure, so the second forward
+     * posted a second notification — this test fails.
+     */
+    @Test
+    fun `a message displayed before configure is not displayed again when forwarded after it`() {
+        val msg = com.google.firebase.messaging.RemoteMessage.Builder("test@fcm").setData(marked).build()
+        val mgr = AppDNA.push.manager
+        AppDNA.push.manager = null
+        assertTrue(AppDNA.push.handleMessage(msg))
+        idle()
+        assertEquals(1, posted())
+        assertTrue(h.received.isEmpty())
+        AppDNA.push.manager = mgr
+        assertTrue(AppDNA.push.handleMessage(msg))
+        idle()
+        assertEquals("displayed once", 1, posted())
+        assertEquals(listOf("push_delivered"), h.events().map { it.first })
+        assertEquals("onPushReceived fires once", 1, h.received.size)
+    }
+
+    /**
+     * Round 2 A1: the last [PushIdempotency.TAP_CAP] handled taps persist, not only the last one. Tap
+     * A, tap B, then the process dies and the Activity is re-created with a FRESH copy of intent A (the
+     * restored launch intent carries its original extras): A is not tracked or routed again.
+     * NEGATIVE CONTROL: with only the last key persisted (B), A re-fires — this test fails.
+     */
+    @Test
+    fun `tap A, tap B, then recreate with A after process death - no re-track`() {
+        assertTrue(AppDNA.handlePushTap(tapIntent("pA", "dA", "x://a")))
+        assertTrue(AppDNA.handlePushTap(tapIntent("pB", "dB", "x://b")))
+        idle()
+        // Process death: the in-memory state is gone; only SharedPreferences survive.
+        val restoredA = tapIntent("pA", "dA", "x://a")
+        assertTrue("an already-handled tap is a no-op that still returns true", AppDNA.handlePushTap(restoredA))
+        idle()
+        val taps = h.events().filter { it.first == "push_tapped" }.map { it.second.getString("delivery_id") }
+        assertEquals(listOf("dA", "dB"), taps)
+        assertEquals(listOf("deep_link" to "x://a", "deep_link" to "x://b"), h.routes)
+        assertEquals(2, h.tapped.size)
+    }
+
+    /** Round 2 A1: the persisted list is capped — the oldest handled tap falls out after TAP_CAP newer ones. */
+    @Test
+    fun `the handled tap list keeps the last TAP_CAP keys`() {
+        val storage = ai.appdna.sdk.storage.LocalStorage(ctx)
+        for (i in 0..PushIdempotency.TAP_CAP) assertTrue(PushIdempotency.claimTap(storage, "k$i"))
+        assertFalse("k1 is still remembered", PushIdempotency.claimTap(storage, "k1"))
+        assertTrue("k0 was evicted", PushIdempotency.claimTap(storage, "k0"))
+    }
+
+    /** Round 2 A1: a tap an older SDK persisted in the single last-tap key still dedupes. */
+    @Test
+    fun `a tap persisted by the older single-key SDK is still handled once`() {
+        val storage = ai.appdna.sdk.storage.LocalStorage(ctx)
+        storage.setString(AppDNA.KEY_LAST_HANDLED_PUSH_TAP, "legacy_key")
+        assertFalse(PushIdempotency.claimTap(storage, "legacy_key"))
     }
 
     /** Minor 33: the first rung that is PRESENT decides (iOS parity) — a blank value never falls through. */

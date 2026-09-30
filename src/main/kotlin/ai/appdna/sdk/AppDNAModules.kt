@@ -275,18 +275,22 @@ class PushModule internal constructor() {
         val deliveryId = data["delivery_id"]?.takeIf { it.isNotBlank() }
         val key = deliveryId ?: pushId
         val mgr = manager
-        // I4 minor 32: claim the delivery only when it can actually be tracked. Before `configure` there
-        // is no manager — claiming then would dedupe away a later forward of the same message (after
-        // configure) with nothing ever tracked.
-        if (mgr != null && key.isNotBlank() && !PushIdempotency.claimDelivered(key)) return ReceiveOutcome.DUPLICATE
+        // Impl audit round 2 (A2): ALWAYS claim, so a message displayed before `configure` is not
+        // displayed again when it is forwarded after it. A claim with no manager to track it is marked
+        // untracked; the first later forward that can track it tracks it and fires `onPushReceived`
+        // (never delivered before `configure`: no delegate yet) — once, and without displaying again.
+        val claim = if (key.isBlank()) PushIdempotency.Claim.FIRST else PushIdempotency.claimDelivered(key, canTrack = mgr != null)
+        if (claim == PushIdempotency.Claim.DUPLICATE) return ReceiveOutcome.DUPLICATE
         Log.info("Push received: $pushId")
         if (mgr == null) Log.warning("Push received before configure — push_delivered is not tracked for $pushId")
         mgr?.trackDelivered(pushId, deliveryId)
-        ctx?.let {
-            try {
-                PushSessionContext.recordPushReceived(it, pushId)
-            } catch (e: Throwable) {
-                Log.warning("PushSessionContext: recordPushReceived failed: ${e.message}")
+        if (claim == PushIdempotency.Claim.FIRST) {
+            ctx?.let {
+                try {
+                    PushSessionContext.recordPushReceived(it, pushId)
+                } catch (e: Throwable) {
+                    Log.warning("PushSessionContext: recordPushReceived failed: ${e.message}")
+                }
             }
         }
         val delegate = delegate()
@@ -296,7 +300,8 @@ class PushModule internal constructor() {
             val inForeground = ctx?.let { AppDNAMessagingService.isAppInForeground(it) } ?: false
             postMain { delegate.onPushReceived(payload, inForeground) }
         }
-        return ReceiveOutcome.HANDLED
+        // A late track does not display again: the first forward already did.
+        return if (claim == PushIdempotency.Claim.LATE_TRACK) ReceiveOutcome.DUPLICATE else ReceiveOutcome.HANDLED
     }
 
     /** Shared by `AppDNA.handlePushTap(intent)` and [handleTapData]. */

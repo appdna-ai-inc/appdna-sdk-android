@@ -45,6 +45,35 @@ class RestoreErrorContractTest {
         assertEquals("networkError", pipe!!.props("purchase_restore_failed").getString("error_type"))
     }
 
+    /**
+     * Impl audit round 2, A6: `/restore` is bounded by 30 s like every other wait in the locked run. A
+     * reply that never comes ends in NetworkError, the cache unchanged, the lock released.
+     */
+    @Test fun `a restore that never answers - NetworkError at 30 s, cache unchanged, lock released`() {
+        val s = scenario("{$ownedLifetime}")
+        val field = NativeBillingManager::class.java.getDeclaredField("receiptVerifier").apply { isAccessible = true }
+        val real = s.verifier
+        val never = kotlinx.coroutines.CompletableDeferred<ai.appdna.sdk.network.ApiResult>()
+        var restoreCalls = 0
+        field.set(s.mgr, ReceiptVerifier(null, "sdk", post = { _, _ -> restoreCalls++; never.await() }, currentUserId = { null }))
+        try {
+            s.setDelegate()
+            var outcome: Result<List<Entitlement>>? = null
+            kotlinx.coroutines.MainScope().launch { outcome = runCatching { s.mgr.restorePurchases() } }
+            s.idle()
+            assertEquals("parked in /restore", 1, restoreCalls)
+            assertEquals(null, outcome)
+            org.robolectric.Shadows.shadowOf(android.os.Looper.getMainLooper()).idleFor(31, java.util.concurrent.TimeUnit.SECONDS)
+            s.idle()
+            assertTrue("got ${outcome?.exceptionOrNull()}", outcome?.exceptionOrNull() is BillingError.NetworkError)
+            assertEquals(listOf("lifetime"), s.entitlementIds())
+            assertEquals(0, s.delegateLog.count { it.first == "onRestoreCompleted" })
+            assertTrue(!s.mgr.completion.purchaseCompletionMutex.isLocked)
+        } finally {
+            field.set(s.mgr, real)
+        }
+    }
+
     @Test fun `a failed Play query - ServerError, cache unchanged`() {
         val s = scenario("""{$ownedLifetime, "query_response_codes":{"subs":"ERROR"}}""")
         val r = s.drive { s.mgr.restorePurchases() }

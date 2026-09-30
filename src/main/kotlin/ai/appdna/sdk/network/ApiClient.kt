@@ -178,7 +178,8 @@ internal class ApiClient(
     /**
      * Enqueue this call and suspend until OkHttp answers, reading the status and body on OkHttp's
      * thread. Cancelling the waiting coroutine cancels the call (`invokeOnCancellation`), so a stalled
-     * server can no longer outlive the caller's timeout. A failure resumes with the [IOException].
+     * server can no longer outlive the caller's timeout. A failure resumes with its exception (an
+     * [IOException] from the call; any [Throwable] from reading the response).
      */
     private suspend fun okhttp3.Call.awaitCancellable(): Pair<Int, String?> =
         kotlinx.coroutines.suspendCancellableCoroutine { cont ->
@@ -189,9 +190,12 @@ internal class ApiClient(
                 }
 
                 override fun onResponse(call: okhttp3.Call, response: Response) {
+                    // Throwable, not IOException (impl audit round 2, A4): anything else thrown while
+                    // reading the body (a charset / state error, an OOM on a huge body) escaped this
+                    // callback into OkHttp's dispatcher and the waiting coroutine never resumed.
                     val read = try {
                         response.use { Result.success(it.code to it.body?.string()) }
-                    } catch (e: IOException) {
+                    } catch (e: Throwable) {
                         Result.failure<Pair<Int, String?>>(e)
                     }
                     if (cont.isActive) cont.resumeWith(read)

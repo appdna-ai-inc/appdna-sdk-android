@@ -105,6 +105,91 @@ class PurchaseCompletionConcurrencyTest {
     }
 
     // ---------------------------------------------------------------------------------------------
+    // a cancelled drain (impl audit round 2, A5)
+    // ---------------------------------------------------------------------------------------------
+
+    private fun cancelManagerChildren(s: BillingScenario) {
+        s.mgr.scope.coroutineContext[kotlinx.coroutines.Job]!!.children.forEach { it.cancel() }
+    }
+
+    /**
+     * The drain is cancelled after it posted the delegate call to Main but before that call started.
+     * The call is abandoned (compare-and-set), the entry stays queued AND leaves the in-flight set, so
+     * the next trigger delivers it exactly once. NEGATIVE CONTROL: the old code left `t1` in-flight
+     * forever (the next drain skipped it) while the posted call still ran — delivered, but also still
+     * queued — so this test fails on both counts.
+     */
+    @Test fun `a drain cancelled before the delegate call starts - the entry stays queued, not in-flight, delivered once later`() {
+        val s = scenario("""{"pending_deliveries":[{"token":"t1","ownerToken":null,"productId":"p1"}]}""")
+        var cancelled = false
+        s.mgr.completion.delegateCallGate = { _ -> if (!cancelled) { cancelled = true; cancelManagerChildren(s) } }
+        s.setDelegate() // trigger (ii): the drain posts the call, then its await sees the cancellation
+        s.idle()
+        assertTrue(cancelled)
+        assertEquals("the abandoned call never ran", 0, delivered(s))
+        assertEquals(listOf("t1"), s.queueTokens())
+        assertFalse(s.mgr.completion.purchaseCompletionMutex.isLocked)
+
+        s.mgr.triggerDrain(); s.idle()
+        assertEquals("the in-flight mark was cleared: the next drain delivers", 1, delivered(s))
+        assertEquals(emptyList<String>(), s.queueTokens())
+        s.mgr.triggerDrain(); s.idle()
+        assertEquals(1, delivered(s))
+    }
+
+    /**
+     * The drain is cancelled WHILE the delegate call runs on Main. The call started, so it counts as
+     * delivered: the entry is removed and never delivered a second time.
+     */
+    @Test fun `a drain cancelled while the delegate call runs - counted delivered, never re-delivered`() {
+        val s = scenario("""{"pending_deliveries":[{"token":"t1","ownerToken":null,"productId":"p1"}]}""")
+        var cancelled = false
+        s.delegateHook = { if (!cancelled) { cancelled = true; cancelManagerChildren(s) } }
+        s.setDelegate(); s.idle()
+        assertTrue(cancelled)
+        assertEquals(1, delivered(s))
+        assertEquals("removed, not left queued", emptyList<String>(), s.queueTokens())
+        s.mgr.triggerDrain(); s.idle()
+        assertEquals("never re-delivered", 1, delivered(s))
+    }
+
+    // ---------------------------------------------------------------------------------------------
+    // a cancelled verify (impl audit round 2, A9)
+    // ---------------------------------------------------------------------------------------------
+
+    /**
+     * The listener's run parks in verify and its scope is cancelled. A cancellation is not a verify
+     * failure: no `purchase_failed`, and the lock is released. NEGATIVE CONTROL: without the
+     * `CancellationException` rethrow the catch-all reports it as a verification failure — one
+     * `purchase_failed` — and this test fails.
+     */
+    @Test fun `a cancelled scope during verify emits no purchase_failed`() {
+        val s = scenario(inFlightPurchase)
+        s.setDelegate()
+        s.fake.autoDeliver = false
+        val caller = kotlinx.coroutines.MainScope()
+        try {
+            caller.launch { runCatching { s.mgr.purchase(activity(), "lifetime_unlock") } }
+            s.idle()
+            val gate = CompletableDeferred<Unit>()
+            val parked = mutableListOf<String>()
+            s.verifyGate = { parked += it; gate.await() }
+            s.fake.deliver(s.fake.listenerPurchase!!, "inapp")
+            s.idle()
+            assertEquals(listOf("tok_x"), parked)
+            assertTrue(s.mgr.completion.purchaseCompletionMutex.isLocked)
+
+            cancelManagerChildren(s)
+            s.idle()
+            assertEquals(0, events("purchase_failed"))
+            assertEquals(0, events("purchase_completed"))
+            assertFalse(s.mgr.completion.purchaseCompletionMutex.isLocked)
+        } finally {
+            caller.coroutineContext[kotlinx.coroutines.Job]?.cancel()
+        }
+    }
+
+    // ---------------------------------------------------------------------------------------------
     // run vs run
     // ---------------------------------------------------------------------------------------------
 

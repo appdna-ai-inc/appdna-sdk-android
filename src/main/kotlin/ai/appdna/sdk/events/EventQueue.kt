@@ -302,10 +302,7 @@ internal class EventQueue(
 
     private fun startAutoFlush() {
         flushJob = scope.launch {
-            // `flushInterval * 1000` overflowed for a very large interval (e.g. Long.MAX_VALUE, which
-            // every test pipeline passes to mean "never") into a NEGATIVE delay — which returns at once,
-            // so the loop spun on Dispatchers.IO flushing the database forever. Saturate instead.
-            val intervalMs = if (flushInterval > Long.MAX_VALUE / 1000) Long.MAX_VALUE else flushInterval * 1000
+            val intervalMs = autoFlushIntervalMs(flushInterval)
             while (isActive) {
                 delay(intervalMs)
                 performFlushWithRetry()
@@ -365,6 +362,18 @@ internal class EventQueue(
     }
 
     companion object {
+        /**
+         * The auto-flush period in ms for an interval in seconds. `flushInterval * 1000` overflowed for
+         * a very large interval (e.g. Long.MAX_VALUE, which every test pipeline passes to mean "never")
+         * into a NEGATIVE delay — which returns at once, so the loop spun on Dispatchers.IO flushing the
+         * database forever: saturate. An interval of 0 or less spun the same way (`delay(0)`): at least
+         * one second (SPEC-497 impl audit round 2, A8).
+         */
+        internal fun autoFlushIntervalMs(flushIntervalSeconds: Long): Long {
+            val seconds = flushIntervalSeconds.coerceAtLeast(1)
+            return if (seconds > Long.MAX_VALUE / 1000) Long.MAX_VALUE else seconds * 1000
+        }
+
         /** SPEC-070-A A.16: Max retries per batch. */
         const val MAX_RETRIES = 3
         /** SPEC-070-A A.16: Base backoff schedule before jitter. */
