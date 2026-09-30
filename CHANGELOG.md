@@ -172,6 +172,9 @@ Needs the AppDNA server from the same release (purchase verification and push tr
   next refresh / snapshot); `onEntitlementsChanged([])` fires if the cache held any entitlements.
 - A Play subscription **on hold** or **pending** reads as `on_hold` / `pending` server-side and is
   not entitled until paid.
+- A destroyed billing connection never leaves a request waiting: an `AppDNA.billing.getProducts` that
+  starts waiting for the Play connection while `shutdown()` tears it down returns an empty list at once
+  instead of waiting forever.
 
 #### Changed — push
 - `AppDNAMessagingService` handles **only AppDNA-marked messages** (`appdna: "1"`). Other messages
