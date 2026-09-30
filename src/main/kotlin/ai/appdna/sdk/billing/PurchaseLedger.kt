@@ -30,6 +30,8 @@ internal data class PendingDelivery(
     val quantity: Int,
     val ownerToken: String?,
     val queuedAt: Long,
+    /** The verified environment (`TransactionInfo.environment`); null = unknown (older entry / server). */
+    val environment: String? = null,
 )
 
 /**
@@ -51,12 +53,12 @@ internal class PurchaseLedger(
 
     // -- reads --
 
-    fun reported(): List<ReportedToken> = parseArray(read(KEY_REPORTED)) { o ->
+    fun reported(): List<ReportedToken> = parseArray(KEY_REPORTED) { o ->
         val t = o.optString("token", "")
         if (t.isEmpty()) null else ReportedToken(t, Finalize.fromWire(o.optString("pending_finalize", "").ifEmpty { null }))
     }
 
-    fun verifyAttempted(): List<String> = parseStrings(read(KEY_VERIFY_ATTEMPTED))
+    fun verifyAttempted(): List<String> = parseStrings(KEY_VERIFY_ATTEMPTED)
 
     fun classCache(): LinkedHashMap<String, String> {
         val out = LinkedHashMap<String, String>()
@@ -65,12 +67,12 @@ internal class PurchaseLedger(
             val o = JSONObject(raw)
             for (k in o.keys()) out[k] = o.optString(k)
         } catch (e: Exception) {
-            Log.debug("PurchaseLedger: class cache unreadable (${e.message})")
+            keepCorrupt(KEY_CLASS_CACHE, raw, e)
         }
         return out
     }
 
-    fun deliveries(): List<PendingDelivery> = parseArray(read(KEY_DELIVERIES)) { o ->
+    fun deliveries(): List<PendingDelivery> = parseArray(KEY_DELIVERIES) { o ->
         val t = o.optString("purchaseToken", "")
         if (t.isEmpty()) null else PendingDelivery(
             purchaseToken = t,
@@ -80,10 +82,11 @@ internal class PurchaseLedger(
             quantity = o.optInt("quantity", 1),
             ownerToken = if (o.isNull("ownerToken")) null else o.optString("ownerToken", "").ifEmpty { null },
             queuedAt = o.optLong("queuedAt", 0L),
+            environment = if (o.isNull("environment")) null else o.optString("environment", "").ifEmpty { null },
         )
     }
 
-    fun identifiedTokens(): List<String>? = read(KEY_IDENTIFIED)?.let { parseStrings(it) }
+    fun identifiedTokens(): List<String>? = read(KEY_IDENTIFIED)?.let { parseStrings(KEY_IDENTIFIED) }
 
     // -- the one writer --
 
@@ -127,6 +130,7 @@ internal class PurchaseLedger(
                         put("quantity", d.quantity)
                         put("ownerToken", d.ownerToken ?: JSONObject.NULL)
                         put("queuedAt", d.queuedAt)
+                        d.environment?.let { put("environment", it) }
                     })
                 }
             }.toString()
@@ -168,25 +172,40 @@ internal class PurchaseLedger(
         if (storage != null) storage.setStringsSync(mapOf(KEY_IDENTIFIED to null)) else memory.remove(KEY_IDENTIFIED)
     }
 
-    private fun <T> parseArray(raw: String?, map: (JSONObject) -> T?): List<T> {
+    private fun <T> parseArray(key: String, map: (JSONObject) -> T?): List<T> {
+        val raw = read(key)
         if (raw.isNullOrBlank()) return emptyList()
         return try {
             val arr = JSONArray(raw)
             (0 until arr.length()).mapNotNull { i -> arr.optJSONObject(i)?.let(map) }
         } catch (e: Exception) {
-            Log.debug("PurchaseLedger: unreadable entry list (${e.message})")
+            keepCorrupt(key, raw, e)
             emptyList()
         }
     }
 
-    private fun parseStrings(raw: String?): List<String> {
+    private fun parseStrings(key: String): List<String> {
+        val raw = read(key)
         if (raw.isNullOrBlank()) return emptyList()
         return try {
             val arr = JSONArray(raw)
             (0 until arr.length()).mapNotNull { i -> arr.optString(i, "").ifEmpty { null } }
-        } catch (_: Exception) {
+        } catch (e: Exception) {
+            keepCorrupt(key, raw, e)
             emptyList()
         }
+    }
+
+    /**
+     * An undecodable ledger value is read as empty — and the next write replaces it, so without this
+     * the undelivered purchases / reported tokens it held would vanish without a trace. Log it loudly
+     * and keep the raw value under `<key>.corrupt` (once per distinct value) so it can be recovered.
+     */
+    private fun keepCorrupt(key: String, raw: String, e: Exception) {
+        val corruptKey = "$key$CORRUPT_SUFFIX"
+        if (read(corruptKey) == raw) return
+        Log.error("PurchaseLedger: $key is unreadable (${e.message}) — read as empty; the raw value is kept in $corruptKey")
+        if (storage != null) storage.setStringsSync(mapOf(corruptKey to raw)) else memory[corruptKey] = raw
     }
 
     companion object {
@@ -195,6 +214,7 @@ internal class PurchaseLedger(
         const val KEY_CLASS_CACHE = "appdna.purchase_class_cache_v1"
         const val KEY_DELIVERIES = "appdna.pending_deliveries_v1"
         const val KEY_IDENTIFIED = "appdna.identified_user_tokens_v1"
+        const val CORRUPT_SUFFIX = ".corrupt"
 
         const val CAP_REPORTED = 500
         const val CAP_VERIFY_ATTEMPTED = 500

@@ -38,6 +38,25 @@ class EntitlementCacheRulesTest {
         assertTrue(c.hasActiveSubscription)
     }
 
+    /**
+     * The entitled statuses are the server's (`ACTIVE_STATUSES` in the server's entitlement rules):
+     * a subscription in `billing_retry` is entitled; `on_hold` / `pending` / `paused` and the terminal
+     * statuses are not. NEGATIVE CONTROL: without `billing_retry` in `EntitlementCache.ACTIVE_STATUSES`,
+     * `hasActiveSubscription` is false for the billing-retry user — this test fails.
+     */
+    @Test fun `billing_retry is entitled like the server, on_hold and the terminal statuses are not`() {
+        val entitled = listOf("active", "trialing", "grace_period", "billing_retry")
+        val notEntitled = listOf("on_hold", "pending", "paused", "expired", "canceled", "revoked", "refunded")
+        for (status in entitled + notEntitled) {
+            EntitlementCache.clearPersisted(ctx)
+            val c = cache()
+            c.update(Entitlement("monthly", "google_play", status, "2026-10-30T00:00:00Z", false, null), "subs")
+            val expected = status in entitled
+            assertEquals("hasActiveSubscription for $status", expected, c.hasActiveSubscription)
+            assertEquals("isEntitled for $status", expected, c.isEntitled("monthly"))
+        }
+    }
+
     @Test fun `a restore reply that omits the lifetime removes it, and product_type round-trips on disk`() {
         val c = cache()
         c.update(ent("lifetime"), "inapp")

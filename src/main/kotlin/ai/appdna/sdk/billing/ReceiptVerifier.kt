@@ -23,6 +23,11 @@ internal data class VerifiedPurchase(
     val entitled: Boolean,
     /** The purchase token the item belongs to (restore items), when the reply carries it. */
     val token: String? = null,
+    /**
+     * `"production"` / `"sandbox"` as the server decided it from the store (Play `testPurchase` on a
+     * subscription, `purchaseType == 0` on a one-time product); null when an older server did not say.
+     */
+    val environment: String? = null,
 )
 
 /** One owned purchase sent to `/billing/restore`. */
@@ -202,6 +207,7 @@ internal class ReceiptVerifier(
                     ?: json.optStringOrNull("originalTransactionId"),
                 entitled = if (json.has("entitled")) json.optBoolean("entitled", true) else true,
                 token = json.optStringOrNull("token") ?: json.optStringOrNull("purchase_token"),
+                environment = json.optStringOrNull("environment")?.takeIf { it == "production" || it == "sandbox" },
             )
         }
     }

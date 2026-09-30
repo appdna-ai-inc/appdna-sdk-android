@@ -1765,7 +1765,9 @@ object AppDNA {
      *
      * Safe to call with any intent: SPEC-497 §9.2 — it does nothing and returns `false` unless the
      * intent carries the AppDNA marker extra (`appdna = "1"`), so a host's own notification taps are
-     * never tracked or routed.
+     * never tracked or routed. One exception: the tap intent of a notification the previous SDK version
+     * posted (no marker; see [isLegacyTapIntent]) is routed and fires `onPushTapped`; it is tracked only
+     * when it carries a `push_id`.
      *
      * 🔴 DEDUP RE-DELIVERY. On Activity re-creation (rotation, "don't keep activities", process-death
      * restore) `onCreate` re-runs `handlePushTap(getIntent())` with the SAME intent. Two guards: the tap
@@ -1776,6 +1778,18 @@ object AppDNA {
      *
      * @return `true` if the intent was an AppDNA push tap (handled now, or a copy of one handled earlier).
      */
+    /**
+     * The tap intent the PREVIOUS SDK version put on its notifications: a launch intent carrying
+     * `push_id`, `action_type` and `action_value` — always as keys, even when a value was null — and
+     * no `appdna` marker (it predates the marker). A notification still in the tray when the app
+     * updates keeps that intent, and without this it was ignored after the upgrade. A host's own
+     * notification does not carry this exact set of keys.
+     */
+    private val LEGACY_TAP_EXTRAS = listOf("push_id", "action_type", "action_value")
+
+    internal fun isLegacyTapIntent(extras: android.os.Bundle): Boolean =
+        !extras.containsKey("appdna") && LEGACY_TAP_EXTRAS.all { extras.containsKey(it) }
+
     @JvmStatic
     fun handlePushTap(intent: android.content.Intent?): Boolean {
         if (intent == null) return false
@@ -1790,14 +1804,20 @@ object AppDNA {
         // SPEC-497 §17 item 28 — a button tap: the typed text of a `text_reply` button reaches
         // `onPushTapped` as `data["reply_text"]`, and the notification is removed (a button tap does
         // not auto-cancel it). Only for AppDNA pushes.
-        if (push.isAppDNAMessage(data)) {
+        if (push.isAppDNAMessage(data) || isLegacyTapIntent(extras)) {
             data.remove(ai.appdna.sdk.integrations.PushNotificationActions.EXTRA_NOTIFICATION_ID)
             ai.appdna.sdk.integrations.PushNotificationActions.replyText(intent)?.let {
                 data[ai.appdna.sdk.integrations.PushNotificationActions.REPLY_DATA_KEY] = it
             }
             ai.appdna.sdk.integrations.PushNotificationActions.cancelFor(push.context, intent)
         }
-        val handled = push.handleTap(data, data["action_id"])
+        val legacy = isLegacyTapIntent(extras)
+        val handled = if (legacy) push.handleLegacyTap(data, data["action_id"]) else push.handleTap(data, data["action_id"])
+        if (handled && legacy) {
+            // The legacy signature (below) is what made it a tap: remove it too, or a re-created
+            // Activity routes it again (an unkeyed legacy tap has no persisted dedup key).
+            LEGACY_TAP_EXTRAS.forEach { intent.removeExtra(it) }
+        }
         if (handled) {
             // Make the intent INERT (I4 M8). The persisted dedup key holds only the LAST tap, so after
             // tap A, then tap B through `onNewIntent` without `setIntent`, a re-created Activity re-runs

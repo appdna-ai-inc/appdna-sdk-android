@@ -66,8 +66,13 @@ sealed class PurchaseResult {
         internal var transactionId: String? = null
             private set
 
-        internal constructor(entitlement: Entitlement, transactionId: String?) : this(entitlement) {
+        /** The server-verified environment (`"production"` / `"sandbox"`); null when not known. */
+        internal var environment: String? = null
+            private set
+
+        internal constructor(entitlement: Entitlement, transactionId: String?, environment: String? = null) : this(entitlement) {
             this.transactionId = transactionId
+            this.environment = environment
         }
     }
     /** User cancelled the purchase flow. */
@@ -496,7 +501,7 @@ class NativeBillingManager internal constructor(
         registerForegroundObserver()
     }
 
-    private fun registerForegroundObserver() {
+    internal fun registerForegroundObserver() {
         if (foregroundObserverRegistered) return
         scope.launch {
             try {
@@ -508,12 +513,30 @@ class NativeBillingManager internal constructor(
         }
     }
 
+    /**
+     * Removes the process-lifecycle observer ON MAIN. `ProcessLifecycleOwner`'s registry rejects a
+     * `removeObserver` from any other thread (IllegalStateException), and `destroy()` is reachable off
+     * Main (`AppDNA.shutdown()` from a background thread): the rejection used to be swallowed, so the
+     * observer — and this whole manager with it — stayed registered for the life of the process. The
+     * registration also runs on Main (it is launched on [scope]), so a posted removal is ordered after
+     * it; a registration that had not started yet is cancelled with [scope] by `destroy()`.
+     */
     private fun unregisterForegroundObserver() {
-        if (!foregroundObserverRegistered) return
-        try {
-            ProcessLifecycleOwner.get().lifecycle.removeObserver(foregroundObserver)
-        } catch (_: Exception) { /* best-effort */ }
-        foregroundObserverRegistered = false
+        val remove = {
+            if (foregroundObserverRegistered) {
+                try {
+                    ProcessLifecycleOwner.get().lifecycle.removeObserver(foregroundObserver)
+                } catch (e: Exception) {
+                    Log.warning("NativeBillingManager: failed to detach foreground observer: ${e.message}")
+                }
+                foregroundObserverRegistered = false
+            }
+        }
+        if (android.os.Looper.myLooper() == android.os.Looper.getMainLooper()) {
+            remove()
+        } else {
+            android.os.Handler(android.os.Looper.getMainLooper()).post { remove() }
+        }
     }
 
     /**
@@ -571,11 +594,45 @@ class NativeBillingManager internal constructor(
         applySnapshotDiff(current)
     }
 
-    private fun applySnapshotDiff(current: Map<String, SubSnapshot>) {
+    private suspend fun applySnapshotDiff(current: Map<String, SubSnapshot>) {
         val previous = loadLastSnapshot()
-        if (emitsLifecycleEvents) diffAndEmit(previous, current)
+        if (emitsLifecycleEvents) {
+            warmRenewalPrices(previous, current)
+            diffAndEmit(previous, current)
+        }
         saveSnapshot(current)
     }
+
+    /**
+     * `subscription_renewed` carries `price` / `currency` (the names `purchase_completed` uses) from the
+     * in-memory [PriceResolver] cache. A renewal is usually seen on a cold start, before anything has
+     * queried the catalogue, so each renewed product that misses the cache is queried once (SUBS,
+     * bounded) — the same warm-up the purchase path does. A failed lookup only omits the price.
+     */
+    private suspend fun warmRenewalPrices(previous: Map<String, SubSnapshot>, current: Map<String, SubSnapshot>) {
+        val missing = current.filter { (pid, now) ->
+            val prev = previous[pid]
+            prev != null && isRenewal(prev, now) && priceResolver.cachedPriceInfo(pid) == null
+        }.keys
+        if (missing.isEmpty()) return
+        val client = withTimeoutOrNull(PurchaseCompletion.WAIT_MS) { connectionManager.awaitConnectedClient() } ?: return
+        for (pid in missing) {
+            try {
+                withTimeoutOrNull(PurchaseCompletion.WAIT_MS) { queryProductDetails(client, pid, BillingClient.ProductType.SUBS) }
+                    ?.let { priceResolver.cacheFromPurchase(it.productDetails) }
+            } catch (e: Exception) {
+                Log.debug("subscription_renewed: price lookup for $pid failed: ${e.message}")
+            }
+        }
+    }
+
+    /**
+     * A renewal is `purchase_time` advancing, or (R47/R48) the Play order id's `..N` suffix changing —
+     * only when BOTH ids are non-blank and differ.
+     */
+    private fun isRenewal(prev: SubSnapshot, now: SubSnapshot): Boolean =
+        now.purchaseTime > prev.purchaseTime ||
+            (prev.transactionId != null && now.transactionId != null && prev.transactionId != now.transactionId)
 
     /** SUBS and INAPP (each null when its query failed), or null without a client. */
     private suspend fun queryOwnedReadOnly(): Pair<List<Purchase>?, List<Purchase>?>? {
@@ -620,6 +677,8 @@ class NativeBillingManager internal constructor(
      * ones; absent ids are omitted, never sent empty. A renewal is `purchase_time` advancing, or (R47/R48)
      * the Play order id's `..N` suffix changing — only when BOTH ids are non-blank and differ; in that
      * arm `purchase_time` is omitted unless it advanced. Cancels carry `cancel_semantics`.
+     * `subscription_renewed` also carries `price` / `currency` when the product's price is cached
+     * ([warmRenewalPrices] fills the cache first).
      */
     internal fun diffAndEmit(
         previous: Map<String, SubSnapshot>,
@@ -649,6 +708,16 @@ class NativeBillingManager internal constructor(
                 if (timeAdvanced) put("purchase_time", now.purchaseTime)
                 now.transactionId?.let { put("transaction_id", it) }
                 now.originalTransactionId?.let { put("original_transaction_id", it) }
+                // The renewal's price: the base plan's recurring price (the last pricing phase — a renewal
+                // is never a trial), with the same `price` / `currency` names as `purchase_completed`.
+                // Omitted when the price is unknown (never sent as 0). Analytics only: gold books revenue
+                // only for a billing provider's renewal, never a device one.
+                try {
+                    priceResolver.cachedPriceInfo(productId)?.takeIf { it.currencyCode.isNotBlank() }?.let { info ->
+                        put("price", info.priceMicros / 1_000_000.0)
+                        put("currency", info.currencyCode)
+                    }
+                } catch (_: Throwable) { /* best-effort */ }
             })
         }
     }
@@ -1112,10 +1181,15 @@ class NativeBillingManager internal constructor(
     }
 
     /**
-     * The live caller's fire-and-forget delegates (the delegate read at emit time, skipped when null):
-     * `onPurchaseCompleted`, and `onPaywallPurchaseCompleted` on the purchase path only.
+     * The live caller's fire-and-forget billing delegate (the delegate read at emit time, skipped when
+     * null): `onPurchaseCompleted`.
+     *
+     * `onPaywallPurchaseCompleted` is NOT called here. A paywall purchase always runs through
+     * `PaywallManager.handlePurchase`, which calls it once when `AppDNA.billing.purchase` returns — as
+     * iOS does (`PaywallManager.swift`). Calling it here as well fired it twice for every paywall
+     * purchase whenever the host's paywall delegate was the one the paywall was presented with.
      */
-    internal fun postPurchaseDelegates(productId: String, txInfo: ai.appdna.sdk.TransactionInfo, paywallId: String?) {
+    internal fun postPurchaseDelegates(productId: String, txInfo: ai.appdna.sdk.TransactionInfo) {
         try {
             val delegate = AppDNA.billing.billingListener
             if (delegate != null) {
@@ -1124,18 +1198,6 @@ class NativeBillingManager internal constructor(
                         delegate.onPurchaseCompleted(productId, txInfo)
                     } catch (e: Throwable) {
                         Log.warning("AppDNABillingDelegate.onPurchaseCompleted threw: ${e.message}")
-                    }
-                }
-            }
-        } catch (_: Throwable) { /* best-effort */ }
-        try {
-            val pwDelegate = AppDNA.paywall.listener
-            if (paywallId != null && pwDelegate != null) {
-                android.os.Handler(android.os.Looper.getMainLooper()).post {
-                    try {
-                        pwDelegate.onPaywallPurchaseCompleted(paywallId, productId, txInfo)
-                    } catch (e: Throwable) {
-                        Log.warning("AppDNAPaywallDelegate.onPaywallPurchaseCompleted threw: ${e.message}")
                     }
                 }
             }
