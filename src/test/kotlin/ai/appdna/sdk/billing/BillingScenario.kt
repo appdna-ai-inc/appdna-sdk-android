@@ -36,10 +36,21 @@ internal class BillingScenario(
 
     val storage = LocalStorage(ctx)
     val cache = EntitlementCache(ctx) { currentUser }
+    /**
+     * I4 M2 — a verify that PARKS: when set, every `/billing/verify` suspends in it (with the token)
+     * before the scripted reply, so a test can hold `run` inside the lock and race another entry.
+     */
+    @Volatile var verifyGate: (suspend (String) -> Unit)? = null
+
     val verifier = ReceiptVerifier(
         apiClient = null,
         billingOwner = if (ownsTransactions) "sdk" else "revenueCat",
-        post = { path, body -> fakePost(path, body) },
+        post = { path, body ->
+            if (path.endsWith("/billing/verify")) {
+                verifyGate?.invoke(JSONObject(body).getJSONObject("transaction").getString("token"))
+            }
+            fakePost(path, body)
+        },
         currentUserId = { currentUser },
     )
     val mgr = NativeBillingManager(
@@ -73,10 +84,13 @@ internal class BillingScenario(
     // -- the delegates ---------------------------------------------------------------------------
 
     var delegateThrows: Boolean = setup.optBoolean("delegate_throws", false)
+    /** Runs inside `onPurchaseCompleted` (on Main), e.g. to advance a clock or run long. */
+    var delegateHook: (() -> Unit)? = null
 
     val delegate = object : AppDNABillingDelegate {
         override fun onPurchaseCompleted(productId: String, transaction: TransactionInfo) {
             delegateLog += "onPurchaseCompleted" to mapOf("productId" to productId, "transactionId" to transaction.transactionId)
+            delegateHook?.invoke()
             if (delegateThrows) throw IllegalStateException("host delegate threw")
         }
         override fun onRestoreCompleted(restoredProducts: List<String>) {

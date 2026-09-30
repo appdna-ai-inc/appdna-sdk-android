@@ -20,7 +20,12 @@ import org.json.JSONObject
  * real EventTracker → EventQueue → EventDatabase (batchSize 0, so nothing leaves the device; no
  * ApiClient, so no network call), injected into `AppDNA.push`, with a recording push delegate.
  */
-internal class PushTestHarness(private val ctx: Context, name: String) {
+internal class PushTestHarness(
+    private val ctx: Context,
+    name: String,
+    /** Null: no network. A client on a loopback server lets a test read the push request bodies. */
+    apiClient: ApiClient? = null,
+) {
     val storage = LocalStorage(ctx)
     private val tracker = EventTracker(IdentityManager(storage), "1.0", "sandbox")
     private val db = EventDatabase(ctx, 10_000, "push_${name.take(40)}.db")
@@ -28,22 +33,24 @@ internal class PushTestHarness(private val ctx: Context, name: String) {
     val tapped = mutableListOf<Pair<PushPayload, String?>>()
     val routes = mutableListOf<Pair<String, String>>()
 
+    /** Shut down on close(): a leaked queue keeps its auto-flush coroutine alive for the whole test JVM. */
+    private val queue: EventQueue
+
     init {
         ClientSeqCounter.init(ctx)
         DroppedEventsCounter.init(ctx)
         db.clearAll()
-        tracker.setEventQueue(
-            EventQueue(
-                apiClient = ApiClient("adn_test_push", Environment.PRODUCTION),
-                eventDatabase = db,
-                connectivityMonitor = null,
-                batchSize = 0,
-                flushInterval = Long.MAX_VALUE,
-            ),
+        queue = EventQueue(
+            apiClient = ApiClient("adn_test_push", Environment.PRODUCTION),
+            eventDatabase = db,
+            connectivityMonitor = null,
+            batchSize = 0,
+            flushInterval = Long.MAX_VALUE,
         )
+        tracker.setEventQueue(queue)
         AppDNA.push.contextOverride = ctx
         PushIdempotency.resetForTesting()
-        AppDNA.push.manager = PushTokenManager(ctx, storage, tracker, null)
+        AppDNA.push.manager = PushTokenManager(ctx, storage, tracker, apiClient)
         AppDNA.push.setDelegate(object : AppDNAPushDelegate {
             override fun onPushReceived(notification: PushPayload, inForeground: Boolean) {
                 received += notification to inForeground
@@ -61,6 +68,7 @@ internal class PushTestHarness(private val ctx: Context, name: String) {
     }
 
     fun close() {
+        queue.shutdown()
         db.clearAll()
         AppDNA.push.setDelegate(null)
         AppDNA.push.manager = null

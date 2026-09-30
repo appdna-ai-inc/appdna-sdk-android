@@ -31,6 +31,27 @@ class BaseUrlOverrideTest {
     @After
     fun tearDown() {
         AppDNA.shutdown()
+        ai.appdna.sdk.background.EventUploadWorker.scheduleProbe = null
+    }
+
+    @Test
+    fun theBackgroundUploadWorkerGetsTheOverriddenBase() {
+        // The input the worker reads its host from.
+        val data = ai.appdna.sdk.background.EventUploadWorker.inputData("k", "https://tunnel.example")
+        assertEquals("https://tunnel.example", data.getString(ai.appdna.sdk.background.EventUploadWorker.KEY_BASE_URL))
+        assertEquals("k", data.getString(ai.appdna.sdk.background.EventUploadWorker.KEY_API_KEY))
+
+        // …and the SDK hands the worker the resolved override, not `environment.baseUrl`.
+        val seen = java.util.Collections.synchronizedList(mutableListOf<String>())
+        ai.appdna.sdk.background.EventUploadWorker.scheduleProbe = { seen += it }
+        val ctx: Context = ApplicationProvider.getApplicationContext()
+        val pkg = shadowOf(ctx.packageManager).getInternalMutablePackageInfo(ctx.packageName)
+        pkg.applicationInfo!!.flags = pkg.applicationInfo!!.flags or ApplicationInfo.FLAG_DEBUGGABLE
+        pkg.applicationInfo!!.metaData = meta("https://tunnel.example/")
+        AppDNA.configure(ctx, "adn_test_override_worker", Environment.SANDBOX)
+        AppDNA.shutdown() // schedules the background upload with the resolved base
+        assertTrue("the worker was scheduled", seen.isNotEmpty())
+        assertEquals(listOf("https://tunnel.example"), seen.distinct())
     }
 
     @Test

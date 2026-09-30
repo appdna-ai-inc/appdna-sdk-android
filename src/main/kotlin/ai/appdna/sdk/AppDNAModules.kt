@@ -274,9 +274,14 @@ class PushModule internal constructor() {
         val pushId = data["push_id"].orEmpty()
         val deliveryId = data["delivery_id"]?.takeIf { it.isNotBlank() }
         val key = deliveryId ?: pushId
-        if (key.isNotBlank() && !PushIdempotency.claimDelivered(key)) return ReceiveOutcome.DUPLICATE
+        val mgr = manager
+        // I4 minor 32: claim the delivery only when it can actually be tracked. Before `configure` there
+        // is no manager — claiming then would dedupe away a later forward of the same message (after
+        // configure) with nothing ever tracked.
+        if (mgr != null && key.isNotBlank() && !PushIdempotency.claimDelivered(key)) return ReceiveOutcome.DUPLICATE
         Log.info("Push received: $pushId")
-        manager?.trackDelivered(pushId, deliveryId)
+        if (mgr == null) Log.warning("Push received before configure — push_delivered is not tracked for $pushId")
+        mgr?.trackDelivered(pushId, deliveryId)
         ctx?.let {
             try {
                 PushSessionContext.recordPushReceived(it, pushId)
@@ -305,8 +310,7 @@ class PushModule internal constructor() {
         // One tap tracks once, whichever entry point (or an Activity re-created with the same
         // intent) sees it — the persisted key survives process death.
         val storage = context?.let { LocalStorage(it) }
-        if (PushIdempotency.tapAlreadyHandled(storage, key)) return true
-        PushIdempotency.markTapHandled(storage, key)
+        if (!PushIdempotency.claimTap(storage, key)) return true
 
         // A body tap carries iOS's `UNNotificationDefaultActionIdentifier` sentinel so the `action`
         // column is non-null and comparable across platforms (SPEC-401-A R81).

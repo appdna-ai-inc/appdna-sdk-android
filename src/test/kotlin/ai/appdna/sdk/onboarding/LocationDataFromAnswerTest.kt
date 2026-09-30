@@ -82,7 +82,7 @@ class LocationDataFromAnswerTest {
                     """"country":"R","country_code":"RR","timezone":"Etc/UTC","postal_code":null}""",
             ),
         )
-        val stored = s.toStoredAnswer()
+        val stored = s!!.toStoredAnswer()
         assertEquals(
             mapOf(
                 "formatted_address" to "Q, R", "address" to "Q, R", "city" to "Q", "country" to "R",
@@ -95,5 +95,17 @@ class LocationDataFromAnswerTest {
         assertEquals("Q", read.city)
         assertNull(read.state)
         assertEquals("RR", read.country_code)
+    }
+
+    @Test
+    fun aSuggestionWithoutCoordinatesIsDroppedNotPinnedAtZero() {
+        assertNull(parseLocationSuggestion(JSONObject("""{"formatted_address":"Q"}""")))
+        assertNull(parseLocationSuggestion(JSONObject("""{"formatted_address":"Q","latitude":1.5}""")))
+        assertNull(parseLocationSuggestion(JSONObject("""{"formatted_address":"Q","latitude":null,"longitude":2.0}""")))
+        assertNull(parseLocationSuggestion(JSONObject("""{"formatted_address":"Q","latitude":"x","longitude":2.0}""")))
+        // A real 0.0 is still a coordinate.
+        val zero = parseLocationSuggestion(JSONObject("""{"formatted_address":"Q","latitude":0.0,"longitude":0.0}"""))!!
+        assertEquals(0.0, zero.latitude, 0.0)
+        assertEquals(0.0, zero.longitude, 0.0)
     }
 }
