@@ -559,9 +559,9 @@ object AppDNA {
     // Cap = 200; on overflow we log + drop the OLDEST so the most recent action
     // (e.g. a deep-link tap that triggered the configure call) survives.
     private const val PRE_INIT_BUFFER_CAP = 200
-    // Last push_id whose tap was handled by handlePushTap — persisted to dedup re-delivery across
-    // Activity re-creation / process death (see handlePushTap).
-    private const val KEY_LAST_HANDLED_PUSH_TAP = "appdna.last_handled_push_tap_id"
+    // Last tap handled by handlePushTap / push.handleTapData — its `delivery_id ?: push_id`, persisted
+    // to dedup re-delivery across Activity re-creation / process death (SPEC-497 §9.2, PushIdempotency).
+    internal const val KEY_LAST_HANDLED_PUSH_TAP = "appdna.last_handled_push_tap_id"
     // SPEC-428 CL-10/CL-1: pre-init overflow drops can't touch the persisted DroppedEventsCounter yet
     // (no app Context before configure()), so accrue them in memory and fold into the durable counter
     // once configure() initializes it.
@@ -1661,114 +1661,37 @@ object AppDNA {
     /**
      * SPEC-070-A H.5 + H.9 — single entry point hosts call from
      * `Activity.onCreate(savedInstanceState)` / `onNewIntent(intent)` to:
-     *   1. Track `push_tapped` (carries push_id + action_id),
+     *   1. Track `push_tapped` (carries push_id, delivery_id + action_id),
      *   2. Fire [AppDNAPushDelegate.onPushTapped] with a typed [PushPayload],
-     *   3. Auto-route built-in actions (`screen_id`, `deep_link`,
-     *      `action_type=show_screen`, etc.) without requiring host code.
+     *   3. Auto-route the tap without requiring host code — the tapped button's action, then the
+     *      notification's `action`, flat `action_type` / `action_value`, `screen_id`, `deep_link`
+     *      (SPEC-497 §9.2, the same ladder as [PushModule.handleTapData]).
      *
-     * Safe to call with any intent — does nothing if `push_id` extra is absent
-     * (so hosts can call unconditionally).
+     * Safe to call with any intent: SPEC-497 §9.2 — it does nothing and returns `false` unless the
+     * intent carries the AppDNA marker extra (`appdna = "1"`), so a host's own notification taps are
+     * never tracked or routed.
      *
-     * @return `true` if the intent was an AppDNA push tap and was handled.
+     * 🔴 DEDUP RE-DELIVERY. On Activity re-creation (rotation, "don't keep activities", process-death
+     * restore) `onCreate` re-runs `handlePushTap(getIntent())` with the SAME intent. The tap is keyed on
+     * `delivery_id ?: push_id` in a persisted key shared with [PushModule.handleTapData], so it tracks
+     * and routes once (a repeat still returns `true` — it IS a push tap).
+     *
+     * @return `true` if the intent was an AppDNA push tap (handled now or earlier).
      */
     @JvmStatic
     fun handlePushTap(intent: android.content.Intent?): Boolean {
         if (intent == null) return false
-        val pushId = intent.getStringExtra("push_id") ?: return false
-        if (pushId.isBlank()) return false
-
-        // 🔴 DEDUP RE-DELIVERY. On Activity re-creation (rotation, "don't keep activities", process-death
-        // restore) `onCreate` re-runs `handlePushTap(getIntent())` with the SAME push_id — re-emitting
-        // push_tapped and re-routing every time, over-counting push-tap conversions. iOS emits from the
-        // one-shot OS `didReceive` callback and cannot double-fire. Skip if we already handled this
-        // push_id (persisted so it survives process death); still return true (it IS a push tap).
-        val handledStore = appContext?.let { ai.appdna.sdk.storage.LocalStorage(it) }
-        if (handledStore?.getString(KEY_LAST_HANDLED_PUSH_TAP) == pushId) {
-            intent.removeExtra("push_id") // also clear the in-memory extra so it stops re-triggering
-            return true
+        val extras = intent.extras ?: return false
+        // Every string extra: the SDK's notification copies the payload keys, and an FCM
+        // background-notification tap carries every data key as an extra.
+        val data = HashMap<String, String>()
+        for (k in extras.keySet()) {
+            @Suppress("DEPRECATION")
+            (extras.get(k) as? String)?.let { data[k] = it }
         }
-
-        val actionId = intent.getStringExtra("action_id")
-        val actionType = intent.getStringExtra("action_type")
-        val actionValue = intent.getStringExtra("action_value")
-        val screenId = intent.getStringExtra("screen_id")
-        val deepLink = intent.getStringExtra("deep_link")
-
-        // 1. Analytics
-        try {
-            // SPEC-401-A R81 (Lens B P2) — body-tap (no actionId / actionType)
-            // emits the same sentinel iOS UNNotificationDefaultActionIdentifier
-            // ships ("com.apple.UNNotificationDefaultActionIdentifier") so
-            // BigQuery `action` column is non-null and equality-filterable on
-            // both platforms. Was emitting null — broke "default tap vs
-            // custom action" dashboards mixing platforms.
-            val resolvedAction = actionId
-                ?: actionType
-                ?: "com.apple.UNNotificationDefaultActionIdentifier"
-            trackPushTapped(pushId, resolvedAction)
-        } catch (e: Throwable) {
-            Log.warning("handlePushTap: trackPushTapped threw: ${e.message}")
-        }
-
-        // SPEC-070-A H.7: fold push_id forward for the next 30 minutes.
-        try {
-            appContext?.let {
-                ai.appdna.sdk.integrations.PushSessionContext.recordPushReceived(it, pushId)
-            }
-        } catch (_: Throwable) { /* best-effort */ }
-
-        // 2. Delegate fan-out
-        try {
-            val delegate = pushTokenManager?.pushListener
-            if (delegate != null) {
-                val payload = ai.appdna.sdk.PushPayload(
-                    pushId = pushId,
-                    title = "",
-                    body = "",
-                    action = actionType?.let { ai.appdna.sdk.PushAction(it, actionValue ?: "") },
-                )
-                android.os.Handler(android.os.Looper.getMainLooper()).post {
-                    runCatching { delegate.onPushTapped(payload, actionId) }
-                        .onFailure { Log.warning("AppDNAPushDelegate.onPushTapped threw: ${it.message}") }
-                }
-            }
-        } catch (e: Throwable) {
-            Log.warning("handlePushTap: delegate fan-out failed: ${e.message}")
-        }
-
-        // 3. Auto-routing — screen_id wins, then deep_link, then action_type/value.
-        try {
-            when {
-                !screenId.isNullOrBlank() -> {
-                    Log.debug("handlePushTap: auto-routing to screen $screenId")
-                    showScreen(screenId)
-                }
-                !deepLink.isNullOrBlank() -> {
-                    Log.debug("handlePushTap: auto-routing deep link $deepLink")
-                    deepLinks.handleURL(deepLink)
-                }
-                actionType == "show_screen" && !actionValue.isNullOrBlank() -> {
-                    showScreen(actionValue)
-                }
-                actionType == "deep_link" && !actionValue.isNullOrBlank() -> {
-                    deepLinks.handleURL(actionValue)
-                }
-                actionType == "show_paywall" && !actionValue.isNullOrBlank() -> {
-                    showPaywall(actionValue)
-                }
-                actionType == "show_survey" && !actionValue.isNullOrBlank() -> {
-                    showSurvey(actionValue)
-                }
-            }
-        } catch (e: Throwable) {
-            Log.warning("handlePushTap: auto-route failed: ${e.message}")
-        }
-
-        // Mark this push_id handled (persisted) + clear the extra so a re-created Activity re-running
-        // handlePushTap(getIntent()) with the same intent cannot re-fire push_tapped. See top guard.
-        handledStore?.setString(KEY_LAST_HANDLED_PUSH_TAP, pushId)
-        intent.removeExtra("push_id")
-        return true
+        val handled = push.handleTap(data, data["action_id"])
+        if (handled) intent.removeExtra("push_id") // stop a re-created Activity re-triggering
+        return handled
     }
 
     // SPEC-070-A finalization (Lens D P0) — pre-configure FCM token buffer.
