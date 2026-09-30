@@ -148,7 +148,10 @@ internal object AppDNANotificationPoster {
         notifTitle: String?,
         notifBody: String?,
     ): android.app.Notification {
-        val channelId = data["channel_id"] ?: AppDNAMessagingService.DEFAULT_CHANNEL_ID
+        // SPEC-497 §17 item 28: a bundled custom sound posts on its own `appdna_sound_<key>` channel
+        // (Android 8+ plays the channel's sound); pre-8 the sound is set on the notification below.
+        val soundChannel = PushSoundChannels.ensureChannel(context, data)
+        val channelId = soundChannel ?: data["channel_id"] ?: AppDNAMessagingService.DEFAULT_CHANNEL_ID
         // SPEC-088: Interpolate push title and body via TemplateEngine
         val pushCtx = ai.appdna.sdk.core.TemplateEngine.buildContext()
         val title = ai.appdna.sdk.core.TemplateEngine.interpolate(
@@ -200,6 +203,8 @@ internal object AppDNANotificationPoster {
             }
         }
 
+        if (soundChannel != null) PushSoundChannels.soundUri(context, data["sound"])?.let { builder.setSound(it) }
+
         // Custom color
         data["color"]?.let { color ->
             try {
@@ -248,32 +253,10 @@ internal object AppDNANotificationPoster {
             )
         )
 
-        // SPEC-084: Action buttons + SPEC-088: Interpolate action button labels
-        PushPayloadParser.parseActionButtons(data).forEach { action ->
-            val actionIntent = context.packageManager.getLaunchIntentForPackage(context.packageName)?.apply {
-                putExtra("push_id", pushId)
-                putExtra("appdna", data["appdna"])
-                putExtra("delivery_id", data["delivery_id"])
-                putExtra("action_id", action.id)
-                putExtra("action_type", action.type)
-                putExtra("action_value", action.value)
-                flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
-            }
-            if (actionIntent != null) {
-                val pendingIntent = PendingIntent.getActivity(
-                    context, "$key:${action.id}".hashCode(), actionIntent,
-                    PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
-                )
-                // SPEC-085 + SPEC-070-A finalization B3#P1: Resolve action button
-                // icon. Accept BOTH schemas iOS supports:
-                //   1. Flat string "ic_email" → R.drawable lookup
-                //   2. JSON dict {library:"lucide"|"material", name:"mail"} →
-                //      look up via library-specific name then fall back to
-                //      drawable lookup on the resolved name.
-                val iconResId = action.icon?.let { NotificationIconResolver.resolvePushActionIconRes(context, it) } ?: 0
-                val interpolatedLabel = ai.appdna.sdk.core.TemplateEngine.interpolate(action.label, pushCtx)
-                builder.addAction(iconResId, interpolatedLabel, pendingIntent)
-            }
+        // SPEC-084 / SPEC-497 §17 item 28: action buttons (dismiss / background buttons via
+        // PushActionReceiver, text_reply with a RemoteInput) + SPEC-088 label interpolation.
+        PushNotificationActions.addTo(builder, context, data, key, notificationId(data)) { label ->
+            ai.appdna.sdk.core.TemplateEngine.interpolate(label, pushCtx)
         }
 
         return builder.build()

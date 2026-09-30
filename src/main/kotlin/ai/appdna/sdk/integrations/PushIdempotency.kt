@@ -121,9 +121,14 @@ internal object PushTapRouter {
     @Volatile
     internal var routeSink: ((String, String) -> Unit)? = null
 
-    /** Route [action] exactly as `handlePushTap` always has: show_screen, deep_link, show_paywall, show_survey. */
-    fun route(action: ai.appdna.sdk.PushAction?) {
-        if (action == null || action.value.isBlank()) return
+    /**
+     * Route [tapped] exactly as `handlePushTap` always has: show_screen, deep_link, show_paywall,
+     * show_survey. SPEC-497 §17 item 28 — `open_url` (the console's URL action) goes to the host's
+     * deep-link handler exactly like `deep_link`, as on iOS (`PushTapRouter.resolve`).
+     */
+    fun route(tapped: ai.appdna.sdk.PushAction?) {
+        if (tapped == null || tapped.value.isBlank()) return
+        val action = if (tapped.type == "open_url") ai.appdna.sdk.PushAction("deep_link", tapped.value) else tapped
         val routable = action.type in setOf("show_screen", "deep_link", "show_paywall", "show_survey")
         if (!routable) return
         routeSink?.invoke(action.type, action.value)
