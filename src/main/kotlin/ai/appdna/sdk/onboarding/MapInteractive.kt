@@ -66,6 +66,10 @@ internal fun GoogleInteractiveMap(block: ContentBlock, rawResolved: Boolean = fa
     LaunchedEffect(mapLoaded, plan.camera) {
         if (mapLoaded) applyPlanCamera(cameraPositionState, plan.camera, density)
     }
+    // A key whose Google Cloud project lacks "Maps SDK for Android" (or whose app restriction does
+    // not list this app) is not detectable up front: the Maps SDK draws a grey map and reports it
+    // only in logcat. A map that never finishes loading is the one visible symptom — say what to fix.
+    LaunchedEffect(Unit) { mapLoadWatchdog(isLoaded = { mapLoaded }) }
 
     val styleOptions = remember(block.mapStr("map_style_json"), block.mapStr("map_theme")) {
         googleStyleJsonOf(block)?.takeIf { it.isNotBlank() }?.let {
@@ -167,6 +171,31 @@ private fun applyPlanCamera(state: CameraPositionState, camera: MapInteractivePl
         }
         state.move(update)
     }.onFailure { Log.debug("map: camera not applied — ${it.message}") }
+}
+
+internal const val MAP_LOAD_WATCHDOG_MS = 15_000L
+
+internal const val MAP_NOT_LOADED_MESSAGE =
+    "Interactive map: the Google map did not finish loading within 15 s, so it is probably grey. " +
+        "The usual cause is the key in com.google.android.geo.API_KEY: enable \"Maps SDK for Android\" " +
+        "for its Google Cloud project (APIs & Services → Library), and if the key has an Android app " +
+        "restriction, add this app's package name and signing SHA-1. Look for \"Authorization failure\" " +
+        "from the Maps SDK in logcat. (A slow or missing network causes this too.)"
+
+/**
+ * Waits [timeoutMs] and logs [MAP_NOT_LOADED_MESSAGE] as an error when the map has not reported
+ * `onMapLoaded` by then. Returns whether it logged. Log only — never a fallback: a slow network
+ * looks the same, and swapping a map that is still loading for the still image would be worse.
+ */
+internal suspend fun mapLoadWatchdog(
+    isLoaded: () -> Boolean,
+    timeoutMs: Long = MAP_LOAD_WATCHDOG_MS,
+    log: (String) -> Unit = { Log.error(it) },
+): Boolean {
+    kotlinx.coroutines.delay(timeoutMs)
+    if (isLoaded()) return false
+    log(MAP_NOT_LOADED_MESSAGE)
+    return true
 }
 
 /**

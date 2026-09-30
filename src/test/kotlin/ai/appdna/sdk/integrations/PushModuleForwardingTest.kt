@@ -147,6 +147,58 @@ class PushModuleForwardingTest {
     }
 
     // ---------------------------------------------------------------------------------------------
+    // Pre-upgrade tray notifications: the previous SDK's tap intent (no marker)
+    // ---------------------------------------------------------------------------------------------
+
+    /** Exactly what the previous `AppDNAMessagingService` put on its tap intent (`putExtra` of nulls included). */
+    private fun legacyTapIntent(pushId: String, link: String?) = Intent().apply {
+        putExtra("push_id", pushId)
+        putExtra("action_type", null as String?)
+        putExtra("action_value", null as String?)
+        putExtra("screen_id", null as String?)
+        putExtra("deep_link", link)
+    }
+
+    /**
+     * A notification posted by the previous SDK version and tapped after the upgrade routes. From a
+     * server older than this release it has a blank `push_id`: nothing to track or deduplicate by, so it
+     * routes and fires `onPushTapped` and tracks nothing. NEGATIVE CONTROL: without the legacy branch
+     * `handlePushTap` returns false and routes nothing (the marker is missing).
+     */
+    @Test
+    fun `a pre-upgrade tray tap with no push id routes, fires onPushTapped, tracks nothing`() {
+        val intent = legacyTapIntent("", "x://old")
+        assertTrue(AppDNA.handlePushTap(intent))
+        idle()
+        assertEquals(listOf("deep_link" to "x://old"), h.routes)
+        assertEquals(1, h.tapped.size)
+        assertTrue(h.events().none { it.first == "push_tapped" })
+        assertFalse("the handled legacy intent is inert", AppDNA.handlePushTap(intent))
+        idle()
+        assertEquals(1, h.routes.size)
+    }
+
+    @Test
+    fun `a pre-upgrade tray tap with a push id is tracked once and routed`() {
+        val intent = legacyTapIntent("p_old", "x://old2")
+        assertTrue(AppDNA.handlePushTap(intent))
+        idle()
+        assertEquals(listOf("deep_link" to "x://old2"), h.routes)
+        assertEquals(1, h.events().count { it.first == "push_tapped" })
+    }
+
+    @Test
+    fun `a pre-upgrade button tap routes the button action`() {
+        val intent = Intent().apply {
+            putExtra("push_id", ""); putExtra("action_id", "view")
+            putExtra("action_type", "deep_link"); putExtra("action_value", "x://btn_old")
+        }
+        assertTrue(AppDNA.handlePushTap(intent))
+        idle()
+        assertEquals(listOf("deep_link" to "x://btn_old"), h.routes)
+    }
+
+    // ---------------------------------------------------------------------------------------------
     // SPEC-497 I4 M8 / minors 31–34
     // ---------------------------------------------------------------------------------------------
 
@@ -217,6 +269,25 @@ class PushModuleForwardingTest {
         idle()
         assertEquals(1, h.events().size)
         assertEquals(1, h.received.size)
+    }
+
+    /**
+     * `handleMessage` of a marked message with a `notification` block (a host service sees one only in
+     * the foreground, where FCM does not display it) posts it once, with the block's title / body.
+     * NEGATIVE CONTROL: with the old `if (message.notification == null)` guard back, nothing is posted.
+     */
+    @Test
+    fun `handleMessage displays a foreground notification message once`() {
+        val b = android.os.Bundle()
+        mapOf("appdna" to "1", "push_id" to "pn", "delivery_id" to "dn").forEach { (k, v) -> b.putString(k, v) }
+        b.putString("gcm.n.e", "1"); b.putString("gcm.n.title", "Hi"); b.putString("gcm.n.body", "There")
+        val msg = com.google.firebase.messaging.RemoteMessage(b)
+        assertTrue(AppDNA.push.handleMessage(msg))
+        assertTrue(AppDNA.push.handleMessage(msg))
+        idle()
+        assertEquals(1, posted())
+        val n = shadowOf(ctx.getSystemService(NotificationManager::class.java)).allNotifications.single()
+        assertEquals("Hi", n.extras.getCharSequence(android.app.Notification.EXTRA_TITLE)?.toString())
     }
 
     /**

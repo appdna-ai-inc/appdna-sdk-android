@@ -108,4 +108,31 @@ class NonOwningBillingManagerTest {
         assertEquals(2L, saved.purchaseTime)
         assertEquals("GPA.1..1", saved.transactionId)
     }
+
+    /**
+     * `subscription_renewed` carries the renewal's `price` / `currency` (the names `purchase_completed`
+     * uses). The price cache is empty on a cold start, so the renewed product is queried first.
+     * NEGATIVE CONTROL: without the price block in `diffAndEmit` (or without `warmRenewalPrices`), the
+     * event has no `price` — this test fails.
+     */
+    @Test fun `a renewal carries price and currency - the price is looked up on a cold cache`() {
+        val setup = JSONObject(unackedSub.toString()).put(
+            "product_details",
+            JSONObject("""{"monthly_sub":{"price_micros":9990000,"currency":"EUR","product_type":"subs"}}"""),
+        )
+        val s = scenario(owns = false, emits = true, setup = setup)
+        assertEquals(null, s.mgr.priceResolver.cachedPriceInfo("monthly_sub"))
+        renewalDiff(s)
+        val props = pipe!!.props("subscription_renewed")
+        assertEquals(9.99, props.getDouble("price"), 1e-9)
+        assertEquals("EUR", props.getString("currency"))
+    }
+
+    @Test fun `a renewal whose price cannot be found omits price and currency`() {
+        val s = scenario(owns = false, emits = true)
+        renewalDiff(s)
+        val props = pipe!!.props("subscription_renewed")
+        assertTrue(!props.has("price"))
+        assertTrue(!props.has("currency"))
+    }
 }

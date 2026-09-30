@@ -2,7 +2,6 @@
 // Source: src/lib/sdk-delegates/index.ts
 // Generator: scripts/sdk-codegen/emit-delegates.ts
 // Regenerate: pnpm sdk-codegen
-// Last codegen commit: becec5bd534f3a891ae3ea7638d019d42a81b848
 
 package ai.appdna.sdk.generated
 

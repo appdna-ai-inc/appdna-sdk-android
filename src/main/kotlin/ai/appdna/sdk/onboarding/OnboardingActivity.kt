@@ -700,9 +700,11 @@ internal fun OnboardingFlowHost(
                 // §5b C3 — the base is stamped with the `callSeq` this call drew at its START.
                 drawSeq = hostDataAccess::nextCallSeq,
                 onStampedOverride = { override, seq ->
-                    // A late reply is applied only if the user is STILL on this step. Dropping it
-                    // into a step they have left would rewrite a screen they are no longer looking
-                    // at. On expiry the flow proceeds with cache then static options.
+                    // Called only for a reply that arrived BEFORE the 3 s deadline — a reply after it
+                    // is dropped (`runBeforeStepRenderHook`), as on iOS. Even then it is applied only
+                    // if the user is STILL on this step: writing it into a step they have left would
+                    // rewrite a screen they are no longer looking at (iOS `handleStepAppear`). On
+                    // expiry the flow proceeds with cache then static options.
                     if (currentIndex < flow.steps.size && flow.steps[currentIndex].id == step.id) {
                         hostDataAccess.applyBeforeRenderReply(step.id, override, seq)
                     }
@@ -2606,11 +2608,13 @@ internal fun emitSocialLoginAction(
     // SPEC-070-A C.1 — social_login retains its existing data shape
     // (`{provider, action: "social_login"}`) for hosts that switch on
     // `action == "social_login"`. iOS `OnboardingRenderer.swift:1507-1524`.
-    val data = mutableMapOf<String, Any>(
-        "provider" to (provider ?: "unknown"),
-        "action" to "social_login",
-    )
+    // Step inputs FIRST, then the SDK's own keys, so a form field with the id `action` or `provider`
+    // can never replace them — a host that switches on `action == "social_login"` must see exactly
+    // that (the same order as [emitAuthAction] and [permissionActionPayload]).
+    val data = mutableMapOf<String, Any>()
     data.putAll(inputValues)
+    data["provider"] = provider ?: "unknown"
+    data["action"] = "social_login"
     onNext(data)
 }
 

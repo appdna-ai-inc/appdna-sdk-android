@@ -2327,6 +2327,7 @@ class SharedFixtureTest(
                 "is_trial" to v.entitlement.isTrial,
                 "original_transaction_id" to v.originalTransactionId,
                 "consume" to v.consume,
+                "environment" to v.environment,
             )
         }
         spy.state["parsed"] = out

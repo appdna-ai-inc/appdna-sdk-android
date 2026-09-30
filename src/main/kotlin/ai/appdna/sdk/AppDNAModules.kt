@@ -87,8 +87,20 @@ data class TransactionInfo(
     val transactionId: String,
     val productId: String,
     val purchaseDate: String,
-    val environment: String = "production"
-)
+    /**
+     * `"sandbox"` for a Play test purchase (a license tester's), `"production"` otherwise — as the
+     * AppDNA server decided it when it verified the purchase (`billingProvider: StoreKit2`). Play's
+     * client library exposes no such flag, so it is `"production"` whenever no verified answer exists:
+     * an older server, a purchase resolved without a verify (an already-owned re-tap), and the
+     * RevenueCat / Adapty bridges.
+     */
+    val environment: String = DEFAULT_ENVIRONMENT
+) {
+    companion object {
+        /** The value used when the environment is not known. */
+        const val DEFAULT_ENVIRONMENT = "production"
+    }
+}
 
 /**
  * Survey response entry.
@@ -219,7 +231,8 @@ class PushModule internal constructor() {
     /**
      * Handle an FCM message a host received in its own `FirebaseMessagingService`: exactly what the
      * SDK's service does for an AppDNA message — tracks `push_delivered` (with `delivery_id`), fires
-     * `onPushReceived` and, for a data-only message with a title or body, posts the notification.
+     * `onPushReceived` and, for a message with a title or body, posts the notification (a message with
+     * a `notification` block reaches a service only in the foreground, where FCM does not display it).
      * Returns `false` and does nothing for a message that is not AppDNA's. Safe to call for every
      * message; a message already handled (by the SDK's service or an earlier call) is a no-op that
      * returns `true`.
@@ -230,14 +243,15 @@ class PushModule internal constructor() {
             ReceiveOutcome.IGNORED -> false
             ReceiveOutcome.DUPLICATE -> true
             ReceiveOutcome.HANDLED -> {
-                // A message with a `notification` block is displayed by FCM itself.
-                if (message.notification == null) {
-                    context?.let { ctx ->
-                        try {
-                            AppDNANotificationPoster.post(ctx, data, null, null)
-                        } catch (e: Throwable) {
-                            Log.warning("PushModule.handleMessage: display failed: ${e.message}")
-                        }
+                // A host's service is called for a message with a `notification` block only while the
+                // app is in the foreground (FCM displays it itself in the background), so it is
+                // displayed here like a data-only message — the notification block's title / body
+                // fill a missing data title / body.
+                context?.let { ctx ->
+                    try {
+                        AppDNANotificationPoster.post(ctx, data, message.notification?.title, message.notification?.body)
+                    } catch (e: Throwable) {
+                        Log.warning("PushModule.handleMessage: display failed: ${e.message}")
                     }
                 }
                 true
@@ -302,6 +316,26 @@ class PushModule internal constructor() {
         }
         // A late track does not display again: the first forward already did.
         return if (claim == PushIdempotency.Claim.LATE_TRACK) ReceiveOutcome.DUPLICATE else ReceiveOutcome.HANDLED
+    }
+
+    /**
+     * A tap on a notification the PREVIOUS SDK version posted (still in the tray when the app updated).
+     * That version's tap intent carries no `appdna` marker and, from a server older than this release,
+     * a blank `push_id` — [handleTap] would drop it (no marker) or refuse it (no key), so the tap did
+     * nothing after the upgrade. With a key it is an ordinary tap; without one it cannot be tracked or
+     * deduplicated, so it fires `onPushTapped` and routes, and tracks nothing. (The caller makes the
+     * intent inert afterwards, so an Activity re-created with it does not route again.)
+     */
+    internal fun handleLegacyTap(data: Map<String, String>, actionId: String?): Boolean {
+        val marked = data + ("appdna" to "1")
+        val key = data["delivery_id"]?.takeIf { it.isNotBlank() } ?: data["push_id"].orEmpty()
+        if (key.isNotBlank()) return handleTap(marked, actionId)
+        delegate()?.let { d ->
+            val payload = PushPayloadParser.buildPayload(marked)
+            postMain { d.onPushTapped(payload, actionId) }
+        }
+        PushTapRouter.route(PushPayloadParser.resolveTapAction(marked, actionId))
+        return true
     }
 
     /** Shared by `AppDNA.handlePushTap(intent)` and [handleTapData]. */
@@ -432,10 +466,18 @@ class BillingModule internal constructor() {
      *      links, OAuth web flows) and need to flush stale cache
      *      without firing user-visible restore events.
      *
-     * Side effects: ZERO. No analytics events, no delegate callbacks,
-     * no UI. Errors are swallowed and logged at warning level — the
-     * suspend returns normally so callers can chain without try/catch.
-     * Mirrors iOS `BillingModule.refreshEntitlementCache()`.
+     * Side effects: no UI and no restore events (`purchase_restored` /
+     * `onRestoreCompleted` never fire). But under `StoreKit2` it is NOT
+     * side-effect free: it completes any purchase Play holds that was never
+     * reported — verify, one `purchase_completed` (plus `subscription_started`
+     * for a subscription), acknowledge / consume, and a queued
+     * `AppDNABillingDelegate.onPurchaseCompleted` — then sends the owned
+     * list to the server's restore endpoint and merges the reply, which
+     * fires `onEntitlementsChanged` when the cache changes. Under
+     * `RevenueCat` / `Adapty` / `None` it only rebuilds the cache locally
+     * from Play (no server call, no analytics event). Errors are swallowed and logged
+     * at warning level — the suspend returns normally so callers can chain
+     * without try/catch.
      */
     suspend fun refreshEntitlementCache() {
         val mgr = manager ?: run {
@@ -539,7 +581,7 @@ class BillingModule internal constructor() {
                     // RN `purchase()` facade return ISO on Android but epoch-millis on iOS, breaking the
                     // mapper's stated epoch-millis contract.
                     purchaseDate = System.currentTimeMillis().toString(),
-                    environment = "production",
+                    environment = result.environment ?: TransactionInfo.DEFAULT_ENVIRONMENT,
                 )
             }
             is PurchaseResult.Cancelled -> throw PurchaseCancelledException(productId)

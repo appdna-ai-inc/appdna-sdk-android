@@ -6,10 +6,10 @@ the project uses [Semantic Versioning](https://semver.org/).
 
 ## [1.0.54] — unreleased
 
-Wraps iOS 1.0.82. Ships SPEC-495 (maps) and SPEC-496 (host data, including P1b "Show more").
+Wraps iOS 1.0.82. Ships maps and host data (including "Show more").
 
 ### Added
-- **Maps (SPEC-495).** A `map` block can use Google as well as Mapbox (the customer's own key,
+- **Maps.** A `map` block can use Google as well as Mapbox (the customer's own key,
   delivered like the Mapbox token), draw a real pannable map through the bundled Google Maps SDK
   where the app can (it needs your key in the `com.google.android.geo.API_KEY` manifest meta-data;
   without it the map is static), style with Google map types / styled-map JSON, and be placed as a
@@ -17,10 +17,10 @@ Wraps iOS 1.0.82. Ships SPEC-495 (maps) and SPEC-496 (host data, including P1b "
   the encoded polyline (Google, precision 5), otherwise straight segments between the stops. With
   auto-fit on (the default) the camera fits the route and its stops, and a single point uses zoom 15;
   with auto-fit off it centres on the authored centre at the authored zoom.
-- **Host data for every element (SPEC-496).** `{{hook_data.…}}`, `data_templates` and bindings
+- **Host data for every element.** `{{hook_data.…}}`, `data_templates` and bindings
   resolve on the raw step JSON for every onboarding field; an `input_select` `repeat` generates its
   options from a host list, with a pending state until `onBeforeStepRender` answers.
-- **"Show more" (SPEC-496 P1b).** `ElementInteractionResult.dataContext` merges into the step's
+- **"Show more".** `ElementInteractionResult.dataContext` merges into the step's
   `hook_data` per top-level key (a `null` value removes the key), so a `refresh_step` button can load
   the next page into a repeat Select. `refresh_step` now also fires from buttons nested in rows,
   stacks, section backgrounds and carousel pages (before, it silently did nothing there). The tapped
@@ -211,8 +211,10 @@ Needs the AppDNA server from the same release (purchase verification and push tr
   `delivery_id` extras from the intent, so handling the same intent again (an Activity re-created with
   it) returns `false` and tracks nothing.
 - **Upgrade note:** a notification that the previous SDK version posted and that is still in the
-  tray when the app updates carries no `appdna` extra, so tapping it after the upgrade is ignored:
-  `handlePushTap` returns `false`, and nothing is tracked or routed.
+  tray when the app updates carries no `appdna` extra. `handlePushTap` recognises that version's tap
+  intent (`push_id`, `action_type` and `action_value` extras, no `appdna`) and still routes it and
+  fires `onPushTapped`; it tracks `push_tapped` only when the notification carries a `push_id` (servers
+  before this release sent none). A handled intent loses those extras, so it is not routed twice.
 
 #### Fixed
 - **A lifetime purchase (under `StoreKit2`) no longer disappears after an entitlement update**; `hasActiveSubscription()`
@@ -246,6 +248,35 @@ Needs the AppDNA server from the same release (purchase verification and push tr
 - The iOS permission-API and `NSLocationWhenInUseUsageDescription` change does not apply to this
   Android SDK. The Flutter plugin that wraps it now ships a `consumer-rules.pro`, so an
   R8-minified Flutter release build keeps the plugin's classes.
+
+#### Fixed — billing, push, onboarding, maps
+- `onPaywallPurchaseCompleted` fires **once** per paywall purchase. It fired twice when your paywall
+  delegate was also the one the paywall was presented with (the billing layer called it too).
+- `EntitlementCache` counts `billing_retry` as active, like the server: `hasActiveSubscription()` and
+  `isEntitled` are true while the store is still retrying a renewal payment.
+- `subscription_renewed` carries `price` and `currency` (the base plan's recurring price, the same
+  names as `purchase_completed`) when Play returns the product's price.
+- `TransactionInfo.environment` is `"sandbox"` for a Play test purchase — the value the AppDNA server
+  decided when it verified the purchase (it was `"production"` for every purchase). It stays
+  `"production"` when there is no verified answer (an older server, an already-owned re-tap,
+  RevenueCat / Adapty).
+- An AppDNA push with a `notification` block that arrives while the app is in the **foreground** is
+  now displayed (by the SDK's service and by `AppDNA.push.handleMessage`), with the same channel and
+  look as a data-only message. FCM displays such a message itself only in the background, so it was
+  never shown in the foreground. A message already forwarded is not shown twice.
+- `social_login`: a form field with the id `action` or `provider` can no longer replace the SDK's own
+  `action: "social_login"` / `provider` in the step data.
+- Adapty: activated with `Adapty.activate(context, AdaptyConfig)` (Adapty 2.11+, 3.x, 4.x), falling
+  back to `activate(context, apiKey)`; before, only the latter was tried, so Adapty 4.x was never
+  activated. Adapty's access levels are now read (they are Adapty's own `ImmutableMap`, which the
+  bridge read as empty). An empty Adapty key is refused with an error log instead of silently.
+- `destroy()` / `AppDNA.shutdown()` called off the main thread now detaches the billing manager's
+  process-lifecycle observer (the removal was rejected off Main and the old manager leaked).
+- The billing ledger logs an unreadable value and keeps it under `<key>.corrupt` instead of silently
+  reading it as empty and overwriting it.
+- An interactive Google map that has not finished loading after 15 s logs an error naming the usual
+  cause (the key's Google Cloud project without "Maps SDK for Android", or an app restriction without
+  this app). It stays a map; it is not swapped for the still image.
 
 #### Source / binary compatibility
 - **`LocationData`'s fields other than `formatted_address` are nullable** (`city`, `state`,
