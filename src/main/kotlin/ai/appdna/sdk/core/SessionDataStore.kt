@@ -77,7 +77,7 @@ class SessionDataStore private constructor(private val prefs: SharedPreferences)
                 }
             }
             _onboardingResponses = converted
-            persistMap(KEY_ONBOARDING, mapToJson(converted))
+            persistMap(KEY_ONBOARDING) { mapToJson(converted) }
         }
     }
 
@@ -91,7 +91,7 @@ class SessionDataStore private constructor(private val prefs: SharedPreferences)
             val merged = _computedData.toMutableMap()
             merged.putAll(data)
             _computedData = merged
-            persistMap(KEY_COMPUTED, flatMapToJson(merged))
+            persistMap(KEY_COMPUTED) { flatMapToJson(merged) }
         }
     }
 
@@ -105,7 +105,7 @@ class SessionDataStore private constructor(private val prefs: SharedPreferences)
             val updated = _sessionData.toMutableMap()
             updated[key] = value
             _sessionData = updated
-            persistMap(KEY_SESSION, flatMapToJson(updated))
+            persistMap(KEY_SESSION) { flatMapToJson(updated) }
         }
     }
 
@@ -144,10 +144,26 @@ class SessionDataStore private constructor(private val prefs: SharedPreferences)
 
     // MARK: - Persistence Helpers
 
-    private fun persistMap(key: String, json: String) {
+    /**
+     * Persists [key] from [buildJson]. `JSONObject.put` THROWS on a NaN / infinite number, and that
+     * exception used to escape into the host's `setSessionData` / onboarding completion call. Now a
+     * value that cannot be written as JSON — or one over the size cap — is logged (the key only, never
+     * the values) and the saved copy is cleared, so the store holds nothing rather than a stale copy.
+     * The in-memory value stays readable for the rest of the session. Same rule as iOS
+     * `SessionDataStore.persistDict`.
+     */
+    private fun persistMap(key: String, buildJson: () -> String) {
+        val json = try {
+            buildJson()
+        } catch (e: org.json.JSONException) {
+            Log.warning("SessionDataStore: $key holds a value that is not valid JSON (a NaN / infinite number or a non-JSON type) — not persisted; the saved copy is cleared")
+            prefs.edit().remove(key).apply()
+            return
+        }
         val bytes = json.toByteArray(Charsets.UTF_8)
         if (bytes.size > MAX_STORAGE_BYTES) {
-            Log.warning("SessionDataStore: $key exceeds $MAX_STORAGE_BYTES bytes — not persisting")
+            Log.warning("SessionDataStore: $key exceeds $MAX_STORAGE_BYTES bytes — not persisted; the saved copy is cleared")
+            prefs.edit().remove(key).apply()
             return
         }
         prefs.edit().putString(key, json).apply()
