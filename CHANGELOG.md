@@ -46,16 +46,17 @@ Wraps iOS 1.0.82. Ships SPEC-495 (maps) and SPEC-496 (host data, including P1b "
   on either type, or constructs either one with defaulted or named arguments, must be recompiled, or
   it fails with `NoSuchMethodError`.
 
-### SPEC-497 — billing ownership, sign-in timeout, push forwarding, consumables, location
+### Billing ownership, sign-in timeout, push forwarding, consumables, location
 
 Needs the AppDNA server from the same release (purchase verification and push tracking rely on it).
 
 #### Changed — billing ownership
 - **`billingProvider` now decides who owns a Play transaction.** Only `StoreKit2` (the default, and
   what you get when the option is omitted) lets the SDK buy, verify, acknowledge and consume. Under
-  `RevenueCat`, `Adapty(apiKey)` or `None` the SDK never verifies, acknowledges or consumes anything
-  and makes no verify / restore call; its entitlement cache is built read-only from Play's own
-  purchase list. Before, a `RevenueCat` / `Adapty` host's paywall bought directly through Play.
+  `RevenueCat` or `Adapty(apiKey)` the SDK never verifies, acknowledges or consumes anything and
+  makes no verify / restore call; its entitlement cache is built read-only from Play's own purchase
+  list. Under `None` there is no billing manager or entitlement cache at all
+  (`hasActiveSubscription()` is `false`). Before, a `RevenueCat` / `Adapty` host's paywall bought directly through Play.
 - **A paywall tap under `RevenueCat`, `Adapty` or `None` fails loudly:** one `purchase_failed`
   (`error_type: "providerNotAvailable"`), then `onPaywallPurchaseFailed(errorType =
   "providerNotAvailable", productId = <the tapped plan>)`, then the paywall's failure route. No
@@ -73,14 +74,15 @@ Needs the AppDNA server from the same release (purchase verification and push tr
   when the restore call fails on the network or Play's query fails with `NETWORK_ERROR` /
   `SERVICE_UNAVAILABLE`, and `serverError` for any other failed Play query, no Play connection within
   30 s, or a non-2xx reply. Entitlements stay unchanged and `onRestoreCompleted([])` no longer fires;
-  `purchase_restore_failed` is tracked on every failed restore after `configure` (a cancelled
-  coroutine's `CancellationException` is rethrown untracked). The Java `restorePurchasesAsync()`
+  `purchase_restore_failed` is tracked on every failed restore once billing has initialised; a
+  restore before that (including right after `configure()` returns) throws the `unknown` "not
+  configured yet" error untracked (a cancelled coroutine's `CancellationException` is rethrown untracked). The Java `restorePurchasesAsync()`
   now completes exceptionally.
 - The SDK sends **`billing_owner`** on its verify and restore calls. An app with a connected
   RevenueCat or Adapty integration that still runs an older SDK on `StoreKit2` gets its
   verifications refused (409 `provider_owned`) until it updates.
-- **Verification failures report `errorType` `verificationFailed`** (was `unknown`), on
-  `purchase_failed` and on the paywall delegate's `onPaywallPurchaseFailed`; `purchase_failed.reason`
+- **Verification failures report `errorType` `verificationFailed`** (was `unknown`) —
+  `networkError` when the verify does not answer within 30 s — on `purchase_failed` and on the paywall delegate's `onPaywallPurchaseFailed`; `purchase_failed.reason`
   is the server's code when there is one (e.g. `store_credentials_missing`), else
   `verification_failed`. `productNotFound` now reaches you as the purchase error type. A purchase
   started while the Play connection is failing fails within 30 s with `serverError`.
@@ -98,7 +100,8 @@ Needs the AppDNA server from the same release (purchase verification and push tr
   `setDelegate(delegate)` is kept); pass `false` for a delegate that should not receive queued late
   purchases.
 - `PurchaseResult.Failed.errorType` and `PurchaseFailedException.errorType` — the
-  `billingErrorType` of the underlying failure (`verificationFailed`, `serverError`, …).
+  `billingErrorType` of the underlying failure (`verificationFailed`, `serverError`, …), or `null`
+  for a failure Play's purchase listener reported and for a shutdown.
 - **Push forwarding for apps that own Firebase Messaging:** `AppDNA.push.isAppDNAMessage(data)`,
   `handleMessage(remoteMessage)`, `handleMessageData(data)` (never displays) and
   `handleTapData(data, actionId)`. Each is marker-gated and idempotent (one tracked delivery / tap
@@ -111,7 +114,10 @@ Needs the AppDNA server from the same release (purchase verification and push tr
   drops a host-passed `emitted_by` / `_appdna_origin`, also before `configure`); `transaction_id` /
   `original_transaction_id` / `cancel_semantics` on lifecycle events; `original_transaction_id` on
   `purchase_completed` and `subscription_started`; `is_consumable` on `purchase_completed`;
-  `delivery_id` on `push_delivered` / `push_tapped`; `purchase_failed.reason`.
+  `delivery_id` on `push_delivered` / `push_tapped`; `quantity` (only when > 1) on
+  `purchase_completed`; `error_type` (and `reason: "not_configured"` on the refusal) on
+  `purchase_restore_failed`; `reason` on `purchase_restored`. `purchase_failed.reason` now carries
+  the server's code for a verification failure.
 
 #### Changed — purchases reported late, consumables
 - **Consumables are consumed immediately** on every path, so they can be bought again at once. Mark
@@ -119,28 +125,33 @@ Needs the AppDNA server from the same release (purchase verification and push tr
   quantity > 1 a host under-grants (known).
 - **Late purchases are reported.** A purchase whose verification failed, or that was made outside
   the app (Play Store resubscribe, a promo redemption, a PENDING purchase completing while the app
-  was killed, a plan change), is reported once by the next app start, `identify` or restore as
+  was killed, a plan change), is reported once at the next return to the foreground, `identify`, restore or
+  `refreshEntitlementCache()` as
   `purchase_completed` (+ `subscription_started` for a subscription) with an empty `paywall_id`
   (`""`). Every report that did not resolve a live `purchase()` caller is queued
   (`appdna.pending_deliveries_v1`, 100 entries / 30 days) and delivered through `onPurchaseCompleted`
-  when a delivering delegate is set, after `identify`, or at the end of `configure`. Delivery is at
+  when a delivering delegate is set, after `identify`, or once billing has initialised during
+  `configure`'s bootstrap. Delivery is at
   least once — grant idempotently by `transactionId`. A reinstall does not re-report purchases
   acknowledged before it. A late-reported plan change looks like a new subscription (known).
 - The public `BillingModule.refreshEntitlementCache()` now also completes unreported purchases and
   may emit / call `onPurchaseCompleted`.
 - Re-tapping an owned item gives one `purchase_restored{reason: "item_already_owned"}`, not a
-  second conversion; restore emits no `purchase_restored` for a token it just reported.
+  second conversion; restore emits no `purchase_restored` for a product the same restore just reported.
   `ITEM_ALREADY_OWNED` returned synchronously by `launchBillingFlow` is handled like the listener
   result (it was `launch_billing_flow_failed`).
 - `ITEM_ALREADY_OWNED` can also resolve `purchase()` as `Failed`: `Failed("item_already_owned")` when
   an owned consumable's pending consume fails again, and `Failed` with `errorType`
-  `verificationFailed` (one `purchase_failed`) when the owned purchase's verification fails.
+  `verificationFailed` (`networkError` on a 30 s timeout; one `purchase_failed`) when the owned
+  purchase's verification fails.
 - A paywall tap made after `configure` but before billing has initialised reports `errorType`
   `unknown` with "AppDNA SDK not configured yet — call configure() first" (not
   `providerNotAvailable`, which now means only "this provider does not buy through AppDNA").
   A paywall **restore** tap in that window, or after `shutdown()`, fails the same way:
   `onPaywallRestoreFailed` with that `unknown` error and one `purchase_restore_failed`
-  (`reason: "not_configured"`, `error_type: "unknown"`) — it was `providerNotAvailable`.
+  (`reason: "not_configured"`, `error_type: "unknown"`), without `onPaywallRestoreStarted`. Before,
+  `onPaywallRestoreStarted` fired first and the failure was an `IllegalStateException("Billing bridge
+  not configured")` with no `error_type`.
 - A paywall restore tap under `RevenueCat`, `Adapty` or `None` no longer fires
   `onPaywallRestoreStarted` before `onPaywallRestoreFailed(providerNotAvailable)` — as on iOS, and as
   the purchase tap (no `onPaywallPurchaseStarted`).
@@ -168,8 +179,9 @@ Needs the AppDNA server from the same release (purchase verification and push tr
   events appear, including on a trial conversion (known: a same-product base-plan change counts as a
   renewal, and a 7-day trial conversion found this way is timed when the device notices it — mostly in
   the d30 trial-to-paid window rather than d7).
-- `reset()` and `identify` with a different user clear the cached entitlements (they refill from the
-  next refresh / snapshot); `onEntitlementsChanged([])` fires if the cache held any entitlements.
+- `reset()`, and `identify` with a user different from the one already identified, clear the cached
+  entitlements (they refill from the next refresh / snapshot). The first `identify` after an
+  anonymous session keeps the cache; its refresh only drops Play entries tagged for another user. `onEntitlementsChanged([])` fires if the cache held any entitlements.
 - A Play subscription **on hold** or **pending** reads as `on_hold` / `pending` server-side and is
   not entitled until paid.
 - A destroyed billing connection never leaves a request waiting: an `AppDNA.billing.getProducts` that
@@ -209,13 +221,14 @@ Needs the AppDNA server from the same release (purchase verification and push tr
   null coordinates (it returned `null`).
 - `StoreKit2` purchases are now verified and acknowledged (the verify call was refused), instead of
   being refunded by Play after 3 days.
-- Location autocomplete drops suggestions that come back without coordinates.
+- Location autocomplete no longer stores `0,0` for a suggestion that comes back without
+  coordinates: the suggestion is kept and the stored answer omits `latitude` / `longitude`.
 - The event queue no longer spins the IO thread pool when `flushInterval` is set to a very large
   value (the auto-flush delay overflowed).
 
-#### Cross-platform notes (group D)
-- The iOS permission-API and `NSLocationWhenInUseUsageDescription` change (D3) does not apply to this
-  Android SDK. The Flutter plugin that wraps it now ships a `consumer-rules.pro` (D1), so an
+#### Cross-platform notes
+- The iOS permission-API and `NSLocationWhenInUseUsageDescription` change does not apply to this
+  Android SDK. The Flutter plugin that wraps it now ships a `consumer-rules.pro`, so an
   R8-minified Flutter release build keeps the plugin's classes.
 
 #### Source / binary compatibility
@@ -252,7 +265,7 @@ Wraps iOS 1.0.79. Publishable version and feature-parity marker move independent
   `75%` or `300px` got its sizing box first, and the alignment was then applied *inside* a box
   already shrunk to that width — so there was no room left to move in. A width-constrained block now
   gets an outer full-width box that carries the alignment, matching SwiftUI's frame order. Affected
-  any 75%-wide sound button or button authored `center` or `right`. (#654, #659)
+  any width-constrained block (for example a 75%-wide button) authored `center` or `right`. (#654, #659)
 - **Content sat behind the pinned bottom zone** and could not be scrolled to. The scroll area
   reserved a hardcoded 80dp under a zone that is routinely ~140dp (two buttons plus a legal line),
   so the last lines of a summary were unreachable — the scroll range ended before them. The reserve
