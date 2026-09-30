@@ -70,7 +70,7 @@ fun LocationFieldComposable(
     val initialText = (values[field.id] as? Map<*, *>)?.get("address") as? String
         ?: values[field.id]?.toString().orEmpty()
     var text by remember { mutableStateOf(initialText) }
-    var suggestions by remember { mutableStateOf<List<LocationSuggestionData>>(emptyList()) }
+    var suggestions by remember { mutableStateOf<List<LocationSuggestion>>(emptyList()) }
     var showSuggestions by remember { mutableStateOf(false) }
     var isSearching by remember { mutableStateOf(false) }
     val coroutineScope = rememberCoroutineScope()
@@ -84,7 +84,7 @@ fun LocationFieldComposable(
             value = text,
             onValueChange = { newText ->
                 text = newText
-                values[field.id] = newText
+                values[field.id] = LocationAnswer.typed(newText)
                 errors.remove(field.id)
                 debounceJob?.cancel()
                 if (newText.length >= minChars) {
@@ -190,31 +190,12 @@ fun LocationFieldComposable(
                         modifier = Modifier
                             .fillMaxWidth()
                             .clickable {
+                                // SPEC-497 §13h — the one stored shape on both platforms and
+                                // both writers (LocationAnswer); the typed text is the raw_query.
+                                val typed = text
                                 text = suggestion.address
                                 showSuggestions = false
-                                // SPEC-070-A finalization B4 P1 — persist
-                                // full 12-key LocationData payload to match
-                                // iOS LocationFieldView. Fields that the
-                                // backend omits resolve to null and are
-                                // skipped from the map so hosts can
-                                // null-check without seeing empty strings.
-                                val payload = mutableMapOf<String, Any>(
-                                    "formatted_address" to suggestion.address,
-                                    "address" to suggestion.address,
-                                )
-                                // A coordinate the lookup lacks is omitted, never stored as 0.0 (A3).
-                                suggestion.latitude?.let { payload["latitude"] = it }
-                                suggestion.longitude?.let { payload["longitude"] = it }
-                                suggestion.city?.let { payload["city"] = it }
-                                suggestion.state?.let { payload["state"] = it }
-                                suggestion.stateCode?.let { payload["state_code"] = it }
-                                suggestion.country?.let { payload["country"] = it }
-                                suggestion.countryCode?.let { payload["country_code"] = it }
-                                suggestion.timezone?.let { payload["timezone"] = it }
-                                suggestion.timezoneOffset?.let { payload["timezone_offset"] = it }
-                                suggestion.postalCode?.let { payload["postal_code"] = it }
-                                suggestion.rawQuery?.let { payload["raw_query"] = it }
-                                values[field.id] = payload
+                                values[field.id] = LocationAnswer.selection(suggestion, typed)
                             },
                         leadingContent = {
                             Icon(
@@ -254,29 +235,6 @@ fun LocationFieldComposable(
 }
 
 /**
- * SPEC-070-A finalization B4 P1 — full LocationData payload mirroring
- * iOS LocationFieldView LocationData struct (12 keys). Previously only
- * `address` + `latitude` + `longitude` were carried, dropping
- * city/state/state_code/country/country_code/timezone/timezone_offset/
- * postal_code/raw_query. Hosts that branch on country (e.g. for tax,
- * shipping, currency) now have parity with iOS.
- */
-internal data class LocationSuggestionData(
-    val address: String,
-    val latitude: Double?,
-    val longitude: Double?,
-    val city: String? = null,
-    val state: String? = null,
-    val stateCode: String? = null,
-    val country: String? = null,
-    val countryCode: String? = null,
-    val timezone: String? = null,
-    val timezoneOffset: Int? = null,
-    val postalCode: String? = null,
-    val rawQuery: String? = null,
-)
-
-/**
  * Calls `/api/v1/sdk/geocode/autocomplete?q=…` (host comes from the
  * configured environment) and forwards the SDK API key via `x-api-key`.
  * Matches the existing inline implementation in `ContentBlockRenderer.kt`.
@@ -286,7 +244,7 @@ private suspend fun fetchLocationSuggestions(
     locationType: String,
     biasCountry: String?,
     language: String?,
-): List<LocationSuggestionData> {
+): List<LocationSuggestion> {
     return try {
         val baseUrl = ai.appdna.sdk.AppDNA.getApiBaseUrl()
         val apiKey = ai.appdna.sdk.AppDNA.getApiKey()
@@ -333,20 +291,8 @@ private suspend fun fetchLocationSuggestions(
         val results = json.optJSONObject("data")?.optJSONArray("suggestions") ?: return emptyList()
         (0 until minOf(results.length(), 5)).mapNotNull { i ->
             val item = results.optJSONObject(i) ?: return@mapNotNull null
-            LocationSuggestionData(
-                address = item.optString("formatted_address", ""),
-                latitude = suggestionCoordinate(item, "latitude"),
-                longitude = suggestionCoordinate(item, "longitude"),
-                city = item.optString("city").takeIf { it.isNotBlank() },
-                state = item.optString("state").takeIf { it.isNotBlank() },
-                stateCode = item.optString("state_code").takeIf { it.isNotBlank() },
-                country = item.optString("country").takeIf { it.isNotBlank() },
-                countryCode = item.optString("country_code").takeIf { it.isNotBlank() },
-                timezone = item.optString("timezone").takeIf { it.isNotBlank() },
-                timezoneOffset = item.optInt("timezone_offset", Int.MIN_VALUE).takeIf { it != Int.MIN_VALUE },
-                postalCode = item.optString("postal_code").takeIf { it.isNotBlank() },
-                rawQuery = query,
-            )
+            // Same parser as the content block; `raw_query` comes from the typed text at selection.
+            parseLocationSuggestion(item)
         }
     } catch (e: Exception) {
         ai.appdna.sdk.Log.debug("LocationFieldComposable autocomplete failed: ${e.message}")
