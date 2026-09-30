@@ -38,24 +38,20 @@ import org.json.JSONObject
 open class AppDNAMessagingService : FirebaseMessagingService() {
 
     override fun onMessageReceived(message: RemoteMessage) {
-        val pushId = message.data["push_id"] ?: ""
-        Log.info("Push received: $pushId")
+        // SPEC-497 §9.2 (B2) — only AppDNA's own messages. A host's (or a third-party pusher's)
+        // message is not tracked, fires no delegate and is never shown as a blank notification.
+        if (!AppDNA.push.isAppDNAMessage(message.data)) return
 
-        // Track delivery
-        AppDNA.trackPushDelivered(pushId)
-
-        // SPEC-070-A H.7: persist push_id so the next event session folds it
-        // into context.push_id, matching iOS PushNotificationHandler.swift:73.
-        try {
-            PushSessionContext.recordPushReceived(applicationContext, pushId)
-        } catch (e: Throwable) {
-            Log.warning("PushSessionContext: recordPushReceived failed: ${e.message}")
-        }
-
-        // SPEC-070-A H.8: fire AppDNAPushDelegate.onPushReceived BEFORE we
-        // build the notification. Hosts can suppress display by reading
-        // the payload (no veto signal yet — iOS contract is observe-only).
-        notifyPushDelegateReceived(message)
+        // Tracks push_delivered (with delivery_id), records the session push id and fires
+        // AppDNAPushDelegate.onPushReceived BEFORE the notification is built (SPEC-070-A H.7/H.8).
+        // A message a host already forwarded through AppDNA.push.handleMessage* is not re-handled.
+        val outcome = AppDNA.push.receive(
+            message.data,
+            message.notification?.title,
+            message.notification?.body,
+            applicationContext,
+        )
+        if (outcome != ai.appdna.sdk.PushModule.ReceiveOutcome.HANDLED) return
 
         // SPEC-070-A H.22: a hybrid notification+data payload is rendered
         // by FCM itself when the app is backgrounded. Building our own
@@ -65,15 +61,19 @@ open class AppDNAMessagingService : FirebaseMessagingService() {
             Log.debug("Push has notification block — FCM auto-displays; skipping SDK notify()")
             return
         }
+        // SPEC-497 §9.2 — a data-only AppDNA message with a blank title AND body is data for the
+        // app, not something to show: no blank notification.
+        if (!AppDNANotificationPoster.isDisplayable(message.data)) {
+            Log.debug("Push is data-only with no title or body — not displaying a notification")
+            return
+        }
 
-        // Build and display notification
-        ensureNotificationChannel(message.data)
+        AppDNANotificationPoster.ensureNotificationChannel(this, message.data)
         val notification = buildNotification(message)
         try {
-            val channelId = message.data["channel_id"] ?: DEFAULT_CHANNEL_ID
-            NotificationManagerCompat.from(this).notify(pushId.hashCode(), notification)
-            // pin channelId for log clarity
-            Log.debug("Push displayed (channel=$channelId, id=$pushId)")
+            NotificationManagerCompat.from(this)
+                .notify(AppDNANotificationPoster.notificationId(message.data), notification)
+            Log.debug("Push displayed (id=${message.data["push_id"]})")
         } catch (e: SecurityException) {
             Log.warning("Missing POST_NOTIFICATIONS permission")
         }
@@ -83,26 +83,90 @@ open class AppDNAMessagingService : FirebaseMessagingService() {
         AppDNA.onNewPushToken(token)
     }
 
-    protected open fun buildNotification(message: RemoteMessage): android.app.Notification {
-        val data = message.data
-        val channelId = data["channel_id"] ?: DEFAULT_CHANNEL_ID
+    protected open fun buildNotification(message: RemoteMessage): android.app.Notification =
+        AppDNANotificationPoster.build(this, message.data, message.notification?.title, message.notification?.body)
+
+    companion object {
+        const val DEFAULT_CHANNEL_ID = "appdna_push"
+
+        /**
+         * SPEC-070-A H.16: foreground detection that works in any process,
+         * including `:fcm`. Reads the running-process importance of the
+         * app's main process — `IMPORTANCE_FOREGROUND` means the user is
+         * actively interacting; anything else means backgrounded or killed.
+         */
+        internal fun isAppInForeground(context: Context): Boolean {
+            return try {
+                val am = context.getSystemService(Context.ACTIVITY_SERVICE) as? ActivityManager
+                    ?: return false
+                val processes = am.runningAppProcesses ?: return false
+                val pkg = context.packageName
+                processes.any {
+                    it.processName == pkg && it.importance == ActivityManager.RunningAppProcessInfo.IMPORTANCE_FOREGROUND
+                }
+            } catch (_: Throwable) {
+                false
+            }
+        }
+    }
+}
+
+/**
+ * The notification the SDK posts for a data-only AppDNA push — shared by [AppDNAMessagingService]
+ * and `AppDNA.push.handleMessage` (a host that owns Firebase Messaging but lets AppDNA display).
+ */
+internal object AppDNANotificationPoster {
+
+    /** `delivery_id ?: push_id` — one notification (and one set of pending intents) per delivery. */
+    fun deliveryKey(data: Map<String, String>): String =
+        data["delivery_id"]?.takeIf { it.isNotBlank() } ?: data["push_id"].orEmpty()
+
+    /**
+     * SPEC-497 §9.2 — keyed on the delivery, so two deliveries of one campaign (same `push_id`,
+     * different `delivery_id`) are two notifications that keep their own extras.
+     */
+    fun notificationId(data: Map<String, String>): Int = deliveryKey(data).hashCode()
+
+    fun isDisplayable(data: Map<String, String>, notifTitle: String? = null, notifBody: String? = null): Boolean =
+        !((data["title"] ?: notifTitle).isNullOrBlank() && (data["body"] ?: notifBody).isNullOrBlank())
+
+    /** Post the notification for [data] unless it has nothing to show. */
+    fun post(context: Context, data: Map<String, String>, notifTitle: String?, notifBody: String?) {
+        if (!isDisplayable(data, notifTitle, notifBody)) return
+        ensureNotificationChannel(context, data)
+        val notification = build(context, data, notifTitle, notifBody)
+        try {
+            NotificationManagerCompat.from(context).notify(notificationId(data), notification)
+        } catch (e: SecurityException) {
+            Log.warning("Missing POST_NOTIFICATIONS permission")
+        }
+    }
+
+    fun build(
+        context: Context,
+        data: Map<String, String>,
+        notifTitle: String?,
+        notifBody: String?,
+    ): android.app.Notification {
+        val channelId = data["channel_id"] ?: AppDNAMessagingService.DEFAULT_CHANNEL_ID
         // SPEC-088: Interpolate push title and body via TemplateEngine
         val pushCtx = ai.appdna.sdk.core.TemplateEngine.buildContext()
         val title = ai.appdna.sdk.core.TemplateEngine.interpolate(
-            data["title"] ?: message.notification?.title ?: "", pushCtx
+            data["title"] ?: notifTitle ?: "", pushCtx
         )
         val body = ai.appdna.sdk.core.TemplateEngine.interpolate(
-            data["body"] ?: message.notification?.body ?: "", pushCtx
+            data["body"] ?: notifBody ?: "", pushCtx
         )
         val pushId = data["push_id"] ?: ""
+        val key = deliveryKey(data)
 
-        val builder = NotificationCompat.Builder(this, channelId)
+        val builder = NotificationCompat.Builder(context, channelId)
             .setContentTitle(title)
             .setContentText(body)
             // SPEC-070-A H.21: resolve icon via Configuration.notificationIcon →
             // manifest <meta-data> → app icon. setSmallIcon throws when given a
             // 0/missing res id, so we always have a valid fallback.
-            .setSmallIcon(resolveNotificationIcon())
+            .setSmallIcon(NotificationIconResolver.resolve(context.applicationContext ?: context))
             .setAutoCancel(true)
             .setPriority(
                 if (data["priority"] == "high") NotificationCompat.PRIORITY_HIGH
@@ -113,7 +177,7 @@ open class AppDNAMessagingService : FirebaseMessagingService() {
         data["image_url"]?.let { url ->
             try {
                 val richBuilder = RichPushHandler.buildRichNotification(
-                    context = this,
+                    context = context,
                     channelId = channelId,
                     title = title,
                     body = body,
@@ -145,8 +209,14 @@ open class AppDNAMessagingService : FirebaseMessagingService() {
 
         // Tap intent with push_id for tracking + iOS-canonical action fields
         // (action_type, action_value, screen_id, deep_link).
-        val tapIntent = packageManager.getLaunchIntentForPackage(packageName)?.apply {
+        val tapIntent = context.packageManager.getLaunchIntentForPackage(context.packageName)?.apply {
             putExtra("push_id", pushId)
+            // SPEC-497 §9.2 — the marker and the delivery id reach handlePushTap, which is gated on
+            // the marker and tracks the tap against this delivery.
+            putExtra("appdna", data["appdna"])
+            putExtra("delivery_id", data["delivery_id"])
+            putExtra("action", data["action"])
+            putExtra("actions", data["actions"])
             putExtra("action_type", data["action_type"])
             putExtra("action_value", data["action_value"])
             putExtra("screen_id", data["screen_id"])
@@ -156,7 +226,7 @@ open class AppDNAMessagingService : FirebaseMessagingService() {
         if (tapIntent != null) {
             builder.setContentIntent(
                 PendingIntent.getActivity(
-                    this, pushId.hashCode(), tapIntent,
+                    context, key.hashCode(), tapIntent,
                     PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
                 )
             )
@@ -165,22 +235,25 @@ open class AppDNAMessagingService : FirebaseMessagingService() {
         // SPEC-070-A H.6: dismissal intent → push_dismissed event broadcast.
         // Set scheme + data via setData() so we don't shadow the outer
         // `data: Map<String,String>` inside the apply block.
-        val dismissIntent = Intent(this, PushDismissReceiver::class.java).apply {
+        val dismissIntent = Intent(context, PushDismissReceiver::class.java).apply {
             action = PushDismissReceiver.ACTION_PUSH_DISMISSED
             putExtra("push_id", pushId)
-            setData(android.net.Uri.parse("appdna://push/dismiss/$pushId"))
+            putExtra("delivery_id", data["delivery_id"])
+            setData(android.net.Uri.parse("appdna://push/dismiss/${android.net.Uri.encode(key)}"))
         }
         builder.setDeleteIntent(
             PendingIntent.getBroadcast(
-                this, pushId.hashCode(), dismissIntent,
+                context, key.hashCode(), dismissIntent,
                 PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
             )
         )
 
         // SPEC-084: Action buttons + SPEC-088: Interpolate action button labels
-        parseActionButtons(data).forEach { action ->
-            val actionIntent = packageManager.getLaunchIntentForPackage(packageName)?.apply {
+        PushPayloadParser.parseActionButtons(data).forEach { action ->
+            val actionIntent = context.packageManager.getLaunchIntentForPackage(context.packageName)?.apply {
                 putExtra("push_id", pushId)
+                putExtra("appdna", data["appdna"])
+                putExtra("delivery_id", data["delivery_id"])
                 putExtra("action_id", action.id)
                 putExtra("action_type", action.type)
                 putExtra("action_value", action.value)
@@ -188,7 +261,7 @@ open class AppDNAMessagingService : FirebaseMessagingService() {
             }
             if (actionIntent != null) {
                 val pendingIntent = PendingIntent.getActivity(
-                    this, action.id.hashCode(), actionIntent,
+                    context, "$key:${action.id}".hashCode(), actionIntent,
                     PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
                 )
                 // SPEC-085 + SPEC-070-A finalization B3#P1: Resolve action button
@@ -197,7 +270,7 @@ open class AppDNAMessagingService : FirebaseMessagingService() {
                 //   2. JSON dict {library:"lucide"|"material", name:"mail"} →
                 //      look up via library-specific name then fall back to
                 //      drawable lookup on the resolved name.
-                val iconResId = action.icon?.let { NotificationIconResolver.resolvePushActionIconRes(this, it) } ?: 0
+                val iconResId = action.icon?.let { NotificationIconResolver.resolvePushActionIconRes(context, it) } ?: 0
                 val interpolatedLabel = ai.appdna.sdk.core.TemplateEngine.interpolate(action.label, pushCtx)
                 builder.addAction(iconResId, interpolatedLabel, pendingIntent)
             }
@@ -213,9 +286,9 @@ open class AppDNAMessagingService : FirebaseMessagingService() {
      *
      * SPEC-070-A H.21b: also honor channel importance (`high|default|low|min`).
      */
-    private fun ensureNotificationChannel(data: Map<String, String>) {
+    fun ensureNotificationChannel(context: Context, data: Map<String, String>) {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return
-        ensureNotificationChannelOreoPlus(data)
+        ensureNotificationChannelOreoPlus(context, data)
     }
 
     /**
@@ -226,9 +299,9 @@ open class AppDNAMessagingService : FirebaseMessagingService() {
      * APIs were introduced in API 26.
      */
     @RequiresApi(Build.VERSION_CODES.O)
-    private fun ensureNotificationChannelOreoPlus(data: Map<String, String>) {
-        val manager = getSystemService(NotificationManager::class.java) ?: return
-        val channelId = data["channel_id"] ?: DEFAULT_CHANNEL_ID
+    private fun ensureNotificationChannelOreoPlus(context: Context, data: Map<String, String>) {
+        val manager = context.getSystemService(NotificationManager::class.java) ?: return
+        val channelId = data["channel_id"] ?: AppDNAMessagingService.DEFAULT_CHANNEL_ID
         if (manager.getNotificationChannel(channelId) != null) return
 
         val channelName = data["channel_name"] ?: "Push Notifications"
@@ -274,75 +347,6 @@ open class AppDNAMessagingService : FirebaseMessagingService() {
         else -> NotificationManager.IMPORTANCE_HIGH
     }
 
-    /**
-     * SPEC-070-A H.21: small-icon resolution priority:
-     *   1. AppDNA.notificationIcon (developer-supplied via Configuration)
-     *   2. <meta-data android:name="com.google.firebase.messaging.default_notification_icon">
-     *   3. ApplicationInfo.icon (last resort)
-     */
-    private fun resolveNotificationIcon(): Int =
-        NotificationIconResolver.resolve(applicationContext)
-
-    /** SPEC-070-A H.10 — see [PushPayloadParser.parseActionButtons]. */
-    private fun parseActionButtons(data: Map<String, String>): List<ai.appdna.sdk.PushActionButton> =
-        PushPayloadParser.parseActionButtons(data)
-
-    /**
-     * SPEC-070-A H.8 + H.16: surface the push payload to the host's
-     * AppDNAPushDelegate. Foreground state inferred via ActivityManager so it
-     * works correctly even when this Service runs in a `:fcm` sub-process
-     * (where ProcessLifecycleOwner is incorrect). Posts to main-thread to
-     * isolate host code from the FCM listener thread.
-     */
-    private fun notifyPushDelegateReceived(message: RemoteMessage) {
-        val delegate = try { AppDNA.push.delegate() } catch (_: Throwable) { null } ?: return
-        val data = message.data
-        val payload = PushPayloadParser.buildPayload(
-            data = data,
-            fallbackTitle = message.notification?.title,
-            fallbackBody = message.notification?.body,
-        )
-        val inForeground = isAppInForeground(applicationContext)
-        try {
-            android.os.Handler(android.os.Looper.getMainLooper()).post {
-                try {
-                    delegate.onPushReceived(payload, inForeground)
-                } catch (e: Throwable) {
-                    Log.warning("AppDNAPushDelegate.onPushReceived threw: ${e.message}")
-                }
-            }
-        } catch (e: Throwable) {
-            Log.warning("AppDNAPushDelegate fan-out failed: ${e.message}")
-        }
-    }
-
-    /** SPEC-070-A H.10 — see [PushPayloadParser.parseCanonicalAction]. */
-    private fun parseCanonicalAction(data: Map<String, String>): PushAction? =
-        PushPayloadParser.parseCanonicalAction(data)
-
-    companion object {
-        const val DEFAULT_CHANNEL_ID = "appdna_push"
-
-        /**
-         * SPEC-070-A H.16: foreground detection that works in any process,
-         * including `:fcm`. Reads the running-process importance of the
-         * app's main process — `IMPORTANCE_FOREGROUND` means the user is
-         * actively interacting; anything else means backgrounded or killed.
-         */
-        internal fun isAppInForeground(context: Context): Boolean {
-            return try {
-                val am = context.getSystemService(Context.ACTIVITY_SERVICE) as? ActivityManager
-                    ?: return false
-                val processes = am.runningAppProcesses ?: return false
-                val pkg = context.packageName
-                processes.any {
-                    it.processName == pkg && it.importance == ActivityManager.RunningAppProcessInfo.IMPORTANCE_FOREGROUND
-                }
-            } catch (_: Throwable) {
-                false
-            }
-        }
-    }
 }
 
 /**

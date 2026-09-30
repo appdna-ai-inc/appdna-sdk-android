@@ -174,6 +174,12 @@ class SharedFixtureTest(
         ScreenManager.shared.setDelegate(null)
         AppDNA.onboarding.setDelegate(null)
         AppDNA.paywall.setDelegate(null)
+        AppDNA.push.setDelegate(null)
+        AppDNA.push.manager = null
+        AppDNA.push.contextOverride = null
+        ai.appdna.sdk.integrations.PushTapRouter.routeSink = null
+        AppDNA.deepLinks.setDelegate(null)
+        AppDNA.deepLinks.trackEvent = { name, props -> AppDNA.track(name, props) }
         ctx.getSharedPreferences("ai.appdna.sdk.msg_freq", Context.MODE_PRIVATE).edit().clear().commit()
     }
 
@@ -224,6 +230,7 @@ class SharedFixtureTest(
             "compose_map_url" -> runComposeMapUrl(action, spy)
             "receive_push" -> runReceivePush(action, spy)
             "tap_push" -> runTapPush(action, spy)
+            "classify_push" -> runClassifyPush(action, spy)
             "present_surface_under_experiment" -> runPresentSurfaceUnderExperiment(action, spy)
             // SPEC-496 §H — the raw host-data pass, through the REAL HostDataResolver.
             "resolve_block" -> runResolveBlock(spy)
@@ -1754,53 +1761,91 @@ class SharedFixtureTest(
         }
     }
 
+    /**
+     * SPEC-497 §8.7 — wire the REAL push entry points (`AppDNA.push.*`, `AppDNA.handlePushTap`) to this
+     * fixture's pipeline: the PushTokenManager and context they read are injected, the idempotency
+     * state is reset (so two fixtures sharing a push_id do not dedup each other), the route sink
+     * records where a tap routed, and `deep_link_handled` lands in the same pipeline.
+     */
+    private fun installPush(p: Pipeline, spy: Spy) {
+        AppDNA.push.contextOverride = ctx
+        ai.appdna.sdk.integrations.PushIdempotency.resetForTesting()
+        AppDNA.push.manager = PushTokenManager(ctx, p.storage, p.tracker, null)
+        AppDNA.push.setDelegate(object : AppDNAPushDelegate {
+            override fun onPushReceived(notification: PushPayload, inForeground: Boolean) {
+                spy.delegateCalls.add("onPushReceived" to pushArgs(notification))
+            }
+            override fun onPushTapped(notification: PushPayload, actionId: String?) {
+                spy.delegateCalls.add("onPushTapped" to pushArgs(notification) + ("actionId" to actionId))
+            }
+        })
+        ai.appdna.sdk.integrations.PushTapRouter.routeSink = { type, value ->
+            spy.state["routed"] = mapOf("type" to type, "value" to value)
+        }
+        AppDNA.deepLinks.trackEvent = { name, props -> p.tracker.track(name, props) }
+        AppDNA.deepLinks.setDelegate(object : AppDNADeepLinkDelegate {
+            override fun onDeepLinkReceived(url: String, params: Map<String, String>) {
+                spy.delegateCalls.add("onDeepLinkReceived" to mapOf("url" to url, "params" to params))
+            }
+        })
+    }
+
+    private fun pushArgs(n: PushPayload): Map<String, Any?> = mapOf(
+        "pushId" to n.pushId,
+        "actions" to n.actions.map { b ->
+            buildMap<String, Any?> {
+                put("id", b.id)
+                put("label", b.label)
+                put("action_type", b.type)
+                b.value?.let { put("action_value", it) }
+            }
+        },
+    )
+
+    private fun notificationPosted(): Boolean {
+        val nm = ctx.getSystemService(android.app.NotificationManager::class.java)
+        return shadowOf(nm).allNotifications.isNotEmpty()
+    }
+
+    /** SPEC-497 §9.2 — the REAL classifier every entry point gates on. */
+    private fun runClassifyPush(action: JSONObject, spy: Spy) {
+        spy.state["is_appdna"] = AppDNA.push.isAppDNAMessage(fcmData(action.getJSONObject("payload")))
+    }
+
     private fun runReceivePush(action: JSONObject, spy: Spy) {
         val p = Pipeline(fixtureName).also { pipeline = it }
         val data = fcmData(action.getJSONObject("payload"))
 
-        val parsed = PushPayloadParser.buildPayload(data) // REAL parse
-        val pushManager = PushTokenManager(ctx, p.storage, p.tracker, null)
-        pushManager.trackDelivered(parsed.pushId) // REAL push_delivered emit
-
-        spy.delegateCalls.add(
-            "onPushReceived" to mapOf(
-                "pushId" to parsed.pushId,
-                "actions" to parsed.actions.map { b ->
-                    buildMap<String, Any?> {
-                        put("id", b.id)
-                        put("label", b.label)
-                        put("action_type", b.type)
-                        b.value?.let { put("action_value", it) }
-                    }
-                },
-            ),
-        )
-        spy.state["registered_action_button_count"] = parsed.actions.size
+        when (val via = action.optStringOrNull("via")) {
+            // SPEC-497 §8.7 — the host-forwarded entry point: marker-gated, tracks delivery with the
+            // delivery_id, fires onPushReceived, NEVER posts a notification.
+            "handleMessageData" -> {
+                installPush(p, spy)
+                spy.state["returned"] = AppDNA.push.handleMessageData(data)
+                idle()
+                spy.state["notification_posted"] = notificationPosted()
+            }
+            null -> {
+                // No `via`: the fixture pins only the PARSER (the raw FCM RemoteMessage through the
+                // service is not drivable on the JVM), so it needs no marker.
+                val parsed = PushPayloadParser.buildPayload(data) // REAL parse
+                val pushManager = PushTokenManager(ctx, p.storage, p.tracker, null)
+                pushManager.trackDelivered(parsed.pushId) // REAL push_delivered emit
+                spy.delegateCalls.add("onPushReceived" to pushArgs(parsed))
+                spy.state["registered_action_button_count"] = parsed.actions.size
+            }
+            else -> unsupported("receive_push via=$via")
+        }
         spy.events += p.envelopes().map { it.toEventPair() }
     }
 
+    /** SPEC-497 §8.7 — the REAL `AppDNA.push.handleTapData`: tracking, the delegate and routing are outputs. */
     private fun runTapPush(action: JSONObject, spy: Spy) {
         val p = Pipeline(fixtureName).also { pipeline = it }
+        installPush(p, spy)
         val data = fcmData(action.getJSONObject("payload"))
-        val parsed = PushPayloadParser.buildPayload(data) // REAL parse (incl. the canonical action)
-        val pushManager = PushTokenManager(ctx, p.storage, p.tracker, null)
-
-        pushManager.trackTapped(parsed.pushId) // REAL push_tapped emit
-        spy.delegateCalls.add("onPushTapped" to mapOf("pushId" to parsed.pushId))
-
-        val pushAction = parsed.action
-        if (pushAction != null && pushAction.type == "deep_link") {
-            val uri = android.net.Uri.parse(pushAction.value)
-            val params = uri.queryParameterNames.associateWith { uri.getQueryParameter(it) }
-            // PLUMBING: DeepLinksModule.handleURL routes through AppDNA.track, which needs a
-            // configured SDK. The URL + params below are the ones the SDK parsed out of the push.
-            p.tracker.track("deep_link_handled", mapOf("url" to pushAction.value))
-            spy.delegateCalls.add(
-                "onDeepLinkReceived" to mapOf("url" to pushAction.value, "params" to params),
-            )
-            spy.state["current_route"] = listOfNotNull(uri.host, uri.path?.trim('/')?.ifEmpty { null })
-                .joinToString("/")
-        }
+        spy.state["returned"] = AppDNA.push.handleTapData(data, action.optStringOrNull("action_id"))
+        idle()
         spy.events += p.envelopes().map { it.toEventPair() }
     }
 
@@ -1904,6 +1949,20 @@ class SharedFixtureTest(
         }
 
         val expectedCalls = expect.optJSONArray("delegate_calls") ?: JSONArray()
+        // SPEC-497 §14 per-category rule: push_payload compares delegate_calls ORDER-INSENSITIVELY —
+        // a push delegate is posted to the main looper, a deep-link delegate fires inline, so their
+        // relative order is not part of the contract. Every other category compares in order.
+        if (fixtureJson.optString("category") == "push_payload") {
+            val remaining = spy.delegateCalls.toMutableList()
+            val aligned = mutableListOf<Pair<String, Map<String, Any?>>>()
+            for (i in 0 until expectedCalls.length()) {
+                val name = expectedCalls.getJSONObject(i).getString("name")
+                val idx = remaining.indexOfFirst { it.first == name }
+                if (idx >= 0) aligned += remaining.removeAt(idx)
+            }
+            spy.delegateCalls.clear()
+            spy.delegateCalls += aligned + remaining
+        }
         assertEquals(
             "[$fixtureName] delegate-call count (SDK invoked ${spy.delegateCalls.map { it.first }})",
             expectedCalls.length(),

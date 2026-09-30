@@ -146,8 +146,14 @@
             display). exported="false" because Firebase does the dispatch
             internally; no other process should bind directly.
         -->
+        <!--
+            SPEC-497 §9.2 (B2): a host that owns Firebase Messaging disables this service by setting
+            `<bool name="appdna_messaging_service_enabled">false</bool>` in its own res/values
+            (`tools:node="remove"` on this element also works) and forwards to AppDNA.push.handleMessage.
+        -->
         <service
             android:name="ai.appdna.sdk.integrations.AppDNAMessagingService"
+            android:enabled="@bool/appdna_messaging_service_enabled"
             android:exported="false">
             <intent-filter>
                 <action android:name="com.google.firebase.MESSAGING_EVENT" />

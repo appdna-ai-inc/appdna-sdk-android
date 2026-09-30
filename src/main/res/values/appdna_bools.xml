@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!--
+        SPEC-497 §9.2 (B2): whether the SDK's AppDNAMessagingService receives FCM messages. A host that
+        runs its own FirebaseMessagingService overrides this to false in its own res/values and forwards
+        AppDNA pushes with AppDNA.push.handleMessage(message).
+    -->
+    <bool name="appdna_messaging_service_enabled">true</bool>
+</resources>

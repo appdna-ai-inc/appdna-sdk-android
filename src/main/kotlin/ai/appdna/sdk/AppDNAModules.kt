@@ -11,7 +11,16 @@ import ai.appdna.sdk.config.ExperimentManager
 import ai.appdna.sdk.config.FeatureFlagManager
 import ai.appdna.sdk.config.RemoteConfigManager
 import ai.appdna.sdk.feedback.SurveyManager
+import ai.appdna.sdk.integrations.AppDNAMessagingService
+import ai.appdna.sdk.integrations.AppDNANotificationPoster
+import ai.appdna.sdk.integrations.PushIdempotency
+import ai.appdna.sdk.integrations.PushPayloadParser
+import ai.appdna.sdk.integrations.PushSessionContext
+import ai.appdna.sdk.integrations.PushTapRouter
 import ai.appdna.sdk.integrations.PushTokenManager
+import ai.appdna.sdk.storage.LocalStorage
+import android.content.Context
+import com.google.firebase.messaging.RemoteMessage
 import ai.appdna.sdk.onboarding.OnboardingFlowManager
 import ai.appdna.sdk.paywalls.PaywallContext
 import ai.appdna.sdk.paywalls.PaywallManager
@@ -190,6 +199,151 @@ class PushModule internal constructor() {
      * via [setDelegate], or null when no host has registered one.
      */
     internal fun delegate(): AppDNAPushDelegate? = manager?.pushListener
+
+    // ---------------------------------------------------------------------------------------------
+    // SPEC-497 §9.2 (B2) — forwarding API for a host that owns Firebase Messaging.
+    // ---------------------------------------------------------------------------------------------
+
+    /** Test seam: the context the push entry points use (production: the configured app context). */
+    internal var contextOverride: Context? = null
+    internal val context: Context? get() = contextOverride ?: AppDNA.getApplicationContext()
+
+    internal enum class ReceiveOutcome { IGNORED, DUPLICATE, HANDLED }
+
+    /**
+     * Whether [data] is an AppDNA push: it carries the server's marker `appdna = "1"`. A bare
+     * `push_id` is NOT enough — hosts and third-party pushers commonly use a `push_id` of their own.
+     */
+    fun isAppDNAMessage(data: Map<String, String>): Boolean = data["appdna"] == "1"
+
+    /**
+     * Handle an FCM message a host received in its own `FirebaseMessagingService`: exactly what the
+     * SDK's service does for an AppDNA message — tracks `push_delivered` (with `delivery_id`), fires
+     * `onPushReceived` and, for a data-only message with a title or body, posts the notification.
+     * Returns `false` and does nothing for a message that is not AppDNA's. Safe to call for every
+     * message; a message already handled (by the SDK's service or an earlier call) is a no-op that
+     * returns `true`.
+     */
+    fun handleMessage(message: RemoteMessage): Boolean {
+        val data = message.data
+        return when (receive(data, message.notification?.title, message.notification?.body)) {
+            ReceiveOutcome.IGNORED -> false
+            ReceiveOutcome.DUPLICATE -> true
+            ReceiveOutcome.HANDLED -> {
+                // A message with a `notification` block is displayed by FCM itself.
+                if (message.notification == null) {
+                    context?.let { ctx ->
+                        try {
+                            AppDNANotificationPoster.post(ctx, data, null, null)
+                        } catch (e: Throwable) {
+                            Log.warning("PushModule.handleMessage: display failed: ${e.message}")
+                        }
+                    }
+                }
+                true
+            }
+        }
+    }
+
+    /**
+     * Like [handleMessage] for a host that owns DISPLAY too: tracks `push_delivered` (with
+     * `delivery_id`) and fires `onPushReceived`, and NEVER posts a notification. Returns `false` and
+     * does nothing unless the data carries the AppDNA marker.
+     */
+    fun handleMessageData(data: Map<String, String>): Boolean =
+        receive(data, null, null) != ReceiveOutcome.IGNORED
+
+    /**
+     * The tap half of `AppDNA.handlePushTap(intent)` for a host that owns display: tracks
+     * `push_tapped` (with `delivery_id`), fires `onPushTapped` and auto-routes the tap (the tapped
+     * button [actionId] first, then the notification's action, `screen_id`, `deep_link`). Returns
+     * `false` and does nothing unless the data carries the AppDNA marker; a tap already handled
+     * (through either entry point) is a no-op that returns `true`.
+     */
+    @JvmOverloads
+    fun handleTapData(data: Map<String, String>, actionId: String? = null): Boolean = handleTap(data, actionId)
+
+    /** Shared by the service, [handleMessage] and [handleMessageData]. */
+    internal fun receive(
+        data: Map<String, String>,
+        fallbackTitle: String?,
+        fallbackBody: String?,
+        ctx: Context? = context,
+    ): ReceiveOutcome {
+        if (!isAppDNAMessage(data)) return ReceiveOutcome.IGNORED
+        val pushId = data["push_id"].orEmpty()
+        val deliveryId = data["delivery_id"]?.takeIf { it.isNotBlank() }
+        val key = deliveryId ?: pushId
+        if (key.isNotBlank() && !PushIdempotency.claimDelivered(key)) return ReceiveOutcome.DUPLICATE
+        Log.info("Push received: $pushId")
+        manager?.trackDelivered(pushId, deliveryId)
+        ctx?.let {
+            try {
+                PushSessionContext.recordPushReceived(it, pushId)
+            } catch (e: Throwable) {
+                Log.warning("PushSessionContext: recordPushReceived failed: ${e.message}")
+            }
+        }
+        val delegate = delegate()
+        if (delegate != null) {
+            val payload = PushPayloadParser.buildPayload(data, fallbackTitle, fallbackBody)
+            // The PROCESS foreground state (works in an `:fcm` process too).
+            val inForeground = ctx?.let { AppDNAMessagingService.isAppInForeground(it) } ?: false
+            postMain { delegate.onPushReceived(payload, inForeground) }
+        }
+        return ReceiveOutcome.HANDLED
+    }
+
+    /** Shared by `AppDNA.handlePushTap(intent)` and [handleTapData]. */
+    internal fun handleTap(data: Map<String, String>, actionId: String?): Boolean {
+        if (!isAppDNAMessage(data)) return false
+        val pushId = data["push_id"].orEmpty()
+        val deliveryId = data["delivery_id"]?.takeIf { it.isNotBlank() }
+        val key = deliveryId ?: pushId
+        if (key.isBlank()) return false
+
+        // One tap tracks once, whichever entry point (or an Activity re-created with the same
+        // intent) sees it — the persisted key survives process death.
+        val storage = context?.let { LocalStorage(it) }
+        if (PushIdempotency.tapAlreadyHandled(storage, key)) return true
+        PushIdempotency.markTapHandled(storage, key)
+
+        // A body tap carries iOS's `UNNotificationDefaultActionIdentifier` sentinel so the `action`
+        // column is non-null and comparable across platforms (SPEC-401-A R81).
+        val resolvedAction = actionId?.takeIf { it.isNotBlank() }
+            ?: data["action_type"]?.takeIf { it.isNotBlank() }
+            ?: "com.apple.UNNotificationDefaultActionIdentifier"
+        try {
+            manager?.trackTapped(pushId, resolvedAction, deliveryId)
+        } catch (e: Throwable) {
+            Log.warning("push tap: trackTapped threw: ${e.message}")
+        }
+        context?.let {
+            try {
+                PushSessionContext.recordPushReceived(it, pushId)
+            } catch (_: Throwable) { /* best-effort */ }
+        }
+        delegate()?.let { d ->
+            val payload = PushPayloadParser.buildPayload(data)
+            postMain { d.onPushTapped(payload, actionId) }
+        }
+        PushTapRouter.route(PushPayloadParser.resolveTapAction(data, actionId))
+        return true
+    }
+
+    private fun postMain(block: () -> Unit) {
+        try {
+            android.os.Handler(android.os.Looper.getMainLooper()).post {
+                try {
+                    block()
+                } catch (e: Throwable) {
+                    Log.warning("AppDNAPushDelegate threw: ${e.message}")
+                }
+            }
+        } catch (e: Throwable) {
+            Log.warning("AppDNAPushDelegate fan-out failed: ${e.message}")
+        }
+    }
 
     companion object {
         // Shared scope for Java-future overloads. Kept in a companion to avoid
@@ -722,6 +876,9 @@ class SurveysModule internal constructor() {
 class DeepLinksModule internal constructor() {
     private var listener: AppDNADeepLinkDelegate? = null
 
+    /** Test seam (SPEC-497 §8.7): where `deep_link_handled` goes. Production: the public `AppDNA.track`. */
+    internal var trackEvent: (String, Map<String, Any>) -> Unit = { name, props -> AppDNA.track(name, props) }
+
     /**
      * SPEC-070-C D10 — OPTIONAL async `shouldOpen` wrapper-veto. This is a
      * NET-NEW decision point (no native deep-link veto existed). When set (the
@@ -767,12 +924,12 @@ class DeepLinksModule internal constructor() {
                         return@launch
                     }
                     listener?.onDeepLinkReceived(url, params)
-                    AppDNA.track("deep_link_handled", mapOf("url" to url))
+                    trackEvent("deep_link_handled", mapOf("url" to url))
                 }
                 return
             }
             listener?.onDeepLinkReceived(url, params)
-            AppDNA.track("deep_link_handled", mapOf("url" to url))
+            trackEvent("deep_link_handled", mapOf("url" to url))
         } catch (e: Exception) {
             Log.error("DeepLinksModule: failed to handle URL: ${e.message}")
         }
