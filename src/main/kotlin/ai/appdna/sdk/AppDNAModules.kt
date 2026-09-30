@@ -304,6 +304,26 @@ class PushModule internal constructor() {
         return if (claim == PushIdempotency.Claim.LATE_TRACK) ReceiveOutcome.DUPLICATE else ReceiveOutcome.HANDLED
     }
 
+    /**
+     * A tap on a notification the PREVIOUS SDK version posted (still in the tray when the app updated).
+     * That version's tap intent carries no `appdna` marker and, from a server older than this release,
+     * a blank `push_id` — [handleTap] would drop it (no marker) or refuse it (no key), so the tap did
+     * nothing after the upgrade. With a key it is an ordinary tap; without one it cannot be tracked or
+     * deduplicated, so it fires `onPushTapped` and routes, and tracks nothing. (The caller makes the
+     * intent inert afterwards, so an Activity re-created with it does not route again.)
+     */
+    internal fun handleLegacyTap(data: Map<String, String>, actionId: String?): Boolean {
+        val marked = data + ("appdna" to "1")
+        val key = data["delivery_id"]?.takeIf { it.isNotBlank() } ?: data["push_id"].orEmpty()
+        if (key.isNotBlank()) return handleTap(marked, actionId)
+        delegate()?.let { d ->
+            val payload = PushPayloadParser.buildPayload(marked)
+            postMain { d.onPushTapped(payload, actionId) }
+        }
+        PushTapRouter.route(PushPayloadParser.resolveTapAction(marked, actionId))
+        return true
+    }
+
     /** Shared by `AppDNA.handlePushTap(intent)` and [handleTapData]. */
     internal fun handleTap(data: Map<String, String>, actionId: String?): Boolean {
         if (!isAppDNAMessage(data)) return false

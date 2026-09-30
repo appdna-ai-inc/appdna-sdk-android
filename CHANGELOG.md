@@ -6,10 +6,10 @@ the project uses [Semantic Versioning](https://semver.org/).
 
 ## [1.0.54] — unreleased
 
-Wraps iOS 1.0.82. Ships SPEC-495 (maps) and SPEC-496 (host data, including P1b "Show more").
+Wraps iOS 1.0.82. Ships maps and host data (including "Show more").
 
 ### Added
-- **Maps (SPEC-495).** A `map` block can use Google as well as Mapbox (the customer's own key,
+- **Maps.** A `map` block can use Google as well as Mapbox (the customer's own key,
   delivered like the Mapbox token), draw a real pannable map through the bundled Google Maps SDK
   where the app can (it needs your key in the `com.google.android.geo.API_KEY` manifest meta-data;
   without it the map is static), style with Google map types / styled-map JSON, and be placed as a
@@ -17,10 +17,10 @@ Wraps iOS 1.0.82. Ships SPEC-495 (maps) and SPEC-496 (host data, including P1b "
   the encoded polyline (Google, precision 5), otherwise straight segments between the stops. With
   auto-fit on (the default) the camera fits the route and its stops, and a single point uses zoom 15;
   with auto-fit off it centres on the authored centre at the authored zoom.
-- **Host data for every element (SPEC-496).** `{{hook_data.…}}`, `data_templates` and bindings
+- **Host data for every element.** `{{hook_data.…}}`, `data_templates` and bindings
   resolve on the raw step JSON for every onboarding field; an `input_select` `repeat` generates its
   options from a host list, with a pending state until `onBeforeStepRender` answers.
-- **"Show more" (SPEC-496 P1b).** `ElementInteractionResult.dataContext` merges into the step's
+- **"Show more".** `ElementInteractionResult.dataContext` merges into the step's
   `hook_data` per top-level key (a `null` value removes the key), so a `refresh_step` button can load
   the next page into a repeat Select. `refresh_step` now also fires from buttons nested in rows,
   stacks, section backgrounds and carousel pages (before, it silently did nothing there). The tapped
@@ -211,8 +211,10 @@ Needs the AppDNA server from the same release (purchase verification and push tr
   `delivery_id` extras from the intent, so handling the same intent again (an Activity re-created with
   it) returns `false` and tracks nothing.
 - **Upgrade note:** a notification that the previous SDK version posted and that is still in the
-  tray when the app updates carries no `appdna` extra, so tapping it after the upgrade is ignored:
-  `handlePushTap` returns `false`, and nothing is tracked or routed.
+  tray when the app updates carries no `appdna` extra. `handlePushTap` recognises that version's tap
+  intent (`push_id`, `action_type` and `action_value` extras, no `appdna`) and still routes it and
+  fires `onPushTapped`; it tracks `push_tapped` only when the notification carries a `push_id` (servers
+  before this release sent none). A handled intent loses those extras, so it is not routed twice.
 
 #### Fixed
 - **A lifetime purchase (under `StoreKit2`) no longer disappears after an entitlement update**; `hasActiveSubscription()`
