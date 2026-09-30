@@ -424,9 +424,8 @@ class PurchaseCompletionConcurrencyTest {
             // I4 R8 m1 — D-R40-1 after the cancel: Play completes the purchase later. The cancelled caller
             // is gone (and its paywall attribution with it), so the report is queued and delivered by the
             // drain: exactly one purchase_completed and one onPurchaseCompleted, and no paywall callback.
-            // NEGATIVE CONTROL: with the purchase scope NOT cleared on cancellation, the report resolves
-            // no caller but keeps the paywall id — the paywall delegate's Completed fires; with the queue
-            // write removed, no onPurchaseCompleted — either way this fails.
+            // NEGATIVE CONTROL: with the queue entry for a report that resolved no live caller not written
+            // (`deliveries = null` in PurchaseCompletion's one write), no onPurchaseCompleted — this fails.
             s.fake.deliver(s.fake.listenerPurchase!!, "inapp")
             s.idle()
             assertEquals(1, delivered(s))
