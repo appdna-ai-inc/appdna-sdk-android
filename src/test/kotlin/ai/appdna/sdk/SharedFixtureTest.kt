@@ -184,7 +184,7 @@ class SharedFixtureTest(
         AppDNA.push.contextOverride = null
         ai.appdna.sdk.integrations.PushTapRouter.routeSink = null
         AppDNA.deepLinks.setDelegate(null)
-        AppDNA.deepLinks.trackEvent = { name, props -> AppDNA.track(name, props) }
+        AppDNA.deepLinks.track = { name, props -> AppDNA.track(name, props) }
         ctx.getSharedPreferences("ai.appdna.sdk.msg_freq", Context.MODE_PRIVATE).edit().clear().commit()
     }
 
@@ -1927,7 +1927,7 @@ class SharedFixtureTest(
         ai.appdna.sdk.integrations.PushTapRouter.routeSink = { type, value ->
             spy.state["routed"] = mapOf("type" to type, "value" to value)
         }
-        AppDNA.deepLinks.trackEvent = { name, props -> p.tracker.track(name, props) }
+        AppDNA.deepLinks.track = { name, props -> p.tracker.track(name, props) }
         AppDNA.deepLinks.setDelegate(object : AppDNADeepLinkDelegate {
             override fun onDeepLinkReceived(url: String, params: Map<String, String>) {
                 spy.delegateCalls.add("onDeepLinkReceived" to mapOf("url" to url, "params" to params))

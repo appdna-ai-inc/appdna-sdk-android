@@ -877,7 +877,7 @@ class DeepLinksModule internal constructor() {
     private var listener: AppDNADeepLinkDelegate? = null
 
     /** Test seam (SPEC-497 §8.7): where `deep_link_handled` goes. Production: the public `AppDNA.track`. */
-    internal var trackEvent: (String, Map<String, Any>) -> Unit = { name, props -> AppDNA.track(name, props) }
+    internal var track: (String, Map<String, Any>) -> Unit = { name, props -> AppDNA.track(name, props) }
 
     /**
      * SPEC-070-C D10 — OPTIONAL async `shouldOpen` wrapper-veto. This is a
@@ -924,12 +924,12 @@ class DeepLinksModule internal constructor() {
                         return@launch
                     }
                     listener?.onDeepLinkReceived(url, params)
-                    trackEvent("deep_link_handled", mapOf("url" to url))
+                    track("deep_link_handled", mapOf("url" to url))
                 }
                 return
             }
             listener?.onDeepLinkReceived(url, params)
-            trackEvent("deep_link_handled", mapOf("url" to url))
+            track("deep_link_handled", mapOf("url" to url))
         } catch (e: Exception) {
             Log.error("DeepLinksModule: failed to handle URL: ${e.message}")
         }
