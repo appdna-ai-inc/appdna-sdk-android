@@ -155,6 +155,18 @@ internal class EventUploadWorker(
         private const val UNIQUE_WORK_NAME = "ai.appdna.sdk.eventUpload"
 
         /**
+         * Test seam (null in production): the base URL every [scheduleIfNeeded] call receives — the SDK
+         * must hand the worker the SAME resolved base as its `ApiClient` (SPEC-497 §3.11).
+         */
+        @Volatile internal var scheduleProbe: ((String) -> Unit)? = null
+
+        /** The worker's input: the API key and the base URL [doWork] uploads to. */
+        internal fun inputData(apiKey: String, baseUrl: String): Data = Data.Builder()
+            .putString(KEY_API_KEY, apiKey)
+            .putString(KEY_BASE_URL, baseUrl)
+            .build()
+
+        /**
          * Schedule a background upload if there are pending events.
          */
         fun scheduleIfNeeded(
@@ -163,13 +175,11 @@ internal class EventUploadWorker(
             baseUrl: String,
             eventDatabase: EventDatabase
         ) {
+            scheduleProbe?.invoke(baseUrl)
             val pendingCount = eventDatabase.count()
             if (pendingCount == 0) return
 
-            val inputData = Data.Builder()
-                .putString(KEY_API_KEY, apiKey)
-                .putString(KEY_BASE_URL, baseUrl)
-                .build()
+            val inputData = inputData(apiKey, baseUrl)
 
             val constraints = Constraints.Builder()
                 .setRequiredNetworkType(NetworkType.CONNECTED)

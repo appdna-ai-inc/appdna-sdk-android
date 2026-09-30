@@ -37,6 +37,19 @@ internal object PushIdempotency {
     }
 
     /**
+     * Check-and-mark in ONE step (I4 minor 31): true the first time [key] is claimed as tapped, false
+     * when it already is. Synchronized, so two entry points racing on the same tap (the intent and a
+     * host's `handleTapData`) cannot both pass the check. `setString` updates the in-memory
+     * SharedPreferences map before returning, so the next claim in this process sees it.
+     */
+    @Synchronized
+    fun claimTap(storage: LocalStorage?, key: String): Boolean {
+        if (tapAlreadyHandled(storage, key)) return false
+        markTapHandled(storage, key)
+        return true
+    }
+
+    /**
      * Test-only: clears the in-process set AND the persisted tap key, so two fixtures that reuse a
      * `push_id` do not dedup each other. `@JvmName` because the RN / Flutter test modules call it by
      * reflection and Kotlin mangles `internal` names in bytecode.

@@ -976,12 +976,7 @@ object AppDNA {
         // stop → clear → start (anonymous → first user is exempt). The switch and the re-point happen
         // under the SDK lock; the cache's clear() fans onEntitlementsChanged([]) out AFTER it.
         val billingMgr = billing.manager
-        if (previousUserId != null && previousUserId != userId) {
-            synchronized(this@AppDNA) { billingMgr?.entitlementCache?.stopObserving() }
-            billingMgr?.entitlementCache?.clear()
-            appContext?.let { ai.appdna.sdk.billing.EntitlementCache.clearPersisted(it) }
-            billingMgr?.completion?.noteIdentityCleared()
-        }
+        billingOnIdentitySwitch(userId, previousUserId)
 
         // SPEC-070-A G.3: emit local `identify` event so the existing client
         // pipeline (BigQuery alias resolution + experiment exposure ledger)
@@ -1039,16 +1034,52 @@ object AppDNA {
         //
         // SPEC-497: the refresh runs PurchaseCompletion (it may report an unreported purchase), then
         // D-R40-1 trigger (iii) — the drain after identify — delivers purchases queued for this user.
-        scope.launch {
-            val mgr = billing.manager
-            if (mgr == null) {
-                billing.refreshEntitlementCache()
-                return@launch
-            }
-            mgr.completion.noteIdentified(userId, previousUserId)
-            mgr.refreshEntitlementCache(anonymousToFirstUser = previousUserId == null)
-            mgr.triggerDrain()
+        scope.launch { billingAfterIdentify(userId, previousUserId) }
+    }
+
+    /**
+     * The billing half of [identify], part 1 — run synchronously inside it: identify to a DIFFERENT
+     * non-null user runs stop → clear (anonymous → first user is exempt, §13b.2 "Clearing") and drops
+     * the in-memory reported-since-identity list. `internal` so the fixture drivers run THIS code
+     * rather than a copy of it (I4 minor 10).
+     */
+    internal fun billingOnIdentitySwitch(userId: String, previousUserId: String?) {
+        if (previousUserId == null || previousUserId == userId) return
+        val billingMgr = billing.manager
+        synchronized(this@AppDNA) { billingMgr?.entitlementCache?.stopObserving() }
+        billingMgr?.entitlementCache?.clear()
+        appContext?.let { ai.appdna.sdk.billing.EntitlementCache.clearPersisted(it) }
+        billingMgr?.completion?.noteIdentityCleared()
+    }
+
+    /**
+     * The billing half of [identify], part 2 — launched after it: record the identified user (the
+     * owner-token set), the silent refresh (`PurchaseCompletion` IDENTIFY_REFRESH), then drain trigger
+     * (iii). `internal` for the fixture drivers (I4 minor 10).
+     */
+    internal suspend fun billingAfterIdentify(userId: String, previousUserId: String?) {
+        val mgr = billing.manager
+        if (mgr == null) {
+            billing.refreshEntitlementCache()
+            return
         }
+        mgr.completion.noteIdentified(userId, previousUserId)
+        mgr.refreshEntitlementCache(anonymousToFirstUser = previousUserId == null)
+        mgr.triggerDrain()
+    }
+
+    /**
+     * The billing half of [reset] (§13b.2 "Clearing"): stop → clear the entitlement cache (memory and
+     * disk). Queued purchase deliveries of other identities are kept, never delivered across (D-R40-1
+     * rule 4). `internal` for the fixture drivers (I4 minor 10).
+     */
+    internal fun billingOnReset() {
+        billing.manager?.let { m ->
+            m.entitlementCache.stopObserving()
+            m.entitlementCache.clear()
+            m.completion.noteIdentityCleared()
+        }
+        appContext?.let { ai.appdna.sdk.billing.EntitlementCache.clearPersisted(it) }
     }
 
     /**
@@ -1090,12 +1121,7 @@ object AppDNA {
         }
         // SPEC-497 §13b.2 "Clearing": stop → clear the entitlement cache (memory and disk). Queued
         // purchase deliveries of other identities are kept, never delivered across (D-R40-1 rule 4).
-        billing.manager?.let { m ->
-            m.entitlementCache.stopObserving()
-            m.entitlementCache.clear()
-            m.completion.noteIdentityCleared()
-        }
-        appContext?.let { ai.appdna.sdk.billing.EntitlementCache.clearPersisted(it) }
+        billingOnReset()
 
         // 🔴 USER A'S ONBOARDING ANSWERS SURVIVED THE SIGN-OUT AND RENDERED INTO USER B'S PAYWALL.
         //
@@ -1738,11 +1764,13 @@ object AppDNA {
      * never tracked or routed.
      *
      * 🔴 DEDUP RE-DELIVERY. On Activity re-creation (rotation, "don't keep activities", process-death
-     * restore) `onCreate` re-runs `handlePushTap(getIntent())` with the SAME intent. The tap is keyed on
-     * `delivery_id ?: push_id` in a persisted key shared with [PushModule.handleTapData], so it tracks
-     * and routes once (a repeat still returns `true` — it IS a push tap).
+     * restore) `onCreate` re-runs `handlePushTap(getIntent())` with the SAME intent. Two guards: the tap
+     * is keyed on `delivery_id ?: push_id` in a persisted key shared with [PushModule.handleTapData]
+     * (a second copy of the same tap tracks once and returns `true`), and a handled intent has its
+     * `appdna` / `push_id` / `delivery_id` extras removed, so re-running the SAME intent object — even
+     * after a later tap replaced the persisted key — does nothing and returns `false`.
      *
-     * @return `true` if the intent was an AppDNA push tap (handled now or earlier).
+     * @return `true` if the intent was an AppDNA push tap (handled now, or a copy of one handled earlier).
      */
     @JvmStatic
     fun handlePushTap(intent: android.content.Intent?): Boolean {
@@ -1756,7 +1784,15 @@ object AppDNA {
             (extras.get(k) as? String)?.let { data[k] = it }
         }
         val handled = push.handleTap(data, data["action_id"])
-        if (handled) intent.removeExtra("push_id") // stop a re-created Activity re-triggering
+        if (handled) {
+            // Make the intent INERT (I4 M8). The persisted dedup key holds only the LAST tap, so after
+            // tap A, then tap B through `onNewIntent` without `setIntent`, a re-created Activity re-runs
+            // `handlePushTap(A)` against key B — and A would be tracked and routed again. Without the
+            // marker the re-run is not an AppDNA tap at all.
+            intent.removeExtra("appdna")
+            intent.removeExtra("push_id")
+            intent.removeExtra("delivery_id")
+        }
         return handled
     }
 
@@ -2268,10 +2304,13 @@ object AppDNA {
         // SPEC-070-B PN row 6 (N1): honor the configured provider.
         val provider = options.billingProvider
         // SPEC-497 §3.2 (SDK minor 12): the policy is assigned BEFORE the `none` early return, so the
-        // PaywallManager never reads an unassigned policy.
+        // PaywallManager never reads an unassigned policy. I4 minor 9: for every provider with a manager it is
+        // assigned TOGETHER with `billing.manager` (manager first, then the policy, under one lock), so a
+        // purchase or a paywall tap in between sees `NotConfigured` ("not configured yet", `unknown`) —
+        // never a configured policy with no manager (`providerNotAvailable`).
         val policy = ai.appdna.sdk.billing.BillingOwnership.policy(provider)
-        billing.ownershipPolicy = policy
         if (provider is BillingProvider.None) {
+            billing.ownershipPolicy = policy
             Log.info("BillingModule: billingProvider = none — billing disabled")
             return
         }
@@ -2298,6 +2337,7 @@ object AppDNA {
             mgr.initialize()
             synchronized(this@AppDNA) {
                 billing.manager = mgr
+                billing.ownershipPolicy = policy
             }
             // The Firestore entitlement listener starts in the bootstrap-success block (orgId is not known
             // yet here — R33: this is why it never ran), and only when the SDK owns transactions.

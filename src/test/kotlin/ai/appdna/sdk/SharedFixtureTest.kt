@@ -2185,8 +2185,9 @@ class SharedFixtureTest(
 
     /**
      * D-R40-1 — the delivery queue. Steps: `set_delegate` (trigger ii), `identify` (trigger iii — the
-     * billing half of AppDNA.identify: the identity switch, `noteIdentified`, the drain), `reset` (the
-     * billing half of AppDNA.reset), `report` (a Play update with no live caller, through the real listener).
+     * production billing half of AppDNA.identify: `billingOnIdentitySwitch` + `billingAfterIdentify`, i.e.
+     * the identity switch, `noteIdentified`, the refresh, the drain), `reset` (`AppDNA.billingOnReset`),
+     * `report` (a Play update with no live caller, through the real listener).
      * `deliveries` = the queued tokens the drain removed after a successful delegate call.
      */
     private fun runDeliveryQueue(action: JSONObject, spy: Spy) {
@@ -2197,17 +2198,19 @@ class SharedFixtureTest(
             val step = steps.getJSONObject(i)
             when (val k = step.getString("kind")) {
                 "set_delegate" -> { sc.setDelegate(); sc.idle() }
+                // I4 minor 10: the REAL billing halves of AppDNA.reset / AppDNA.identify (the identity
+                // itself is the scenario's `currentUser`, which the manager's provider reads).
                 "reset" -> {
                     sc.currentUser = null
-                    sc.cache.stopObserving(); sc.cache.clear(); sc.mgr.completion.noteIdentityCleared()
+                    AppDNA.billingOnReset()
                 }
                 "identify" -> {
                     val previous = sc.currentUser
                     val user = step.getString("user_id")
                     AppAccountTokenResolverSeam.recordFirst(user)
                     sc.currentUser = user
-                    sc.drive { sc.mgr.completion.noteIdentified(user, previous) }
-                    sc.mgr.triggerDrain()
+                    AppDNA.billingOnIdentitySwitch(user, previous)
+                    sc.drive { AppDNA.billingAfterIdentify(user, previous) }
                     sc.idle()
                 }
                 "report" -> {

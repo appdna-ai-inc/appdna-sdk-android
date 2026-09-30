@@ -97,15 +97,19 @@ internal object PushPayloadParser {
      *   (2) the flat `action_type` / `action_value`;
      *   (3) `screen_id` → `show_screen`;
      *   (4) `deep_link` → `deep_link`.
-     * Returns null when nothing routes. Pure.
+     * The first rung that is PRESENT decides, as on iOS (`PushTapRouter.route`, I4 minor 33): a tapped
+     * button, or a body action with a type, whose value is blank routes nowhere — it does not fall
+     * through to `screen_id` / `deep_link`. Returns null when nothing routes. Pure.
      */
     fun resolveTapAction(data: Map<String, String>, actionId: String?): PushAction? {
         if (!actionId.isNullOrBlank()) {
             val button = parseActionButtons(data).firstOrNull { it.id == actionId }
-            val value = button?.value
-            if (button != null && !value.isNullOrBlank()) return PushAction(button.type, value)
+            if (button != null) {
+                val value = button.value
+                return if (value.isNullOrBlank()) null else PushAction(button.type, value)
+            }
         }
-        parseCanonicalAction(data)?.let { if (it.value.isNotBlank()) return it }
+        parseCanonicalAction(data)?.let { return if (it.value.isNotBlank()) it else null }
         data["screen_id"]?.takeIf { it.isNotBlank() }?.let { return PushAction("show_screen", it) }
         data["deep_link"]?.takeIf { it.isNotBlank() }?.let { return PushAction("deep_link", it) }
         return null

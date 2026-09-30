@@ -12701,14 +12701,22 @@ internal data class LocationSuggestion(
     }
 }
 
-/** One autocomplete item → [LocationSuggestion]; blank strings are absent. */
-internal fun parseLocationSuggestion(item: org.json.JSONObject): LocationSuggestion {
+/**
+ * One autocomplete item → [LocationSuggestion]; blank strings are absent. An item without a finite
+ * `latitude` AND `longitude` is dropped (null) — it used to become 0.0 / 0.0, a real point off the
+ * coast of Africa that a selection would store and a map would pin (I4 minor 38).
+ */
+internal fun parseLocationSuggestion(item: org.json.JSONObject): LocationSuggestion? {
     fun opt(key: String): String? =
         if (item.isNull(key)) null else item.optString(key).takeIf { it.isNotBlank() }
+    fun coord(key: String): Double? =
+        if (!item.has(key) || item.isNull(key)) null else item.optDouble(key, Double.NaN).takeIf { it.isFinite() }
+    val lat = coord("latitude") ?: return null
+    val lng = coord("longitude") ?: return null
     return LocationSuggestion(
         address = item.optString("formatted_address", ""),
-        latitude = item.optDouble("latitude", 0.0),
-        longitude = item.optDouble("longitude", 0.0),
+        latitude = lat,
+        longitude = lng,
         city = opt("city"),
         state = opt("state"),
         stateCode = opt("state_code"),

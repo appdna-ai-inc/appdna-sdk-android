@@ -38,10 +38,10 @@ class PaywallNoProviderTest {
         AppDNA.billing.ownershipPolicy = BillingOwnershipPolicy.NotConfigured
     }
 
-    private fun tap(provider: BillingProvider) {
+    private fun tap(provider: BillingProvider?) {
         pipe = BillingTestPipeline(ctx, "no_provider")
-        if (provider !is BillingProvider.None) sc = BillingScenario(ctx, JSONObject(), ownsTransactions = false)
-        AppDNA.billing.ownershipPolicy = BillingOwnership.policy(provider)
+        if (provider != null && provider !is BillingProvider.None) sc = BillingScenario(ctx, JSONObject(), ownsTransactions = false)
+        AppDNA.billing.ownershipPolicy = if (provider == null) BillingOwnershipPolicy.NotConfigured else BillingOwnership.policy(provider)
         val paywall = PaywallConfigParser.parsePaywalls(mapOf("pw" to mapOf("id" to "pw", "name" to "t", "layout" to mapOf("type" to "stack"), "sections" to emptyList<Any>())))["pw"]!!
         val delegate = object : AppDNAPaywallDelegate {
             override fun onPaywallPurchaseStarted(paywallId: String, productId: String) { calls += "started" }
@@ -66,6 +66,15 @@ class PaywallNoProviderTest {
         assertEquals(listOf("purchase_failed"), pipe!!.names())
         assertEquals(listOf("failed:providerNotAvailable:pro_monthly"), calls)
         assertEquals(0, sc!!.fake.launchCount)
+    }
+
+    /** I4 minor 9: a tap between configure() and billing init is "not configured yet" (`unknown`). */
+    @Test fun `a paywall tap before billing is configured - unknown not-configured, no started`() {
+        tap(null)
+        assertEquals(listOf("purchase_failed"), pipe!!.names())
+        assertEquals("unknown", pipe!!.props("purchase_failed").getString("error_type"))
+        assertEquals(BillingOwnershipPolicy.NOT_CONFIGURED_MESSAGE, pipe!!.props("purchase_failed").getString("error"))
+        assertEquals(listOf("failed:unknown:pro_monthly"), calls)
     }
 
     @Test fun `direct purchase before configure fails unknown with the not-configured message`() = runBlocking {

@@ -308,6 +308,34 @@ internal class PaywallManager(
         // under which the SDK cannot purchase (RevenueCat, Adapty, none), the tap fails loudly — one
         // purchase_failed, onPaywallPurchaseFailed(providerNotAvailable), the failure routing — and NO
         // purchase_started / onPaywallPurchaseStarted (the purchase never started).
+        // I4 minor 9 / §3.2 rule 3 (R65, R72): before `configure` has chosen a policy — including a tap
+        // between `configure()` and the launched bootstrap's billing init — the tap fails with the same
+        // `unknown` "not configured yet" error as `AppDNA.billing.purchase`, not providerNotAvailable.
+        if (!AppDNA.billing.ownershipPolicy.isConfigured) {
+            val message = ai.appdna.sdk.billing.BillingOwnershipPolicy.NOT_CONFIGURED_MESSAGE
+            eventTracker.track(
+                "purchase_failed",
+                ai.appdna.sdk.billing.BillingEventProps.marked(mapOf(
+                    "paywall_id" to paywallId,
+                    "product_id" to plan.product_id,
+                    "reason" to "not_configured",
+                    "error" to message,
+                    "error_type" to "unknown",
+                )),
+            )
+            listener?.onPaywallPurchaseFailed(
+                paywallId = paywallId,
+                error = IllegalStateException(message),
+                errorType = "unknown",
+                productId = plan.product_id,
+            )
+            handlePostPurchaseFailure(
+                config = config.post_purchase?.on_failure,
+                paywallId = paywallId,
+                listener = listener,
+            )
+            return
+        }
         val mgrForPolicy = AppDNA.billing.manager
         if (mgrForPolicy == null || !AppDNA.billing.ownershipPolicy.sdkCanPurchase) {
             val provider = mgrForPolicy?.providerName

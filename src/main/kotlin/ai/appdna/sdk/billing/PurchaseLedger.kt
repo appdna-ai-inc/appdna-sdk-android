@@ -133,8 +133,26 @@ internal class PurchaseLedger(
         }
         identifiedTokens?.let { values[KEY_IDENTIFIED] = JSONArray(it.distinct().takeLast(CAP_IDENTIFIED)).toString() }
         if (values.isEmpty()) return true
-        return if (storage != null) storage.setStringsSync(values) else { memory.putAll(values); true }
+        writeObserver?.invoke(values)
+        val ok = if (storage != null) storage.setStringsSync(values) else { memory.putAll(values); true }
+        // I4 minor 8: `commit()` can fail (disk full, I/O error). The in-memory SharedPreferences map
+        // still holds the values, so this process keeps its dedupe; a crash before the next successful
+        // write could lose them — say so loudly instead of failing silently.
+        if (!ok) Log.error("PurchaseLedger: commit() FAILED for ${values.keys} — the billing ledger may not survive a restart")
+        return ok
     }
+
+    /**
+     * Test seam (null in production): sees every ledger write, before it is committed.
+     *
+     * Why the commits stay on Main (I4 minor 8): every write happens inside `purchaseCompletionMutex`
+     * in the Main-confined `runLocked`, and step 3 is "take the live caller → persist → emit → resume"
+     * with NO suspension point. Hopping to `Dispatchers.IO` for the commit would add one between the
+     * continuation being taken and `clearPurchaseScope()`: a new `purchase()` could start in that gap
+     * and have its `pendingProductId` / paywall ids cleared by the previous purchase. A ledger write is
+     * one small `commit()` of a few KB, so it stays synchronous.
+     */
+    @Volatile internal var writeObserver: ((Map<String, String?>) -> Unit)? = null
 
     /** Entries older than 30 days are purged (the manual-grant note in the docs covers them). */
     fun purgeExpired(list: List<PendingDelivery>): List<PendingDelivery> {

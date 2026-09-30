@@ -148,20 +148,22 @@ internal class ApiClient(
                         .header("Content-Type", "application/json")
                         .post(body.toRequestBody(jsonMediaType))
                         .build()
-                    client.newCall(request).execute().use { response ->
-                        val raw = response.body?.string()
-                        if (response.isSuccessful) {
-                            return@withContext ApiResult(response.code, raw, null)
-                        }
-                        val code = raw?.let { decodeErrorCode(it) }
-                        if (response.code in 400..499) {
-                            Log.warning("API request failed (${response.code}): $path code=${code ?: "n/a"}")
-                            return@withContext ApiResult(response.code, raw, code)
-                        }
-                        Log.warning("API request failed (${response.code}): $path")
-                        lastStatus = response.code
-                        lastBody = raw
+                    // SPEC-497 I4 M1 — CANCELLABLE: a blocking `execute()` ignores coroutine
+                    // cancellation, so `PurchaseCompletion`'s 30 s `withTimeoutOrNull` around a verify
+                    // could not end the call and the purchase lock was held for the client's 60 s
+                    // `callTimeout` (plus retries). `awaitCancellable` cancels the OkHttp call itself.
+                    val (status, raw) = client.newCall(request).awaitCancellable()
+                    if (status in 200..299) {
+                        return@withContext ApiResult(status, raw, null)
                     }
+                    val code = raw?.let { decodeErrorCode(it) }
+                    if (status in 400..499) {
+                        Log.warning("API request failed ($status): $path code=${code ?: "n/a"}")
+                        return@withContext ApiResult(status, raw, code)
+                    }
+                    Log.warning("API request failed ($status): $path")
+                    lastStatus = status
+                    lastBody = raw
                 } catch (e: IOException) {
                     Log.warning("API request error: ${e.message}")
                     lastStatus = null
@@ -172,6 +174,30 @@ internal class ApiClient(
             ApiResult(lastStatus, lastBody, lastBody?.let { decodeErrorCode(it) })
         }
     }
+
+    /**
+     * Enqueue this call and suspend until OkHttp answers, reading the status and body on OkHttp's
+     * thread. Cancelling the waiting coroutine cancels the call (`invokeOnCancellation`), so a stalled
+     * server can no longer outlive the caller's timeout. A failure resumes with the [IOException].
+     */
+    private suspend fun okhttp3.Call.awaitCancellable(): Pair<Int, String?> =
+        kotlinx.coroutines.suspendCancellableCoroutine { cont ->
+            cont.invokeOnCancellation { runCatching { cancel() } }
+            enqueue(object : okhttp3.Callback {
+                override fun onFailure(call: okhttp3.Call, e: IOException) {
+                    if (cont.isActive) cont.resumeWith(Result.failure(e))
+                }
+
+                override fun onResponse(call: okhttp3.Call, response: Response) {
+                    val read = try {
+                        response.use { Result.success(it.code to it.body?.string()) }
+                    } catch (e: IOException) {
+                        Result.failure<Pair<Int, String?>>(e)
+                    }
+                    if (cont.isActive) cont.resumeWith(read)
+                }
+            })
+        }
 
     /**
      * SPEC-067: POST a JSON body with gzip compression for event ingestion.

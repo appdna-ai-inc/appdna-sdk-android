@@ -202,6 +202,10 @@ internal class EntitlementCache(
      * @param appId The app ID.
      * @param userId The user ID.
      */
+    /** How many times a listener registration was attempted for the current identity, and where (tests). */
+    @Volatile internal var observeStarts: Int = 0
+    @Volatile internal var lastObservedPath: String? = null
+
     @Synchronized
     fun startObserving(orgId: String, appId: String, userId: String) {
         stopObserving()
@@ -214,6 +218,8 @@ internal class EntitlementCache(
         val basePath = "orgs/$orgId/apps/$appId/users/$userId"
         val docPath = "$basePath/entitlements/current"
         Log.debug("EntitlementCache: observing Firestore at $docPath")
+        observeStarts++
+        lastObservedPath = docPath
 
         val db = AppDNA.firestoreDB ?: run {
             Log.warning("EntitlementCache: Firestore not available — skipping real-time sync")

@@ -20,7 +20,12 @@ import org.json.JSONObject
  * real EventTracker → EventQueue → EventDatabase (batchSize 0, so nothing leaves the device; no
  * ApiClient, so no network call), injected into `AppDNA.push`, with a recording push delegate.
  */
-internal class PushTestHarness(private val ctx: Context, name: String) {
+internal class PushTestHarness(
+    private val ctx: Context,
+    name: String,
+    /** Null: no network. A client on a loopback server lets a test read the push request bodies. */
+    apiClient: ApiClient? = null,
+) {
     val storage = LocalStorage(ctx)
     private val tracker = EventTracker(IdentityManager(storage), "1.0", "sandbox")
     private val db = EventDatabase(ctx, 10_000, "push_${name.take(40)}.db")
@@ -43,7 +48,7 @@ internal class PushTestHarness(private val ctx: Context, name: String) {
         )
         AppDNA.push.contextOverride = ctx
         PushIdempotency.resetForTesting()
-        AppDNA.push.manager = PushTokenManager(ctx, storage, tracker, null)
+        AppDNA.push.manager = PushTokenManager(ctx, storage, tracker, apiClient)
         AppDNA.push.setDelegate(object : AppDNAPushDelegate {
             override fun onPushReceived(notification: PushPayload, inForeground: Boolean) {
                 received += notification to inForeground

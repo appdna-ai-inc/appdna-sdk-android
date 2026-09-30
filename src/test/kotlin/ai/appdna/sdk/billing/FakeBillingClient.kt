@@ -31,6 +31,9 @@ internal class FakeBillingClient(private val listener: PurchasesUpdatedListener)
     val consumeCalls = mutableListOf<String>()
     val consumeFailures = HashSet<String>()
     val acknowledgeFailures = HashSet<String>()
+    /** Play never answers these tokens' acknowledge / consume (the FIRST attempt; a retry answers). */
+    val acknowledgeHangs = HashSet<String>()
+    val consumeHangs = HashSet<String>()
     /** Consume answers ITEM_NOT_OWNED for these tokens. */
     val consumeNotOwned = HashSet<String>()
 
@@ -60,6 +63,11 @@ internal class FakeBillingClient(private val listener: PurchasesUpdatedListener)
         main.post { listener.onPurchasesUpdated(result(BillingResponseCode.OK), listOf(purchase)) }
     }
 
+    /** Deliver [purchase] through the listener WITHOUT making it visible to the owned queries (Play lag). */
+    fun deliverWithoutOwning(purchase: Purchase) {
+        main.post { listener.onPurchasesUpdated(result(BillingResponseCode.OK), listOf(purchase)) }
+    }
+
     /** Play finished consuming a purchase: it is no longer owned. */
     private fun dropOwned(token: String) {
         owned.values.forEach { l -> l.removeAll { it.purchaseToken == token } }
@@ -82,11 +90,28 @@ internal class FakeBillingClient(private val listener: PurchasesUpdatedListener)
 
     // -- queries -------------------------------------------------------------------------------
 
+    /**
+     * I4 M2 — a query callback that PARKS: while [queryGate] is set and not completed, every
+     * `queryPurchasesAsync` answer is held and delivered (with the owned list AS OF the release) on
+     * Main once it completes. [queriesParked] counts the held calls.
+     */
+    @Volatile var queryGate: kotlinx.coroutines.CompletableDeferred<Unit>? = null
+    @Volatile var queriesParked = 0
+
     override fun queryPurchasesAsync(params: QueryPurchasesParams, listener: PurchasesResponseListener) {
         val type = stringsOf(params).firstOrNull { it == ProductType.SUBS || it == ProductType.INAPP } ?: ProductType.INAPP
-        val code = queryCodes[type] ?: BillingResponseCode.OK
-        val list = if (code == BillingResponseCode.OK) owned[type].orEmpty().toList() else emptyList()
-        listener.onQueryPurchasesResponse(result(code), list)
+        val answer = {
+            val code = queryCodes[type] ?: BillingResponseCode.OK
+            val list = if (code == BillingResponseCode.OK) owned[type].orEmpty().toList() else emptyList()
+            listener.onQueryPurchasesResponse(result(code), list)
+        }
+        val gate = queryGate
+        if (gate != null && !gate.isCompleted) {
+            queriesParked++
+            gate.invokeOnCompletion { main.post { answer() } }
+            return
+        }
+        answer()
     }
 
     @Deprecated("deprecated in Play Billing")
@@ -118,6 +143,7 @@ internal class FakeBillingClient(private val listener: PurchasesUpdatedListener)
     override fun acknowledgePurchase(params: AcknowledgePurchaseParams, listener: AcknowledgePurchaseResponseListener) {
         val token = params.purchaseToken
         acknowledgeCalls += token
+        if (acknowledgeHangs.remove(token)) return // never answers
         // A scripted failure fails the FIRST attempt only (the retry then succeeds).
         val ok = !acknowledgeFailures.remove(token)
         listener.onAcknowledgePurchaseResponse(result(if (ok) BillingResponseCode.OK else BillingResponseCode.SERVICE_UNAVAILABLE))
@@ -126,6 +152,7 @@ internal class FakeBillingClient(private val listener: PurchasesUpdatedListener)
     override fun consumeAsync(params: ConsumeParams, listener: ConsumeResponseListener) {
         val token = params.purchaseToken
         consumeCalls += token
+        if (consumeHangs.remove(token)) return // never answers
         val code = when (token) {
             in consumeNotOwned -> BillingResponseCode.ITEM_NOT_OWNED
             in consumeFailures -> BillingResponseCode.SERVICE_UNAVAILABLE.also { consumeFailures.remove(token) }

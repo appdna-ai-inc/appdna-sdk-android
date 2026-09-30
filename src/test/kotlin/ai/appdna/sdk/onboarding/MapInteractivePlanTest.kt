@@ -2,6 +2,7 @@ package ai.appdna.sdk.onboarding
 
 import androidx.compose.ui.test.junit4.createComposeRule
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -85,9 +86,23 @@ class MapInteractivePlanTest {
 
     @Test
     fun rawResolvedKeepsAPolylineContainingBraces() {
-        val raw = block("map_route_variable" to "{{x", "map_route_polyline" to sample)
-        // Not resolved: an unresolved-looking `{{` falls through to the authored polyline.
-        assertEquals("polyline", MapInteractivePlan.compute(raw, rawResolved = false).route.source)
+        // A REAL encoded polyline can contain `{{` (ASCII 63–126): this two-point route encodes to one.
+        val braced = encodeMapPolyline(listOf(48.0 to 2.0, 48.00974 to 2.1))
+        assertTrue("fixture polyline must contain {{: $braced", braced.contains("{{"))
+        val blk = block("map_route_variable" to braced, "map_route_polyline" to sample)
+
+        // The RAW path (the host-data pass resolved the variable, R69): the variable IS the polyline.
+        val raw = MapInteractivePlan.compute(blk, rawResolved = true)
+        assertEquals("polyline", raw.route.source)
+        assertEquals(2, raw.route.points.size)
+        assertEquals(48.0, raw.route.points[0].first, 1e-5)
+        assertEquals(48.00974, raw.route.points[1].first, 1e-5)
+        assertEquals(2.1, raw.route.points[1].second, 1e-5)
+
+        // Not resolved: an unresolved-looking `{{` falls through to the authored polyline (3 points).
+        val interpolated = MapInteractivePlan.compute(blk, rawResolved = false)
+        assertEquals("polyline", interpolated.route.source)
+        assertEquals(3, interpolated.route.points.size)
     }
 
     @Test
