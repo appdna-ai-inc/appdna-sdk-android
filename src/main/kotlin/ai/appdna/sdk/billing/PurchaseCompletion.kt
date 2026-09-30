@@ -737,9 +737,11 @@ internal class PurchaseCompletion(
 
     /**
      * The drain (Q3): one pass over a snapshot of the queued ids, entry by entry — (a) lock, skip
-     * in-flight entries, mark the next deliverable one in-flight, unlock; (b) re-read the delegate and
-     * call it synchronously on Main; (c) lock again: on success (or a late return) remove the entry; only
-     * on a THROW unmark it (it stays queued, and is not revisited in this pass). Total budget 60 s.
+     * in-flight entries, mark the next deliverable one in-flight, unlock; (b) on Main, re-check the
+     * entry is still deliverable to the current identity, re-read the delegate and call it synchronously;
+     * (c) lock again: on success (or a late return) remove the entry; on a THROW, or when (b) found the
+     * identity changed or no delivering delegate, unmark it (it stays queued, and is not revisited in this
+     * pass). Total budget 60 s.
      * A no-op until `configure` has loaded the identity and the queue.
      */
     suspend fun drainDeliveries() {
@@ -761,17 +763,22 @@ internal class PurchaseCompletion(
             var outcome: DelegateOutcome? = null
             try {
                 delegateCallGate?.invoke(token)
-                val delegate = AppDNA.billing.deliveringDelegate()
-                    ?: return // no delivering delegate: everything stays queued for the next trigger
-                outcome = callDelegateBounded(delegate, entry, call)
+                // A cheap early exit only — the delegate and the identity are re-checked ON MAIN, in the
+                // same turn as the call (I4 minors 1+2), because an `identify` / `reset` / `setDelegate`
+                // can land between here and the posted block.
+                if (AppDNA.billing.deliveringDelegate() == null) {
+                    return // no delivering delegate: everything stays queued for the next trigger
+                }
+                outcome = callDelegateBounded(entry, call)
             } finally {
                 // Impl audit round 2 (A5): ALWAYS unmark — a cancelled drain (or a throwing gate) used to
                 // leave the token in-flight, so no later drain in this process would deliver it. A drain
                 // ended before an outcome abandons a call that has not started (compare-and-set: the
                 // posted call can no longer run, the entry stays queued); a call that already started
-                // counts as delivered — removed — unless it threw, so it is never ALSO left queued.
+                // counts as delivered — removed — unless it threw or was skipped on Main (identity changed
+                // or no delivering delegate), so it is never ALSO left queued.
                 val delivered = outcome == DelegateOutcome.DELIVERED ||
-                    (outcome == null && !call.abandonIfNotStarted() && !call.threw())
+                    (outcome == null && !call.abandonIfNotStarted() && !call.notDelivered())
                 withContext(NonCancellable) {
                     purchaseCompletionMutex.withLock {
                         inFlight -= token
@@ -785,29 +792,37 @@ internal class PurchaseCompletion(
         }
     }
 
-    private enum class DelegateOutcome { DELIVERED, THREW, NOT_STARTED }
+    /**
+     * SKIPPED: the posted block found the identity changed (the entry is no longer deliverable) or no
+     * delivering delegate on Main — not delivered, the entry stays queued (iOS `PurchaseDeliveryQueue`
+     * step (b) does the same).
+     */
+    private enum class DelegateOutcome { DELIVERED, THREW, SKIPPED, NOT_STARTED }
 
     /** One drain delegate call's state, shared between the drain and the call posted to Main. */
     private class DelegateCall {
         val state = AtomicInteger(0) // 0 = not started, 1 = started, 2 = abandoned
-        val done = kotlinx.coroutines.CompletableDeferred<Boolean>() // true = threw
+        /** DELIVERED, THREW or SKIPPED — completed by the posted block. */
+        val done = kotlinx.coroutines.CompletableDeferred<DelegateOutcome>()
 
         /** True when the call had not started and now never will. */
         fun abandonIfNotStarted(): Boolean = state.compareAndSet(0, 2)
 
-        /** The started call has already finished by throwing. */
+        /** The started call has already finished without delivering (it threw, or was skipped on Main). */
         @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
-        fun threw(): Boolean = done.isCompleted && done.getCompleted()
+        fun notDelivered(): Boolean = done.isCompleted && done.getCompleted() != DelegateOutcome.DELIVERED
     }
 
     /**
-     * Q3(b): call `onPurchaseCompleted` on Main, bounded by 30 s. Success, a timeout and a late return
-     * all count as DELIVERED (the call started; the docs say to grant idempotently by `transactionId`);
-     * only a throw keeps the entry queued. A call that never even started (Main busy for 30 s) is
-     * abandoned — it can no longer run — and stays queued.
+     * Q3(b): call `onPurchaseCompleted` on Main, bounded by 30 s. On Main, in the same turn as the call,
+     * the entry's identity is re-checked (`deliverable`) and the delivering delegate re-read — an
+     * `identify(B)` that landed while this drain was suspended must never hand A's purchase to B (I4
+     * minors 1+2); either failing → SKIPPED (stays queued). Success, a timeout and a late return all
+     * count as DELIVERED (the call started; the docs say to grant idempotently by `transactionId`); a
+     * throw keeps the entry queued. A call that never even started (Main busy for 30 s) is abandoned —
+     * it can no longer run — and stays queued.
      */
     private suspend fun callDelegateBounded(
-        delegate: ai.appdna.sdk.AppDNABillingDelegate,
         entry: PendingDelivery,
         call: DelegateCall,
     ): DelegateOutcome {
@@ -815,20 +830,25 @@ internal class PurchaseCompletion(
         val done = call.done
         mainHandler.post {
             if (!state.compareAndSet(0, 1)) return@post
-            val threw = try {
+            val delegate = AppDNA.billing.deliveringDelegate()
+            if (delegate == null || !deliverable(entry)) {
+                done.complete(DelegateOutcome.SKIPPED)
+                return@post
+            }
+            val result = try {
                 delegate.onPurchaseCompleted(
                     entry.productId,
                     TransactionInfo(transactionId = entry.transactionId, productId = entry.productId, purchaseDate = entry.purchaseTime.toString()),
                 )
-                false
+                DelegateOutcome.DELIVERED
             } catch (t: Throwable) {
                 Log.warning("AppDNABillingDelegate.onPurchaseCompleted threw — the delivery stays queued: ${t.message}")
-                true
+                DelegateOutcome.THREW
             }
-            done.complete(threw)
+            done.complete(result)
         }
-        val threw = withTimeoutOrNull(WAIT_MS) { done.await() }
-        if (threw != null) return if (threw) DelegateOutcome.THREW else DelegateOutcome.DELIVERED
+        val finished = withTimeoutOrNull(WAIT_MS) { done.await() }
+        if (finished != null) return finished
         if (state.compareAndSet(0, 2)) {
             Log.warning("AppDNABillingDelegate.onPurchaseCompleted did not start within 30 s — the delivery stays queued")
             return DelegateOutcome.NOT_STARTED

@@ -104,6 +104,83 @@ class PurchaseCompletionConcurrencyTest {
         assertEquals(1, delivered(s))
     }
 
+    /**
+     * SPEC-497 I4 minors 1+2 — the cross-user grant race. Drain 1 marks user A's tagged entry in-flight
+     * and parks before its delegate call; `identify(B)` lands meanwhile (its own drain skips the in-flight
+     * entry). When drain 1 resumes, the posted block re-checks the identity ON MAIN: A's entry is not
+     * deliverable to B, so it is NOT delivered and stays queued (unmarked). Back as A, it is delivered
+     * once. NEGATIVE CONTROL: with the Main-side `deliverable(entry)` re-check removed, drain 1 hands A's
+     * purchase to B's delegate — `delivered` is 1 while B is signed in and the queue is empty.
+     */
+    @Test fun `identify(B) while a drain is parked - A's entry stays queued and is not delivered to B`() {
+        val ownerA = AppAccountTokenResolver.token("user_a")!!.toString().lowercase()
+        val s = scenario("""{"current_user_id":"user_a","first_identified_user_id":"user_a",
+            "pending_deliveries":[{"token":"t1","ownerToken":"$ownerA","productId":"p1"}]}""")
+        val gate = CompletableDeferred<Unit>()
+        val parkedAt = mutableListOf<String>()
+        s.mgr.completion.delegateCallGate = { token -> parkedAt += token; gate.await() }
+
+        s.setDelegate() // trigger (ii): drain 1 parks at the gate with t1 in-flight
+        s.idle()
+        assertEquals(listOf("t1"), parkedAt)
+
+        // identify(B) — the identity changes, then the production billing half of identify runs.
+        s.currentUser = "user_b"
+        var identifyDone = false
+        s.mgr.scope.launch { AppDNA.billingAfterIdentify("user_b", "user_a"); identifyDone = true }
+        s.idle(200)
+        assertTrue(identifyDone)
+        assertEquals("the identify drain skipped the in-flight entry", listOf("t1"), parkedAt)
+
+        gate.complete(Unit)
+        s.idle(200)
+        assertEquals("A's purchase was never handed to B", 0, delivered(s))
+        assertEquals("A's entry stays queued", listOf("t1"), s.queueTokens())
+        assertFalse(s.mgr.completion.purchaseCompletionMutex.isLocked)
+
+        // Still B: another drain delivers nothing.
+        s.mgr.triggerDrain(); s.idle()
+        assertEquals(0, delivered(s))
+
+        // A signs back in: the entry was unmarked, so it is delivered exactly once.
+        s.currentUser = "user_a"
+        s.mgr.triggerDrain(); s.idle()
+        assertEquals(1, delivered(s))
+        assertEquals(emptyList<String>(), s.queueTokens())
+    }
+
+    /**
+     * SPEC-497 I4 minors 1+2 — the delegate is re-read on Main too. The host clears the delegate AFTER
+     * the drain's early check but BEFORE its posted block runs (the clear is posted to Main first, so it
+     * runs first): the block finds no delivering delegate, delivers nothing, and the entry stays queued
+     * (unmarked) for the next delivering delegate. NEGATIVE CONTROL: with the delegate captured before
+     * the post (the old code), the cleared delegate is still called — `delivered` is 1 and the queue empty.
+     */
+    @Test fun `delegate cleared between the early check and the Main call - not delivered, stays queued`() {
+        val s = scenario("""{"pending_deliveries":[{"token":"t1","ownerToken":null,"productId":"p1"}]}""")
+        val gate = CompletableDeferred<Unit>()
+        var parks = 0
+        val main = android.os.Handler(android.os.Looper.getMainLooper())
+        s.mgr.completion.delegateCallGate = { _ ->
+            if (parks++ == 0) {
+                gate.await()
+                main.post { AppDNA.billing.setDelegate(null) }
+            }
+        }
+        s.setDelegate(); s.idle()
+        assertEquals(1, parks)
+
+        gate.complete(Unit)
+        s.idle()
+        assertNull("the clear ran", AppDNA.billing.deliveringDelegate())
+        assertEquals(0, delivered(s))
+        assertEquals(listOf("t1"), s.queueTokens())
+
+        s.setDelegate(); s.idle() // trigger (ii) again
+        assertEquals(1, delivered(s))
+        assertEquals(emptyList<String>(), s.queueTokens())
+    }
+
     // ---------------------------------------------------------------------------------------------
     // a cancelled drain (impl audit round 2, A5)
     // ---------------------------------------------------------------------------------------------
