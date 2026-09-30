@@ -188,6 +188,9 @@ Needs the AppDNA server from the same release (purchase verification and push tr
 - Once it has handled a tap, `AppDNA.handlePushTap(intent)` removes the `appdna`, `push_id` and
   `delivery_id` extras from the intent, so handling the same intent again (an Activity re-created with
   it) returns `false` and tracks nothing.
+- **Upgrade note:** a notification that the previous SDK version posted and that is still in the
+  tray when the app updates carries no `appdna` extra, so tapping it after the upgrade is ignored:
+  `handlePushTap` returns `false`, and nothing is tracked or routed.
 
 #### Changed — onboarding
 - Interactive map: draws the route polyline and fits the camera to the route and stops; with fit off
@@ -223,6 +226,16 @@ Needs the AppDNA server from the same release (purchase verification and push tr
   `IllegalStateException` — a `catch (e: IllegalStateException)` no longer matches.
 - `PurchaseResult.Failed` and `PurchaseFailedException` gain a defaulted `errorType`:
   source-compatible; **binary-incompatible for precompiled callers of `PurchaseResult.Failed.copy`**.
+- **Binary-incompatible for prebuilt Kotlin/Java callers compiled against ≤ 1.0.53:**
+  - `LocationData`: the JVM signatures of its constructor, `copy`, the `componentN` functions and
+    the getters of the fields that became nullable primitives (`getLatitude()`, `getLongitude()`,
+    `getTimezone_offset()` now return boxed `Double` / `Integer`) all changed.
+  - `VerificationException` gains `httpStatus` and `serverError`. Its `(String)` and
+    `(String, Throwable)` constructors are kept (`@JvmOverloads`), but the synthetic
+    default-arguments constructor that Kotlin emits for a call using defaulted or named arguments
+    changed.
+
+  A prebuilt library that uses either type must be recompiled, or it fails with `NoSuchMethodError`.
 - Every other addition is additive.
 
 ## [1.0.51] — 2026-09-23
