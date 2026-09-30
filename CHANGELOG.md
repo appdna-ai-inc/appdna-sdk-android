@@ -224,7 +224,17 @@ Needs the AppDNA server from the same release (purchase verification and push tr
 - **`getLocationData` returns something useful.** A selected suggestion carries
   `formatted_address`, city, state, country, coordinates and timezone (the stored answer keeps
   `address` as an alias); text typed without selecting returns `{formatted_address, raw_query}` with
-  null coordinates (it returned `null`).
+  null coordinates (it returned `null`). The form-step Location field and the Location content block
+  now store the same shape as iOS: a selection also stores `timezone_offset` and `raw_query` (the typed
+  search text) in the content block, and a string / number field of the wrong JSON type is absent
+  rather than coerced (a numeric-string coordinate is no longer read as a number).
+- An `onBeforeStepAdvance` reply `skipTo` / `skipToWithData` without a `stepId`, or with a blank one, is
+  no longer a skip: a Flutter / React Native bridge blocks it on a sign-in step as no answer (it
+  advanced the user past the sign-in step) and otherwise proceeds (with its `data`, if any). New
+  `StepAdvanceResult.isExplicitBridgeDecision` / `bridgeSkipTarget` hold that rule for both bridges.
+- `setSessionData` / an onboarding answer holding a value that is not valid JSON (e.g. `Double.NaN`)
+  no longer throws `JSONException` into the caller: the value is not saved to disk, a warning is
+  logged and the previously saved copy is cleared.
 - `StoreKit2` purchases are now verified and acknowledged (the verify call was refused), instead of
   being refunded by Play after 3 days.
 - Location autocomplete no longer stores `0,0` for a suggestion that comes back without
