@@ -4,9 +4,18 @@ import android.content.Context
 import android.content.pm.PackageManager
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
+import ai.appdna.sdk.Log
+import com.google.android.gms.maps.CameraUpdateFactory
+import com.google.android.gms.maps.model.LatLngBounds
+import com.google.maps.android.compose.CameraPositionState
+import kotlin.math.roundToInt
 import ai.appdna.sdk.core.StyleEngine
 import com.google.android.gms.maps.model.CameraPosition
 import com.google.android.gms.maps.model.LatLng
@@ -41,21 +50,23 @@ import com.google.maps.android.compose.rememberCameraPositionState
  * field. A host that does nothing therefore gets the map it gets today, not a regression.
  */
 @Composable
-internal fun GoogleInteractiveMap(block: ContentBlock, modifier: Modifier = Modifier) {
-    val stops = mapStopsOf(block)
-    val isPlace = block.mapStr("map_mode") == "place"
+internal fun GoogleInteractiveMap(block: ContentBlock, rawResolved: Boolean = false, modifier: Modifier = Modifier) {
+    // SPEC-497 §7.2 — every decision (route source, markers, camera) is the pure plan; this
+    // composable only draws it. `rawResolved` keeps a raw host polyline containing `{{` (R69).
+    val plan = remember(block, rawResolved) { MapInteractivePlan.compute(block, rawResolved) }
 
-    val centre = when {
-        isPlace -> LatLng(block.mapNum("place_lat") ?: 47.6205, block.mapNum("place_lng") ?: -122.3493)
-        stops.isNotEmpty() -> LatLng(stops.first().first, stops.first().second)
-        else -> LatLng(block.mapNum("map_center_lat") ?: 47.6205, block.mapNum("map_center_lng") ?: -122.3493)
-    }
-    val zoom = (block.mapNum("map_zoom") ?: 12.0).toFloat()
     val cameraPositionState = rememberCameraPositionState {
-        position = CameraPosition.fromLatLngZoom(centre, zoom)
+        position = initialCameraPosition(plan.camera)
+    }
+    var mapLoaded by remember { mutableStateOf(false) }
+    val density = LocalDensity.current.density
+    // Rule 4 — applied once the map has laid out, and again ONLY when the camera input changes
+    // (e.g. host routes arriving after first paint). Styling or recomposition never moves it, so a
+    // user's pan/zoom is kept.
+    LaunchedEffect(mapLoaded, plan.camera) {
+        if (mapLoaded) applyPlanCamera(cameraPositionState, plan.camera, density)
     }
 
-    val context = LocalContext.current
     val styleOptions = remember(block.mapStr("map_style_json"), block.mapStr("map_theme")) {
         googleStyleJsonOf(block)?.takeIf { it.isNotBlank() }?.let {
             // A malformed style must not take the map down with it — the static tier makes the same
@@ -67,6 +78,7 @@ internal fun GoogleInteractiveMap(block: ContentBlock, modifier: Modifier = Modi
     GoogleMap(
         modifier = modifier.fillMaxSize(),
         cameraPositionState = cameraPositionState,
+        onMapLoaded = { mapLoaded = true },
         properties = MapProperties(
             mapType = when (googleMapType(block.mapStr("map_style"))) {
                 "satellite" -> MapType.SATELLITE
@@ -96,30 +108,65 @@ internal fun GoogleInteractiveMap(block: ContentBlock, modifier: Modifier = Modi
     ) {
         // Route BEFORE markers, so pins draw over the line — the same ordering the two static
         // builders use, so switching tier does not reorder the map.
-        if (!isPlace && block.mapBool("route_show") != false && stops.size >= 2) {
-            val width = (block.mapNum("route_width") ?: 4.0).toFloat()
-            val casing = (block.mapNum("route_casing_width") ?: 2.0).toFloat()
-            val points = stops.map { LatLng(it.first, it.second) }
-            if (casing > 0) {
-                Polyline(
-                    points = points,
-                    color = StyleEngine.parseColor(block.mapStr("route_casing_color") ?: "#FFFFFF"),
-                    width = width + casing * 2,
-                )
-            }
-            Polyline(
-                points = points,
-                color = StyleEngine.parseColor(block.mapStr("route_color") ?: "#6366F1"),
-                width = width,
-            )
-        }
-        stops.forEachIndexed { i, s ->
+        PlanRoute(block, plan.route)
+        plan.markers.forEachIndexed { i, s ->
             Marker(
                 state = MarkerState(position = LatLng(s.first, s.second)),
                 title = if (i == 0) block.mapStr("place_title") else null,
             )
         }
     }
+}
+
+/** The route line, styled exactly as before, for whichever source the plan chose. */
+@Composable
+private fun PlanRoute(block: ContentBlock, route: MapInteractivePlan.Route) {
+    if (route.source == "none" || route.points.size < 2) return
+    val width = (block.mapNum("route_width") ?: 4.0).toFloat()
+    val casing = (block.mapNum("route_casing_width") ?: 2.0).toFloat()
+    val points = route.points.map { LatLng(it.first, it.second) }
+    if (casing > 0) {
+        Polyline(
+            points = points,
+            color = StyleEngine.parseColor(block.mapStr("route_casing_color") ?: "#FFFFFF"),
+            width = width + casing * 2,
+        )
+    }
+    Polyline(
+        points = points,
+        color = StyleEngine.parseColor(block.mapStr("route_color") ?: "#6366F1"),
+        width = width,
+    )
+}
+
+/** A starting position before the map has a size: the fit's first point, or the plan's centre. */
+internal fun initialCameraPosition(camera: MapInteractivePlan.Camera): CameraPosition = when (camera) {
+    is MapInteractivePlan.Camera.Center -> CameraPosition.fromLatLngZoom(LatLng(camera.lat, camera.lng), camera.zoom.toFloat())
+    is MapInteractivePlan.Camera.Fit -> CameraPosition.fromLatLngZoom(
+        LatLng(camera.points.first().first, camera.points.first().second),
+        12f,
+    )
+}
+
+/**
+ * Moves the camera to the plan. `newLatLngBounds` takes PIXELS, so the 48 dp padding is converted
+ * with the display density (SDK minor 18). A failure (e.g. a zero-sized map) leaves the camera where
+ * it is rather than taking the step down.
+ */
+private fun applyPlanCamera(state: CameraPositionState, camera: MapInteractivePlan.Camera, density: Float) {
+    runCatching {
+        val update = when (camera) {
+            is MapInteractivePlan.Camera.Center ->
+                CameraUpdateFactory.newLatLngZoom(LatLng(camera.lat, camera.lng), camera.zoom.toFloat())
+            is MapInteractivePlan.Camera.Fit -> {
+                val bounds = LatLngBounds.builder().apply {
+                    camera.points.forEach { include(LatLng(it.first, it.second)) }
+                }.build()
+                CameraUpdateFactory.newLatLngBounds(bounds, (MapInteractivePlan.FIT_PADDING_DP * density).roundToInt())
+            }
+        }
+        state.move(update)
+    }.onFailure { Log.debug("map: camera not applied — ${it.message}") }
 }
 
 /**

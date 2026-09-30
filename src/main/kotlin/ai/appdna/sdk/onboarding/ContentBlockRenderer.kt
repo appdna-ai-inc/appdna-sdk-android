@@ -8278,7 +8278,7 @@ internal fun MapBlock(block: ContentBlock, placement: MapPlacement = MapPlacemen
                     // asked for, and the manifest-key check above is why a host without the
                     // `com.google.android.geo.API_KEY` line falls through to the still image
                     // rather than being handed the Maps SDK's grey "no key" rectangle.
-                    GoogleInteractiveMap(block)
+                    GoogleInteractiveMap(block, rawResolved = LocalHostDataRawResolved.current)
                 } else {
                     val url = mapStaticUrl(
                         block, AppDNA.mapboxToken, 390, heightPx.toInt(), AppDNA.googleMapsApiKey,
