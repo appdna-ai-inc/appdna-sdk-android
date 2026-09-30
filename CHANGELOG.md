@@ -130,6 +130,12 @@ Needs the AppDNA server from the same release (purchase verification and push tr
   second conversion; restore emits no `purchase_restored` for a token it just reported.
   `ITEM_ALREADY_OWNED` returned synchronously by `launchBillingFlow` is handled like the listener
   result (it was `launch_billing_flow_failed`).
+- `ITEM_ALREADY_OWNED` can also resolve `purchase()` as `Failed`: `Failed("item_already_owned")` when
+  an owned consumable's pending consume fails again, and `Failed` with `errorType`
+  `verificationFailed` (one `purchase_failed`) when the owned purchase's verification fails.
+- A paywall tap made after `configure` but before billing has initialised reports `errorType`
+  `unknown` with "AppDNA SDK not configured yet — call configure() first" (not
+  `providerNotAvailable`, which now means only "this provider does not buy through AppDNA").
 - A free-trial purchase reports `is_trial: true` and price 0 (from the verify / restore reply).
 - A renewal is also detected by the Play order id's `..N` suffix, so new `subscription_renewed`
   events appear, including on a trial conversion (known: a same-product base-plan change counts as a
@@ -146,7 +152,11 @@ Needs the AppDNA server from the same release (purchase verification and push tr
 - `AppDNA.handlePushTap(intent)` returns `false` for an intent without the `appdna` extra, and routes
   by the same ladder as `handleTapData`: the tapped button, then the canonical `action`, then flat
   `action_type` / `action_value`, then `screen_id`, then `deep_link` (a payload with both an action
-  and a `screen_id` now follows the action).
+  and a `screen_id` now follows the action). An action (tapped button or body action) with a blank
+  value routes nowhere; it no longer falls through to `screen_id` / `deep_link`.
+- Once it has handled a tap, `AppDNA.handlePushTap(intent)` removes the `appdna`, `push_id` and
+  `delivery_id` extras from the intent, so handling the same intent again (an Activity re-created with
+  it) returns `false` and tracks nothing.
 
 #### Changed — onboarding
 - Interactive map: draws the route polyline and fits the camera to the route and stops; with fit off
@@ -165,6 +175,9 @@ Needs the AppDNA server from the same release (purchase verification and push tr
   null coordinates (it returned `null`).
 - `StoreKit2` purchases are verified again (the verify call was refused), so they are acknowledged
   instead of being refunded by Play after 3 days.
+- Location autocomplete drops suggestions that come back without coordinates.
+- The event queue no longer spins the IO thread pool when `flushInterval` is set to a very large
+  value (the auto-flush delay overflowed).
 
 #### Source / binary compatibility
 - **`LocationData`'s fields other than `formatted_address` are nullable** (`city`, `state`,
