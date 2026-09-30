@@ -553,6 +553,27 @@ sealed class StepAdvanceResult {
      * If `message` is null/empty the SDK stays silent (host handles UI).
      */
     data class Stay(val message: String? = null) : StepAdvanceResult()
+
+    companion object {
+        /**
+         * SPEC-497 §4.2 (A2) — the minimum time a Flutter / React Native bridge waits for the host's
+         * `onBeforeStepAdvance` reply on a sign-in action. The native core imposes no timeout; this
+         * floor only stops a bridge from cutting a legitimate sign-in (OS sheets, 2FA, a backend
+         * round trip), while still bounding a handler that never answers.
+         */
+        const val AUTH_BRIDGE_TIMEOUT_MS: Long = 120_000L
+
+        /**
+         * The bridge floor for this hook call: [AUTH_BRIDGE_TIMEOUT_MS] when `stepData["action"]` is a
+         * sign-in action ([AuthActionPolicy.bridgeFloorActions]), else `null` (the configured timeout
+         * applies). Bridges wait `max(configured, floor ?: 0)`.
+         */
+        @JvmStatic
+        fun minimumBridgeTimeoutMs(stepData: Map<String, Any?>?): Long? {
+            val action = stepData?.get("action") as? String ?: return null
+            return if (action in AuthActionPolicy.bridgeFloorActions) AUTH_BRIDGE_TIMEOUT_MS else null
+        }
+    }
 }
 
 /**
