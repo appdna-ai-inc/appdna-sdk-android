@@ -225,10 +225,14 @@ internal class BillingConnectionManager(
         if (isConnected) return client
 
         return suspendCancellableCoroutine { continuation ->
-            synchronized(pendingCallbacks) {
-                pendingCallbacks.add { connectedClient ->
-                    continuation.resume(connectedClient) {}
-                }
+            val callback: (BillingClient?) -> Unit = { connectedClient ->
+                continuation.resume(connectedClient) {}
+            }
+            synchronized(pendingCallbacks) { pendingCallbacks.add(callback) }
+            // SPEC-497 R9 — a cancelled waiter (a cancelled caller, or `withTimeoutOrNull` giving up) takes
+            // its callback with it, so a device that never connects does not accumulate dead waiters.
+            continuation.invokeOnCancellation {
+                synchronized(pendingCallbacks) { pendingCallbacks.remove(callback) }
             }
             // Ensure connection attempt is in progress (reset retry budget —
             // see withConnectedClient for rationale).
@@ -239,6 +243,10 @@ internal class BillingConnectionManager(
             }
         }
     }
+
+    /** How many [awaitConnectedClient] callers are parked (observed by tests). */
+    internal val pendingWaiterCount: Int
+        get() = synchronized(pendingCallbacks) { pendingCallbacks.size }
 
     /** Resume every parked [awaitConnectedClient] with null (give-up branch and [destroy]). */
     private fun resumeWaitersWithNull() {

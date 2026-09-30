@@ -68,6 +68,11 @@ internal class FakeBillingClient(private val listener: PurchasesUpdatedListener)
         main.post { listener.onPurchasesUpdated(result(BillingResponseCode.OK), listOf(purchase)) }
     }
 
+    /** Play answers the listener with a bare [code] (no purchases) — e.g. a late USER_CANCELED. */
+    fun answer(code: Int) {
+        main.post { listener.onPurchasesUpdated(result(code), null) }
+    }
+
     /** Play finished consuming a purchase: it is no longer owned. */
     private fun dropOwned(token: String) {
         owned.values.forEach { l -> l.removeAll { it.purchaseToken == token } }

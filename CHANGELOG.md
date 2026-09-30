@@ -148,16 +148,17 @@ Needs the AppDNA server from the same release (purchase verification and push tr
   that completes afterwards is delivered through the delivery queue. The one-shot
   `skipNextAutoDismissOnRestore` flag is cleared when such a restore is cancelled. This also holds
   when `shutdown()` is called off the main thread (the paywall is now shut down before billing).
-- **A purchase cancelled before Play's sheet opens no longer blocks later purchases.** If the
-  coroutine calling `purchase()` was cancelled while it waited for the Play connection or the product
-  lookup, every later `purchase()` failed with `purchase_in_progress` until the app restarted. Such a
-  purchase is now cleared as it is cancelled, and never launches the sheet.
-- A refused restore under `RevenueCat` / `Adapty` carries the same message as on iOS —
-  "RevenueCat: purchases are made by RevenueCat in your app" (it was "revenueCat: restore purchases
-  through revenueCat").
+- A `purchase()` whose calling coroutine is cancelled before Play's sheet opens (while it waits for
+  the Play connection or the product lookup) is cleared as it is cancelled and never launches the
+  sheet; the next `purchase()` starts normally. A late Play answer for a cancelled purchase never
+  resolves, relaunches or clears a newer one.
+- A refused purchase or restore under `RevenueCat` / `Adapty` — the direct API and the paywall tap
+  alike — carries the same message as on iOS: "RevenueCat: purchases are made by RevenueCat in your
+  app" ("Adapty: …" for Adapty).
 - The paywall's purchase button is enabled again after a failed, cancelled or pending purchase when
-  the paywall has no `on_failure` action, and when the purchase is cancelled by `shutdown()` (it
-  stayed disabled with its spinner).
+  the paywall has no `on_failure` action, after a successful purchase when it has no `on_success`
+  action (the paywall stays up for your app to close), and when the purchase is cancelled by
+  `shutdown()` (it stayed disabled with its spinner).
 - A free-trial purchase reports `is_trial: true` and price 0 (from the verify / restore reply).
 - A renewal is also detected by the Play order id's `..N` suffix, so new `subscription_renewed`
   events appear, including on a trial conversion (known: a same-product base-plan change counts as a

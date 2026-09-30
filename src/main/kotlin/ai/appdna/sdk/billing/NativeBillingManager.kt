@@ -234,6 +234,14 @@ class NativeBillingManager internal constructor(
 
     internal fun hasLiveContinuation(): Boolean = purchaseContinuation?.isActive == true
 
+    /**
+     * SPEC-497 R9 — does [owner] still own the purchase scope? An async handler captures
+     * [purchaseScopeOwner] when Play answers and checks this before it resolves, clears or relaunches
+     * anything: a handler whose purchase was cancelled while it waited must never act on the scope of a
+     * newer purchase.
+     */
+    internal fun ownsScope(owner: Long): Boolean = owner != 0L && purchaseScopeOwner == owner
+
     /** Take the live continuation (nulling the field). Null when there is no live caller. */
     internal fun takeContinuation(): CancellableContinuation<PurchaseResult>? {
         val c = purchaseContinuation
@@ -269,7 +277,14 @@ class NativeBillingManager internal constructor(
     }
     private var foregroundObserverRegistered = false
 
-    /** Play's purchase updates. Every owned-purchase branch goes through [completion]. */
+    /**
+     * Play's purchase updates. Every owned-purchase branch goes through [completion].
+     *
+     * SPEC-497 R9 — a non-OK answer carries no product, so it belongs to the purchase whose sheet is up:
+     * the one with a live continuation. Without one (its caller was cancelled, and a newer purchase may be
+     * waiting for its connection or product query) the answer is reported unattributed and resolves,
+     * clears and relaunches nothing.
+     */
     private val purchaseUpdateListener = PurchasesUpdatedListener { billingResult, purchases ->
         when (billingResult.responseCode) {
             BillingClient.BillingResponseCode.OK -> {
@@ -279,17 +294,23 @@ class NativeBillingManager internal constructor(
             }
             BillingClient.BillingResponseCode.USER_CANCELED -> {
                 Log.debug("Purchase cancelled by user")
+                val live = hasLiveContinuation()
                 AppDNA.trackBillingEvent("purchase_canceled", buildMap {
-                    put("paywall_id", currentPaywallId ?: "")
-                    pendingProductId?.let { put("product_id", it) }
+                    put("paywall_id", if (live) currentPaywallId ?: "" else "")
+                    if (live) pendingProductId?.let { put("product_id", it) }
                 })
-                resumePurchase(PurchaseResult.Cancelled)
+                if (live) resumePurchase(PurchaseResult.Cancelled)
             }
             // SPEC-497 §13a.2 — never a restore, never firstOrNull(): the handler works on the purchase
             // matching pendingProductId, which is still set.
             BillingClient.BillingResponseCode.ITEM_ALREADY_OWNED -> {
-                Log.info("Item already owned — routing to the ITEM_ALREADY_OWNED handler")
-                scope.launch { completion.handleItemAlreadyOwned() }
+                if (hasLiveContinuation()) {
+                    Log.info("Item already owned — routing to the ITEM_ALREADY_OWNED handler")
+                    val owner = purchaseScopeOwner
+                    scope.launch { completion.handleItemAlreadyOwned(owner) }
+                } else {
+                    Log.warning("Item already owned for a purchase with no live caller — ignored")
+                }
             }
             BillingClient.BillingResponseCode.ITEM_NOT_OWNED -> failAndResume("Item not owned", "item_not_owned", billingResult.debugMessage)
             // SPEC-070-A finalization B-4 — an explicit, typed failure per BillingResponseCode.
@@ -310,11 +331,19 @@ class NativeBillingManager internal constructor(
         }
     }
 
-    /** Track (while the purchase scope still carries its attribution), then resolve the caller. */
+    /**
+     * Track (while the purchase scope still carries its attribution), then resolve the caller. With no
+     * live caller (R9) the failure is reported unattributed and the scope is left alone.
+     */
     private fun failAndResume(error: String, reason: String, debugMessage: String?) {
         Log.warning("Purchase update: $reason ${debugMessage ?: ""}")
-        trackPurchaseFailed(reason, debugMessage, pendingProductId)
-        resumePurchase(PurchaseResult.Failed(error))
+        val live = hasLiveContinuation()
+        trackPurchaseFailed(
+            reason, debugMessage,
+            productId = if (live) pendingProductId else null,
+            paywallId = if (live) currentPaywallId else "",
+        )
+        if (live) resumePurchase(PurchaseResult.Failed(error))
     }
 
     /**
@@ -725,7 +754,7 @@ class NativeBillingManager internal constructor(
         options: PurchaseOptions? = null,
     ): PurchaseResult {
         if (!ownsTransactions) {
-            val message = "$providerName: purchases are made by $providerName in your app"
+            val message = BillingOwnership.refusalMessage(providerName)
             trackPurchaseFailed(
                 reason = "provider_not_available", debugMessage = message, productId = productId,
                 errorType = "providerNotAvailable", omitPaywallId = true,
@@ -824,7 +853,7 @@ class NativeBillingManager internal constructor(
                     BillingClient.BillingResponseCode.OK -> Unit
                     // R24: the SYNCHRONOUS ITEM_ALREADY_OWNED goes to the same handler, before anything is cleared.
                     BillingClient.BillingResponseCode.ITEM_ALREADY_OWNED ->
-                        scope.launch { completion.handleItemAlreadyOwned() }
+                        scope.launch { completion.handleItemAlreadyOwned(scopeId) }
                     else -> resumePurchase(
                         failPurchase(
                             "Failed to launch billing flow: ${launchResult.debugMessage}",
@@ -844,9 +873,15 @@ class NativeBillingManager internal constructor(
     }
 
     /**
-     * I4 R8 M1 — this [purchase] lost its scope while it waited ([destroy] resolved the purchase as
-     * `shutdown`, or it was otherwise cleared): stop without launching the sheet and without touching the
-     * scope, which may already belong to a newer purchase. Nothing is tracked, as for [destroy].
+     * I4 R8 M1 — this [purchase] lost its scope while it waited: stop without launching the sheet and
+     * without touching the scope, which may already belong to a newer purchase. Nothing is tracked, as
+     * for [destroy].
+     *
+     * SPEC-497 R9 — before the continuation exists, [destroy] is the only thing that can take the scope.
+     * The caller's own cancellation throws instead of returning here, and every other path that clears
+     * it (the listener's non-OK branches, [PurchaseCompletion.handleItemAlreadyOwned], precedence (4), a
+     * PENDING update, a verify failure) acts only for a live continuation or for the scope owner it
+     * captured. So `Failed("shutdown")` is exact.
      */
     private fun scopeLost(productId: String): PurchaseResult {
         Log.warning("NativeBillingManager.purchase($productId): the purchase scope was cleared while waiting — not launching")
@@ -866,7 +901,10 @@ class NativeBillingManager internal constructor(
         val result = client.launchBillingFlow(activity, params)
         when (result.responseCode) {
             BillingClient.BillingResponseCode.OK -> Unit
-            BillingClient.BillingResponseCode.ITEM_ALREADY_OWNED -> scope.launch { completion.handleItemAlreadyOwned() }
+            BillingClient.BillingResponseCode.ITEM_ALREADY_OWNED -> {
+                val owner = purchaseScopeOwner
+                scope.launch { completion.handleItemAlreadyOwned(owner) }
+            }
             else -> resumePurchase(
                 failPurchase("Failed to relaunch billing flow: ${result.debugMessage}", "launch_billing_flow_failed", pendingProductId),
             )
@@ -953,7 +991,7 @@ class NativeBillingManager internal constructor(
     internal suspend fun restoreDetailed(trackFailure: Boolean): RestoreDetail {
         try {
             if (!ownsTransactions) {
-                throw BillingError.ProviderNotAvailable(BillingOwnership.restoreRefusalMessage(providerName))
+                throw BillingError.ProviderNotAvailable(BillingOwnership.refusalMessage(providerName))
             }
             Log.info("Restoring purchases (SUBS + INAPP)")
             val result = completion.run(PurchaseCompletion.Entry.RESTORE)

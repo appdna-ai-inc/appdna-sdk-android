@@ -338,9 +338,8 @@ internal class PaywallManager(
         }
         val mgrForPolicy = AppDNA.billing.manager
         if (mgrForPolicy == null || !AppDNA.billing.ownershipPolicy.sdkCanPurchase) {
-            val provider = mgrForPolicy?.providerName
-            val message = if (provider == null || provider == "none") "No billing provider configured"
-            else "$provider: purchases are made by $provider in your app"
+            // SPEC-497 R9 — the one refusal message (iOS `BillingOwnershipPolicy.refusalMessage`).
+            val message = ai.appdna.sdk.billing.BillingOwnership.refusalMessage(mgrForPolicy?.providerName ?: "none")
             val error = ai.appdna.sdk.billing.BillingError.ProviderNotAvailable(message)
             eventTracker.track(
                 "purchase_failed",
@@ -467,7 +466,12 @@ internal class PaywallManager(
         paywallId: String,
         listener: AppDNAPaywallDelegate?,
     ) {
-        if (config == null) return // legacy: delegate-only behavior
+        if (config == null) {
+            // Legacy: delegate-only behavior — the paywall stays on screen for the host to close, so
+            // re-enable its CTA (SPEC-497 R9; without this it kept spinning after a success).
+            PaywallActivity.signalPurchaseEnded()
+            return
+        }
         val delayMs = (config.delay_ms ?: 2000).toLong()
         scope.launch {
             // Round-12 Finding 1 — after a successful purchase, iOS DISMISSES the paywall in EVERY
@@ -593,7 +597,7 @@ internal class PaywallManager(
             !policy.isConfigured -> IllegalStateException(ai.appdna.sdk.billing.BillingOwnershipPolicy.NOT_CONFIGURED_MESSAGE)
             nativeMgr == null -> ai.appdna.sdk.billing.BillingError.ProviderNotAvailable("No billing provider configured")
             !policy.sdkCanRestore -> ai.appdna.sdk.billing.BillingError.ProviderNotAvailable(
-                ai.appdna.sdk.billing.BillingOwnership.restoreRefusalMessage(nativeMgr.providerName),
+                ai.appdna.sdk.billing.BillingOwnership.refusalMessage(nativeMgr.providerName),
             )
             else -> null
         }

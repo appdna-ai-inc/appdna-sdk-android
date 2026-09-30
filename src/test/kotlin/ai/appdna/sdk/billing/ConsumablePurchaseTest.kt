@@ -230,6 +230,110 @@ class ConsumablePurchaseTest {
         assertEquals("coins", s.mgr.pendingProductId)
     }
 
+    /**
+     * SPEC-497 R9 — purchase A answers ITEM_ALREADY_OWNED and its handler parks in `run()` (the owned
+     * query). A's caller is cancelled, purchase B starts and launches, then A's handler finishes with an
+     * `Owned` outcome. B must not be resolved, relaunched or cleared by A's handler, and A's outcome is not
+     * reported against B's scope. NEGATIVE CONTROL: without the `ownsScope(owner)` check after `run()` in
+     * `handleItemAlreadyOwned`, A's handler resolves B `Purchased` with A's product and clears its scope —
+     * this test fails.
+     */
+    @Test fun `an ITEM_ALREADY_OWNED handler of a cancelled purchase leaves the newer purchase alone`() {
+        val s = scenario("""{
+          "product_details":{"lifetime_unlock":{"price_micros":4990000,"currency":"USD","product_type":"inapp"},
+            "coins":{"price_micros":990000,"currency":"USD","product_type":"inapp"}},
+          "owned_purchases":[{"product_id":"lifetime_unlock","token":"tok_o","order_id":"GPA.o","acknowledged":true,"product_type":"inapp","purchase_state":"PURCHASED"}],
+          "reported_tokens":[{"token":"tok_o","pending_finalize":null}],
+          "cached_entitlements":[{"product_id":"lifetime_unlock","status":"active","store":"google_play","expires_at":null,"product_type":"inapp"}],
+          "play_response_codes":["ITEM_ALREADY_OWNED"]
+        }""")
+        s.fake.autoDeliver = false
+        val gate = kotlinx.coroutines.CompletableDeferred<Unit>()
+        s.fake.queryGate = gate
+        var first: PurchaseResult? = null
+        val job = kotlinx.coroutines.MainScope().launch { first = s.mgr.purchase(activity(), "lifetime_unlock") }
+        s.idle()
+        assertEquals(1, s.mgr.launchCount)
+        assertTrue("A's ITEM_ALREADY_OWNED handler is parked in run()", s.fake.queriesParked > 0)
+
+        job.cancel()
+        s.idle()
+        assertEquals(false, s.mgr.purchaseInFlight)
+
+        var second: PurchaseResult? = null
+        s.mgr.scope.launch { second = s.mgr.purchase(activity(), "coins") }
+        s.idle()
+        assertEquals("B launched", 2, s.mgr.launchCount)
+
+        gate.complete(Unit)
+        s.idle(200)
+        assertEquals(null, first)
+        assertEquals("B is not resolved by A's handler", null, second)
+        assertEquals("B is not relaunched", 2, s.mgr.launchCount)
+        assertTrue("B still owns the scope", s.mgr.purchaseInFlight)
+        assertEquals("coins", s.mgr.pendingProductId)
+        assertEquals(0, pipe.count("purchase_restored"))
+    }
+
+    /**
+     * SPEC-497 R9 — A's caller is cancelled with its sheet still up; purchase B is waiting for its product
+     * query (no continuation yet) when Play answers A's sheet with USER_CANCELED, then ERROR. Neither may
+     * resolve or clear B's scope; each is reported once, unattributed. NEGATIVE CONTROL: without the
+     * `hasLiveContinuation()` guard on the listener's non-OK branches, the late answer clears B's scope and
+     * B stops `Failed("shutdown")` without launching — this test fails.
+     */
+    @Test fun `a late non-OK Play answer for a cancelled purchase leaves the newer purchase alone`() {
+        val s = scenario("""{"product_details":{"lifetime_unlock":{"price_micros":4990000,"currency":"USD","product_type":"inapp"},
+          "coins":{"price_micros":990000,"currency":"USD","product_type":"inapp"}}}""")
+        s.fake.autoDeliver = false
+        s.mgr.currentPaywallId = "pw_a"
+        var first: PurchaseResult? = null
+        val job = kotlinx.coroutines.MainScope().launch { first = s.mgr.purchase(activity(), "lifetime_unlock") }
+        s.idle()
+        assertEquals(1, s.mgr.launchCount)
+        job.cancel()
+        s.idle()
+
+        val gate = kotlinx.coroutines.CompletableDeferred<Unit>()
+        s.fake.productQueryGate = gate
+        s.mgr.currentPaywallId = "pw_b"
+        var second: PurchaseResult? = null
+        s.mgr.scope.launch { second = s.mgr.purchase(activity(), "coins") }
+        s.idle()
+        s.fake.answer(com.android.billingclient.api.BillingClient.BillingResponseCode.USER_CANCELED)
+        s.fake.answer(com.android.billingclient.api.BillingClient.BillingResponseCode.ERROR)
+        s.idle()
+        assertTrue("B still owns the scope", s.mgr.purchaseInFlight)
+
+        gate.complete(Unit)
+        s.idle()
+        assertEquals(null, first)
+        assertEquals("B launched and waits for Play", null, second)
+        assertEquals(2, s.mgr.launchCount)
+        assertEquals("coins", s.mgr.pendingProductId)
+        val canceled = pipe.events().single { it.first == "purchase_canceled" }.second
+        assertEquals("", canceled.getString("paywall_id"))
+        assertTrue(!canceled.has("product_id"))
+        val failed = pipe.events().single { it.first == "purchase_failed" }.second
+        assertEquals("billing_error", failed.getString("reason"))
+        assertEquals("", failed.getString("paywall_id"))
+        assertTrue(!failed.has("product_id"))
+    }
+
+    /**
+     * SPEC-497 R9 — a cancelled `awaitConnectedClient` waiter takes its callback with it. NEGATIVE CONTROL:
+     * without `invokeOnCancellation` in `awaitConnectedClient`, the count stays 1 — this test fails.
+     */
+    @Test fun `a cancelled connection waiter is removed`() {
+        val s = scenario("""{"billing_setup_code":"SERVICE_UNAVAILABLE"}""")
+        val job = kotlinx.coroutines.MainScope().launch { s.mgr.connectionManager.awaitConnectedClient() }
+        s.idle()
+        assertEquals(1, s.mgr.connectionManager.pendingWaiterCount)
+        job.cancel()
+        s.idle()
+        assertEquals(0, s.mgr.connectionManager.pendingWaiterCount)
+    }
+
     @Test fun `destroy during a purchase resolves Failed shutdown`() {
         val s = scenario("""{"product_details":{"lifetime_unlock":{"price_micros":4990000,"currency":"USD","product_type":"inapp"}}}""")
         s.fake.autoDeliver = false

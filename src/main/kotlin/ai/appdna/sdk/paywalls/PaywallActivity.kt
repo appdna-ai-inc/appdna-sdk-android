@@ -503,7 +503,8 @@ class PaywallActivity : ComponentActivity() {
         /**
          * SPEC-497 I4 R8 m5 — bumped by [PaywallManager] when a paywall purchase ends without success
          * (a failure, a user cancel, a pending approval, or the purchase coroutine cancelled — e.g.
-         * `shutdown()` with the paywall on screen). A live paywall re-enables its CTA (`isPurchasing =
+         * `shutdown()` with the paywall on screen) — and, since R9, after a success with no `on_success`
+         * config, where the paywall stays up for the host to close. A live paywall re-enables its CTA (`isPurchasing =
          * false`) when it sees the value change. Before this, only a drained `retry` / `show_error`
          * overlay reset it, so a failure with no `on_failure` config — or a cancelled purchase — left the
          * CTA spinning and disabled for good.

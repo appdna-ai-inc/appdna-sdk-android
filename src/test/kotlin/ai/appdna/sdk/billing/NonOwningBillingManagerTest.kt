@@ -60,6 +60,9 @@ class NonOwningBillingManagerTest {
         val activity = Robolectric.buildActivity(Activity::class.java).setup().get()
         val r = s.drive { s.mgr.purchase(activity, "monthly_sub") }
         assertTrue(r.exceptionOrNull() is BillingError.ProviderNotAvailable)
+        // R9 — the purchase refusal carries the same message as the restore refusal (and iOS).
+        assertEquals("RevenueCat: purchases are made by RevenueCat in your app", r.exceptionOrNull()?.message)
+        assertEquals("RevenueCat: purchases are made by RevenueCat in your app", pipe!!.props("purchase_failed").getString("error"))
         assertEquals(0, s.fake.launchCount)
         assertEquals(listOf("purchase_failed"), pipe!!.names())
         assertEquals("providerNotAvailable", pipe!!.props("purchase_failed").getString("error_type"))

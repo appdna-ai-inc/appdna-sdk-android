@@ -562,8 +562,17 @@ internal class PurchaseCompletion(
      * result, with `pendingProductId` still set. Never calls `restorePurchases()` and never takes the
      * lock itself: it calls [run] (`filter = pendingProductId`, never `firstOrNull()`), then acts on the
      * outcome after [run] has returned (the relaunch included).
+     *
+     * SPEC-497 R9 — [owner] is the purchase scope's owner when Play answered. [run] can wait up to 30 s
+     * per step; if that purchase's caller is cancelled meanwhile and a newer purchase takes the scope, this
+     * handler must not resolve, relaunch or clear the newer one. So it acts only while [owner] still owns
+     * the scope; otherwise it tracks nothing (as for a lost scope in `purchase()`) and only drains.
      */
-    suspend fun handleItemAlreadyOwned() {
+    suspend fun handleItemAlreadyOwned(owner: Long) {
+        if (!mgr.ownsScope(owner)) {
+            Log.warning("ITEM_ALREADY_OWNED: the purchase scope changed before the handler ran — ignored")
+            return
+        }
         if (!mgr.ownsTransactions) {
             mgr.resumePurchase(PurchaseResult.Failed("item_already_owned", "unknown"))
             return
@@ -573,6 +582,12 @@ internal class PurchaseCompletion(
             return
         }
         val result = run(Entry.ITEM_ALREADY_OWNED, filter = productId)
+        if (!mgr.ownsScope(owner)) {
+            // Resolved by precedence (4) inside run (ReportedLive / VerifyFailed), cancelled, or taken over
+            // by a newer purchase: nothing is left for this handler to do.
+            mgr.triggerDrain()
+            return
+        }
         when (val outcome = result.itemOutcome ?: ItemOutcome.NoMatch) {
             ItemOutcome.ReportedLive -> Unit // precedence (4) resolved the pending purchase() with it
             ItemOutcome.Pending -> {

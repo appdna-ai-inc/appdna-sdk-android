@@ -70,6 +70,8 @@ class PaywallNoProviderTest {
         assertEquals(listOf("purchase_failed"), pipe!!.names())
         assertEquals(listOf("failed:providerNotAvailable:pro_monthly"), calls)
         assertEquals(0, sc!!.fake.launchCount)
+        // R9 — the paywall tap's refusal reads exactly like the direct API's and the restore's (and iOS).
+        assertEquals("RevenueCat: purchases are made by RevenueCat in your app", pipe!!.props("purchase_failed").getString("error"))
     }
 
     /** I4 minor 9: a tap between configure() and billing init is "not configured yet" (`unknown`). */
@@ -193,9 +195,9 @@ class PaywallNoProviderTest {
 
     /** I4 R8 m4 — the refused-restore message is the iOS `BillingOwnershipPolicy.refusalMessage`, per provider. */
     @Test fun `restore refusal message matches iOS for every provider`() {
-        assertEquals("RevenueCat: purchases are made by RevenueCat in your app", BillingOwnership.restoreRefusalMessage("revenueCat"))
-        assertEquals("Adapty: purchases are made by Adapty in your app", BillingOwnership.restoreRefusalMessage("adapty"))
-        assertEquals("No billing provider configured", BillingOwnership.restoreRefusalMessage("none"))
+        assertEquals("RevenueCat: purchases are made by RevenueCat in your app", BillingOwnership.refusalMessage("revenueCat"))
+        assertEquals("Adapty: purchases are made by Adapty in your app", BillingOwnership.refusalMessage("adapty"))
+        assertEquals("No billing provider configured", BillingOwnership.refusalMessage("none"))
     }
 
     @Test fun `PurchaseFailedException carries the verification error type`() {
