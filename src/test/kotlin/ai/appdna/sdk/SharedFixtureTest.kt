@@ -238,6 +238,13 @@ class SharedFixtureTest(
             "host_data_scenario" -> runHostDataScenario(action, spy)
             // SPEC-496 §5b C2 — the core decoder every bridge forwards `dataContext` through.
             "decode_interaction_result" -> runDecodeInteractionResult(spy)
+            // SPEC-497 §4.8 — the sign-in bridge floor (the core half; bridge_waits is the bridge tests').
+            "bridge_timeout_floor" -> runBridgeTimeoutFloor(action, spy)
+            // SPEC-497 §7.7 — the pure polyline decoder and the interactive map plan.
+            "decode_polyline" -> runDecodePolyline(action, spy)
+            "map_interactive_plan" -> runMapInteractivePlan(action, spy)
+            // SPEC-497 §13h.3 — getLocationData over the stored answer.
+            "location_data_from_answer" -> runLocationDataFromAnswer(action, spy)
             else -> unsupported("no driver for action.kind=$kind")
         }
         assertExpectations(spy)
@@ -1749,6 +1756,120 @@ class SharedFixtureTest(
         }
     }
 
+    // ---------------------------------------------------------------------------------------------
+    // SPEC-497 — A2 bridge floor, A5 map geometry, D2 location data
+    // ---------------------------------------------------------------------------------------------
+
+    /** Only `cases` (the floor function) — asserting max() here would be a tautology (§4.8). */
+    private fun runBridgeTimeoutFloor(action: JSONObject, spy: Spy) {
+        val cases = action.optJSONArray("cases") ?: unsupported("bridge_timeout_floor without action.cases")
+        val floors = (0 until cases.length()).map { i ->
+            val c = cases.getJSONObject(i)
+            val stepData = c.optJSONObject("step_data")?.asMap()
+            val floor = StepAdvanceResult.minimumBridgeTimeoutMs(stepData)
+            val expected = if (c.isNull("expect_floor_ms")) null else c.getLong("expect_floor_ms")
+            assertEquals("[$fixtureName] case[$i] floor", expected, floor)
+            floor
+        }
+        spy.state["floors_ms"] = floors
+    }
+
+    private fun points(l: List<Pair<Double, Double>>?): List<List<Double>>? = l?.map { listOf(it.first, it.second) }
+
+    /** The REAL decoder — a sample, a malformed table, or decode(encode(stops)) with the REAL encoder. */
+    private fun runDecodePolyline(action: JSONObject, spy: Spy) {
+        when {
+            action.has("cases") -> {
+                val cases = action.getJSONArray("cases")
+                spy.state["results"] = (0 until cases.length()).map { i ->
+                    val c = cases.getJSONObject(i)
+                    points(ai.appdna.sdk.onboarding.MapPolyline.decode(c.getString("encoded")))
+                }
+            }
+            action.has("stops") -> {
+                val arr = action.getJSONArray("stops")
+                val stops = (0 until arr.length()).map { i ->
+                    arr.getJSONArray(i).let { it.getDouble(0) to it.getDouble(1) }
+                }
+                val encoded = ai.appdna.sdk.onboarding.encodeMapPolyline(stops)
+                spy.state["roundtrip_points"] = points(ai.appdna.sdk.onboarding.MapPolyline.decode(encoded))
+            }
+            action.has("encoded") ->
+                spy.state["points"] = points(ai.appdna.sdk.onboarding.MapPolyline.decode(action.getString("encoded")))
+            else -> unsupported("decode_polyline without encoded / cases / stops")
+        }
+    }
+
+    /**
+     * The step is built through the REAL override merge (as `map_delegate_route` does), then the
+     * REAL plan is computed for the named block — so merge → plan is covered end to end.
+     */
+    private fun runMapInteractivePlan(action: JSONObject, spy: Spy) {
+        val blockId = action.getString("block_id")
+        val mapRoutes = sessionData.optJSONObject("host_map_routes")?.let {
+            ai.appdna.sdk.onboarding.StepConfigOverride.decodeMapRoutes(jsonValueToKotlin(it))
+        }
+        val step = ai.appdna.sdk.onboarding.OnboardingConfigParser.parseStepForTest(
+            mapOf(
+                "type" to "custom", "name" to "m", "analytics_name" to "m", "skip_allowed" to false,
+                "config" to jsonValueToKotlin(config ?: error("setup.config missing")),
+            ),
+        ) ?: error("setup.config did not parse as a step")
+        val merged = step.config.applyingOverride(ai.appdna.sdk.onboarding.StepConfigOverride(mapRoutes = mapRoutes))
+        val block = merged.content_blocks.orEmpty().firstOrNull { it.id == blockId }
+            ?: unsupported("map_interactive_plan: block $blockId not in setup.config")
+        val plan = ai.appdna.sdk.onboarding.MapInteractivePlan.compute(block)
+        val camera: Map<String, Any?> = when (val c = plan.camera) {
+            is ai.appdna.sdk.onboarding.MapInteractivePlan.Camera.Fit -> mapOf("mode" to "fit", "points" to points(c.points))
+            is ai.appdna.sdk.onboarding.MapInteractivePlan.Camera.Center ->
+                mapOf("mode" to "center", "lat" to c.lat, "lng" to c.lng, "zoom" to c.zoom)
+        }
+        spy.state["plan"] = mapOf(
+            "route" to mapOf("source" to plan.route.source, "points" to points(plan.route.points)),
+            "markers" to points(plan.markers),
+            "camera" to camera,
+        )
+    }
+
+    /**
+     * The stored answer is seeded into the REAL SessionDataStore and read back through the public
+     * `AppDNA.getLocationData`. Always writes `location_data`: Kotlin null for nil, else every key.
+     */
+    private fun runLocationDataFromAnswer(action: JSONObject, spy: Spy) {
+        val fieldId = action.getString("field_id")
+        val responses = (sessionData.optJSONObject("responses") ?: JSONObject()).asMap()
+            .mapValues { (_, v) -> (v as? Map<*, *>)?.filterValues { it != null } }
+            .filterValues { it != null }
+            .mapValues { it.value!! }
+        ai.appdna.sdk.core.SessionDataStore.initialize(ctx)
+        val store = ai.appdna.sdk.core.SessionDataStore.instance!!
+        try {
+            @Suppress("UNCHECKED_CAST")
+            store.setOnboardingResponses(responses as Map<String, Any>)
+            val loc = AppDNA.getLocationData(fieldId)
+            val actual: Map<String, Any?>? = loc?.let {
+                linkedMapOf(
+                    "formatted_address" to it.formatted_address,
+                    "city" to it.city,
+                    "state" to it.state,
+                    "state_code" to it.state_code,
+                    "country" to it.country,
+                    "country_code" to it.country_code,
+                    "latitude" to it.latitude,
+                    "longitude" to it.longitude,
+                    "timezone" to it.timezone,
+                    "timezone_offset" to it.timezone_offset,
+                    "postal_code" to it.postal_code,
+                    "raw_query" to it.raw_query,
+                )
+            }
+            val expected = fixtureJson.getJSONObject("expect").optJSONObject("state_after")?.opt("location_data")
+            assertStrictJson("[$fixtureName] location_data", expected, actual, "$")
+            spy.state["location_data"] = actual
+        } finally {
+            store.clearAll()
+        }
+    }
     // ---------------------------------------------------------------------------------------------
     // push_payload — REAL PushPayloadParser + PushTokenManager
     // ---------------------------------------------------------------------------------------------

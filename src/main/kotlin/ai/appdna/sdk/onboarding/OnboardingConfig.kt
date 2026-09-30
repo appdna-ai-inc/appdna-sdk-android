@@ -333,21 +333,63 @@ enum class FormFieldType(val value: String) {
     }
 }
 
-/** Structured location data from geocoding autocomplete (SPEC-089). */
+/**
+ * Structured location data from geocoding autocomplete (SPEC-089).
+ *
+ * SPEC-497 §13h (D2) — every field except [formatted_address] is optional: a stored answer may be a
+ * typed string (no coordinates, no city) or a partial selection, and a missing value is `null`, never
+ * a made-up `0.0` / `""` / `"UTC"`. (Source change for hosts that read these unwrapped.)
+ */
 data class LocationData(
     val formatted_address: String = "",
-    val city: String = "",
-    val state: String = "",
-    val state_code: String = "",
-    val country: String = "",
-    val country_code: String = "",
-    val latitude: Double = 0.0,
-    val longitude: Double = 0.0,
-    val timezone: String = "UTC",
-    val timezone_offset: Int = 0,
+    val city: String? = null,
+    val state: String? = null,
+    val state_code: String? = null,
+    val country: String? = null,
+    val country_code: String? = null,
+    val latitude: Double? = null,
+    val longitude: Double? = null,
+    val timezone: String? = null,
+    val timezone_offset: Int? = null,
     val postal_code: String? = null,
-    val raw_query: String = ""
+    val raw_query: String? = null,
 )
+
+/**
+ * SPEC-497 §13h.2 — [LocationData] from whatever a location field stored, tolerantly.
+ *
+ * - a map (a selected suggestion, a partial one, or the legacy `{address, latitude, longitude}`):
+ *   each field read on its own; `address` is the legacy name of `formatted_address`; a coordinate is
+ *   kept only when it is a finite number. A map with no address at all is not a location → `null`.
+ * - a non-empty string (typed, never selected): `{formatted_address: text, raw_query: text}`, the
+ *   rest null — the host still gets what the user typed.
+ * - anything else (empty string, number, null, no answer): `null`.
+ */
+internal fun locationDataFromAnswer(value: Any?): LocationData? {
+    fun str(v: Any?): String? = (v as? String)?.takeIf { it.isNotEmpty() }
+    fun coord(v: Any?): Double? = (v as? Number)?.toDouble()?.takeIf { it.isFinite() }
+    return when (value) {
+        is String -> value.takeIf { it.isNotBlank() }?.let { LocationData(formatted_address = it, raw_query = it) }
+        is Map<*, *> -> {
+            val address = str(value["formatted_address"]) ?: str(value["address"]) ?: return null
+            LocationData(
+                formatted_address = address,
+                city = str(value["city"]),
+                state = str(value["state"]),
+                state_code = str(value["state_code"]),
+                country = str(value["country"]),
+                country_code = str(value["country_code"]),
+                latitude = coord(value["latitude"]),
+                longitude = coord(value["longitude"]),
+                timezone = str(value["timezone"]),
+                timezone_offset = (value["timezone_offset"] as? Number)?.toInt(),
+                postal_code = str(value["postal_code"]),
+                raw_query = str(value["raw_query"]),
+            )
+        }
+        else -> null
+    }
+}
 
 data class FormFieldOption(
     val id: String,
@@ -511,6 +553,27 @@ sealed class StepAdvanceResult {
      * If `message` is null/empty the SDK stays silent (host handles UI).
      */
     data class Stay(val message: String? = null) : StepAdvanceResult()
+
+    companion object {
+        /**
+         * SPEC-497 §4.2 (A2) — the minimum time a Flutter / React Native bridge waits for the host's
+         * `onBeforeStepAdvance` reply on a sign-in action. The native core imposes no timeout; this
+         * floor only stops a bridge from cutting a legitimate sign-in (OS sheets, 2FA, a backend
+         * round trip), while still bounding a handler that never answers.
+         */
+        const val AUTH_BRIDGE_TIMEOUT_MS: Long = 120_000L
+
+        /**
+         * The bridge floor for this hook call: [AUTH_BRIDGE_TIMEOUT_MS] when `stepData["action"]` is a
+         * sign-in action ([AuthActionPolicy.bridgeFloorActions]), else `null` (the configured timeout
+         * applies). Bridges wait `max(configured, floor ?: 0)`.
+         */
+        @JvmStatic
+        fun minimumBridgeTimeoutMs(stepData: Map<String, Any?>?): Long? {
+            val action = stepData?.get("action") as? String ?: return null
+            return if (action in AuthActionPolicy.bridgeFloorActions) AUTH_BRIDGE_TIMEOUT_MS else null
+        }
+    }
 }
 
 /**

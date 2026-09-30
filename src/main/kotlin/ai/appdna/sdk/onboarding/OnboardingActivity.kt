@@ -2451,23 +2451,7 @@ fun OnboardingStepView(
 // silently flow through `onNext` -> `responses` payload while no host
 // authentication side-effect actually runs. iOS logs a warning and
 // stays on the step so the user notices auth didn't happen.
-private val AUTH_ACTIONS_REQUIRING_DELEGATE = setOf(
-    "login",
-    "register",
-    "reset_password",
-    "magic_link",
-    "verify_email",
-    "resend_verification",
-    "enable_biometric",
-    "email_login",
-    "request_otp",
-    "verify_otp",
-    "logout",
-    "change_password",
-    "set_new_password",
-    "delete_account",
-    "update_profile",
-)
+// The set moved to AuthActionPolicy.delegateRequiredActions (SPEC-497 §4.2).
 
 /**
  * SPEC-070-A finalization B4#P0 — pure resolver for the OTP delivery
@@ -2545,12 +2529,12 @@ internal fun emitAuthAction(
     // SPEC-070-A finalization OB-4 — auth-action delegate gate. If the
     // host has not registered an AppDNAOnboardingDelegate (which is the
     // contract surface for `onBeforeStepAdvance`), refuse to advance
-    // for actions in AUTH_ACTIONS_REQUIRING_DELEGATE. Mirrors iOS
+    // for actions in AuthActionPolicy.delegateRequiredActions. Mirrors iOS
     // OnboardingRenderer.swift:1465-1474 (warn + return early). Logging
     // via SDK Log so production builds (BuildConfig.DEBUG=false) don't
     // suppress the message — auth flow misconfiguration is a developer
     // contract issue worth surfacing in release builds too.
-    if (action in AUTH_ACTIONS_REQUIRING_DELEGATE && delegate == null) {
+    if (action in AuthActionPolicy.delegateRequiredActions && delegate == null) {
         // 🔴 NO `onboarding_step_completed` HERE. The step did NOT complete — it refused to
         // advance. Android used to emit one anyway (with a `blocked_reason: "no_delegate"` property
         // no dbt model has ever heard of), inflating Android step-completion counts and funnel

@@ -8278,7 +8278,7 @@ internal fun MapBlock(block: ContentBlock, placement: MapPlacement = MapPlacemen
                     // asked for, and the manifest-key check above is why a host without the
                     // `com.google.android.geo.API_KEY` line falls through to the still image
                     // rather than being handed the Maps SDK's grey "no key" rectangle.
-                    GoogleInteractiveMap(block)
+                    GoogleInteractiveMap(block, rawResolved = LocalHostDataRawResolved.current)
                 } else {
                     val url = mapStaticUrl(
                         block, AppDNA.mapboxToken, 390, heightPx.toInt(), AppDNA.googleMapsApiKey,
@@ -12605,11 +12605,7 @@ private fun FormInputLocationPlaceholder(
                             .clickable {
                                 text = suggestion.address
                                 showSuggestions = false
-                                inputValues[fieldId] = mapOf(
-                                    "address" to suggestion.address,
-                                    "latitude" to suggestion.latitude,
-                                    "longitude" to suggestion.longitude,
-                                )
+                                inputValues[fieldId] = suggestion.toStoredAnswer()
                             }
                             .padding(horizontal = 12.dp, vertical = 8.dp),
                         verticalAlignment = Alignment.CenterVertically,
@@ -12666,12 +12662,62 @@ private fun FormInputLocationPlaceholder(
     }
 }
 
-/** Data class for geocoding autocomplete suggestion. */
-private data class LocationSuggestion(
+/**
+ * Data class for geocoding autocomplete suggestion.
+ *
+ * SPEC-497 §13h.2 (D2) — carries city / state / country / timezone (+ codes and postal code) as
+ * `LocationFieldComposable` already parses them, so a selection stores the full location.
+ */
+internal data class LocationSuggestion(
     val address: String,
     val latitude: Double,
     val longitude: Double,
-)
+    val city: String? = null,
+    val state: String? = null,
+    val stateCode: String? = null,
+    val country: String? = null,
+    val countryCode: String? = null,
+    val timezone: String? = null,
+    val postalCode: String? = null,
+) {
+    /**
+     * The one stored shape a selection writes on both platforms (§13h.2):
+     * `{formatted_address, city, state, country, latitude, longitude, timezone}` plus
+     * `state_code` / `country_code` / `postal_code` when the lookup has them. `address` stays as an
+     * alias of `formatted_address` for hosts that read the older key.
+     */
+    fun toStoredAnswer(): Map<String, Any> = buildMap {
+        put("formatted_address", address)
+        put("address", address)
+        city?.let { put("city", it) }
+        state?.let { put("state", it) }
+        country?.let { put("country", it) }
+        put("latitude", latitude)
+        put("longitude", longitude)
+        timezone?.let { put("timezone", it) }
+        stateCode?.let { put("state_code", it) }
+        countryCode?.let { put("country_code", it) }
+        postalCode?.let { put("postal_code", it) }
+    }
+}
+
+/** One autocomplete item → [LocationSuggestion]; blank strings are absent. */
+internal fun parseLocationSuggestion(item: org.json.JSONObject): LocationSuggestion {
+    fun opt(key: String): String? =
+        if (item.isNull(key)) null else item.optString(key).takeIf { it.isNotBlank() }
+    return LocationSuggestion(
+        address = item.optString("formatted_address", ""),
+        latitude = item.optDouble("latitude", 0.0),
+        longitude = item.optDouble("longitude", 0.0),
+        city = opt("city"),
+        state = opt("state"),
+        stateCode = opt("state_code"),
+        country = opt("country"),
+        countryCode = opt("country_code"),
+        timezone = opt("timezone"),
+        postalCode = opt("postal_code"),
+    )
+}
 
 /** Fetch location suggestions from the AppDNA backend geocoding API.
  *
@@ -12723,11 +12769,7 @@ private suspend fun fetchLocationSuggestions(query: String): List<LocationSugges
 
         (0 until minOf(results.length(), 5)).mapNotNull { i ->
             val item = results.optJSONObject(i) ?: return@mapNotNull null
-            LocationSuggestion(
-                address = item.optString("formatted_address", ""),
-                latitude = item.optDouble("latitude", 0.0),
-                longitude = item.optDouble("longitude", 0.0),
-            )
+            parseLocationSuggestion(item)
         }
     } catch (e: Exception) {
         ai.appdna.sdk.Log.debug("Location autocomplete failed: ${e.message}")
