@@ -235,7 +235,7 @@ class SubscriptionStartedEventTest {
     fun `a RevenueCat purchase with no explicit flag infers subscription from the verified entitlement`() {
         installRealPipeline()
         val cache = EntitlementCache(ctx)
-        cache.update(subscriptionEntitlement())
+        cache.update(subscriptionEntitlement(), "subs")
         AppDNA.billing.manager = NativeBillingManager(
             context = ctx,
             receiptVerifier = ReceiptVerifier(ApiClient("adn_test_subscription_started", Environment.PRODUCTION)),
@@ -254,7 +254,7 @@ class SubscriptionStartedEventTest {
         installRealPipeline()
         val cache = EntitlementCache(ctx)
         cache.clear()
-        cache.update(oneOffEntitlement())
+        cache.update(oneOffEntitlement(), "inapp")
         AppDNA.billing.manager = NativeBillingManager(
             context = ctx,
             receiptVerifier = ReceiptVerifier(ApiClient("adn_test_subscription_started", Environment.PRODUCTION)),

@@ -1,0 +1,799 @@
+package ai.appdna.sdk.billing
+
+import ai.appdna.sdk.AppDNA
+import ai.appdna.sdk.Log
+import ai.appdna.sdk.TransactionInfo
+import com.android.billingclient.api.AcknowledgePurchaseParams
+import com.android.billingclient.api.BillingClient
+import com.android.billingclient.api.BillingResult
+import com.android.billingclient.api.ConsumeParams
+import com.android.billingclient.api.Purchase
+import com.android.billingclient.api.PurchasesResult
+import com.android.billingclient.api.QueryPurchasesParams
+import com.android.billingclient.api.queryPurchasesAsync
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.suspendCancellableCoroutine
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeoutOrNull
+import java.util.concurrent.atomic.AtomicInteger
+import kotlin.coroutines.resume
+
+/** The decision for one purchase (§13a.2 "Purchase completion plan"). */
+internal data class CompletionPlan(
+    val verify: Boolean,
+    val finalize: Finalize?,
+    val emitCompleted: Boolean,
+    val updateEntitlements: Boolean,
+    /** Which precedence (1)–(5) matched — for logs and tests. */
+    val precedence: Int,
+)
+
+/**
+ * SPEC-497 §13a.2 — the pure, two-phase decision. `serverConsume == null` means "not verified yet": the
+ * first call returns `verify` or a finalize-only plan; after the verify a second call with the reply's
+ * `consume` returns the finalize plan. Precedence, first match wins:
+ *   (1) `!ownsTransactions` → nothing;
+ *   (2) reported with a finalize pending → retry that finalize only, regardless of anything else;
+ *   (3) not reported and acknowledged (and never verify-attempted) → no emit, no entitlement change;
+ *       an INAPP purchase is classified (a silent verify) and a consumable is consumed silently;
+ *   (4) not reported and (unacknowledged or verify-attempted) → verify, finalize, emit;
+ *   (5) reported and finalized → nothing.
+ */
+internal object PurchaseCompletionPlan {
+    private val NOTHING = CompletionPlan(false, null, false, false, 0)
+
+    fun decide(
+        productType: String,
+        serverConsume: Boolean?,
+        ownsTransactions: Boolean,
+        alreadyReported: Boolean,
+        isAcknowledged: Boolean,
+        pendingFinalize: Finalize?,
+        verifyAttempted: Boolean,
+    ): CompletionPlan {
+        if (!ownsTransactions) return NOTHING.copy(precedence = 1)
+        if (alreadyReported && pendingFinalize != null) {
+            return CompletionPlan(verify = false, finalize = pendingFinalize, emitCompleted = false, updateEntitlements = false, precedence = 2)
+        }
+        if (!alreadyReported && isAcknowledged && !verifyAttempted) {
+            // SUBS are never classified (never consumable); INAPP learns `consume` from a silent verify.
+            if (productType != "inapp") return NOTHING.copy(precedence = 3)
+            if (serverConsume == null) return CompletionPlan(verify = true, finalize = null, emitCompleted = false, updateEntitlements = false, precedence = 3)
+            return CompletionPlan(false, if (serverConsume) Finalize.Consume else null, false, false, 3)
+        }
+        if (!alreadyReported) {
+            if (serverConsume == null) return CompletionPlan(verify = true, finalize = null, emitCompleted = false, updateEntitlements = false, precedence = 4)
+            val finalize = when {
+                serverConsume -> Finalize.Consume // consuming also acknowledges
+                !isAcknowledged -> Finalize.Acknowledge
+                else -> null
+            }
+            return CompletionPlan(verify = false, finalize = finalize, emitCompleted = true, updateEntitlements = !serverConsume, precedence = 4)
+        }
+        return NOTHING.copy(precedence = 5)
+    }
+}
+
+/** A Play purchase with the query arm that returned it (`"subs"` / `"inapp"`). */
+internal data class OwnedPurchase(val purchase: Purchase, val productType: String) {
+    val token: String get() = purchase.purchaseToken
+    val productId: String get() = purchase.products.firstOrNull() ?: ""
+}
+
+/**
+ * SPEC-497 §13a.2 (LD-R19-1, D-R40-1) — THE one owner of Android purchase completion.
+ *
+ * Only this class verifies (`/billing/verify`, `/billing/restore`), acknowledges and consumes an owned
+ * purchase, and emits the report (`purchase_completed`, plus `subscription_started` for SUBS). Every
+ * entry point — the purchase path, ON_START, `identify`'s refresh, `restorePurchases`,
+ * `ITEM_ALREADY_OWNED` — calls [run]. [run] and [drainDeliveries] are the only methods that take
+ * [purchaseCompletionMutex] (non-reentrant): `runLocked` never calls [run], [drainDeliveries],
+ * `restorePurchases()` or `refreshEntitlementCache()`; a drain and the `ITEM_ALREADY_OWNED` relaunch
+ * happen after [run] has returned.
+ */
+internal class PurchaseCompletion(
+    private val mgr: NativeBillingManager,
+    internal val ledger: PurchaseLedger,
+    private val clock: () -> Long = System::currentTimeMillis,
+) {
+    enum class Entry { PURCHASE, ON_START, IDENTIFY_REFRESH, RESTORE, ITEM_ALREADY_OWNED }
+
+    /** What `ITEM_ALREADY_OWNED` found for the pending product. */
+    sealed class ItemOutcome {
+        object NoMatch : ItemOutcome()
+        object Pending : ItemOutcome()
+        object ReportedLive : ItemOutcome()
+        object Consumed : ItemOutcome()
+        data class Owned(val purchase: Purchase, val entitlement: Entitlement) : ItemOutcome()
+    }
+
+    class CompletionResult(val entry: Entry) {
+        var queryOk: Boolean = false
+        var queryError: BillingError? = null
+        val skippedTokens = LinkedHashSet<String>()
+        /** Tokens precedence (4) did not complete (retryable or terminal) — excluded from `/restore`. */
+        val notCompleted = LinkedHashSet<String>()
+        val consumed = LinkedHashSet<String>()
+        val reportedTokens = ArrayList<String>()
+        val reportedProducts = LinkedHashSet<String>()
+        var queued: Int = 0
+        /** The owned list read inside the lock (identity-filtered + reported-since-identity + listener). */
+        val owned = ArrayList<OwnedPurchase>()
+        /** Products of the raw OK SUBS query, or null when it failed. */
+        var okSubsProducts: Set<String>? = null
+        /** Identity-filtered SUBS purchases (skipped ones included) — the lifecycle snapshot's input. */
+        val subsForSnapshot = ArrayList<OwnedPurchase>()
+        var restored: List<VerifiedPurchase> = emptyList()
+        var restoreError: Throwable? = null
+        var itemOutcome: ItemOutcome? = null
+        /** Both queries OK and nothing owned (the refresh re-runs at the next ON_START). */
+        var ownedEmpty: Boolean = false
+    }
+
+    val purchaseCompletionMutex = Mutex()
+
+    /** In-memory in-flight set of the drain (Q3). Guarded by [purchaseCompletionMutex]. */
+    private val inFlight = HashSet<String>()
+
+    /**
+     * Tokens the purchase path reported since the last identity change, kept in the owned list whatever
+     * `filterOwnedPurchases` returns (R21-V1). In memory only; cleared on an identity change.
+     */
+    private val reportedSinceIdentity = LinkedHashSet<String>()
+
+    /** An empty OK owned list marks the refresh to re-run at the next ON_START (R32 SDK minor 1). */
+    @Volatile var refreshRerunPending: Boolean = false
+
+    /** A drain is a no-op until `configure` has loaded the identity and the queue (trigger (iv)). */
+    @Volatile var drainReady: Boolean = false
+
+    /** Silent-verify entitlements learnt during a run, by token (ITEM_ALREADY_OWNED reuses them). */
+    private val classificationEntitlements = HashMap<String, VerifiedPurchase>()
+
+    // ---------------------------------------------------------------------------------------------
+    // run
+    // ---------------------------------------------------------------------------------------------
+
+    suspend fun run(
+        entry: Entry,
+        filter: String? = null,
+        listenerPurchase: Purchase? = null,
+        anonymousToFirstUser: Boolean = false,
+    ): CompletionResult = purchaseCompletionMutex.withLock {
+        runLocked(entry, filter, listenerPurchase, anonymousToFirstUser)
+    }
+
+    private suspend fun runLocked(
+        entry: Entry,
+        filter: String?,
+        listenerPurchase: Purchase?,
+        anonymousToFirstUser: Boolean,
+    ): CompletionResult {
+        val result = CompletionResult(entry)
+        if (!mgr.ownsTransactions) return result
+        classificationEntitlements.clear()
+
+        val client = withTimeoutOrNull(WAIT_MS) { mgr.connectionManager.awaitConnectedClient() }
+        if (client == null) {
+            result.queryError = BillingError.ServerError("billing unavailable")
+            return result
+        }
+
+        // -- input, read inside the lock ------------------------------------------------------------
+        val subs = queryOwned(client, BillingClient.ProductType.SUBS)
+        val inapp = queryOwned(client, BillingClient.ProductType.INAPP)
+        val subsOk = subs?.billingResult?.responseCode == BillingClient.BillingResponseCode.OK
+        val inappOk = inapp?.billingResult?.responseCode == BillingClient.BillingResponseCode.OK
+        result.queryOk = subsOk && inappOk
+        if (!result.queryOk) result.queryError = queryErrorFor(if (!subsOk) subs?.billingResult else inapp?.billingResult)
+        if (subsOk) result.okSubsProducts = subs!!.purchasesList.flatMap { it.products }.toSet()
+
+        val unfiltered = LinkedHashMap<String, OwnedPurchase>()
+        if (subsOk) subs!!.purchasesList.forEach { unfiltered.putIfAbsent(it.purchaseToken, OwnedPurchase(it, "subs")) }
+        if (inappOk) inapp!!.purchasesList.forEach { unfiltered.putIfAbsent(it.purchaseToken, OwnedPurchase(it, "inapp")) }
+        val listener: OwnedPurchase? = listenerPurchase?.let { p ->
+            unfiltered[p.purchaseToken]?.copy(purchase = p)
+                ?: OwnedPurchase(p, mgr.pendingProductType?.takeIf { p.products.contains(mgr.pendingProductId) } ?: guessType(p))
+        }
+        if (listener != null) unfiltered[listener.token] = listener
+        result.ownedEmpty = result.queryOk && unfiltered.isEmpty()
+
+        fun inScope(op: OwnedPurchase) = filter == null || op.purchase.products.contains(filter)
+
+        // -- pending-purchase rule: other entries skip the in-flight product --------------------------
+        val purchasePath = entry == Entry.PURCHASE || entry == Entry.ITEM_ALREADY_OWNED
+        val inFlightProduct = if (mgr.hasLiveContinuation()) mgr.pendingProductId else null
+        if (!purchasePath && inFlightProduct != null) {
+            unfiltered.values.filter { it.purchase.products.contains(inFlightProduct) }.forEach { result.skippedTokens += it.token }
+        }
+
+        // -- precedence (2): retry a pending finalize, against the UNFILTERED list --------------------
+        retryPendingFinalizes(client, unfiltered, result, filter, ::inScope)
+
+        // -- the identity-filtered list (+ reported since identity + the listener's own purchase) -----
+        val identityToken = mgr.currentUserToken()
+        val kept = mgr.filterOwnedPurchases(unfiltered.values.map { it.purchase }, identityToken, "PurchaseCompletion.$entry")
+            .map { it.purchaseToken }.toMutableSet()
+        kept += reportedSinceIdentity.filter { unfiltered.containsKey(it) }
+        listener?.let { kept += it.token }
+        for (op in unfiltered.values) {
+            if (op.token !in kept) continue
+            if (op.productType == "subs" && op.purchase.purchaseState == Purchase.PurchaseState.PURCHASED) result.subsForSnapshot += op
+            if (!inScope(op)) continue
+            result.owned += op
+        }
+
+        // -- per purchase ---------------------------------------------------------------------------
+        for (op in result.owned.toList()) {
+            if (op.token in result.skippedTokens) continue
+            if (op.purchase.purchaseState != Purchase.PurchaseState.PURCHASED) continue
+            val reported = ledger.reported().firstOrNull { it.token == op.token }
+            val isListener = listener?.token == op.token
+            if (reported != null) {
+                // (5), or (2) already retried above. Safety net: the purchase path finding its own
+                // token already reported resolves Purchased from the cache — it never hangs, never re-emits.
+                if (isListener && isLiveFor(entry, op)) resolveFromCache(op)
+                continue
+            }
+            val attempted = op.token in ledger.verifyAttempted()
+            if (op.purchase.isAcknowledged && !attempted && !isListener) {
+                applyPrecedence3(client, op, result)
+                continue
+            }
+            applyPrecedence4(client, op, entry, isListener, result)
+        }
+
+        if (entry == Entry.ITEM_ALREADY_OWNED) result.itemOutcome = itemOutcome(client, result, filter)
+
+        // -- restore / refresh (and a pending refresh re-run at ON_START), still inside the lock -------
+        val refresh = entry == Entry.RESTORE || entry == Entry.IDENTIFY_REFRESH ||
+            (entry == Entry.ON_START && refreshRerunPending)
+        if (refresh) restoreAndMerge(result, unfiltered, anonymousToFirstUser)
+        return result
+    }
+
+    // ---------------------------------------------------------------------------------------------
+    // precedences
+    // ---------------------------------------------------------------------------------------------
+
+    private suspend fun retryPendingFinalizes(
+        client: BillingClient,
+        unfiltered: Map<String, OwnedPurchase>,
+        result: CompletionResult,
+        filter: String?,
+        inScope: (OwnedPurchase) -> Boolean,
+    ) {
+        if (!mgr.ownsTransactions) return
+        for (r in ledger.reported()) {
+            val pending = r.pendingFinalize ?: continue
+            val op = unfiltered[r.token]
+            if (op == null) {
+                // Nothing left to finalize — cleared ONLY when both queries answered OK and the run is
+                // unfiltered (a failed query keeps the pending finalize, R61). The token stays reported.
+                if (result.queryOk && filter == null) setPending(r.token, null)
+                continue
+            }
+            if (!inScope(op)) continue
+            val done = when (pending) {
+                Finalize.Consume -> consumeAsyncAwait(client, r.token)
+                Finalize.Acknowledge -> acknowledgeAwait(client, r.token)
+            }
+            if (done) {
+                if (pending == Finalize.Consume) {
+                    result.consumed += r.token
+                    val cache = ledger.classCache().apply { remove(r.token) }
+                    ledger.write(reported = ledger.reported().map { if (it.token == r.token) it.copy(pendingFinalize = null) else it }, classCache = cache)
+                } else {
+                    setPending(r.token, null)
+                }
+            }
+        }
+    }
+
+    /** (3): acknowledged, unreported, never verify-attempted. INAPP only is classified. */
+    private suspend fun applyPrecedence3(client: BillingClient, op: OwnedPurchase, result: CompletionResult) {
+        if (!mgr.ownsTransactions) return
+        val cls = classify(op) ?: return
+        val plan = PurchaseCompletionPlan.decide(
+            productType = op.productType, serverConsume = cls == PurchaseLedger.CLASS_CONSUMABLE,
+            ownsTransactions = true, alreadyReported = false, isAcknowledged = true,
+            pendingFinalize = null, verifyAttempted = false,
+        )
+        if (plan.finalize == Finalize.Consume && consumeAsyncAwait(client, op.token)) {
+            result.consumed += op.token
+            ledger.write(classCache = ledger.classCache().apply { remove(op.token) })
+        }
+    }
+
+    /**
+     * The purchase's class (`consumable` / `non_consumable` / `unknown`), in order: a pending consume in
+     * the reported set, the persisted class cache, an inline SILENT verify (no emit, no entitlement
+     * change; never recorded as verify-attempted). A retryable verify failure returns null and writes
+     * nothing (the next ON_START tries again); a terminal one caches `unknown`. SUBS are never classified.
+     */
+    private suspend fun classify(op: OwnedPurchase): String? {
+        if (!mgr.ownsTransactions) return null
+        if (op.productType != "inapp") return null
+        ledger.reported().firstOrNull { it.token == op.token }?.let { if (it.pendingFinalize == Finalize.Consume) return PurchaseLedger.CLASS_CONSUMABLE }
+        ledger.classCache()[op.token]?.let { return it }
+        val outcome = try {
+            withTimeoutOrNull(WAIT_MS) {
+                mgr.receiptVerifier.verify(op.token, op.productId, op.productType, "android", null, null)
+            }
+        } catch (e: VerificationException) {
+            if (classifyVerifyStatus(e.httpStatus) == VerifyOutcomeClass.Terminal) {
+                ledger.write(classCache = ledger.classCache().apply { put(op.token, PurchaseLedger.CLASS_UNKNOWN) })
+                return PurchaseLedger.CLASS_UNKNOWN
+            }
+            return null
+        } catch (e: Exception) {
+            Log.warning("PurchaseCompletion: classification verify failed for ${op.productId}: ${e.message}")
+            return null
+        } ?: return null // a timeout is retryable
+        classificationEntitlements[op.token] = outcome
+        val cls = if (outcome.consume) PurchaseLedger.CLASS_CONSUMABLE else PurchaseLedger.CLASS_NON_CONSUMABLE
+        ledger.write(classCache = ledger.classCache().apply { put(op.token, cls) })
+        return cls
+    }
+
+    /** Does [op] have a live `purchase()` caller in this entry? (the purchase path, for `pendingProductId`) */
+    private fun isLiveFor(entry: Entry, op: OwnedPurchase): Boolean =
+        (entry == Entry.PURCHASE || entry == Entry.ITEM_ALREADY_OWNED) &&
+            mgr.pendingProductId != null && op.purchase.products.contains(mgr.pendingProductId) &&
+            mgr.hasLiveContinuation()
+
+    /** (4), exactly once, in order: price → verify → decide the live caller + persist → emit → delegates → finalize. */
+    private suspend fun applyPrecedence4(
+        client: BillingClient,
+        op: OwnedPurchase,
+        entry: Entry,
+        isListener: Boolean,
+        result: CompletionResult,
+    ) {
+        if (!mgr.ownsTransactions) return
+        val productId = op.productId
+        val live = isLiveFor(entry, op)
+
+        // 1. price — PriceResolver is memory-only, so a cache miss queries the product first (R21-S3).
+        if (mgr.priceResolver.cachedPriceInfo(productId) == null) {
+            try {
+                withTimeoutOrNull(WAIT_MS) { mgr.queryProductDetails(client, productId, op.productType) }
+                    ?.let { mgr.priceResolver.cacheFromPurchase(it.productDetails) }
+            } catch (e: Exception) {
+                Log.debug("PurchaseCompletion: price lookup for $productId failed: ${e.message}")
+            }
+        }
+
+        // 2. verify (C2), bounded so the lock is never held beyond 30 s per token (R79).
+        val unacknowledged = !op.purchase.isAcknowledged
+        if (unacknowledged && op.token !in ledger.verifyAttempted()) {
+            ledger.write(verifyAttempted = ledger.verifyAttempted() + op.token)
+        }
+        val verified: VerifiedPurchase = try {
+            withTimeoutOrNull(WAIT_MS) {
+                mgr.receiptVerifier.verify(
+                    purchaseToken = op.token,
+                    productId = productId,
+                    productType = op.productType,
+                    platform = "android",
+                    paywallId = if (live) mgr.currentPaywallId else null,
+                    experimentId = if (live) mgr.currentExperimentId else null,
+                )
+            } ?: throw BillingError.NetworkError(java.io.IOException("verification timed out after 30 s"))
+        } catch (e: Exception) {
+            result.notCompleted += op.token
+            Log.warning("PurchaseCompletion: verify failed for $productId (${e.message}) — left for the next rescue")
+            if (isListener) mgr.reportVerificationFailure(productId, e, live)
+            return
+        }
+        val plan = PurchaseCompletionPlan.decide(
+            productType = op.productType, serverConsume = verified.consume, ownsTransactions = true,
+            alreadyReported = false, isAcknowledged = op.purchase.isAcknowledged, pendingFinalize = null,
+            verifyAttempted = true,
+        )
+        val productType = verified.productType ?: op.productType
+        val orderId = op.purchase.orderId?.takeIf { it.isNotBlank() }
+        val txId = orderId ?: op.token
+
+        // 3. decide the live caller, THEN persist — one write (Q1): reported + pending finalize, the
+        //    verify-attempted removal, the class cache, and (no live caller) the queue entry.
+        val continuation = if (live) mgr.takeContinuation() else null
+        val paywallId = if (continuation != null) mgr.currentPaywallId else null
+        val experimentId = if (continuation != null) mgr.currentExperimentId else null
+        val metadata = if (continuation != null) mgr.currentPaywallMetadata else emptyMap()
+        val delivery = PendingDelivery(
+            purchaseToken = op.token,
+            transactionId = txId,
+            productId = productId,
+            purchaseTime = op.purchase.purchaseTime,
+            quantity = op.purchase.quantity,
+            ownerToken = ownerTokenFor(op, entry, continuation != null),
+            queuedAt = clock(),
+        )
+        val classCache = ledger.classCache()
+        if (op.productType == "inapp") {
+            classCache[op.token] = if (verified.consume) PurchaseLedger.CLASS_CONSUMABLE else PurchaseLedger.CLASS_NON_CONSUMABLE
+        }
+        ledger.write(
+            reported = ledger.reported().filter { it.token != op.token } + ReportedToken(op.token, plan.finalize),
+            verifyAttempted = ledger.verifyAttempted() - op.token,
+            classCache = classCache,
+            deliveries = if (continuation == null) ledger.deliveries().filter { it.purchaseToken != op.token } + delivery else null,
+        )
+        reportedSinceIdentity += op.token
+        if (plan.updateEntitlements) mgr.entitlementCache.update(verified.entitlement, productType)
+
+        // 4. emit.
+        mgr.trackPurchaseCompleted(
+            productId = productId,
+            isTrial = verified.entitlement.isTrial,
+            transactionId = orderId,
+            isSubscription = op.productType == "subs",
+            isConsumable = verified.consume,
+            originalTransactionId = verified.originalTransactionId ?: orderId?.let { stripRenewalSuffix(it) },
+            quantity = op.purchase.quantity,
+            paywallId = paywallId,
+            experimentId = experimentId,
+            paywallMetadata = metadata,
+        )
+        result.reportedTokens += op.token
+        result.reportedProducts += productId
+        if (continuation == null) result.queued++
+
+        // 5. the live caller (Q6) — resumed with Purchased; exactly one delivery between the inline call
+        //    and the cancellation handler's enqueue.
+        if (continuation != null) {
+            val txInfo = TransactionInfo(transactionId = txId, productId = productId, purchaseDate = op.purchase.purchaseTime.toString())
+            val decided = AtomicInteger(0) // 1 = inline call, 2 = enqueued by the cancellation handler
+            continuation.resume(PurchaseResult.Purchased(verified.entitlement, txId)) { _ ->
+                if (decided.compareAndSet(0, 2)) {
+                    mgr.scope.launch {
+                        purchaseCompletionMutex.withLock {
+                            ledger.write(deliveries = ledger.deliveries().filter { it.purchaseToken != op.token } + delivery)
+                        }
+                        drainDeliveries()
+                    }
+                }
+            }
+            mgr.clearPurchaseScope()
+            if (decided.compareAndSet(0, 1)) mgr.postPurchaseDelegates(productId, txInfo, paywallId)
+        }
+
+        // 6. finalize — a consumable is consumed immediately (LD-R23-3), anything else acknowledged.
+        when (plan.finalize) {
+            Finalize.Consume -> if (consumeAsyncAwait(client, op.token)) {
+                result.consumed += op.token
+                ledger.write(
+                    reported = ledger.reported().map { if (it.token == op.token) it.copy(pendingFinalize = null) else it },
+                    classCache = ledger.classCache().apply { remove(op.token) },
+                )
+            }
+            Finalize.Acknowledge -> if (acknowledgeAwait(client, op.token)) setPending(op.token, null)
+            null -> Unit
+        }
+    }
+
+    /** The purchase path found its token already reported: resolve from the cache, never re-emit. */
+    private fun resolveFromCache(op: OwnedPurchase) {
+        val cont = mgr.takeContinuation() ?: return
+        val ent = mgr.entitlementCache.getEntitlement(op.productId) ?: localEntitlement(op.productId)
+        cont.resume(PurchaseResult.Purchased(ent, op.purchase.orderId?.takeIf { it.isNotBlank() } ?: op.token)) { _ -> }
+        mgr.clearPurchaseScope()
+    }
+
+    // ---------------------------------------------------------------------------------------------
+    // ITEM_ALREADY_OWNED
+    // ---------------------------------------------------------------------------------------------
+
+    private suspend fun itemOutcome(client: BillingClient, result: CompletionResult, filter: String?): ItemOutcome {
+        if (!mgr.ownsTransactions) return ItemOutcome.NoMatch
+        val matching = result.owned.filter { filter == null || it.purchase.products.contains(filter) }
+        if (matching.isEmpty()) return ItemOutcome.NoMatch
+        if (matching.any { it.token in result.reportedTokens } && !mgr.hasLiveContinuation()) return ItemOutcome.ReportedLive
+        if (matching.any { it.token in result.consumed }) return ItemOutcome.Consumed
+        val purchased = matching.firstOrNull { it.purchase.purchaseState == Purchase.PurchaseState.PURCHASED }
+        if (purchased != null) {
+            if (purchased.token in result.notCompleted) return ItemOutcome.Owned(purchased.purchase, localEntitlement(purchased.productId))
+            // Non-consumable / subscription already reported or acknowledged: the entitlement comes from
+            // the cache or a single-token verify — never a restore, so no per-product purchase_restored.
+            val ent = mgr.entitlementCache.getEntitlement(purchased.productId)
+                ?: classificationEntitlements[purchased.token]?.entitlement
+                ?: try {
+                    withTimeoutOrNull(WAIT_MS) {
+                        mgr.receiptVerifier.verify(purchased.token, purchased.productId, purchased.productType, "android", null, null)
+                    }?.entitlement
+                } catch (e: Exception) {
+                    null
+                }
+                ?: localEntitlement(purchased.productId) // R79: no cache entry and a failed verify
+            return ItemOutcome.Owned(purchased.purchase, ent)
+        }
+        return ItemOutcome.Pending
+    }
+
+    /**
+     * SPEC-497 §13a.2 `ITEM_ALREADY_OWNED` — from the listener or the synchronous `launchBillingFlow`
+     * result, with `pendingProductId` still set. Never calls `restorePurchases()` and never takes the
+     * lock itself: it calls [run] (`filter = pendingProductId`, never `firstOrNull()`), then acts on the
+     * outcome after [run] has returned (the relaunch included).
+     */
+    suspend fun handleItemAlreadyOwned() {
+        if (!mgr.ownsTransactions) {
+            mgr.resumePurchase(PurchaseResult.Failed("item_already_owned", "unknown"))
+            return
+        }
+        val productId = mgr.pendingProductId ?: run {
+            mgr.resumePurchase(PurchaseResult.Unknown)
+            return
+        }
+        val result = run(Entry.ITEM_ALREADY_OWNED, filter = productId)
+        when (val outcome = result.itemOutcome ?: ItemOutcome.NoMatch) {
+            ItemOutcome.ReportedLive -> Unit // precedence (4) resolved the pending purchase() with it
+            ItemOutcome.Pending -> {
+                mgr.trackPurchasePending(productId, live = true)
+                mgr.resumePurchase(PurchaseResult.Pending)
+            }
+            ItemOutcome.Consumed -> {
+                // The old unit was consumed silently; buy again ONCE if the Activity is still alive.
+                if (!mgr.relaunchUsed && mgr.relaunchBillingFlow()) Unit
+                else {
+                    mgr.trackPurchaseFailed(reason = "item_already_owned", debugMessage = "item_already_owned", productId = productId, errorType = "unknown")
+                    mgr.resumePurchase(PurchaseResult.Failed("item_already_owned", "unknown"))
+                }
+            }
+            is ItemOutcome.Owned -> {
+                // A re-tap of an owned non-consumable / subscription: ONE purchase_restored with no price
+                // or currency (books no revenue), no purchase_completed, no onPurchaseCompleted.
+                val orderId = outcome.purchase.orderId?.takeIf { it.isNotBlank() }
+                AppDNA.trackBillingEvent("purchase_restored", buildMap {
+                    put("product_id", productId)
+                    orderId?.let { put("transaction_id", it) }
+                    put("reason", "item_already_owned")
+                })
+                mgr.resumePurchase(PurchaseResult.Purchased(outcome.entitlement, orderId ?: outcome.purchase.purchaseToken))
+            }
+            ItemOutcome.NoMatch -> {
+                mgr.trackPurchaseFailed(reason = "item_already_owned_no_entitlement", debugMessage = null, productId = productId)
+                mgr.resumePurchase(PurchaseResult.Unknown)
+            }
+        }
+        mgr.triggerDrain()
+    }
+
+    // ---------------------------------------------------------------------------------------------
+    // restore / refresh
+    // ---------------------------------------------------------------------------------------------
+
+    private suspend fun restoreAndMerge(
+        result: CompletionResult,
+        unfiltered: Map<String, OwnedPurchase>,
+        anonymousToFirstUser: Boolean,
+    ) {
+        if (!mgr.ownsTransactions) return
+        if (!result.queryOk) return // a failed query leaves the cache unchanged
+        if (result.entry == Entry.ON_START || result.entry == Entry.IDENTIFY_REFRESH) refreshRerunPending = false
+        if (result.ownedEmpty) refreshRerunPending = true
+
+        val excludedOrSkipped = result.notCompleted + result.skippedTokens
+        val send = result.owned.filter {
+            it.purchase.purchaseState == Purchase.PurchaseState.PURCHASED &&
+                it.token !in result.consumed && it.token !in excludedOrSkipped
+        }
+        val userBefore = mgr.currentUserId()
+        val reply = if (send.isEmpty()) emptyList() else try {
+            mgr.receiptVerifier.restore(send.map { RestoreTransaction(it.token, it.productId, it.productType) })
+        } catch (e: Exception) {
+            result.restoreError = e
+            return
+        }
+        if (mgr.currentUserId() != userBefore) {
+            // R35: a reply that started under another identity is dropped.
+            result.restoreError = BillingError.ServerError("identity changed")
+            return
+        }
+        val kept = reply.filter { !it.consume } // a consumable is finalized by (3)/(4), never granted
+        result.restored = kept
+        val protected = unfiltered.values.filter { it.token in excludedOrSkipped }.flatMap { it.purchase.products }.toSet()
+        if (anonymousToFirstUser) dropOtherTaggedEntries(unfiltered)
+        mgr.entitlementCache.mergeRestoreReply(
+            reply = kept.map { it.entitlement to it.productType },
+            protectedProducts = protected,
+            okSubsProducts = result.okSubsProducts,
+        )
+    }
+
+    /** R36 SDK minor 2: on the anonymous → first user transition, drop entries tagged for someone else. */
+    private fun dropOtherTaggedEntries(unfiltered: Map<String, OwnedPurchase>) {
+        val current = mgr.currentUserToken()?.toString()?.lowercase() ?: return
+        val foreign = unfiltered.values.filter { op ->
+            val tag = op.purchase.accountIdentifiers?.obfuscatedAccountId?.lowercase()
+            tag != null && tag != current
+        }.flatMap { it.purchase.products }.toSet()
+        for (p in foreign) {
+            val e = mgr.entitlementCache.getEntitlement(p) ?: continue
+            if (e.store == "google_play") mgr.entitlementCache.remove(p)
+        }
+    }
+
+    // ---------------------------------------------------------------------------------------------
+    // the delivery queue (D-R40-1)
+    // ---------------------------------------------------------------------------------------------
+
+    /**
+     * Queue rule 4 — the owner of a report. A `PURCHASE`-entry report carries the derived token of the
+     * user current at report time, except a no-live-caller report whose `obfuscatedAccountId` is one of
+     * the identified-users tokens (it keeps that owner). A rescue carries its `obfuscatedAccountId` only
+     * when it is the derived token of a user identified on this device; otherwise it is untagged.
+     */
+    private fun ownerTokenFor(op: OwnedPurchase, entry: Entry, live: Boolean): String? {
+        val current = mgr.currentUserToken()?.toString()?.lowercase()
+        val tag = op.purchase.accountIdentifiers?.obfuscatedAccountId?.lowercase()
+        val identified = identifiedTokens()
+        return if (entry == Entry.PURCHASE) {
+            if (!live && tag != null && tag in identified) tag else current
+        } else {
+            if (tag != null && tag in identified) tag else null
+        }
+    }
+
+    /** The identified-users tokens: the persisted set plus the current and first-identified users. */
+    private fun identifiedTokens(): Set<String> {
+        val out = LinkedHashSet<String>()
+        ledger.identifiedTokens()?.let { out += it.map { t -> t.lowercase() } }
+        mgr.currentUserToken()?.let { out += it.toString().lowercase() }
+        AppAccountTokenResolver.firstIdentifiedToken()?.let { out += it.toString().lowercase() }
+        return out
+    }
+
+    /**
+     * Record an identified user's derived token (bounded 50). The first call seeds the set with the
+     * current and the first-identified users' tokens (the upgrade seed, R62).
+     */
+    suspend fun noteIdentified(userId: String, previousUserId: String?) {
+        purchaseCompletionMutex.withLock {
+            val token = AppAccountTokenResolver.token(userId)?.toString()?.lowercase() ?: return@withLock
+            val existing = ledger.identifiedTokens()
+            val seeded = existing ?: listOfNotNull(
+                AppAccountTokenResolver.firstIdentifiedToken()?.toString()?.lowercase(),
+            )
+            ledger.write(identifiedTokens = (seeded - token) + token)
+            if (previousUserId != userId) reportedSinceIdentity.clear()
+        }
+    }
+
+    /** `reset()` / an identity change: the in-memory reported-since-identity list is dropped. */
+    fun noteIdentityCleared() {
+        reportedSinceIdentity.clear()
+    }
+
+    private fun deliverable(d: PendingDelivery): Boolean {
+        val current = mgr.currentUserToken()?.toString()?.lowercase()
+        val owner = d.ownerToken?.lowercase()
+        if (owner != null) return current != null && current == owner
+        // Untagged: an anonymous user, or the device's first-identified user.
+        return current == null || current == AppAccountTokenResolver.firstIdentifiedToken()?.toString()?.lowercase()
+    }
+
+    /**
+     * The drain (Q3): one pass over a snapshot of the queued ids, entry by entry — (a) lock, skip
+     * in-flight entries, mark the next deliverable one in-flight, unlock; (b) re-read the delegate and
+     * call it synchronously on Main; (c) lock again: on success (or a late return) remove the entry; only
+     * on a THROW unmark it (it stays queued, and is not revisited in this pass). Total budget 60 s.
+     * A no-op until `configure` has loaded the identity and the queue.
+     */
+    suspend fun drainDeliveries() {
+        if (!drainReady || !mgr.ownsTransactions) return
+        val started = clock()
+        val snapshot = purchaseCompletionMutex.withLock {
+            val all = ledger.deliveries()
+            val fresh = ledger.purgeExpired(all)
+            if (fresh.size != all.size) ledger.write(deliveries = fresh)
+            fresh.map { it.purchaseToken }
+        }
+        for (token in snapshot) {
+            if (clock() - started > DRAIN_BUDGET_MS) break
+            val entry = purchaseCompletionMutex.withLock {
+                val d = ledger.deliveries().firstOrNull { it.purchaseToken == token }
+                if (d == null || token in inFlight || !deliverable(d)) null else { inFlight += token; d }
+            } ?: continue
+            val delegate = AppDNA.billing.deliveringDelegate()
+            if (delegate == null) {
+                purchaseCompletionMutex.withLock { inFlight -= token }
+                return // no delivering delegate: everything stays queued for the next trigger
+            }
+            val threw = withContext(Dispatchers.Main) {
+                try {
+                    delegate.onPurchaseCompleted(
+                        entry.productId,
+                        TransactionInfo(transactionId = entry.transactionId, productId = entry.productId, purchaseDate = entry.purchaseTime.toString()),
+                    )
+                    false
+                } catch (t: Throwable) {
+                    Log.warning("AppDNABillingDelegate.onPurchaseCompleted threw — the delivery stays queued: ${t.message}")
+                    true
+                }
+            }
+            purchaseCompletionMutex.withLock {
+                inFlight -= token
+                if (!threw) ledger.write(deliveries = ledger.deliveries().filter { it.purchaseToken != token })
+            }
+        }
+    }
+
+    // ---------------------------------------------------------------------------------------------
+    // Play plumbing — every wait bounded by 30 s (a timeout is a retryable failure)
+    // ---------------------------------------------------------------------------------------------
+
+    private suspend fun queryOwned(client: BillingClient, type: String): PurchasesResult? = try {
+        withTimeoutOrNull(WAIT_MS) {
+            client.queryPurchasesAsync(QueryPurchasesParams.newBuilder().setProductType(type).build())
+        }
+    } catch (e: Exception) {
+        Log.warning("PurchaseCompletion: queryPurchasesAsync($type) threw: ${e.message}")
+        null
+    }
+
+    /** `consumeAsync`; `ITEM_NOT_OWNED` counts as done (nothing left to consume). */
+    private suspend fun consumeAsyncAwait(client: BillingClient, token: String): Boolean {
+        if (!mgr.ownsTransactions) return false
+        val code = withTimeoutOrNull(WAIT_MS) {
+            suspendCancellableCoroutine<BillingResult> { c ->
+                client.consumeAsync(ConsumeParams.newBuilder().setPurchaseToken(token).build()) { br, _ ->
+                    if (c.isActive) c.resume(br)
+                }
+            }
+        }?.responseCode
+        val ok = code == BillingClient.BillingResponseCode.OK || code == BillingClient.BillingResponseCode.ITEM_NOT_OWNED
+        if (!ok) Log.warning("PurchaseCompletion: consume failed ($code) — retried at the next run")
+        return ok
+    }
+
+    private suspend fun acknowledgeAwait(client: BillingClient, token: String): Boolean {
+        if (!mgr.ownsTransactions) return false
+        val code = withTimeoutOrNull(WAIT_MS) {
+            suspendCancellableCoroutine<BillingResult> { c ->
+                client.acknowledgePurchase(AcknowledgePurchaseParams.newBuilder().setPurchaseToken(token).build()) { br ->
+                    if (c.isActive) c.resume(br)
+                }
+            }
+        }?.responseCode
+        val ok = code == BillingClient.BillingResponseCode.OK
+        if (!ok) Log.warning("PurchaseCompletion: acknowledge failed ($code) — retried at the next run")
+        return ok
+    }
+
+    private fun setPending(token: String, pending: Finalize?) {
+        ledger.write(reported = ledger.reported().map { if (it.token == token) it.copy(pendingFinalize = pending) else it })
+    }
+
+    private fun guessType(p: Purchase): String {
+        val pid = p.products.firstOrNull() ?: return "inapp"
+        return mgr.entitlementCache.productTypeOf(pid)
+            ?: if (mgr.priceResolver.isKnownSubscriptionProduct(pid)) "subs" else "inapp"
+    }
+
+    companion object {
+        const val WAIT_MS = 30_000L
+        const val DRAIN_BUDGET_MS = 60_000L
+
+        /** Play's `NETWORK_ERROR` (12) / `SERVICE_UNAVAILABLE` (2) → `NetworkError`; anything else → `ServerError`. */
+        fun queryErrorFor(br: BillingResult?): BillingError = when (br?.responseCode) {
+            BillingClient.BillingResponseCode.NETWORK_ERROR,
+            BillingClient.BillingResponseCode.SERVICE_UNAVAILABLE ->
+                BillingError.NetworkError(java.io.IOException("purchase query failed (${br.responseCode})"))
+            else -> BillingError.ServerError("purchase query failed")
+        }
+
+        /** `GPA.1234-5678-9012-34567..2` → `GPA.1234-5678-9012-34567` (the base order id). */
+        fun stripRenewalSuffix(orderId: String): String = orderId.replace(Regex("\\.\\.\\d+$"), "")
+
+        /** An entitlement built from the Play purchase alone (no expiry; Play's client API has none). */
+        fun localEntitlement(productId: String): Entitlement = Entitlement(
+            productId = productId, store = "google_play", status = "active",
+            expiresAt = null, isTrial = false, offerType = null,
+        )
+    }
+}

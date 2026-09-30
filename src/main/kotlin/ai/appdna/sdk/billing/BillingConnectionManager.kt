@@ -55,8 +55,7 @@ internal class BillingConnectionManager(
     // hasn't fired yet:
     //   1. initialize()                          — first connect
     //   2. scheduleRetry().launch.delay → start  — backoff retry
-    //   3. withConnectedClient() if !retryScheduled
-    //   4. awaitConnectedClient() if !retryScheduled
+        //   4. awaitConnectedClient() if !retryScheduled
     // Play Billing rejects re-entry with the exact log spam the user
     // reported: "Client is already in the process of connecting to billing
     // service." The `retryScheduled` flag previously only guarded path 2.
@@ -71,7 +70,7 @@ internal class BillingConnectionManager(
         private set
 
     /** Callbacks waiting for connection readiness. */
-    private val pendingCallbacks = mutableListOf<(BillingClient) -> Unit>()
+    private val pendingCallbacks = mutableListOf<(BillingClient?) -> Unit>()
 
     /**
      * Initialize the BillingClient and start the connection.
@@ -155,6 +154,9 @@ internal class BillingConnectionManager(
                 "Billing reconnection gave up after $retryAttempt attempts. " +
                     "Surfacing onBillingUnavailable; will retry on next billing operation."
             )
+            // SPEC-497 R38 SDK minor 2: release the parked waiters with null BEFORE surfacing, so a
+            // restore / purchase waiting on the connection fails now instead of hanging.
+            resumeWaitersWithNull()
             surfaceBillingUnavailable()
             return
         }
@@ -213,33 +215,6 @@ internal class BillingConnectionManager(
     }
 
     /**
-     * Execute an operation when the billing client is connected.
-     * If already connected, executes immediately. Otherwise, queues until connected.
-     *
-     * @param operation The operation to execute with the connected BillingClient.
-     */
-    fun withConnectedClient(operation: (BillingClient) -> Unit) {
-        val client = billingClient
-        if (client != null && isConnected) {
-            operation(client)
-        } else {
-            synchronized(pendingCallbacks) {
-                pendingCallbacks.add(operation)
-            }
-            // A user-initiated billing call is a fresh signal that we should
-            // try again — reset the auto-retry counter so a previous "gave up"
-            // state doesn't strand the new request. Also reset
-            // `unavailableSurfaced` so a future re-failure can re-fire the
-            // delegate.
-            if (billingClient != null && !isConnected) {
-                retryAttempt = 0
-                unavailableSurfaced = false
-                if (!retryScheduled) startConnection()
-            }
-        }
-    }
-
-    /**
      * Execute a suspend operation when the billing client is connected.
      * Suspends the caller until the client is ready.
      *
@@ -265,6 +240,16 @@ internal class BillingConnectionManager(
         }
     }
 
+    /** Resume every parked [awaitConnectedClient] with null (give-up branch and [destroy]). */
+    private fun resumeWaitersWithNull() {
+        val waiters = synchronized(pendingCallbacks) {
+            val copy = ArrayList(pendingCallbacks)
+            pendingCallbacks.clear()
+            copy
+        }
+        waiters.forEach { runCatching { it(null) } }
+    }
+
     /**
      * Get the raw BillingClient instance (may not be connected).
      */
@@ -275,9 +260,7 @@ internal class BillingConnectionManager(
      */
     fun destroy() {
         scope.cancel()
-        synchronized(pendingCallbacks) {
-            pendingCallbacks.clear()
-        }
+        resumeWaitersWithNull()
         billingClient?.endConnection()
         billingClient = null
         isConnected = false

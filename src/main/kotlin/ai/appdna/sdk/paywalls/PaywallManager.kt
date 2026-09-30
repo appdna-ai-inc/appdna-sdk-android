@@ -71,12 +71,15 @@ internal fun restoreOutcome(
     paywallId: String,
     productIds: List<String>,
     hostRequestedSkip: Boolean,
+    // SPEC-497 R21 SDK minor 8: the products this same restore just REPORTED (purchase_completed) are
+    // not counted as restored.
+    justReported: Set<String> = emptySet(),
 ): RestoreOutcome = RestoreOutcome(
     events = listOf(
-        "purchase_restored" to mapOf(
+        "purchase_restored" to ai.appdna.sdk.billing.BillingEventProps.marked(mapOf(
             "paywall_id" to paywallId,
-            "restored_count" to productIds.size,
-        ),
+            "restored_count" to productIds.count { it !in justReported },
+        )),
     ),
     restoredProductIds = productIds,
     shouldDismiss = productIds.isNotEmpty() && !hostRequestedSkip,
@@ -301,6 +304,38 @@ internal class PaywallManager(
         metadata: Map<String, Any>,
         listener: AppDNAPaywallDelegate?,
     ) {
+        // SPEC-497 §3.2 rule 5 — evaluated BEFORE anything else: with no billing manager, or a policy
+        // under which the SDK cannot purchase (RevenueCat, Adapty, none), the tap fails loudly — one
+        // purchase_failed, onPaywallPurchaseFailed(providerNotAvailable), the failure routing — and NO
+        // purchase_started / onPaywallPurchaseStarted (the purchase never started).
+        val mgrForPolicy = AppDNA.billing.manager
+        if (mgrForPolicy == null || !AppDNA.billing.ownershipPolicy.sdkCanPurchase) {
+            val provider = mgrForPolicy?.providerName
+            val message = if (provider == null || provider == "none") "No billing provider configured"
+            else "$provider: purchases are made by $provider in your app"
+            val error = ai.appdna.sdk.billing.BillingError.ProviderNotAvailable(message)
+            eventTracker.track(
+                "purchase_failed",
+                ai.appdna.sdk.billing.BillingEventProps.marked(mapOf(
+                    "paywall_id" to paywallId,
+                    "product_id" to plan.product_id,
+                    "error" to message,
+                    "error_type" to "providerNotAvailable",
+                )),
+            )
+            listener?.onPaywallPurchaseFailed(
+                paywallId = paywallId,
+                error = error,
+                errorType = "providerNotAvailable",
+                productId = plan.product_id,
+            )
+            handlePostPurchaseFailure(
+                config = config.post_purchase?.on_failure,
+                paywallId = paywallId,
+                listener = listener,
+            )
+            return
+        }
         listener?.onPaywallPurchaseStarted(paywallId = paywallId, productId = plan.product_id)
         // 🔴 The ids must travel WITH the metadata. When the purchase emits moved down to the billing
         // manager (so they stopped firing twice), `currentPaywallId` / `currentExperimentId` were left
@@ -311,7 +346,9 @@ internal class PaywallManager(
         //
         // It was green only because the TEST assigned the field itself. A test driving a path
         // production cannot reach is not a test.
-        AppDNA.billing.manager?.let { mgr ->
+        // SPEC-497 R22/R23: never overwrite the attribution of a purchase already in flight (the second
+        // purchase() then fails with purchase_in_progress).
+        AppDNA.billing.manager?.takeIf { !it.purchaseInFlight }?.let { mgr ->
             mgr.currentPaywallMetadata = metadata
             mgr.currentPaywallId = paywallId
         }
@@ -512,11 +549,14 @@ internal class PaywallManager(
                 // `BillingModule.restorePurchases()` is fire-and-forget
                 // (Unit); for the delegate completion we want the typed
                 // `List<Entitlement>` so we can pass productIds.
+                // SPEC-497 R37 SDK major 2: no billing → providerNotAvailable (was IllegalStateException).
                 val nativeMgr = AppDNA.billing.manager
-                    ?: throw IllegalStateException("Billing bridge not configured")
-                val entitlements = nativeMgr.restorePurchases()
-                val productIds = entitlements.map { it.productId }
-                val outcome = restoreOutcome(paywallId, productIds, hostRequestedSkip = false)
+                    ?: throw ai.appdna.sdk.billing.BillingError.ProviderNotAvailable("No billing provider configured")
+                // trackFailure = false: this path emits its own purchase_restore_failed (with paywall_id),
+                // so a failure is tracked exactly once (R36).
+                val detail = nativeMgr.restoreDetailed(trackFailure = false)
+                val productIds = detail.entitlements.map { it.productId }
+                val outcome = restoreOutcome(paywallId, productIds, hostRequestedSkip = false, justReported = detail.reportedProducts)
                 outcome.events.forEach { (name, props) -> eventTracker.track(name, props) }
                 listener?.onPaywallRestoreCompleted(
                     paywallId = paywallId,
@@ -548,10 +588,11 @@ internal class PaywallManager(
             } catch (e: Exception) {
                 eventTracker.track(
                     "purchase_restore_failed",
-                    mapOf(
+                    ai.appdna.sdk.billing.BillingEventProps.marked(mapOf(
                         "paywall_id" to paywallId,
                         "error" to (e.message ?: "unknown"),
-                    ),
+                        "error_type" to ai.appdna.sdk.billing.billingErrorType(e),
+                    )),
                 )
                 listener?.onPaywallRestoreFailed(paywallId = paywallId, error = e)
                 // SPEC-401 R3 audit — symmetric clear on failure too so

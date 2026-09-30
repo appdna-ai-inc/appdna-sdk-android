@@ -214,12 +214,12 @@ internal class RevenueCatBridge {
         val isSub = isSubscription
             ?: AppDNA.billing.manager?.isKnownSubscriptionProduct(productId)
             ?: false
-        AppDNA.track("purchase_completed", props)
+        AppDNA.trackBillingEvent("purchase_completed", props)
         // Same envelope, purchase-time, once. NOT emitted from the UpdatedCustomerInfoListener above:
         // that fires on renewals, restores and cross-device syncs too, so `subscription_started` there
         // would fire once per RENEWAL — an over-count on a metered event.
         if (isSub) {
-            AppDNA.track("subscription_started", props)
+            AppDNA.trackBillingEvent("subscription_started", props)
         }
         delegate?.onPurchaseCompleted(productId, txInfo)
     }
@@ -234,7 +234,7 @@ internal class RevenueCatBridge {
         val props = AppDNA.billing.manager
             ?.purchaseEventProps(productId, "revenuecat")
             ?: mapOf("product_id" to productId, "provider" to "revenuecat")
-        AppDNA.track("purchase_started", props)
+        AppDNA.trackBillingEvent("purchase_started", props)
     }
 
     /**
@@ -246,7 +246,7 @@ internal class RevenueCatBridge {
         val props = AppDNA.billing.manager
             ?.purchaseEventProps(productId, "revenuecat")
             ?: mapOf("product_id" to productId, "provider" to "revenuecat")
-        AppDNA.track("purchase_canceled", props)
+        AppDNA.trackBillingEvent("purchase_canceled", props)
     }
 
     /** Forward a host-driven RevenueCat purchase failure. */
@@ -254,7 +254,7 @@ internal class RevenueCatBridge {
         val base = AppDNA.billing.manager
             ?.purchaseEventProps(productId, "revenuecat")
             ?: mapOf("product_id" to productId, "provider" to "revenuecat")
-        AppDNA.track("purchase_failed", base + mapOf(
+        AppDNA.trackBillingEvent("purchase_failed", base + mapOf(
             "error" to (error.message ?: "unknown"),
         ))
         delegate?.onPurchaseFailed(productId, error)

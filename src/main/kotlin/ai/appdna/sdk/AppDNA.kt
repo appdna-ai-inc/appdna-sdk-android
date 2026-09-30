@@ -216,12 +216,14 @@ object AppDNA {
         get() = _pushDelegate
         set(value) { _pushDelegate = value; push.setDelegate(value) }
 
-    private var _billingDelegate: AppDNABillingDelegate? = null
-    /** SPEC-070-A finalization B6#P0-25 — top-level proxy for `billing.setDelegate(...)`. */
+    /**
+     * SPEC-070-A finalization B6#P0-25 — top-level proxy for `billing.setDelegate(...)`. SPEC-497: reads
+     * the module's storage; the setter delivers queued purchases (`setDelegate(value, true)`).
+     */
     @JvmStatic
     var billingDelegate: AppDNABillingDelegate?
-        get() = _billingDelegate
-        set(value) { _billingDelegate = value; billing.setDelegate(value) }
+        get() = billing.billingListener
+        set(value) { billing.setDelegate(value, deliversPurchases = true) }
 
     private var _screenDelegate: ai.appdna.sdk.screens.AppDNAScreenDelegate? = null
     /** SPEC-070-A finalization B6#P0-25 — top-level proxy for `ScreenManager.shared.setDelegate(...)`. */
@@ -956,6 +958,17 @@ object AppDNA {
 
         identityManager?.identify(userId, traits)
 
+        // SPEC-497 §13b.2 "Clearing" (R34/R35): identify to a DIFFERENT non-null user runs
+        // stop → clear → start (anonymous → first user is exempt). The switch and the re-point happen
+        // under the SDK lock; the cache's clear() fans onEntitlementsChanged([]) out AFTER it.
+        val billingMgr = billing.manager
+        if (previousUserId != null && previousUserId != userId) {
+            synchronized(this@AppDNA) { billingMgr?.entitlementCache?.stopObserving() }
+            billingMgr?.entitlementCache?.clear()
+            appContext?.let { ai.appdna.sdk.billing.EntitlementCache.clearPersisted(it) }
+            billingMgr?.completion?.noteIdentityCleared()
+        }
+
         // SPEC-070-A G.3: emit local `identify` event so the existing client
         // pipeline (BigQuery alias resolution + experiment exposure ledger)
         // sees the user-id transition immediately.
@@ -994,6 +1007,12 @@ object AppDNA {
             webEntitlementManager?.startObserving(orgId, appId, userId)
             // SPEC-203: start journey-triggered pending-messages listener.
             pendingMessageListener?.startObserving(orgId, appId, userId)
+            // SPEC-497 R33: re-point the Firestore entitlement listener at the new user (owning only).
+            if (previousUserId != userId) {
+                synchronized(this@AppDNA) {
+                    billingMgr?.takeIf { it.ownsTransactions }?.entitlementCache?.startObserving(orgId, appId, userId)
+                }
+            }
         }
 
         // SPEC-401 Fix 1D — silently refresh the entitlement cache so the
@@ -1003,8 +1022,18 @@ object AppDNA {
         // the SDK's lifecycle-bound `scope` (cancelled on shutdown);
         // identify is not blocked on completion. Errors are swallowed
         // inside refreshEntitlementCache. Mirrors iOS AppDNA.identify.
+        //
+        // SPEC-497: the refresh runs PurchaseCompletion (it may report an unreported purchase), then
+        // D-R40-1 trigger (iii) — the drain after identify — delivers purchases queued for this user.
         scope.launch {
-            billing.refreshEntitlementCache()
+            val mgr = billing.manager
+            if (mgr == null) {
+                billing.refreshEntitlementCache()
+                return@launch
+            }
+            mgr.completion.noteIdentified(userId, previousUserId)
+            mgr.refreshEntitlementCache(anonymousToFirstUser = previousUserId == null)
+            mgr.triggerDrain()
         }
     }
 
@@ -1045,6 +1074,14 @@ object AppDNA {
         appContext?.let {
             ai.appdna.sdk.billing.NativeBillingManager.clearPersistedSnapshot(ai.appdna.sdk.storage.LocalStorage(it))
         }
+        // SPEC-497 §13b.2 "Clearing": stop → clear the entitlement cache (memory and disk). Queued
+        // purchase deliveries of other identities are kept, never delivered across (D-R40-1 rule 4).
+        billing.manager?.let { m ->
+            m.entitlementCache.stopObserving()
+            m.entitlementCache.clear()
+            m.completion.noteIdentityCleared()
+        }
+        appContext?.let { ai.appdna.sdk.billing.EntitlementCache.clearPersisted(it) }
 
         // 🔴 USER A'S ONBOARDING ANSWERS SURVIVED THE SIGN-OUT AND RENDERED INTO USER B'S PAYWALL.
         //
@@ -1118,6 +1155,33 @@ object AppDNA {
     }
 
     fun track(event: String, properties: Map<String, Any>? = null) {
+        trackImpl(event, properties, internalBilling = false)
+    }
+
+    /**
+     * SPEC-497 §11.9 — every INTERNAL billing emit (NativeBillingManager, the RevenueCat / Adapty
+     * bridges, BillingModule). Adds `emitted_by: "sdk"` so the analytics dedupe can tell an SDK device
+     * row from a host-tracked one; the public [track] strips that marker from host events.
+     */
+    internal fun trackBillingEvent(event: String, properties: Map<String, Any>? = null) {
+        trackImpl(event, ai.appdna.sdk.billing.BillingEventProps.marked(properties), internalBilling = true)
+    }
+
+    /** Whether `configure()` has published the event tracker (R65: purchase_failed only when one exists). */
+    internal fun hasEventTracker(): Boolean = eventTracker != null
+
+    /**
+     * The body of [track]: keeps the pre-init buffer and the message / survey triggers. For a host call
+     * (`internalBilling = false`) the reserved keys `emitted_by` and `_appdna_origin` are stripped FIRST,
+     * before the pre-init buffer decision, so a buffered event is stripped too (R74).
+     */
+    private fun trackImpl(event: String, rawProperties: Map<String, Any>?, internalBilling: Boolean) {
+        val properties = if (internalBilling || rawProperties == null) rawProperties
+        else if (rawProperties.containsKey(ai.appdna.sdk.billing.BillingEventProps.EMITTED_BY) ||
+            rawProperties.containsKey(ai.appdna.sdk.billing.BillingEventProps.APPDNA_ORIGIN)
+        ) {
+            rawProperties - ai.appdna.sdk.billing.BillingEventProps.EMITTED_BY - ai.appdna.sdk.billing.BillingEventProps.APPDNA_ORIGIN
+        } else rawProperties
         // SPEC-428 STEP-9: double-checked locking. Fast path (post-configure) reads the @Volatile
         // eventTracker with no lock. If null, take preInitLock (which configure() holds while it reserves
         // the pre-init seq block + publishes eventTracker) and RE-CHECK: still null → buffer (pre-configure);
@@ -2073,6 +2137,11 @@ object AppDNA {
                         webEntitlementManager?.startObserving(orgId, appId, userId)
                         // SPEC-203: pending-messages listener when already identified.
                         pendingMessageListener?.startObserving(orgId, appId, userId)
+                        // SPEC-497 R33: the Firestore entitlement listener — it never ran before, because
+                        // billing init sees no orgId. The user id is re-read under this lock; only when
+                        // the SDK owns transactions (the doc is written by AppDNA's own verification).
+                        billing.manager?.takeIf { it.ownsTransactions }?.entitlementCache
+                            ?.startObserving(orgId, appId, userId)
                     }
                 }
 
@@ -2271,10 +2340,12 @@ object AppDNA {
         if (billing.manager != null) return
         val ctx = appContext ?: return
 
-        // SPEC-070-B PN row 6 (N1): honor the configured provider. Before this, Android ignored the
-        // host's choice entirely and Adapty's apiKey had nowhere to live — AdaptyBridge had zero
-        // call sites.
+        // SPEC-070-B PN row 6 (N1): honor the configured provider.
         val provider = options.billingProvider
+        // SPEC-497 §3.2 (SDK minor 12): the policy is assigned BEFORE the `none` early return, so the
+        // PaywallManager never reads an unassigned policy.
+        val policy = ai.appdna.sdk.billing.BillingOwnership.policy(provider)
+        billing.ownershipPolicy = policy
         if (provider is BillingProvider.None) {
             Log.info("BillingModule: billingProvider = none — billing disabled")
             return
@@ -2282,25 +2353,29 @@ object AppDNA {
 
         val storage = LocalStorage(ctx)
         try {
-            val verifier = ai.appdna.sdk.billing.ReceiptVerifier(client)
+            // LD-R4-1: the verifier declares the owner from the policy, never from a host string.
+            val verifier = ai.appdna.sdk.billing.ReceiptVerifier(
+                client,
+                billingOwner = ai.appdna.sdk.billing.BillingOwnership.billingOwner(provider),
+            )
             val cache = ai.appdna.sdk.billing.EntitlementCache(ctx)
             val mgr = ai.appdna.sdk.billing.NativeBillingManager(
                 context = ctx,
                 receiptVerifier = verifier,
                 entitlementCache = cache,
                 storage = storage,
+                // §3.2 rule 3/4: RevenueCat and Adapty never verify, acknowledge or consume (owner Q1);
+                // RevenueCat's device lifecycle events stop (Q2), Adapty keeps them (LD-R10-1).
+                ownsTransactions = policy.ownsTransactions,
+                emitsLifecycleEvents = policy.emitsLifecycleEvents,
+                providerName = provider.type,
             )
             mgr.initialize()
             synchronized(this@AppDNA) {
                 billing.manager = mgr
             }
-            // Start observing entitlement changes from Firestore once we have org/app/user.
-            val orgId = bootstrapOrgId
-            val appId = bootstrapAppId
-            val userId = identityManager?.currentIdentity?.userId
-            if (orgId != null && appId != null && userId != null) {
-                cache.startObserving(orgId, appId, userId)
-            }
+            // The Firestore entitlement listener starts in the bootstrap-success block (orgId is not known
+            // yet here — R33: this is why it never ran), and only when the SDK owns transactions.
 
             when (provider) {
                 is BillingProvider.Adapty -> {
@@ -2309,15 +2384,20 @@ object AppDNA {
                     adaptyBridge = bridge
                 }
                 is BillingProvider.RevenueCat ->
-                    // Matches iOS: the `.revenueCat` case carries no key, because the host configures
-                    // Purchases itself and forwards results. We only note the choice.
-                    Log.info("BillingModule: billingProvider = revenueCat — host is expected to call Purchases.configure()")
+                    Log.info("BillingModule: billingProvider = revenueCat — purchases and restores are made by RevenueCat in the host app; the SDK reads entitlements only")
                 else -> Unit
             }
 
-            Log.info("BillingModule: NativeBillingManager initialized (provider=${provider.type})")
+            // D-R40-1 trigger (iv): the queue and the identity are loaded — a drain is no longer a
+            // no-op, and a delivering delegate set before configure gets its queued purchases now.
+            mgr.completion.drainReady = true
+            if (billing.deliveringDelegate() != null) mgr.triggerDrain()
+
+            Log.info("BillingModule: NativeBillingManager initialized (provider=${provider.type}, ownsTransactions=${policy.ownsTransactions})")
         } catch (e: Exception) {
             Log.error("BillingModule init failed: ${e.message}")
+            // Billing unavailable → no purchase, no restore: the providerNotAvailable path.
+            billing.ownershipPolicy = ai.appdna.sdk.billing.BillingOwnership.none
             // SPEC-070-B PN row 17 (W13/AC-31(b)): billing is not analytics. A failed billing init is a
             // degraded SDK, not a dead one — events keep flowing.
             reportInitDegraded(e)

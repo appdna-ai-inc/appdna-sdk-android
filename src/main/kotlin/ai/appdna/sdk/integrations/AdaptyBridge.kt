@@ -122,7 +122,7 @@ internal class AdaptyBridge {
         val props = AppDNA.billing.manager
             ?.purchaseEventProps(productId, "adapty")
             ?: mapOf("product_id" to productId, "provider" to "adapty")
-        AppDNA.track("purchase_started", props)
+        AppDNA.trackBillingEvent("purchase_started", props)
     }
 
     /**
@@ -134,7 +134,7 @@ internal class AdaptyBridge {
         val props = AppDNA.billing.manager
             ?.purchaseEventProps(productId, "adapty")
             ?: mapOf("product_id" to productId, "provider" to "adapty")
-        AppDNA.track("purchase_canceled", props)
+        AppDNA.trackBillingEvent("purchase_canceled", props)
     }
 
     /**
@@ -164,11 +164,11 @@ internal class AdaptyBridge {
         val isSub = isSubscription
             ?: AppDNA.billing.manager?.isKnownSubscriptionProduct(productId)
             ?: false
-        AppDNA.track("purchase_completed", props)
+        AppDNA.trackBillingEvent("purchase_completed", props)
         // Same envelope, purchase-time, once. Renewals stay the reconcile diff's business
         // (`subscription_renewed`) — emitting `subscription_started` there would double-count.
         if (isSub) {
-            AppDNA.track("subscription_started", props)
+            AppDNA.trackBillingEvent("subscription_started", props)
         }
         delegate?.onPurchaseCompleted(productId, txInfo)
     }
@@ -178,7 +178,7 @@ internal class AdaptyBridge {
         val base = AppDNA.billing.manager
             ?.purchaseEventProps(productId, "adapty")
             ?: mapOf("product_id" to productId, "provider" to "adapty")
-        AppDNA.track("purchase_failed", base + mapOf(
+        AppDNA.trackBillingEvent("purchase_failed", base + mapOf(
             "error" to (error.message ?: "unknown"),
         ))
         delegate?.onPurchaseFailed(productId, error)
@@ -192,7 +192,7 @@ internal class AdaptyBridge {
         if (!isAdaptyPresent()) return emptyList()
         Log.info("AdaptyBridge.restore")
         val entitlements = profileToEntitlements(awaitRestoreProfile())
-        AppDNA.track(
+        AppDNA.trackBillingEvent(
             "purchase_restored",
             mapOf(
                 "restored_count" to entitlements.size,

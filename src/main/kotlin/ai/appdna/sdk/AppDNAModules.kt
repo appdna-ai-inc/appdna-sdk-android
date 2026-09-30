@@ -239,6 +239,16 @@ class BillingModule internal constructor() {
         java.util.concurrent.CopyOnWriteArrayList<(List<Entitlement>) -> Unit>()
     private val scope = CoroutineScope(Dispatchers.Main + SupervisorJob())
 
+    /**
+     * SPEC-497 §3.2 — the ownership policy chosen at `configure` (`BillingOwnership.policy(provider)`),
+     * assigned BEFORE the `none` early return; a failed billing init sets the `none` policy. Its explicit
+     * initial value is [BillingOwnershipPolicy.NotConfigured] (and again after `shutdown()`), so the
+     * paywall never reads an unassigned policy.
+     */
+    @Volatile
+    internal var ownershipPolicy: ai.appdna.sdk.billing.BillingOwnershipPolicy =
+        ai.appdna.sdk.billing.BillingOwnershipPolicy.NotConfigured
+
     /** Check if user has active subscription. */
     fun hasActiveSubscription(): Boolean {
         return manager?.entitlementCache?.hasActiveSubscription ?: false
@@ -324,18 +334,37 @@ class BillingModule internal constructor() {
         productId: String,
         options: BillingPurchaseOptions? = null,
     ): TransactionInfo {
-        val mgr = manager ?: run {
-            Log.warning("BillingModule: manager not available — cannot purchase")
-            throw IllegalStateException("BillingModule: NativeBillingManager not initialized — call AppDNA.configure() first")
+        val policy = ownershipPolicy
+        if (!policy.isConfigured) {
+            // R65: before configure — an `unknown` error (no new error type); `purchase_failed` only
+            // when a tracker exists.
+            val msg = ai.appdna.sdk.billing.BillingOwnershipPolicy.NOT_CONFIGURED_MESSAGE
+            if (AppDNA.hasEventTracker()) {
+                AppDNA.trackBillingEvent("purchase_failed", mapOf(
+                    "product_id" to productId, "reason" to "not_configured", "error" to msg, "error_type" to "unknown",
+                ))
+            }
+            throw IllegalStateException(msg)
         }
-        AppDNA.track("billing_purchase_requested", mapOf("product_id" to productId))
+        val mgr = manager ?: run {
+            // §3.2 rule 5: no provider (or a failed billing init) — exactly one purchase_failed, no
+            // purchase_started, no paywall_id.
+            val msg = "No billing provider configured"
+            AppDNA.trackBillingEvent("purchase_failed", mapOf(
+                "product_id" to productId, "reason" to "provider_not_available", "error" to msg,
+                "error_type" to "providerNotAvailable",
+            ))
+            throw ai.appdna.sdk.billing.BillingError.ProviderNotAvailable(msg)
+        }
+        AppDNA.trackBillingEvent("billing_purchase_requested", mapOf("product_id" to productId))
 
         val result = mgr.purchase(activity, productId, options)
         return when (result) {
             is PurchaseResult.Purchased -> {
                 val ent = result.entitlement
                 TransactionInfo(
-                    transactionId = ent.productId, // Google Play exposes the orderId via the receipt; entitlement productId is the closest stable handle
+                    // SPEC-497 §13a.2 (V2-M4, R79): the real id, `orderId ?: purchaseToken`.
+                    transactionId = result.transactionId ?: ent.productId,
                     productId = ent.productId,
                     // 🔴 THIS RETURNED THE EXPIRY AS THE PURCHASE DATE — a FUTURE date for a subscription,
                     // an empty string for a one-off. The `Entitlement` carries no purchase time, so the
@@ -352,7 +381,7 @@ class BillingModule internal constructor() {
             }
             is PurchaseResult.Cancelled -> throw PurchaseCancelledException(productId)
             is PurchaseResult.Pending -> throw PurchasePendingException(productId)
-            is PurchaseResult.Failed -> throw PurchaseFailedException(productId, result.error)
+            is PurchaseResult.Failed -> throw PurchaseFailedException(productId, result.error, result.errorType)
             is PurchaseResult.Unknown -> throw PurchaseFailedException(productId, "unknown billing result")
         }
     }
@@ -375,16 +404,20 @@ class BillingModule internal constructor() {
      * delegate flow.
      */
     suspend fun restorePurchases(): List<String> {
+        if (!ownershipPolicy.isConfigured) {
+            throw IllegalStateException(ai.appdna.sdk.billing.BillingOwnershipPolicy.NOT_CONFIGURED_MESSAGE)
+        }
         val mgr = manager ?: run {
-            Log.warning("BillingModule: manager not available — cannot restore")
-            return emptyList()
+            // SPEC-497 R37 SDK major 2: `none` throws (was `[]`), tracked once.
+            val e = ai.appdna.sdk.billing.BillingError.ProviderNotAvailable("No billing provider configured")
+            AppDNA.trackBillingEvent("purchase_restore_failed", mapOf(
+                "error" to (e.message ?: "providerNotAvailable"), "error_type" to "providerNotAvailable",
+            ))
+            throw e
         }
-        return try {
-            mgr.restorePurchases().map { it.productId }
-        } catch (e: Exception) {
-            Log.error("BillingModule.restorePurchases failed: ${e.message}")
-            emptyList()
-        }
+        // SPEC-497 restore error contract: every failure reaches the host as a typed BillingError
+        // (already tracked once by the manager); the cache is unchanged.
+        return mgr.restorePurchases().map { it.productId }
     }
 
     /**
@@ -444,10 +477,42 @@ class BillingModule internal constructor() {
      * Set a delegate to receive billing lifecycle callbacks (purchases, failures, restores).
      */
     fun setDelegate(delegate: AppDNABillingDelegate?) {
-        this.billingListener = delegate
+        assignBillingDelegate(delegate, delivers = true)
     }
 
-    internal var billingListener: AppDNABillingDelegate? = null
+    /**
+     * SPEC-497 D-R40-1 — set the billing delegate and say whether it takes queued purchase deliveries.
+     * A delegate registered with `deliversPurchases = false` is never called by the delivery queue's
+     * drain (it still receives the live `purchase()` caller's `onPurchaseCompleted`). Any delegate set
+     * through [setDelegate] delivers — implement `onPurchaseCompleted` and grant idempotently by
+     * `transactionId` (delivery is at least once).
+     */
+    fun setDelegate(delegate: AppDNABillingDelegate?, deliversPurchases: Boolean) {
+        assignBillingDelegate(delegate, deliversPurchases)
+    }
+
+    /** The delegate and its `delivers` flag, held as ONE volatile snapshot (R46). */
+    private class DelegateSlot(val delegate: AppDNABillingDelegate?, val delivers: Boolean)
+
+    @Volatile
+    private var delegateSlot = DelegateSlot(null, false)
+
+    /** The current billing delegate (read at call time). Only [assignBillingDelegate] writes it. */
+    internal val billingListener: AppDNABillingDelegate?
+        get() = delegateSlot.delegate
+
+    /** The delegate the drain may call, or null when there is none or it does not deliver purchases. */
+    internal fun deliveringDelegate(): AppDNABillingDelegate? =
+        delegateSlot.let { if (it.delivers) it.delegate else null }
+
+    /**
+     * The ONE entry point that writes the delegate storage and the flag (R42/R43). The flag is set with
+     * the delegate in one snapshot, and a delivering delegate triggers the drain itself (trigger (ii)).
+     */
+    internal fun assignBillingDelegate(delegate: AppDNABillingDelegate?, delivers: Boolean) {
+        delegateSlot = DelegateSlot(delegate, delivers && delegate != null)
+        if (delegate != null && delivers) manager?.triggerDrain()
+    }
 
     /**
      * SPEC-070-A H.24 — cancel the wrapper's coroutine scope so any pending
@@ -457,7 +522,8 @@ class BillingModule internal constructor() {
      */
     internal fun shutdown() {
         scope.cancel()
-        billingListener = null
+        assignBillingDelegate(null, delivers = false)
+        ownershipPolicy = ai.appdna.sdk.billing.BillingOwnershipPolicy.NotConfigured
     }
 }
 
@@ -468,7 +534,12 @@ class PurchaseCancelledException(val productId: String) : RuntimeException("Purc
 class PurchasePendingException(val productId: String) : RuntimeException("Purchase pending for product: $productId")
 
 /** Thrown by [BillingModule.purchase] when Google Play returns an error. */
-class PurchaseFailedException(val productId: String, val error: String) : RuntimeException("Purchase failed for $productId: $error")
+class PurchaseFailedException @JvmOverloads constructor(
+    val productId: String,
+    val error: String,
+    /** SPEC-497 §13a.3 — the `billingErrorType` of the underlying failure (`verificationFailed`, …). */
+    val errorType: String? = null,
+) : RuntimeException("Purchase failed for $productId: $error")
 
 /**
  * Onboarding module namespace.
