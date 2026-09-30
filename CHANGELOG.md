@@ -174,8 +174,8 @@ Needs the AppDNA server from the same release (purchase verification and push tr
   `formatted_address`, city, state, country, coordinates and timezone (the stored answer keeps
   `address` as an alias); text typed without selecting returns `{formatted_address, raw_query}` with
   null coordinates (it returned `null`).
-- `StoreKit2` purchases are verified again (the verify call was refused), so they are acknowledged
-  instead of being refunded by Play after 3 days.
+- `StoreKit2` purchases are now verified and acknowledged (the verify call was refused), instead of
+  being refunded by Play after 3 days.
 - Location autocomplete drops suggestions that come back without coordinates.
 - The event queue no longer spins the IO thread pool when `flushInterval` is set to a very large
   value (the auto-flush delay overflowed).
