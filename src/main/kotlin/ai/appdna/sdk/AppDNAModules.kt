@@ -219,7 +219,8 @@ class PushModule internal constructor() {
     /**
      * Handle an FCM message a host received in its own `FirebaseMessagingService`: exactly what the
      * SDK's service does for an AppDNA message — tracks `push_delivered` (with `delivery_id`), fires
-     * `onPushReceived` and, for a data-only message with a title or body, posts the notification.
+     * `onPushReceived` and, for a message with a title or body, posts the notification (a message with
+     * a `notification` block reaches a service only in the foreground, where FCM does not display it).
      * Returns `false` and does nothing for a message that is not AppDNA's. Safe to call for every
      * message; a message already handled (by the SDK's service or an earlier call) is a no-op that
      * returns `true`.
@@ -230,14 +231,15 @@ class PushModule internal constructor() {
             ReceiveOutcome.IGNORED -> false
             ReceiveOutcome.DUPLICATE -> true
             ReceiveOutcome.HANDLED -> {
-                // A message with a `notification` block is displayed by FCM itself.
-                if (message.notification == null) {
-                    context?.let { ctx ->
-                        try {
-                            AppDNANotificationPoster.post(ctx, data, null, null)
-                        } catch (e: Throwable) {
-                            Log.warning("PushModule.handleMessage: display failed: ${e.message}")
-                        }
+                // A host's service is called for a message with a `notification` block only while the
+                // app is in the foreground (FCM displays it itself in the background), so it is
+                // displayed here like a data-only message — the notification block's title / body
+                // fill a missing data title / body.
+                context?.let { ctx ->
+                    try {
+                        AppDNANotificationPoster.post(ctx, data, message.notification?.title, message.notification?.body)
+                    } catch (e: Throwable) {
+                        Log.warning("PushModule.handleMessage: display failed: ${e.message}")
                     }
                 }
                 true
@@ -432,10 +434,18 @@ class BillingModule internal constructor() {
      *      links, OAuth web flows) and need to flush stale cache
      *      without firing user-visible restore events.
      *
-     * Side effects: ZERO. No analytics events, no delegate callbacks,
-     * no UI. Errors are swallowed and logged at warning level — the
-     * suspend returns normally so callers can chain without try/catch.
-     * Mirrors iOS `BillingModule.refreshEntitlementCache()`.
+     * Side effects: no UI and no restore events (`purchase_restored` /
+     * `onRestoreCompleted` never fire). But under `StoreKit2` it is NOT
+     * side-effect free: it completes any purchase Play holds that was never
+     * reported — verify, one `purchase_completed` (plus `subscription_started`
+     * for a subscription), acknowledge / consume, and a queued
+     * `AppDNABillingDelegate.onPurchaseCompleted` — then sends the owned
+     * list to the server's restore endpoint and merges the reply, which
+     * fires `onEntitlementsChanged` when the cache changes. Under
+     * `RevenueCat` / `Adapty` / `None` it only rebuilds the cache locally
+     * from Play (no server call, no analytics event). Errors are swallowed and logged
+     * at warning level — the suspend returns normally so callers can chain
+     * without try/catch.
      */
     suspend fun refreshEntitlementCache() {
         val mgr = manager ?: run {

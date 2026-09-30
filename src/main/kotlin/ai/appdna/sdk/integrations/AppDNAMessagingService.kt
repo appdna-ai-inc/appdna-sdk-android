@@ -33,7 +33,8 @@ import org.json.JSONObject
  *   H.19: server-supplied channel name/description/group honored
  *   H.21: notificationIcon resolved via Configuration → manifest meta-data → app icon
  *   H.21b: server-supplied channel importance honored
- *   H.22: hybrid notification+data payloads skip notify() (FCM auto-displays)
+ *   H.22: a notification+data payload reaches this service only in the foreground (FCM displays
+ *         it itself in the background), so the SDK displays it here like a data-only payload
  */
 open class AppDNAMessagingService : FirebaseMessagingService() {
 
@@ -53,18 +54,20 @@ open class AppDNAMessagingService : FirebaseMessagingService() {
         )
         if (outcome != ai.appdna.sdk.PushModule.ReceiveOutcome.HANDLED) return
 
-        // SPEC-070-A H.22: a hybrid notification+data payload is rendered
-        // by FCM itself when the app is backgrounded. Building our own
-        // notification here would produce a duplicate. Only render for
-        // pure data-only payloads.
-        if (message.notification != null) {
-            Log.debug("Push has notification block — FCM auto-displays; skipping SDK notify()")
-            return
-        }
-        // SPEC-497 §9.2 — a data-only AppDNA message with a blank title AND body is data for the
-        // app, not something to show: no blank notification.
-        if (!AppDNANotificationPoster.isDisplayable(message.data)) {
-            Log.debug("Push is data-only with no title or body — not displaying a notification")
+        // A message with a `notification` block reaches onMessageReceived ONLY while the app is in
+        // the foreground — in the background FCM displays it itself and never calls this service. So
+        // here nothing else will show it: the SDK displays it with the same channel and visuals as a
+        // data-only message (the notification block's title / body fill a missing data title / body).
+        // (It used to return here on the belief that FCM auto-displays it — true only in the
+        // background, so a foreground notification message was never shown.) A message the host
+        // already forwarded through AppDNA.push.handleMessage* returned above (not HANDLED), so the
+        // host's own display is never doubled.
+        val notifTitle = message.notification?.title
+        val notifBody = message.notification?.body
+        // SPEC-497 §9.2 — an AppDNA message with a blank title AND body is data for the app, not
+        // something to show: no blank notification.
+        if (!AppDNANotificationPoster.isDisplayable(message.data, notifTitle, notifBody)) {
+            Log.debug("Push has no title or body — not displaying a notification")
             return
         }
 

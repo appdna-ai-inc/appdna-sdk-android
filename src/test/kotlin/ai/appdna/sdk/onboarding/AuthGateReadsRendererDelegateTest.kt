@@ -140,6 +140,26 @@ class AuthGateReadsRendererDelegateTest {
         assertTrue(errors.isEmpty())
     }
 
+    /**
+     * The SDK's own keys win over the step's inputs: a form field whose id is `action` or `provider`
+     * cannot replace `action: "social_login"` / the provider the host switches on. Other inputs pass
+     * through. NEGATIVE CONTROL: with `putAll(inputValues)` back after the SDK keys, `action` is
+     * "not_social" — this test fails.
+     */
+    @Test
+    fun `social_login - an input named action or provider cannot override the SDK keys`() {
+        var advanced: Map<String, Any>? = null
+        emitSocialLoginAction(
+            provider = "google",
+            inputValues = mapOf("action" to "not_social", "provider" to "evil", "email" to "a@b.co"),
+            onNext = { advanced = it },
+            delegate = HostDelegate(),
+        )
+        assertEquals("social_login", advanced!!["action"])
+        assertEquals("google", advanced!!["provider"])
+        assertEquals("a@b.co", advanced!!["email"])
+    }
+
     /** The gate still does its job: no delegate anywhere → no advance, and the user is TOLD. */
     @Test
     fun `an auth action with no delegate at all still refuses to advance`() {

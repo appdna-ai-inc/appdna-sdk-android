@@ -495,7 +495,7 @@ internal class PurchaseCompletion(
                 }
             }
             mgr.clearPurchaseScope()
-            if (decided.compareAndSet(0, 1)) mgr.postPurchaseDelegates(productId, txInfo, paywallId)
+            if (decided.compareAndSet(0, 1)) mgr.postPurchaseDelegates(productId, txInfo)
         }
 
         // 6. finalize — a consumable is consumed immediately (LD-R23-3), anything else acknowledged.

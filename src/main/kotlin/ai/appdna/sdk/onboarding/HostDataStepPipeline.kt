@@ -906,7 +906,9 @@ internal suspend fun runBeforeStepRenderHook(
         }
         cancelled = false
         if (outcome == null) {
-            // Deadline: end pending; a later reply is dropped (as both platforms do today).
+            // Deadline: end pending; a later reply is dropped, even while the user is still on the
+            // step (iOS `HostDataPendingCoordinator.finish` does the same; fixture
+            // `before_render_reply_after_deadline_dropped`).
             presentation.end(gen, byDeadline = true)
             hostJob.cancel()
         } else {

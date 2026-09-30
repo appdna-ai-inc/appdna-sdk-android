@@ -73,7 +73,8 @@ class ConsumablePurchaseTest {
         assertEquals(1, pipe.count("purchase_completed"))
         assertEquals("pw_1", pipe.props("purchase_completed").getString("paywall_id"))
         assertEquals(1, completions())
-        assertEquals(listOf("pw_1/lifetime_unlock"), paywallCalls)
+        // A direct manager purchase calls no paywall delegate (PaywallManager.handlePurchase owns that call).
+        assertEquals(emptyList<String>(), paywallCalls)
     }
 
     @Test fun `SUBS verify failed then ON_START - purchase_completed and subscription_started once, queued`() {

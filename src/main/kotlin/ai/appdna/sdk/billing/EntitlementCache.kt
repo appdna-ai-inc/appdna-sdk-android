@@ -461,8 +461,13 @@ internal class EntitlementCache(
                 .remove(KEY_ENTITLEMENTS).remove(KEY_OWNER).commit()
         }
 
-        /** Statuses considered "active" for entitlement checks. */
-        private val ACTIVE_STATUSES = setOf("active", "trialing", "grace_period")
+        /**
+         * Statuses considered "active" for entitlement checks — the server's entitled set
+         * (`ACTIVE_STATUSES` in the server's entitlement rules): a subscription in `billing_retry`
+         * (the store is still retrying the renewal payment) is entitled. `on_hold`, `pending` and
+         * `paused` are not. A canceled subscription still in its paid period arrives as `active`.
+         */
+        internal val ACTIVE_STATUSES = setOf("active", "trialing", "grace_period", "billing_retry")
 
         /**
          * Static parser for Firestore subscription documents. Pure — no I/O,
