@@ -460,6 +460,10 @@ object AppDNA {
     // Internal managers
     private var apiKey: String? = null
     private var environment: Environment = Environment.PRODUCTION
+
+    /** SPEC-497 §3.11 — the base every request uses; set once in `configure`. */
+    @Volatile internal var resolvedBaseUrl: String = Environment.PRODUCTION.baseUrl
+        private set
     // `internal`, not `private`: the unit tests are a friend module, and the wrapper-attribution
     // fields (`framework`, `frameworkVersion`) are only observable through a configured options
     // object. They were untestable while this was private — which is why no test ever covered the
@@ -651,7 +655,17 @@ object AppDNA {
             this.identityManager = identityMgr
 
             // 3. Initialize networking
-            val client = ApiClient(apiKey, environment)
+            // SPEC-497 §3.11 — resolved ONCE: the test-only override (debuggable + SANDBOX), else
+            // the environment's base. Every URL the SDK builds reads `resolvedBaseUrl`.
+            resolvedBaseUrl = try {
+                val info = appContext.packageManager.getApplicationInfo(
+                    appContext.packageName, android.content.pm.PackageManager.GET_META_DATA,
+                )
+                ai.appdna.sdk.network.resolveBaseUrl(info, info.metaData, environment)
+            } catch (_: Exception) {
+                environment.baseUrl
+            }
+            val client = ApiClient(apiKey, resolvedBaseUrl)
             this.apiClient = client
 
             // 4. Initialize event system
@@ -683,7 +697,7 @@ object AppDNA {
                 override fun scheduleIfNeeded() {
                     try {
                         ai.appdna.sdk.background.EventUploadWorker.scheduleIfNeeded(
-                            appContext, apiKey, environment.baseUrl, eventDb
+                            appContext, apiKey, resolvedBaseUrl, eventDb
                         )
                     } catch (e: Throwable) {
                         Log.warning("Background upload schedule failed: ${e.message}")
@@ -1454,31 +1468,19 @@ object AppDNA {
 
     /**
      * SPEC-070-A I.11 — fetch the structured [ai.appdna.sdk.onboarding.LocationData]
-     * captured by the named onboarding form field. Returns `null` if the
-     * field hasn't been answered yet, was answered with a free-text value,
-     * or no flow has run this session. Mirrors iOS
-     * `AppDNA.getLocationData(fieldId:)`.
+     * captured by the named onboarding form field. Mirrors iOS `AppDNA.getLocationData(fieldId:)`.
+     *
+     * SPEC-497 §13h (D2) — built tolerantly from whatever the field stored: a selected suggestion
+     * gives the full object; a typed-but-not-selected answer gives `{formatted_address, raw_query}`
+     * with null coordinates (it used to return null); a partial or legacy `{address, …}` answer gives
+     * the fields it has. Returns `null` when the field is unanswered, empty, or not a location.
      */
     fun getLocationData(fieldId: String): ai.appdna.sdk.onboarding.LocationData? {
         val responses = ai.appdna.sdk.core.SessionDataStore.instance?.onboardingResponses
             ?: return null
         for ((_, stepData) in responses) {
-            val raw = stepData[fieldId] as? Map<*, *> ?: continue
-            val address = raw["formatted_address"] as? String ?: raw["address"] as? String ?: continue
-            return ai.appdna.sdk.onboarding.LocationData(
-                formatted_address = address,
-                city = raw["city"] as? String ?: "",
-                state = raw["state"] as? String ?: "",
-                state_code = raw["state_code"] as? String ?: "",
-                country = raw["country"] as? String ?: "",
-                country_code = raw["country_code"] as? String ?: "",
-                latitude = (raw["latitude"] as? Number)?.toDouble() ?: 0.0,
-                longitude = (raw["longitude"] as? Number)?.toDouble() ?: 0.0,
-                timezone = raw["timezone"] as? String ?: "UTC",
-                timezone_offset = (raw["timezone_offset"] as? Number)?.toInt() ?: 0,
-                postal_code = raw["postal_code"] as? String,
-                raw_query = raw["raw_query"] as? String ?: "",
-            )
+            if (!stepData.containsKey(fieldId)) continue
+            ai.appdna.sdk.onboarding.locationDataFromAnswer(stepData[fieldId])?.let { return it }
         }
         return null
     }
@@ -1525,7 +1527,7 @@ object AppDNA {
         sb.appendLine("=== AppDNA SDK diagnose ===")
         sb.appendLine("configured: $isConfigured")
         sb.appendLine("environment: ${environment.name.lowercase()}")
-        sb.appendLine("base_url: ${environment.baseUrl}")
+        sb.appendLine("base_url: $resolvedBaseUrl")
         sb.appendLine("api_key: ${if (apiKey.isNullOrBlank()) "<unset>" else "${apiKey?.take(8)}…"}")
         val fw = options.framework
         val reportVersion = if (fw != "native" && !options.frameworkVersion.isNullOrBlank()) options.frameworkVersion else sdkVersion
@@ -1955,7 +1957,7 @@ object AppDNA {
      *
      * Returns Production base URL when called before [configure] (defensive fallback).
      */
-    internal fun getApiBaseUrl(): String = environment.baseUrl
+    internal fun getApiBaseUrl(): String = resolvedBaseUrl
 
     /**
      * SPEC-070-A: Internal accessor for the SDK API key, used by ad-hoc HTTP calls
@@ -2370,7 +2372,7 @@ object AppDNA {
                 // wedged: the re-entrancy guard rejected every subsequent `configure()`.
                 try {
                     ai.appdna.sdk.background.EventUploadWorker.scheduleIfNeeded(
-                        ctx, key, environment.baseUrl, db
+                        ctx, key, resolvedBaseUrl, db
                     )
                 } catch (e: Throwable) {
                     Log.warning("Background upload schedule on shutdown failed: ${e.message}")

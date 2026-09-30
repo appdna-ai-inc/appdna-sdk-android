@@ -30,8 +30,15 @@ import java.util.zip.DeflaterOutputStream
  */
 internal class ApiClient(
     private val apiKey: String,
-    private val environment: Environment
+    /**
+     * SPEC-497 §3.11 — every request URL is built from this. Production passes the resolved base
+     * (the test-only override, else `environment.baseUrl`).
+     */
+    internal val baseUrl: String,
 ) {
+    /** Existing callers (and tests) that pass an [Environment] keep compiling unchanged. */
+    constructor(apiKey: String, environment: Environment) : this(apiKey, environment.baseUrl)
+
     // SPEC-070-A H.15: bump connectTimeout to 30s (iOS default) and add a wall-clock
     // callTimeout so a stalled write/read can never hold the queue indefinitely.
     private val client = OkHttpClient.Builder()
@@ -66,7 +73,7 @@ internal class ApiClient(
             for (attempt in 0..retryDelays.size) {
                 try {
                     val request = Request.Builder()
-                        .url("${environment.baseUrl}$path")
+                        .url("$baseUrl$path")
                         .header("x-api-key", apiKey)
                         .header("Content-Type", "application/json")
                         .post(body.toRequestBody(jsonMediaType))
@@ -137,7 +144,7 @@ internal class ApiClient(
                     Log.debug("Compressed events: $originalSize → ${compressed.size} bytes (${String.format("%.1f", originalSize.toDouble() / compressed.size.coerceAtLeast(1))}x)")
 
                     val request = Request.Builder()
-                        .url("${environment.baseUrl}$path")
+                        .url("$baseUrl$path")
                         .header("x-api-key", apiKey)
                         .header("Content-Type", "application/json")
                         .header("Content-Encoding", "deflate")
@@ -199,7 +206,7 @@ internal class ApiClient(
         return withContext(Dispatchers.IO) {
             try {
                 val request = Request.Builder()
-                    .url("${environment.baseUrl}$path")
+                    .url("$baseUrl$path")
                     .header("x-api-key", apiKey)
                     .get()
                     .build()
@@ -240,7 +247,7 @@ internal class ApiClient(
                 attempt++
                 try {
                     val request = Request.Builder()
-                        .url("${environment.baseUrl}$path")
+                        .url("$baseUrl$path")
                         .header("x-api-key", apiKey)
                         .get()
                         .build()
@@ -299,7 +306,7 @@ internal class ApiClient(
                 Log.debug("Compressed events: $originalSize → ${compressed.size} bytes")
 
                 val request = Request.Builder()
-                    .url("${environment.baseUrl}$path")
+                    .url("$baseUrl$path")
                     .header("x-api-key", apiKey)
                     .header("Content-Type", "application/json")
                     .header("Content-Encoding", "deflate")
