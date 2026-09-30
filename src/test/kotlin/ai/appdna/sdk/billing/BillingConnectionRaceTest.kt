@@ -9,6 +9,7 @@ import kotlinx.coroutines.MainScope
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertSame
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -51,5 +52,35 @@ class BillingConnectionRaceTest {
         assertEquals("no dead waiter left behind", 0, mgr.pendingWaiterCount)
         scope.cancel()
         mgr.destroy()
+    }
+
+    /**
+     * SPEC-497 round 11 — `destroy()` runs between the waiter's fast-path read of the client and its
+     * registration, so its `resumeWaitersWithNull` finds an empty list. The waiter must still get null at
+     * once (the `PriceResolver` waits have no timeout). NEGATIVE CONTROL: without the `destroyed` check in
+     * the locked check-and-add, the callback is parked after the release and the waiter never resumes — this
+     * test fails.
+     */
+    @Test fun `a destroy between the check and the registration resumes the waiter with null`() {
+        val listener = PurchasesUpdatedListener { _, _ -> }
+        val fake = FakeBillingClient(listener).apply { holdSetup = true }
+        val mgr = BillingConnectionManager(ctx, listener) { _, _ -> fake }
+        mgr.initialize()
+        assertEquals(false, mgr.isConnected)
+
+        mgr.beforeWaiterRegistered = {
+            mgr.beforeWaiterRegistered = null
+            mgr.destroy()
+        }
+        val scope = MainScope()
+        var got: BillingClient? = fake
+        var returned = false
+        scope.launch { got = mgr.awaitConnectedClient(); returned = true }
+        shadowOf(Looper.getMainLooper()).idle()
+
+        assertEquals("the waiter resumed", true, returned)
+        assertNull(got)
+        assertEquals("no dead waiter left behind", 0, mgr.pendingWaiterCount)
+        scope.cancel()
     }
 }

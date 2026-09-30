@@ -73,6 +73,13 @@ internal class BillingConnectionManager(
     private val pendingCallbacks = mutableListOf<(BillingClient?) -> Unit>()
 
     /**
+     * SPEC-497 round 11 — set by [destroy] under the `pendingCallbacks` lock. A waiter that read the client
+     * before `destroy` but registers after its `resumeWaitersWithNull` would park forever (the `PriceResolver`
+     * waits have no timeout); the registration checks this flag in the same locked check-and-add instead.
+     */
+    private var destroyed = false
+
+    /**
      * Initialize the BillingClient and start the connection.
      */
     fun initialize() {
@@ -119,12 +126,14 @@ internal class BillingConnectionManager(
 
                     // Dispatch pending callbacks. SPEC-497 I4 m7 — `isConnected` flips under the same lock
                     // `awaitConnectedClient` registers under, so a waiter either sees it or is dispatched.
-                    synchronized(pendingCallbacks) {
+                    // Round 11 — the callbacks run OUTSIDE the lock (copied and cleared under it).
+                    val callbacks = synchronized(pendingCallbacks) {
                         isConnected = true
-                        val callbacks = ArrayList(pendingCallbacks)
+                        val copy = ArrayList(pendingCallbacks)
                         pendingCallbacks.clear()
-                        callbacks.forEach { it(client) }
+                        copy
                     }
+                    callbacks.forEach { it(client) }
                 } else {
                     Log.warning("Billing setup failed: ${result.responseCode} - ${result.debugMessage}")
                     isConnected = false
@@ -232,12 +241,19 @@ internal class BillingConnectionManager(
             beforeWaiterRegistered?.invoke()
             // SPEC-497 I4 m7 — check-and-add atomically: the connection may have come up since the fast-path
             // check above, after its dispatch emptied the list; a callback added then would never be called.
-            val connectedNow = synchronized(pendingCallbacks) {
-                if (isConnected) true else { pendingCallbacks.add(callback); false }
+            // Round 11 — likewise `destroy()` may have run since, after its release emptied the list: a
+            // destroyed manager answers null at once instead of parking the waiter forever.
+            val outcome = synchronized(pendingCallbacks) {
+                when {
+                    destroyed -> WaiterOutcome.DESTROYED
+                    isConnected -> WaiterOutcome.CONNECTED
+                    else -> { pendingCallbacks.add(callback); WaiterOutcome.PARKED }
+                }
             }
-            if (connectedNow) {
-                continuation.resume(client) {}
-                return@suspendCancellableCoroutine
+            when (outcome) {
+                WaiterOutcome.DESTROYED -> { continuation.resume(null) {}; return@suspendCancellableCoroutine }
+                WaiterOutcome.CONNECTED -> { continuation.resume(client) {}; return@suspendCancellableCoroutine }
+                WaiterOutcome.PARKED -> Unit
             }
             // SPEC-497 R9 — a cancelled waiter (a cancelled caller, or `withTimeoutOrNull` giving up) takes
             // its callback with it, so a device that never connects does not accumulate dead waiters.
@@ -253,6 +269,8 @@ internal class BillingConnectionManager(
             }
         }
     }
+
+    private enum class WaiterOutcome { DESTROYED, CONNECTED, PARKED }
 
     /** Test seam (I4 m7) — runs between the fast-path `isConnected` check and the waiter registration. */
     @Volatile internal var beforeWaiterRegistered: (() -> Unit)? = null
@@ -281,6 +299,7 @@ internal class BillingConnectionManager(
      */
     fun destroy() {
         scope.cancel()
+        synchronized(pendingCallbacks) { destroyed = true }
         resumeWaitersWithNull()
         billingClient?.endConnection()
         billingClient = null
