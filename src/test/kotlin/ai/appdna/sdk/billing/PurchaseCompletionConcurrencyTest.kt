@@ -267,6 +267,63 @@ class PurchaseCompletionConcurrencyTest {
     }
 
     // ---------------------------------------------------------------------------------------------
+    // a cancelled restore (SPEC-497 §13b.2 R37, I4 r6 M1)
+    // ---------------------------------------------------------------------------------------------
+
+    /**
+     * `restorePurchases()` runs in the CALLER's scope and parks in the `/billing/verify` gate (holding
+     * `purchaseCompletionMutex`); the caller is cancelled. A cancellation is not a failed restore: the
+     * caller gets the `CancellationException` as is, no `purchase_restore_failed` is tracked, and the lock
+     * is released. NEGATIVE CONTROL: without the `catch (e: CancellationException) { throw e }` ahead of
+     * the tracking catch in `restoreDetailed`, the catch-all tracks one `purchase_restore_failed` and
+     * rethrows a `BillingError.ServerError` — this test fails on both counts.
+     */
+    @Test fun `a cancelled caller during restore - CancellationException rethrown, no purchase_restore_failed`() {
+        val s = scenario("""{
+          "product_details":{"lifetime_unlock":{"price_micros":4990000,"currency":"USD","product_type":"inapp"}},
+          "owned_purchases":[{"product_id":"lifetime_unlock","token":"tok_rs","order_id":"GPA.rs","acknowledged":false,"product_type":"inapp","purchase_state":"PURCHASED"}],
+          "verify_replies":{"tok_rs":{"status":200,"consume":false,"expires_at":null,"is_trial":false}}
+        }""")
+        val gate = CompletableDeferred<Unit>()
+        val parked = mutableListOf<String>()
+        s.verifyGate = { parked += it; gate.await() }
+
+        val caller = kotlinx.coroutines.MainScope()
+        var caught: Throwable? = null
+        var returned = false
+        try {
+            caller.launch {
+                try {
+                    s.mgr.restorePurchases()
+                    returned = true
+                } catch (t: Throwable) {
+                    caught = t
+                    throw t
+                }
+            }
+            s.idle()
+            assertEquals("the restore is parked in the verify gate", listOf("tok_rs"), parked)
+            assertTrue(s.mgr.completion.purchaseCompletionMutex.isLocked)
+            assertNull(caught)
+
+            caller.coroutineContext[kotlinx.coroutines.Job]!!.cancel()
+            s.idle()
+            assertFalse(returned)
+            assertTrue(
+                "the caller got the CancellationException as is, not a BillingError: $caught",
+                caught is kotlinx.coroutines.CancellationException && caught !is BillingError,
+            )
+            assertEquals(0, events("purchase_restore_failed"))
+            assertEquals(0, events("purchase_restored"))
+            assertTrue("onRestoreCompleted never fired", s.delegateLog.none { it.first == "onRestoreCompleted" })
+            assertFalse(s.mgr.completion.purchaseCompletionMutex.isLocked)
+        } finally {
+            gate.complete(Unit)
+            caller.coroutineContext[kotlinx.coroutines.Job]?.cancel()
+        }
+    }
+
+    // ---------------------------------------------------------------------------------------------
     // run vs run
     // ---------------------------------------------------------------------------------------------
 
