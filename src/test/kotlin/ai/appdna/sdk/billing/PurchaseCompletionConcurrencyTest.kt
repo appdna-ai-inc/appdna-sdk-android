@@ -323,6 +323,54 @@ class PurchaseCompletionConcurrencyTest {
         }
     }
 
+    /**
+     * SPEC-497 I3 r6 m3 — the PAYWALL restore button's run parks in the verify gate and the paywall
+     * scope is cancelled (`PaywallManager.shutdown()`, as `AppDNA.shutdown()` does). A cancellation is
+     * not a failed restore: no `purchase_restore_failed` and no `onPaywallRestoreFailed`. NEGATIVE
+     * CONTROL: without the `catch (e: CancellationException) { throw e }` in `handleRestore`, its
+     * catch-all tracks one `purchase_restore_failed` (with `paywall_id`) and calls
+     * `onPaywallRestoreFailed` — this test fails.
+     */
+    @Test fun `a paywall restore cancelled by shutdown - no purchase_restore_failed, no onPaywallRestoreFailed`() {
+        val s = scenario("""{
+          "product_details":{"lifetime_unlock":{"price_micros":4990000,"currency":"USD","product_type":"inapp"}},
+          "owned_purchases":[{"product_id":"lifetime_unlock","token":"tok_pr","order_id":"GPA.pr","acknowledged":false,"product_type":"inapp","purchase_state":"PURCHASED"}],
+          "verify_replies":{"tok_pr":{"status":200,"consume":false,"expires_at":null,"is_trial":false}}
+        }""")
+        val gate = CompletableDeferred<Unit>()
+        val parked = mutableListOf<String>()
+        s.verifyGate = { parked += it; gate.await() }
+
+        val paywallEvents = mutableListOf<String>()
+        val listener = object : AppDNAPaywallDelegate {
+            override fun onPaywallRestoreStarted(paywallId: String) { paywallEvents += "started" }
+            override fun onPaywallRestoreCompleted(paywallId: String, productIds: List<String>) { paywallEvents += "completed" }
+            override fun onPaywallRestoreFailed(paywallId: String, error: Throwable) { paywallEvents += "failed:${error::class.simpleName}" }
+        }
+        val pm = ai.appdna.sdk.paywalls.PaywallManager(
+            ai.appdna.sdk.config.RemoteConfigManager(null, ai.appdna.sdk.storage.LocalStorage(ctx), 3600L), pipe!!.tracker,
+        )
+        try {
+            ai.appdna.sdk.paywalls.PaywallManager::class.java
+                .getDeclaredMethod("handleRestore", String::class.java, AppDNAPaywallDelegate::class.java)
+                .apply { isAccessible = true }
+                .invoke(pm, "pw_cancel", listener)
+            s.idle()
+            assertEquals("the paywall restore is parked in the verify gate", listOf("tok_pr"), parked)
+            assertTrue(s.mgr.completion.purchaseCompletionMutex.isLocked)
+
+            pm.shutdown()
+            s.idle()
+            assertEquals(0, events("purchase_restore_failed"))
+            assertEquals(0, events("purchase_restored"))
+            assertEquals("no onPaywallRestoreFailed / Completed", listOf("started"), paywallEvents)
+            assertFalse(s.mgr.completion.purchaseCompletionMutex.isLocked)
+        } finally {
+            gate.complete(Unit)
+            pm.shutdown()
+        }
+    }
+
     // ---------------------------------------------------------------------------------------------
     // run vs run
     // ---------------------------------------------------------------------------------------------

@@ -613,6 +613,10 @@ internal class PaywallManager(
                 if (restoreOutcome(paywallId, productIds, hostRequestedSkip).shouldDismiss) {
                     PaywallActivity.activeInstance(paywallId)?.dismissAfterRestore()
                 }
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                // SPEC-497 (I3 r6 m3): a cancelled paywall scope (`shutdown()`) is not a failed restore —
+                // no purchase_restore_failed, no onPaywallRestoreFailed.
+                throw e
             } catch (e: Exception) {
                 eventTracker.track(
                     "purchase_restore_failed",
