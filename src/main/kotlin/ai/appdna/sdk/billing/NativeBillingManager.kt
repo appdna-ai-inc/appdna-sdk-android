@@ -575,40 +575,48 @@ class NativeBillingManager internal constructor(
             reconcileReadOnly()
             return
         }
-        val result = completion.run(PurchaseCompletion.Entry.ON_START)
-        triggerDrain()
-        if (result.okSubsProducts == null) return // the SUBS query failed: no diff, keep the baseline
-        val current = LinkedHashMap<String, SubSnapshot>()
-        for (op in result.subsForSnapshot) {
-            val pid = op.productId
-            if (pid.isEmpty()) continue
-            current[pid] = snapshotOf(op.purchase, pid)
+        applySnapshotDiff {
+            val result = completion.run(PurchaseCompletion.Entry.ON_START)
+            triggerDrain()
+            if (result.okSubsProducts == null) return@applySnapshotDiff null // the SUBS query failed: keep the baseline
+            val current = LinkedHashMap<String, SubSnapshot>()
+            for (op in result.subsForSnapshot) {
+                val pid = op.productId
+                if (pid.isEmpty()) continue
+                current[pid] = snapshotOf(op.purchase, pid)
+            }
+            current
         }
-        applySnapshotDiff(current)
     }
 
     /** §3.2 rule 3 — read-only reconcile under a non-owning provider. */
-    private suspend fun reconcileReadOnly() {
-        val lists = queryOwnedReadOnly() ?: return
+    private suspend fun reconcileReadOnly() = applySnapshotDiff {
+        val lists = queryOwnedReadOnly() ?: return@applySnapshotDiff null
         val (subs, inapp) = lists
         if (subs != null && inapp != null) replaceWithLocalEntitlements(subs, inapp)
-        if (subs == null) return
+        if (subs == null) return@applySnapshotDiff null
         val current = LinkedHashMap<String, SubSnapshot>()
         for (p in filterOwnedPurchases(subs, currentUserToken(), "reconcileReadOnly")) {
             if (p.purchaseState != Purchase.PurchaseState.PURCHASED) continue
             val pid = p.products.firstOrNull() ?: continue
             current[pid] = snapshotOf(p, pid)
         }
-        applySnapshotDiff(current)
+        current
     }
 
     /**
-     * Load → (price warm-up) → diff → save, one reconcile at a time. The warm-up suspends on a Play query,
-     * and two reconciles (a foreground entry racing a purchase-path pass) used to both load the SAME old
-     * snapshot across it and both emit the renewal: two `subscription_renewed` for one renewal. Under
-     * [snapshotMutex] the second one loads the snapshot the first saved and finds nothing new.
+     * Read Play → load → (price warm-up) → diff → save, one reconcile at a time. [readCurrent] (Play's
+     * owned SUBS as snapshots, or null to keep the baseline) runs INSIDE [snapshotMutex], so the reconcile
+     * that read Play later is always the one that applies later:
+     *   - the warm-up suspends on a Play query, and two reconciles used to both load the SAME old snapshot
+     *     across it and both emit the renewal (two `subscription_renewed` for one renewal);
+     *   - a reconcile that read Play BEFORE a renewal but applied AFTER one that read it later diffed the
+     *     older purchase against the newer snapshot: the order id changed, so it emitted a renewal
+     *     backwards and saved the older snapshot, and the next reconcile emitted the real renewal again.
+     * [isRenewal] also requires the purchase time not to go back, so a stale read can never be a renewal.
      */
-    private suspend fun applySnapshotDiff(current: Map<String, SubSnapshot>) = snapshotMutex.withLock {
+    private suspend fun applySnapshotDiff(readCurrent: suspend () -> Map<String, SubSnapshot>?) = snapshotMutex.withLock {
+        val current = readCurrent() ?: return@withLock
         val previous = loadLastSnapshot()
         if (emitsLifecycleEvents) {
             warmRenewalPrices(previous, current)
@@ -645,11 +653,13 @@ class NativeBillingManager internal constructor(
 
     /**
      * A renewal is `purchase_time` advancing, or (R47/R48) the Play order id's `..N` suffix changing —
-     * only when BOTH ids are non-blank and differ.
+     * only when BOTH ids are non-blank and differ, and the purchase time has not gone back (an older
+     * read of the same subscription is never a renewal).
      */
-    private fun isRenewal(prev: SubSnapshot, now: SubSnapshot): Boolean =
+    internal fun isRenewal(prev: SubSnapshot, now: SubSnapshot): Boolean =
         now.purchaseTime > prev.purchaseTime ||
-            (prev.transactionId != null && now.transactionId != null && prev.transactionId != now.transactionId)
+            (now.purchaseTime >= prev.purchaseTime &&
+                prev.transactionId != null && now.transactionId != null && prev.transactionId != now.transactionId)
 
     /** SUBS and INAPP (each null when its query failed), or null without a client. */
     private suspend fun queryOwnedReadOnly(): Pair<List<Purchase>?, List<Purchase>?>? {
@@ -717,9 +727,8 @@ class NativeBillingManager internal constructor(
         }
         for ((productId, now) in current) {
             val prev = previous[productId] ?: continue
+            if (!isRenewal(prev, now)) continue
             val timeAdvanced = now.purchaseTime > prev.purchaseTime
-            val idChanged = prev.transactionId != null && now.transactionId != null && prev.transactionId != now.transactionId
-            if (!timeAdvanced && !idChanged) continue
             AppDNA.trackBillingEvent("subscription_renewed", buildMap<String, Any> {
                 put("product_id", productId)
                 if (timeAdvanced) put("purchase_time", now.purchaseTime)

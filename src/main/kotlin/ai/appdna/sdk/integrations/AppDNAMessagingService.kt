@@ -30,9 +30,10 @@ import org.json.JSONObject
  *   H.8: AppDNAPushDelegate.onPushReceived fires before notify()
  *   H.10: payload schema parses canonical iOS-shaped action/actions plus legacy flat keys
  *   H.16: foreground state inferred from ActivityManager (works in :fcm process)
- *   H.19: server-supplied channel name/description/group honored
+ *   H.19: server-supplied channel group honored for a named (non-default) channel
  *   H.21: notificationIcon resolved via Configuration → manifest meta-data → app icon
- *   H.21b: server-supplied channel importance honored
+ *   H.21b: server-supplied channel importance / name / description apply to the custom-sound channel
+ *          only; the default `appdna_push` channel always takes the SDK's own settings
  *   H.22: a notification+data payload reaches this service only in the foreground (FCM displays
  *         it itself in the background), so the SDK displays it here like a data-only payload
  */
@@ -154,7 +155,7 @@ internal object AppDNANotificationPoster {
         // SPEC-497 §17 item 28: a bundled custom sound posts on its own `appdna_sound_<key>` channel
         // (Android 8+ plays the channel's sound); pre-8 the sound is set on the notification below.
         val soundChannel = PushSoundChannels.ensureChannel(context, data)
-        val channelId = soundChannel ?: data["channel_id"] ?: AppDNAMessagingService.DEFAULT_CHANNEL_ID
+        val channelId = soundChannel ?: data["channel_id"]?.takeIf { it.isNotBlank() } ?: AppDNAMessagingService.DEFAULT_CHANNEL_ID
         // SPEC-088: Interpolate push title and body via TemplateEngine
         val pushCtx = ai.appdna.sdk.core.TemplateEngine.buildContext()
         val title = ai.appdna.sdk.core.TemplateEngine.interpolate(
@@ -266,16 +267,25 @@ internal object AppDNANotificationPoster {
     }
 
     /**
-     * SPEC-070-A H.19: read server-supplied channel id/name/description/group
-     * from the FCM data payload before falling back to defaults. Console-defined
-     * channel grouping per push category must reach the end-user device.
+     * Creates the channel a push without a bundled custom sound posts on, if it does not exist yet:
+     * `data.channel_id` (a channel the host or the campaign's custom data names), else the SDK's default
+     * `appdna_push`.
      *
-     * SPEC-070-A H.21b: also honor channel importance (`high|default|low|min`).
+     * The channel is created with the SDK's OWN settings — name "Push Notifications", importance high, no
+     * description — whatever the push says. `channel_importance` / `channel_name` / `channel_description`
+     * describe the CUSTOM-SOUND channel only ([PushSoundChannels]). They used to be read here too, and a
+     * channel's settings are fixed once it exists, so the first push to reach a device decided the default
+     * channel for good: one campaign sent at Low or Min importance silenced every later push without a
+     * custom sound. `channel_group` (SPEC-070-A H.19) still applies to a named non-default channel; the
+     * default channel joins no group.
      */
     fun ensureNotificationChannel(context: Context, data: Map<String, String>) {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return
         ensureNotificationChannelOreoPlus(context, data)
     }
+
+    /** The default channel's name in the system settings. */
+    const val DEFAULT_CHANNEL_NAME = "Push Notifications"
 
     /**
      * SPEC-070-A J.15 — extracted helper that ASSUMES API 26+ so Android Lint
@@ -287,16 +297,11 @@ internal object AppDNANotificationPoster {
     @RequiresApi(Build.VERSION_CODES.O)
     private fun ensureNotificationChannelOreoPlus(context: Context, data: Map<String, String>) {
         val manager = context.getSystemService(NotificationManager::class.java) ?: return
-        val channelId = data["channel_id"] ?: AppDNAMessagingService.DEFAULT_CHANNEL_ID
+        val channelId = data["channel_id"]?.takeIf { it.isNotBlank() } ?: AppDNAMessagingService.DEFAULT_CHANNEL_ID
         if (manager.getNotificationChannel(channelId) != null) return
 
-        val channelName = data["channel_name"] ?: "Push Notifications"
-        val channelDescription = data["channel_description"]
-        val channelImportance = mapImportanceOreoPlus(data["channel_importance"])
-
-        val channel = NotificationChannel(channelId, channelName, channelImportance).apply {
-            channelDescription?.let { description = it }
-            data["channel_group"]?.let {
+        val channel = NotificationChannel(channelId, DEFAULT_CHANNEL_NAME, NotificationManager.IMPORTANCE_HIGH).apply {
+            data["channel_group"]?.takeIf { channelId != AppDNAMessagingService.DEFAULT_CHANNEL_ID }?.let {
                 // Channel group must exist before the channel can adopt it; create
                 // both lazily.
                 if (manager.getNotificationChannelGroup(it) == null) {
@@ -308,29 +313,6 @@ internal object AppDNANotificationPoster {
             }
         }
         manager.createNotificationChannel(channel)
-    }
-
-    private fun mapImportance(raw: String?): Int {
-        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return 0
-        return mapImportanceOreoPlus(raw)
-    }
-
-    /**
-     * SPEC-070-A J.15 — extracted helper that ASSUMES API 26+ so Android Lint
-     * flags any accidental call that isn't behind a
-     * `Build.VERSION.SDK_INT >= O` guard. The `NotificationManager.IMPORTANCE_*`
-     * constants surfaced from this helper are the ones consumed by
-     * [NotificationChannel] (API 26+); even though the constant values were
-     * declared in older API levels, callers using them must be on a path
-     * where the channel APIs are available.
-     */
-    @RequiresApi(Build.VERSION_CODES.O)
-    private fun mapImportanceOreoPlus(raw: String?): Int = when (raw?.lowercase()) {
-        "high" -> NotificationManager.IMPORTANCE_HIGH
-        "default" -> NotificationManager.IMPORTANCE_DEFAULT
-        "low" -> NotificationManager.IMPORTANCE_LOW
-        "min" -> NotificationManager.IMPORTANCE_MIN
-        else -> NotificationManager.IMPORTANCE_HIGH
     }
 
 }

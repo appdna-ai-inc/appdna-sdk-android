@@ -226,12 +226,20 @@ internal class PurchaseLedger(
 
     private fun indexKey(key: String) = "$key$CORRUPT_SUFFIX.index"
 
-    /** The keys of the corrupt copies kept for [key], oldest first. */
-    fun corruptCopyKeys(key: String): List<String> = try {
-        val arr = JSONArray(read(indexKey(key)) ?: "[]")
-        (0 until arr.length()).map { arr.getString(it) }
-    } catch (_: Exception) {
-        emptyList()
+    /**
+     * The keys of the corrupt copies kept for [key], oldest first. A legacy `<key>.corrupt` copy left by an
+     * older SDK (one slot, overwritten by each new unreadable value) is folded in as the OLDEST entry, so it
+     * is listed and counts toward (and is pruned by) the cap; the next [keepCorrupt] writes it into the index.
+     */
+    fun corruptCopyKeys(key: String): List<String> {
+        val indexed = try {
+            val arr = JSONArray(read(indexKey(key)) ?: "[]")
+            (0 until arr.length()).map { arr.getString(it) }
+        } catch (_: Exception) {
+            emptyList()
+        }
+        val legacy = "$key$CORRUPT_SUFFIX"
+        return if (legacy !in indexed && read(legacy) != null) listOf(legacy) + indexed else indexed
     }
 
     companion object {

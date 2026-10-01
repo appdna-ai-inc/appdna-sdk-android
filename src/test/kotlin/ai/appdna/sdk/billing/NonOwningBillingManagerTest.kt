@@ -162,4 +162,59 @@ class NonOwningBillingManagerTest {
         assertEquals(1, pipe!!.count("subscription_renewed"))
         assertEquals(9.99, pipe!!.props("subscription_renewed").getDouble("price"), 1e-9)
     }
+
+    /**
+     * Round 19 — an OUT-OF-ORDER apply. Reconcile 1 reads Play before the renewal (GPA.1..0) and its answer
+     * is held; Play then renews (GPA.1..1) and reconcile 2 is started; reconcile 2's read is answered first,
+     * then reconcile 1's.
+     * NEGATIVE CONTROL: with Play read OUTSIDE the snapshot mutex (and `isRenewal` not requiring the purchase
+     * time to hold), reconcile 2 applied the renewal, then reconcile 1 diffed the OLDER purchase against it:
+     * the order id differed, so it emitted a second, backwards `subscription_renewed` and saved the older
+     * snapshot (two events, the saved order id GPA.1..0).
+     */
+    @Test fun `an older Play read applied after a newer one emits no backwards renewal and does not regress the snapshot`() {
+        val s = scenario(owns = false, emits = true)
+        val first = FakeBillingClient.purchase("monthly_sub", "tok_s", "GPA.1..0", acknowledged = true, purchaseTime = 1L, autoRenewing = true)
+        s.mgr.saveSnapshot(mapOf("monthly_sub" to NativeBillingManager.SubSnapshot("monthly_sub", 1L, true, true, "GPA.1..0", "GPA.1")))
+        s.fake.owned.values.forEach { it.clear() }
+        s.fake.addOwned("subs", first)
+
+        val g1 = kotlinx.coroutines.CompletableDeferred<Unit>()
+        val g2 = kotlinx.coroutines.CompletableDeferred<Unit>()
+        s.fake.subsQueryGates.addLast(g1)
+        s.fake.subsQueryGates.addLast(g2)
+        var done1 = false; var done2 = false
+        s.mgr.scope.launch { s.mgr.reconcileSubscriptionState(); done1 = true }
+        s.idle()
+        assertEquals("reconcile 1 is parked in its SUBS read", 1, s.fake.subsQueriesStarted)
+
+        // Play renews; reconcile 2 starts.
+        s.fake.owned.values.forEach { it.clear() }
+        s.fake.addOwned("subs", FakeBillingClient.purchase("monthly_sub", "tok_s", "GPA.1..1", acknowledged = true, purchaseTime = 2L, autoRenewing = true))
+        s.mgr.scope.launch { s.mgr.reconcileSubscriptionState(); done2 = true }
+        s.idle()
+
+        g2.complete(Unit) // the newer read answers first
+        s.idle()
+        g1.complete(Unit)
+        s.idle(200)
+        assertTrue(done1 && done2)
+        assertEquals("one renewal, never a backwards one", 1, pipe!!.count("subscription_renewed"))
+        assertEquals("GPA.1..1", pipe!!.props("subscription_renewed").getString("transaction_id"))
+        val saved = s.mgr.loadLastSnapshot().getValue("monthly_sub")
+        assertEquals("the snapshot never goes back", "GPA.1..1", saved.transactionId)
+        assertEquals(2L, saved.purchaseTime)
+    }
+
+    /** The pure rule: an older purchase time is never a renewal, even with a different order id. */
+    @Test fun `isRenewal requires the purchase time not to go back`() {
+        val s = scenario(owns = false, emits = true)
+        val newer = NativeBillingManager.SubSnapshot("m", 2L, true, true, "GPA.1..1", "GPA.1")
+        val older = NativeBillingManager.SubSnapshot("m", 1L, true, true, "GPA.1..0", "GPA.1")
+        assertTrue(s.mgr.isRenewal(older, newer))
+        assertTrue(!s.mgr.isRenewal(newer, older))
+        assertTrue("same time, new order id (R47)", s.mgr.isRenewal(older, NativeBillingManager.SubSnapshot("m", 1L, true, true, "GPA.1..1", "GPA.1")))
+        s.mgr.diffAndEmit(mapOf("m" to newer), mapOf("m" to older))
+        assertEquals(0, pipe!!.count("subscription_renewed"))
+    }
 }

@@ -201,6 +201,38 @@ class PushNotificationActionsTest {
         assertEquals(3, notifications().single().actions.size)
     }
 
+    private val lowCampaign = mapOf("channel_importance" to "low", "channel_name" to "Offers", "channel_description" to "Promotional pushes")
+
+    /**
+     * Round 19 — a campaign's channel settings describe its custom-sound channel only. NEGATIVE CONTROL: the
+     * default `appdna_push` channel was created from the FIRST push's `channel_*` keys, so one Low campaign
+     * fixed it at Low (named "Offers") and every later push without a custom sound posted silently.
+     */
+    @Test
+    fun `the default channel ignores a push's channel settings and keeps the SDK's own`() {
+        post(data(lowCampaign))
+        service.onMessageReceived(RemoteMessage.Builder("test@fcm").setData(data(mapOf("delivery_id" to "d2"))).build())
+        idle()
+        assertTrue(notifications().all { it.channelId == AppDNAMessagingService.DEFAULT_CHANNEL_ID })
+        val channel = nm.getNotificationChannel(AppDNAMessagingService.DEFAULT_CHANNEL_ID)
+        assertEquals(NotificationManager.IMPORTANCE_HIGH, channel.importance)
+        assertEquals("Push Notifications", channel.name.toString())
+        assertNull(channel.description)
+    }
+
+    @Test
+    fun `the custom-sound channel takes the push's channel settings`() {
+        PushSoundChannels.rawResourceId = { _, key -> if (key == "chime") 0x7f0f0001 else 0 }
+        val n = post(data(lowCampaign + ("sound" to "chime.wav")))
+        assertEquals("appdna_sound_chime", n.channelId)
+        val channel = nm.getNotificationChannel("appdna_sound_chime")
+        assertEquals(NotificationManager.IMPORTANCE_LOW, channel.importance)
+        assertEquals("Offers (chime)", channel.name.toString())
+        assertEquals("Promotional pushes", channel.description)
+        assertNull("a sound push does not create the default channel from its settings either",
+            nm.getNotificationChannel(AppDNAMessagingService.DEFAULT_CHANNEL_ID)?.takeIf { it.importance != NotificationManager.IMPORTANCE_HIGH })
+    }
+
     @Test
     fun `sound keys match the server rule`() {
         assertEquals("notification_chime", PushSoundChannels.soundKey("Notification-Chime.WAV"))

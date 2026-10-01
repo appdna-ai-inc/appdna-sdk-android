@@ -79,4 +79,30 @@ class PurchaseLedgerCorruptTest {
         assertEquals(listOf("bad-2", "bad-3", "bad-4"), ledger.corruptCopyKeys(PurchaseLedger.KEY_DELIVERIES).map { storage.getString(it) })
         assertEquals(null, storage.getString("$key.1000"))
     }
+
+    /**
+     * Round 19 — an older SDK kept ONE `<key>.corrupt` copy. NEGATIVE CONTROL: it was outside the index, so it
+     * was never listed (`corruptCopyKeys` missed it) and never pruned — a fourth copy beside the cap of three.
+     */
+    @Test fun `a legacy single corrupt copy is folded into the index as the oldest and pruned by the cap`() {
+        val storage = LocalStorage(ctx)
+        var now = 1_000L
+        val ledger = PurchaseLedger(storage, clock = { now })
+        val legacy = PurchaseLedger.KEY_DELIVERIES + PurchaseLedger.CORRUPT_SUFFIX
+        storage.setStringsSync(mapOf(legacy to "legacy"))
+        assertEquals("listed before any new copy", listOf(legacy), ledger.corruptCopyKeys(PurchaseLedger.KEY_DELIVERIES))
+
+        storage.setStringsSync(mapOf(PurchaseLedger.KEY_DELIVERIES to "bad-0"))
+        ledger.deliveries()
+        assertEquals(listOf(legacy, "$legacy.1000"), ledger.corruptCopyKeys(PurchaseLedger.KEY_DELIVERIES))
+        assertTrue("the index itself now holds it", storage.getString("$legacy.index")!!.contains("\"$legacy\""))
+
+        for (i in 1 until 3) {
+            now += 1_000
+            storage.setStringsSync(mapOf(PurchaseLedger.KEY_DELIVERIES to "bad-$i"))
+            ledger.deliveries()
+        }
+        assertEquals(listOf("$legacy.1000", "$legacy.2000", "$legacy.3000"), ledger.corruptCopyKeys(PurchaseLedger.KEY_DELIVERIES))
+        assertEquals("the legacy copy is pruned like any oldest copy", null, storage.getString(legacy))
+    }
 }

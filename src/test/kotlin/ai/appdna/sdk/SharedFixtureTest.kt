@@ -183,6 +183,7 @@ class SharedFixtureTest(
         AppDNA.push.manager = null
         AppDNA.push.contextOverride = null
         ai.appdna.sdk.integrations.PushTapRouter.routeSink = null
+        ai.appdna.sdk.integrations.PushSoundChannels.rawResourceId = { c, key -> c.resources.getIdentifier(key, "raw", c.packageName) }
         AppDNA.deepLinks.setDelegate(null)
         AppDNA.deepLinks.track = { name, props -> AppDNA.track(name, props) }
         ctx.getSharedPreferences("ai.appdna.sdk.msg_freq", Context.MODE_PRIVATE).edit().clear().commit()
@@ -236,6 +237,8 @@ class SharedFixtureTest(
             "receive_push" -> runReceivePush(action, spy)
             "tap_push" -> runTapPush(action, spy)
             "classify_push" -> runClassifyPush(action, spy)
+            // Round 19 — the notification channels the REAL poster creates (Android only).
+            "post_push_notification" -> runPostPushNotification(action, spy)
             "present_surface_under_experiment" -> runPresentSurfaceUnderExperiment(action, spy)
             // SPEC-496 §H — the raw host-data pass, through the REAL HostDataResolver.
             "resolve_block" -> runResolveBlock(spy)
@@ -2036,6 +2039,44 @@ class SharedFixtureTest(
     /** SPEC-497 §9.2 — the REAL classifier every entry point gates on. */
     private fun runClassifyPush(action: JSONObject, spy: Spy) {
         spy.state["is_appdna"] = AppDNA.push.isAppDNAMessage(fcmData(action.getJSONObject("payload")))
+    }
+
+    /**
+     * Round 19 — each payload posted through the REAL `AppDNANotificationPoster.post` (the path
+     * AppDNAMessagingService and `AppDNA.push.handleMessage` display through), then the channels read back
+     * from Robolectric's NotificationManager. `setup.bundled_sounds` stands in for the app's `res/raw`.
+     */
+    private fun runPostPushNotification(action: JSONObject, spy: Spy) {
+        val bundled = (setup.optJSONArray("bundled_sounds") ?: JSONArray()).let { a -> (0 until a.length()).map { a.getString(it) } }
+        ai.appdna.sdk.integrations.PushSoundChannels.rawResourceId = { _, key ->
+            bundled.indexOf(key).let { if (it < 0) 0 else 0x7f0f0001 + it }
+        }
+        val payloads = action.optJSONArray("payloads") ?: unsupported("post_push_notification without action.payloads")
+        var last: Map<String, String>? = null
+        for (i in 0 until payloads.length()) {
+            val data = fcmData(payloads.getJSONObject(i))
+            ai.appdna.sdk.integrations.AppDNANotificationPoster.post(ctx, data, null, null)
+            last = data
+        }
+        idle()
+        val nm = ctx.getSystemService(android.app.NotificationManager::class.java)
+        val posted = shadowOf(nm).getNotification(ai.appdna.sdk.integrations.AppDNANotificationPoster.notificationId(last!!))
+            ?: unsupported("the last payload posted no notification")
+        fun importance(i: Int) = when (i) {
+            android.app.NotificationManager.IMPORTANCE_HIGH -> "high"
+            android.app.NotificationManager.IMPORTANCE_DEFAULT -> "default"
+            android.app.NotificationManager.IMPORTANCE_LOW -> "low"
+            android.app.NotificationManager.IMPORTANCE_MIN -> "min"
+            else -> "other:$i"
+        }
+        val channel = nm.getNotificationChannel(posted.channelId) ?: unsupported("no channel ${posted.channelId}")
+        spy.state["channel_id"] = posted.channelId
+        spy.state["channel_importance"] = importance(channel.importance)
+        spy.state["channel_name"] = channel.name?.toString()
+        spy.state["channel_description"] = channel.description
+        spy.state["default_channel"] = nm.getNotificationChannel(ai.appdna.sdk.integrations.AppDNAMessagingService.DEFAULT_CHANNEL_ID)?.let {
+            mapOf("importance" to importance(it.importance), "name" to it.name?.toString(), "description" to it.description)
+        }
     }
 
     private fun runReceivePush(action: JSONObject, spy: Spy) {

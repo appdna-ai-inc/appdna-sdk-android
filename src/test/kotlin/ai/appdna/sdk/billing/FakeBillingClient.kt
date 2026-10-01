@@ -114,8 +114,24 @@ internal class FakeBillingClient(private val listener: PurchasesUpdatedListener)
     @Volatile var queryGate: kotlinx.coroutines.CompletableDeferred<Unit>? = null
     @Volatile var queriesParked = 0
 
+    /**
+     * Round 19 — one gate PER SUBS query, taken in call order: the query answers with the owned list AS OF
+     * THE CALL (what Play returned then), on Main once its own gate completes. Lets a test release two
+     * reconciles' reads in the opposite order to the one they were made in.
+     */
+    val subsQueryGates = ArrayDeque<kotlinx.coroutines.CompletableDeferred<Unit>>()
+    @Volatile var subsQueriesStarted = 0
+
     override fun queryPurchasesAsync(params: QueryPurchasesParams, listener: PurchasesResponseListener) {
         val type = stringsOf(params).firstOrNull { it == ProductType.SUBS || it == ProductType.INAPP } ?: ProductType.INAPP
+        if (type == ProductType.SUBS) subsQueriesStarted++
+        val perCall = if (type == ProductType.SUBS) subsQueryGates.removeFirstOrNull() else null
+        if (perCall != null) {
+            val code = queryCodes[type] ?: BillingResponseCode.OK
+            val list = if (code == BillingResponseCode.OK) owned[type].orEmpty().toList() else emptyList()
+            perCall.invokeOnCompletion { main.post { listener.onQueryPurchasesResponse(result(code), list) } }
+            return
+        }
         val answer = {
             val code = queryCodes[type] ?: BillingResponseCode.OK
             val list = if (code == BillingResponseCode.OK) owned[type].orEmpty().toList() else emptyList()

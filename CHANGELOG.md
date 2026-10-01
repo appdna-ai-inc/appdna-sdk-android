@@ -64,9 +64,19 @@ Wraps iOS 1.0.82. Ships maps and host data (including "Show more").
 - Adapty bridge: its entitlement and restore lists name the store product (`AccessLevel.vendorProductId`), as on iOS;
   they named the access level (e.g. `premium`).
 - One renewal seen by two overlapping reconciles emits one `subscription_renewed` (it could emit two).
+  A reconcile now reads Play inside the same lock as its diff, and an older read of a subscription
+  (an earlier purchase time) is never a renewal: a reconcile that read Play before a renewal but
+  finished after one that read it later used to emit a second, backwards `subscription_renewed` and
+  store the older state.
+- The default push channel, `appdna_push`, is created with the SDK's own settings (name "Push
+  Notifications", importance high). It was created from the first push's `channel_importance` /
+  `channel_name` / `channel_description`, so one campaign sent at Low or Min importance fixed every
+  later push without a custom sound at that importance. Those keys now apply to a custom-sound channel
+  only.
 - An unreadable billing-ledger value is kept under `<key>.corrupt.<epoch-ms>`; the newest three copies
   per key are kept (listed under `<key>.corrupt.index`). A second unreadable value used to overwrite
-  the single `<key>.corrupt` copy.
+  the single `<key>.corrupt` copy. A `<key>.corrupt` copy left by an earlier SDK is listed in the index
+  as the oldest copy and is removed like one.
 - `diagnose()` reports the veto timeout a wrapper was given (`0.5`, not the whole-second `1`): new
   `AppDNAOptions.vetoTimeoutSeconds` (a body property, so the constructors and `copy` are unchanged).
 
