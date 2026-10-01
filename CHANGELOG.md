@@ -14,7 +14,7 @@ Wraps iOS 1.0.82. Ships maps and host data (including "Show more").
   (`open_url` now routes like `deep_link`). `dismiss` and buttons set not to open the app go to the
   new `PushActionReceiver`, which is declared in the SDK manifest. A text-reply button delivers its
   text as `data["reply_text"]` in `onPushTapped`. The notification is removed when one of its buttons
-  is tapped. A custom sound plays from `res/raw/<name>` on its own `appdna_sound_<name>` channel, which
+  is tapped (for a button that opens the app, by `handlePushTap`). A custom sound plays from `res/raw/<name>` on its own `appdna_sound_<name>` channel, which
   the SDK creates the first time it sees the sound.
 - **Maps.** A `map` block can use Google as well as Mapbox (the customer's own key,
   delivered like the Mapbox token), draw a real pannable map through the bundled Google Maps SDK
@@ -245,8 +245,9 @@ Needs the AppDNA server from the same release (purchase verification and push tr
   it) returns `false` and tracks nothing.
 - **Upgrade note:** a notification that the previous SDK version posted and that is still in the
   tray when the app updates carries no `appdna` extra. `handlePushTap` recognises that version's tap
-  intent (`push_id`, `action_type` and `action_value` extras, no `appdna`) and still routes it and
-  fires `onPushTapped`; it tracks `push_tapped` only when the notification carries a `push_id` (servers
+  intent (exactly the extras that version set — `push_id`, `action_type`, `action_value`, and either
+  `screen_id` and `deep_link` or a button's `action_id` — and no `appdna`) and still routes it and
+  fires `onPushTapped`; it tracks `push_tapped` only when the notification carries a non-empty `push_id` (servers
   before this release sent none). A handled intent loses those extras, so it is not routed twice.
 
 #### Fixed
