@@ -300,4 +300,28 @@ class EventEnvelopeWireFormatTest {
 
         assertFalse(device.has("framework_version"))
     }
+
+    @Test
+    fun deviceTimezone_isTheDefaultZonesIanaId_readPerEvent() {
+        // The server schedules time-zone-aware pushes, quiet hours and journey waits from this field, so
+        // it must be the platform's CURRENT zone at build time (a traveller moves), as an IANA id.
+        val saved = java.util.TimeZone.getDefault()
+        try {
+            java.util.TimeZone.setDefault(java.util.TimeZone.getTimeZone("Pacific/Chatham"))
+            val first = EventSchema.buildEnvelope(
+                eventName = "evt", properties = null, identity = identity, sessionId = "s1",
+                appVersion = "1.2.3", analyticsConsent = true,
+            ).getJSONObject("device")
+            assertEquals("Pacific/Chatham", first.getString("timezone"))
+
+            java.util.TimeZone.setDefault(java.util.TimeZone.getTimeZone("America/Sao_Paulo"))
+            val second = EventSchema.buildEnvelope(
+                eventName = "evt", properties = null, identity = identity, sessionId = "s1",
+                appVersion = "1.2.3", analyticsConsent = true,
+            ).getJSONObject("device")
+            assertEquals("America/Sao_Paulo", second.getString("timezone"))
+        } finally {
+            java.util.TimeZone.setDefault(saved)
+        }
+    }
 }

@@ -90,6 +90,11 @@ internal object EventSchema {
                 // so the field round-trips with iOS `Locale.identifier` exactly.
                 put("locale", Locale.getDefault().toLanguageTag())
                 put("country", Locale.getDefault().country)
+                // The device's IANA time-zone id (e.g. "Europe/Berlin"), read per event so a user who
+                // travels is scheduled in the zone they are in now. The server records it on the user's
+                // profile for time-zone-aware pushes, quiet hours and journey waits. Omitted when the
+                // platform reports none, as iOS omits a nil `timezone`.
+                deviceTimeZoneId()?.let { put("timezone", it) }
             })
 
             put("context", JSONObject().apply {
@@ -135,6 +140,10 @@ internal object EventSchema {
             })
         }
     }
+
+    /** The device's IANA zone id (`TimeZone.getDefault().id`), or null when empty. */
+    internal fun deviceTimeZoneId(): String? =
+        java.util.TimeZone.getDefault()?.id?.takeIf { it.isNotEmpty() }
 
     /**
      * SPEC-070-A G.15: Pad `Build.VERSION.RELEASE` to a 3-part `<major>.<minor>.<patch>`
