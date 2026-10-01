@@ -130,6 +130,17 @@ class PushModule internal constructor() {
     /** Set by `configure` on its bootstrap thread, read by receivers on the main thread. */
     @Volatile
     internal var manager: PushTokenManager? = null
+        set(value) {
+            field = value
+            // A delegate registered before `configure` (or kept across `shutdown`) is applied to the
+            // manager `configure` creates — as iOS keeps `AppDNA.pushDelegate`. Without this the
+            // delegate set before configure was dropped and `onPushReceived` / `onPushTapped` never fired.
+            value?.pushListener = heldDelegate
+        }
+
+    /** The host's push delegate, held independently of the manager so it survives configure / shutdown. */
+    @Volatile
+    private var heldDelegate: AppDNAPushDelegate? = null
     // SPEC-070-A H.17: dropped duplicate `listener` field. The single source
     // of truth is `PushTokenManager.pushListener`, which Phase B.1 wires from
     // [setDelegate]. Reading the delegate now goes through [delegate].
@@ -204,6 +215,7 @@ class PushModule internal constructor() {
 
     /** Set a delegate for push notification lifecycle events. */
     fun setDelegate(delegate: AppDNAPushDelegate?) {
+        heldDelegate = delegate
         manager?.pushListener = delegate
     }
 
