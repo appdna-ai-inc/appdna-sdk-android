@@ -271,8 +271,9 @@ internal object AppDNANotificationPoster {
      * `data.channel_id` (a channel the host or the campaign's custom data names), else the SDK's default
      * `appdna_push`.
      *
-     * The channel is created with the SDK's OWN settings — name "Push Notifications", importance high, no
-     * description — whatever the push says. `channel_importance` / `channel_name` / `channel_description`
+     * The channel is created with the SDK's OWN settings — importance high, no description, named
+     * "Push Notifications" (the default channel) or "Push Notifications (<id>)" (a `data.channel_id` one, so
+     * it is not a second channel of the same name in the system settings) — whatever the push says. `channel_importance` / `channel_name` / `channel_description`
      * describe the CUSTOM-SOUND channel only ([PushSoundChannels]). They used to be read here too, and a
      * channel's settings are fixed once it exists, so the first push to reach a device decided the default
      * channel for good: one campaign sent at Low or Min importance silenced every later push without a
@@ -288,6 +289,14 @@ internal object AppDNANotificationPoster {
     const val DEFAULT_CHANNEL_NAME = "Push Notifications"
 
     /**
+     * The system-settings name of a channel the SDK creates without a custom sound: [DEFAULT_CHANNEL_NAME] for
+     * the default `appdna_push`, and "Push Notifications (<id>)" for a `data.channel_id` one — it used to be
+     * "Push Notifications" too, two channels of one name the user could not tell apart.
+     */
+    fun channelName(channelId: String): String =
+        if (channelId == AppDNAMessagingService.DEFAULT_CHANNEL_ID) DEFAULT_CHANNEL_NAME else "$DEFAULT_CHANNEL_NAME ($channelId)"
+
+    /**
      * SPEC-070-A J.15 — extracted helper that ASSUMES API 26+ so Android Lint
      * flags any accidental call that isn't behind a
      * `Build.VERSION.SDK_INT >= O` guard. [NotificationChannel] and the
@@ -300,7 +309,7 @@ internal object AppDNANotificationPoster {
         val channelId = data["channel_id"]?.takeIf { it.isNotBlank() } ?: AppDNAMessagingService.DEFAULT_CHANNEL_ID
         if (manager.getNotificationChannel(channelId) != null) return
 
-        val channel = NotificationChannel(channelId, DEFAULT_CHANNEL_NAME, NotificationManager.IMPORTANCE_HIGH).apply {
+        val channel = NotificationChannel(channelId, channelName(channelId), NotificationManager.IMPORTANCE_HIGH).apply {
             data["channel_group"]?.takeIf { channelId != AppDNAMessagingService.DEFAULT_CHANNEL_ID }?.let {
                 // Channel group must exist before the channel can adopt it; create
                 // both lazily.

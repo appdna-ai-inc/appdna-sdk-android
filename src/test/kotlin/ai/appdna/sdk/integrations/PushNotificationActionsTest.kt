@@ -220,6 +220,23 @@ class PushNotificationActionsTest {
         assertNull(channel.description)
     }
 
+    /**
+     * Round 20 — a channel a push's custom data names (`data.channel_id`). NEGATIVE CONTROL: it was created as
+     * "Push Notifications", the default channel's name, so the system settings showed two channels of one name.
+     */
+    @Test
+    fun `a custom-data channel is named after its id, and the default keeps its name`() {
+        val n = post(data(lowCampaign + ("channel_id" to "orders")))
+        assertEquals("orders", n.channelId)
+        val channel = nm.getNotificationChannel("orders")
+        assertEquals("Push Notifications (orders)", channel.name.toString())
+        assertEquals(NotificationManager.IMPORTANCE_HIGH, channel.importance)
+        assertNull(channel.description)
+        service.onMessageReceived(RemoteMessage.Builder("test@fcm").setData(data(mapOf("delivery_id" to "d2", "push_id" to "p2"))).build())
+        idle()
+        assertEquals("Push Notifications", nm.getNotificationChannel(AppDNAMessagingService.DEFAULT_CHANNEL_ID).name.toString())
+    }
+
     @Test
     fun `the custom-sound channel takes the push's channel settings`() {
         PushSoundChannels.rawResourceId = { _, key -> if (key == "chime") 0x7f0f0001 else 0 }
