@@ -12698,6 +12698,10 @@ private suspend fun fetchLocationSuggestions(query: String): List<LocationSugges
                 doOutput = true
                 setRequestProperty("Content-Type", "application/json")
                 if (apiKey != null) setRequestProperty("x-api-key", apiKey)
+                // The server answers null for a missing coordinate / zone only to an SDK that says it
+                // reads null (Android >= 1.0.54); without these headers it sends the legacy 0 / "UTC" shape.
+                setRequestProperty("x-sdk-version", ai.appdna.sdk.AppDNA.sdkVersion)
+                setRequestProperty("x-sdk-platform", "android")
             } ?: return@withContext null
             try {
                 connection.outputStream.use { it.write(requestBody.toByteArray(Charsets.UTF_8)) }
