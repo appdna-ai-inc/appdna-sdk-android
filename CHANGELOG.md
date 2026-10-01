@@ -33,6 +33,11 @@ Wraps iOS 1.0.82. Ships maps and host data (including "Show more").
   stacks, section backgrounds and carousel pages (before, it silently did nothing there). The tapped
   button shows a spinner; a refresh ends after at most 8 s. New `ElementInteractionResult.
   decodeDataContext` and `minimumBridgeTimeoutMs` for wrapper bridges.
+- **Device time zone on every event.** The event envelope carries `device.timezone`, the IANA id
+  from `TimeZone.getDefault()` read per event (omitted when the platform reports none). The AppDNA
+  server keeps the latest one on the identified user's profile and uses it for pushes sent in the
+  user's time zone, push quiet hours and journey waits — after a `timezone` identify trait, which still
+  takes precedence. No code change needed.
 
 ### Changed
 - `onElementInteraction` behaviour for every flow: `inputValuePatches` merge onto the answers as they

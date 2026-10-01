@@ -679,9 +679,21 @@ class SharedFixtureTest(
         // SPEC-497 §11.9 (R52): through the PUBLIC AppDNA.track — the host path, which strips the reserved
         // `emitted_by` / `_appdna_origin` keys — with the capturing tracker installed.
         AppDNA.installEventTrackerForTest(p.tracker)
-        AppDNA.track(name, props)
-
-        spy.events += p.envelopes().map { it.toEventPair() }
+        // `setup.device_timezone` — installed as the JVM default zone (what `TimeZone.getDefault()`
+        // reports) and restored after. The SDK reads it through the platform API; the driver never hands
+        // it to the SDK.
+        val savedZone = java.util.TimeZone.getDefault()
+        fixtureJson.optJSONObject("setup")?.optString("device_timezone", "")?.takeIf { it.isNotEmpty() }?.let { id ->
+            val zone = java.util.TimeZone.getTimeZone(id)
+            assertEquals("[$fixtureName] setup.device_timezone '$id' is not an IANA zone", id, zone.id)
+            java.util.TimeZone.setDefault(zone)
+        }
+        try {
+            AppDNA.track(name, props)
+            spy.events += p.envelopes().map { it.toEventPair() }
+        } finally {
+            java.util.TimeZone.setDefault(savedZone)
+        }
         spy.state["current_screen"] = screen
     }
 
@@ -2440,7 +2452,7 @@ class SharedFixtureTest(
         val expected = fixtureJson.getJSONObject("expect").optJSONArray("events") ?: JSONArray()
         for (i in 0 until minOf(expected.length(), events.size)) {
             val want = expected.getJSONObject(i).optJSONObject("properties")?.keys()?.asSequence()?.toSet() ?: continue
-            val got = events[i].second.filterValues { it != null }.keys - "context"
+            val got = events[i].second.filterValues { it != null }.keys - "context" - "device"
             assertEquals("[$fixtureName] event[$i] exact property keys", want.sorted(), got.sorted())
         }
     }
@@ -2532,10 +2544,14 @@ class SharedFixtureTest(
     // Helpers
     // ---------------------------------------------------------------------------------------------
 
-    /** The persisted envelope → (event_name, props ∪ {context}) so `properties.context.*` resolves. */
+    /**
+     * The persisted envelope → (event_name, props ∪ {context, device}) so `properties.context.*` and
+     * `properties.device.*` resolve against the envelope's own blocks.
+     */
     private fun JSONObject.toEventPair(): Pair<String, Map<String, Any?>> {
         val props = (optJSONObject("properties") ?: JSONObject()).asMap().toMutableMap()
         props["context"] = optJSONObject("context")?.asMap()
+        props["device"] = optJSONObject("device")?.asMap()
         return getString("event_name") to props
     }
 
