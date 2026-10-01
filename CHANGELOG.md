@@ -147,8 +147,9 @@ Needs the AppDNA server from the same release (purchase verification and push tr
   `purchase_completed` (+ `subscription_started` for a subscription) with an empty `paywall_id`
   (`""`). Every report that did not resolve a live `purchase()` caller is queued
   (`appdna.pending_deliveries_v1`, 100 entries / 30 days) and delivered through `onPurchaseCompleted`
-  when a delivering delegate is set, after `identify`, or once billing has initialised during
-  `configure`'s bootstrap. Delivery is at
+  while a delivering delegate is set: when it is set, once billing has initialised during
+  `configure`'s bootstrap, and after each return to the foreground, `identify`, restore and
+  `refreshEntitlementCache()`. Delivery is at
   least once — grant idempotently by `transactionId`. A reinstall does not re-report purchases
   acknowledged before it. A late-reported plan change looks like a new subscription (known).
 - The public `BillingModule.refreshEntitlementCache()` now also completes unreported purchases and
@@ -173,7 +174,7 @@ Needs the AppDNA server from the same release (purchase verification and push tr
   `onPaywallRestoreFailed(providerNotAvailable)`, without `onPaywallRestoreStarted` — as on iOS, and as
   the purchase tap (no `onPaywallPurchaseStarted`). Before, `onPaywallRestoreStarted` fired first; under
   `RevenueCat` / `Adapty` AppDNA then ran a Play restore itself, and under `None` the restore failed
-  with `unknown`.
+  with `IllegalStateException("Billing bridge not configured")` and no `error_type`.
 - `AppDNA.shutdown()` while a paywall purchase or restore is waiting no longer reports it as failed:
   no `onPaywallPurchaseFailed` / `onPaywallRestoreFailed` and no `purchase_restore_failed`. A purchase
   that completes afterwards is delivered through the delivery queue. The one-shot
@@ -300,8 +301,8 @@ Needs the AppDNA server from the same release (purchase verification and push tr
     the getters of the fields that became nullable primitives (`getLatitude()`, `getLongitude()`,
     `getTimezone_offset()` now return boxed `Double` / `Integer`) all changed.
   - `VerificationException` gains `httpStatus` and `serverError`. The `(String, Throwable)`
-    constructor is kept, and a `(String)` constructor is new for Java callers (`@JvmOverloads`;
-    before, Java could only pass both arguments). The synthetic default-arguments constructor that
+    constructor is kept; `@JvmOverloads` adds `(String)`, `(String, Throwable, Integer)` and the
+    four-argument constructor for Java callers (before, Java could only pass both arguments). The synthetic default-arguments constructor that
     Kotlin emits for a call using defaulted or named arguments (for example
     `VerificationException("…")`) changed.
 
