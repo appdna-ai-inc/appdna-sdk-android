@@ -48,6 +48,10 @@ Wraps iOS 1.0.82. Ships maps and host data (including "Show more").
   when the same view is reused for a new presentation.
 
 ### Fixed
+- A push delegate set before `configure` (`AppDNA.push.setDelegate` or `AppDNA.pushDelegate`) is kept
+  and used once `configure` runs, and again after `shutdown` and a new `configure`, as on iOS. It was
+  dropped, so `onPushReceived` / `onPushTapped` never fired for a host that set it first, while
+  `AppDNA.pushDelegate` still returned it.
 - `push_dismissed` was never tracked: `PushDismissReceiver` was not declared in the manifest, so the
   notification's delete intent reached no receiver. It is declared now.
 - A throwing `onElementInteraction` no longer crashes the app; it is treated as `null`.
