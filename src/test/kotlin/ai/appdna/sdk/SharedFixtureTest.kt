@@ -2052,10 +2052,12 @@ class SharedFixtureTest(
             bundled.indexOf(key).let { if (it < 0) 0 else 0x7f0f0001 + it }
         }
         val payloads = action.optJSONArray("payloads") ?: unsupported("post_push_notification without action.payloads")
+        // The FCM notification block's title / body (a server-built data map carries neither), when the fixture gives one.
+        val notif = action.optJSONObject("notification")
         var last: Map<String, String>? = null
         for (i in 0 until payloads.length()) {
             val data = fcmData(payloads.getJSONObject(i))
-            ai.appdna.sdk.integrations.AppDNANotificationPoster.post(ctx, data, null, null)
+            ai.appdna.sdk.integrations.AppDNANotificationPoster.post(ctx, data, notif?.optStringOrNull("title"), notif?.optStringOrNull("body"))
             last = data
         }
         idle()
@@ -2074,6 +2076,10 @@ class SharedFixtureTest(
         spy.state["channel_importance"] = importance(channel.importance)
         spy.state["channel_name"] = channel.name?.toString()
         spy.state["channel_description"] = channel.description
+        // The group the last channel was filed under, and every channel the SDK created with its group (null = none), by
+        // id — a list, so an unexpected extra channel fails (an object is compared on the fixture's keys only).
+        spy.state["channel_group"] = channel.group
+        spy.state["channel_groups"] = nm.notificationChannels.sortedBy { it.id }.map { mapOf("id" to it.id, "group" to it.group) }
         spy.state["default_channel"] = nm.getNotificationChannel(ai.appdna.sdk.integrations.AppDNAMessagingService.DEFAULT_CHANNEL_ID)?.let {
             mapOf("importance" to importance(it.importance), "name" to it.name?.toString(), "description" to it.description)
         }
