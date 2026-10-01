@@ -276,7 +276,7 @@ internal object AppDNANotificationPoster {
      * describe the CUSTOM-SOUND channel only ([PushSoundChannels]). They used to be read here too, and a
      * channel's settings are fixed once it exists, so the first push to reach a device decided the default
      * channel for good: one campaign sent at Low or Min importance silenced every later push without a
-     * custom sound. `channel_group` (SPEC-070-A H.19) still applies to a named non-default channel; the
+     * custom sound. `channel_group` still applies to a named non-default channel; the
      * default channel joins no group.
      */
     fun ensureNotificationChannel(context: Context, data: Map<String, String>) {
