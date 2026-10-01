@@ -446,19 +446,12 @@ class MessageManager internal constructor(
      * day divergence across platforms. Unparsable → null (treated as no scheduling constraint).
      */
     private fun parseWindowDate(iso: String): Date? {
+        ai.appdna.sdk.core.IsoInstant.parseEpochMs(iso)?.let { return Date(it) }
         return try {
-            Date(java.time.OffsetDateTime.parse(iso).toInstant().toEpochMilli())
-        } catch (_: Throwable) {
-            try {
-                Date(java.time.Instant.parse(iso).toEpochMilli())
-            } catch (_: Throwable) {
-                try {
-                    SimpleDateFormat("yyyy-MM-dd", Locale.US)
-                        .apply { timeZone = TimeZone.getTimeZone("UTC") }
-                        .parse(iso)
-                } catch (_: Throwable) { null }
-            }
-        }
+            SimpleDateFormat("yyyy-MM-dd", Locale.US)
+                .apply { timeZone = TimeZone.getTimeZone("UTC") }
+                .parse(iso)
+        } catch (_: Throwable) { null }
     }
 
     private fun checkDateRange(config: MessageConfig): Boolean {

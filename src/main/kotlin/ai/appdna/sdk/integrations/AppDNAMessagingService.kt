@@ -313,11 +313,7 @@ internal object AppDNANotificationPoster {
             data["channel_group"]?.takeIf { channelId != AppDNAMessagingService.DEFAULT_CHANNEL_ID }?.let {
                 // Channel group must exist before the channel can adopt it; create
                 // both lazily.
-                if (manager.getNotificationChannelGroup(it) == null) {
-                    manager.createNotificationChannelGroup(
-                        android.app.NotificationChannelGroup(it, it),
-                    )
-                }
+                NotificationChannelGroups.ensure(manager, it)
                 group = it
             }
         }

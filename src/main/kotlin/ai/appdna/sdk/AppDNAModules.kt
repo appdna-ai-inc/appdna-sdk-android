@@ -853,8 +853,28 @@ class PaywallModule internal constructor() {
  * Remote config module namespace.
  */
 class RemoteConfigModule internal constructor() {
+    /**
+     * Every `onChanged` callback the host registered, held here and attached to every manager
+     * `configure()` builds. They used to go to the CURRENT manager only, so a callback registered
+     * before `configure()` (no manager yet) was dropped, and `shutdown()` → `configure()` built a new
+     * manager without the earlier ones. iOS keeps its handlers on the module the same way.
+     */
+    private val changeCallbacks = mutableListOf<(Map<String, Any>) -> Unit>()
+    private var attachedTo: RemoteConfigManager? = null
+
     internal var manager: RemoteConfigManager? = null
-    private var changeCallback: ((Map<String, Any>) -> Unit)? = null
+        set(value) {
+            field = value
+            value?.let { attach(it) }
+        }
+
+    /** Attaches the held callbacks to [m] once (configure calls it as soon as the manager exists). */
+    @Synchronized
+    internal fun attach(m: RemoteConfigManager) {
+        if (attachedTo === m) return
+        attachedTo = m
+        changeCallbacks.forEach { m.addChangeListener(it) }
+    }
 
     /** Get a config value. */
     fun get(key: String): Any? = manager?.getConfig(key)
@@ -865,10 +885,15 @@ class RemoteConfigModule internal constructor() {
     /** Force refresh config from server. */
     fun refresh() { manager?.fetchConfigs() }
 
-    /** Register a callback that fires when remote config values change. */
+    /**
+     * Register a callback that fires when remote config values change. Callbacks add up (each one
+     * fires), and they stay registered for the life of the process: one registered before `configure()`
+     * or before a `shutdown()` → `configure()` fires for the new SDK instance too.
+     */
+    @Synchronized
     fun onChanged(callback: (Map<String, Any>) -> Unit) {
-        this.changeCallback = callback
-        manager?.addChangeListener(callback)
+        changeCallbacks.add(callback)
+        attachedTo?.addChangeListener(callback)
     }
 }
 
@@ -876,8 +901,23 @@ class RemoteConfigModule internal constructor() {
  * Feature flags module namespace.
  */
 class FeaturesModule internal constructor() {
+    /** As [RemoteConfigModule]: held here and attached to every manager `configure()` builds. */
+    private val changeCallbacks = mutableListOf<(Map<String, Boolean>) -> Unit>()
+    private var attachedTo: FeatureFlagManager? = null
+
     internal var manager: FeatureFlagManager? = null
-    private var changeCallback: ((Map<String, Boolean>) -> Unit)? = null
+        set(value) {
+            field = value
+            value?.let { attach(it) }
+        }
+
+    /** Attaches the held callbacks to [m] once (configure calls it as soon as the manager exists). */
+    @Synchronized
+    internal fun attach(m: FeatureFlagManager) {
+        if (attachedTo === m) return
+        attachedTo = m
+        changeCallbacks.forEach { m.addChangeListener(it) }
+    }
 
     /** Check if a feature flag is enabled. */
     fun isEnabled(flag: String): Boolean = manager?.isEnabled(flag) ?: false
@@ -885,10 +925,14 @@ class FeaturesModule internal constructor() {
     /** Get feature flag value. */
     fun getVariant(flag: String): Any? = manager?.getValue(flag)
 
-    /** Register a callback that fires when feature flags change. */
+    /**
+     * Register a callback that fires when feature flags change, with every flag's [isEnabled] value.
+     * Callbacks add up and stay registered across `configure()` and `shutdown()` → `configure()`.
+     */
+    @Synchronized
     fun onChanged(callback: (Map<String, Boolean>) -> Unit) {
-        this.changeCallback = callback
-        manager?.addChangeListener(callback)
+        changeCallbacks.add(callback)
+        attachedTo?.addChangeListener(callback)
     }
 }
 
@@ -905,12 +949,21 @@ class InAppMessagesModule internal constructor() {
     var delegate: AppDNAInAppMessageDelegate? = null
         private set
 
+    /**
+     * The async veto, held here like [delegate]. Both are applied to every `MessageManager`
+     * `configure()` builds ([applyTo]): they used to be written to the CURRENT manager only, so one set
+     * before `configure()`, or before `shutdown()` → `configure()`, was dropped. iOS holds both on the
+     * module the same way.
+     */
+    @Volatile
+    private var asyncShouldShowMessage: (suspend (String) -> Boolean)? = null
+
     /** SPEC-070-A A.11: Temporarily suppress display. Forwards to MessageManager. */
     fun suppressDisplay(suppress: Boolean) {
         AppDNA.messageManager?.suppressDisplay(suppress)
     }
 
-    /** SPEC-070-A A.11: Set a delegate for in-app message lifecycle events. */
+    /** SPEC-070-A A.11: Set a delegate for in-app message lifecycle events. Kept across `configure()`. */
     fun setDelegate(delegate: AppDNAInAppMessageDelegate?) {
         this.delegate = delegate
         AppDNA.messageManager?.delegate = delegate
@@ -919,10 +972,17 @@ class InAppMessagesModule internal constructor() {
     /**
      * SPEC-070-C D10 — set the OPTIONAL async `shouldShowMessage` wrapper-veto.
      * Forwards to `MessageManager.asyncShouldShowMessage`, which awaits it (in
-     * addition to the sync delegate veto) before presenting. Null clears it.
+     * addition to the sync delegate veto) before presenting. Null clears it. Kept across `configure()`.
      */
     fun setAsyncShouldShowMessage(veto: (suspend (String) -> Boolean)?) {
+        this.asyncShouldShowMessage = veto
         AppDNA.messageManager?.asyncShouldShowMessage = veto
+    }
+
+    /** Hands the held delegate and veto to a manager `configure()` just built. */
+    internal fun applyTo(manager: ai.appdna.sdk.messages.MessageManager) {
+        manager.delegate = delegate
+        manager.asyncShouldShowMessage = asyncShouldShowMessage
     }
 }
 

@@ -2080,6 +2080,9 @@ class SharedFixtureTest(
         // id — a list, so an unexpected extra channel fails (an object is compared on the fixture's keys only).
         spy.state["channel_group"] = channel.group
         spy.state["channel_groups"] = nm.notificationChannels.sortedBy { it.id }.map { mapOf("id" to it.id, "group" to it.group) }
+        // The channel GROUPS that exist afterwards, by id. A channel's `group` is only a string on Robolectric — it
+        // does not prove the group was created — so the groups are read from the NotificationManager itself.
+        spy.state["channel_groups_created"] = nm.notificationChannelGroups.map { it.id }.sorted()
         spy.state["default_channel"] = nm.getNotificationChannel(ai.appdna.sdk.integrations.AppDNAMessagingService.DEFAULT_CHANNEL_ID)?.let {
             mapOf("importance" to importance(it.importance), "name" to it.name?.toString(), "description" to it.description)
         }

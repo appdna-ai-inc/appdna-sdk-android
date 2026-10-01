@@ -61,6 +61,21 @@ android {
         buildConfig = true
     }
 
+    // NewApi is a CI gate (sdk-ci.yml, `./gradlew :lintDebug -PlintCheckOnly=NewApi`). minSdk is 24, and a call
+    // above its guard compiles fine against compileSdk 35 and crashes only on an old device:
+    // `getNotificationChannelGroup` (API 28) under an API 26 guard crashed Android 8.0 / 8.1 on the
+    // first push with a `channel_group`, and `MutableList.removeFirst()` binds to the API 35
+    // `List.removeFirst`. The full lint run still has older errors in other checks, so CI runs this
+    // one check only; it stays an error here so a local `lintDebug` reports it too.
+    lint {
+        error += "NewApi"
+        abortOnError = true
+        checkDependencies = false
+        (project.findProperty("lintCheckOnly") as String?)?.let { ids ->
+            checkOnly += ids.split(",").map { it.trim() }.filter { it.isNotEmpty() }
+        }
+    }
+
     composeOptions {
         kotlinCompilerExtensionVersion = libs.versions.composeCompiler.get()
     }

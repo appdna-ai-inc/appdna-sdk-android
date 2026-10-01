@@ -27,9 +27,11 @@ internal class FeatureFlagManager(private val remoteConfigManager: RemoteConfigM
     fun getValue(flag: String): Any? = remoteConfigManager.getConfig(flag)
 
     /**
-     * Register a listener for feature flag changes (stub).
+     * Register a listener for feature flag changes. It fires whenever the remote config's flags
+     * change, with every flag's [isEnabled] value. (It was a stub that registered nothing, so
+     * `AppDNA.features.onChanged` never fired on Android.)
      */
     fun addChangeListener(callback: (Map<String, Boolean>) -> Unit) {
-        // Stub — change listeners are managed at the RemoteConfigManager level
+        remoteConfigManager.addChangeListener { flags -> callback(flags.keys.associateWith { isEnabled(it) }) }
     }
 }

@@ -265,9 +265,7 @@ object RichPushHandler {
         val channel = NotificationChannel(channelId, channelName, importance).apply {
             description?.let { this.description = it }
             group?.let {
-                if (manager.getNotificationChannelGroup(it) == null) {
-                    manager.createNotificationChannelGroup(android.app.NotificationChannelGroup(it, it))
-                }
+                NotificationChannelGroups.ensure(manager, it)
                 this.group = it
             }
         }

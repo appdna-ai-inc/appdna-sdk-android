@@ -800,6 +800,10 @@ object AppDNA {
             this.remoteConfigManager = remoteCfg
 
             this.featureFlagManager = FeatureFlagManager(remoteCfg)
+            // `onChanged` callbacks the host registered before configure (or before a
+            // shutdown → configure) attach now, before the first fetch can fire a change.
+            remoteConfig.attach(remoteCfg)
+            featureFlagManager?.let { features.attach(it) }
 
             val expManager = ExperimentManager(
                 remoteConfigManager = remoteCfg,
@@ -890,7 +894,7 @@ object AppDNA {
                         configProvider = { remoteConfigManager?.getActiveMessages() ?: activeMessages },
                         // SPEC-036-F §1.2 — experiment-aware presentation.
                         experimentManager = expManager,
-                    )
+                    ).also { inAppMessages.applyTo(it) }
                 }
             }
 

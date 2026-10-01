@@ -78,7 +78,7 @@ fun ChatStepComposable(
             val content = (m["content"] as? String).orEmpty()
             val msgId = (m["id"] as? String) ?: java.util.UUID.randomUUID().toString()
             val ts = (m["timestamp"] as? String)?.let { ts ->
-                runCatching { java.time.Instant.parse(ts).toEpochMilli() }.getOrNull()
+                ai.appdna.sdk.core.IsoInstant.parseEpochMs(ts)
             } ?: System.currentTimeMillis()
             ChatMessage(
                 id = msgId,

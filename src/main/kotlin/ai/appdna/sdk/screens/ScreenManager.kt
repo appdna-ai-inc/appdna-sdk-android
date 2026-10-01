@@ -116,18 +116,10 @@ class ScreenManager private constructor() {
      * dates as "no scheduling constraint" rather than "always blocked").
      */
     private fun parseIsoToEpochMs(iso: String): Long? {
-        return try {
-            java.time.OffsetDateTime.parse(iso).toInstant().toEpochMilli()
-        } catch (_: Throwable) {
-            try {
-                java.time.Instant.parse(iso).toEpochMilli()
-            } catch (_: Throwable) {
-                try {
-                    val sdf = java.text.SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss", java.util.Locale.US)
-                    sdf.parse(iso)?.time
-                } catch (_: Throwable) { null }
-            }
-        }
+        return ai.appdna.sdk.core.IsoInstant.parseEpochMs(iso) ?: try {
+            val sdf = java.text.SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss", java.util.Locale.US)
+            sdf.parse(iso)?.time
+        } catch (_: Throwable) { null }
     }
 
     fun showScreen(screenId: String, callback: ((ScreenResult) -> Unit)? = null) {

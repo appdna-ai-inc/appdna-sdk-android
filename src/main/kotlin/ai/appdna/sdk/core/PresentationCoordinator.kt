@@ -74,7 +74,9 @@ internal class PresentationCoordinator private constructor() {
                 isPresenting = false
                 return
             }
-            next = presentationQueue.removeFirst()
+            // `removeAt(0)`, never `removeFirst()`: compiled against API 35, `removeFirst()` binds to
+            // `java.util.List.removeFirst` (API 35 / JDK 21) and throws NoSuchMethodError below that.
+            next = presentationQueue.removeAt(0)
         } finally {
             lock.unlock()
         }

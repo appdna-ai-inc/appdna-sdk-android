@@ -48,6 +48,24 @@ Wraps iOS 1.0.82. Ships maps and host data (including "Show more").
   when the same view is reused for a new presentation.
 
 ### Fixed
+- **Android 8.0 / 8.1 crash on a push with a channel group.** A push whose data carried
+  `channel_group` called `NotificationManager.getNotificationChannelGroup`, which is API 28, under an
+  API 26 guard: the messaging service threw `NoSuchMethodError` and the app crashed. Below API 28 the
+  SDK now reads the existing groups from `notificationChannelGroups`. Lint `NewApi` is now a CI gate.
+- Dismissing a paywall, onboarding flow, screen, message or survey while another presentation was
+  queued behind it crashed on every Android version below 15 (`NoSuchMethodError`:
+  `List.removeFirst`, an API 35 method). The queued presentation now runs.
+- On Android 7 (API 24 / 25) ISO-8601 dates with a zone — message and screen schedule windows,
+  auto-trigger start dates, chat transcript timestamps — are parsed with their zone. They were read in
+  the device's time zone, or as the date only, because `java.time` is API 26.
+- `AppDNA.features.onChanged` fires: it registered nothing (the listener was a stub). It delivers every
+  flag with its `isEnabled` value.
+- `AppDNA.remoteConfig.onChanged` and `AppDNA.features.onChanged` callbacks registered before
+  `configure`, or before `shutdown` and a new `configure`, are kept and fire for the configured SDK.
+  They were attached only to the manager that existed at the time, so they were dropped.
+- The in-app message delegate (`AppDNA.inAppMessages.setDelegate`) and async veto
+  (`setAsyncShouldShowMessage`) set before `configure`, or before `shutdown` and a new `configure`, are
+  kept and applied to every message manager `configure` builds, as on iOS. They were dropped.
 - A push delegate set before `configure` (`AppDNA.push.setDelegate` or `AppDNA.pushDelegate`) is kept
   and used once `configure` runs, and again after `shutdown` and a new `configure`, as on iOS. It was
   dropped, so `onPushReceived` / `onPushTapped` never fired for a host that set it first, while
