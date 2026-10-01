@@ -127,6 +127,8 @@ interface AppDNAPushDelegate {
  * Push notification module namespace.
  */
 class PushModule internal constructor() {
+    /** Set by `configure` on its bootstrap thread, read by receivers on the main thread. */
+    @Volatile
     internal var manager: PushTokenManager? = null
     // SPEC-070-A H.17: dropped duplicate `listener` field. The single source
     // of truth is `PushTokenManager.pushListener`, which Phase B.1 wires from

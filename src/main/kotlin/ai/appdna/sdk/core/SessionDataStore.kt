@@ -77,7 +77,7 @@ class SessionDataStore private constructor(private val prefs: SharedPreferences)
                 }
             }
             _onboardingResponses = converted
-            persistMap(KEY_ONBOARDING) { mapToJson(converted) }
+            persistMap(KEY_ONBOARDING) { mapToJson(converted, it) }
         }
     }
 
@@ -91,7 +91,7 @@ class SessionDataStore private constructor(private val prefs: SharedPreferences)
             val merged = _computedData.toMutableMap()
             merged.putAll(data)
             _computedData = merged
-            persistMap(KEY_COMPUTED) { flatMapToJson(merged) }
+            persistMap(KEY_COMPUTED) { flatMapToJson(merged, it) }
         }
     }
 
@@ -105,7 +105,7 @@ class SessionDataStore private constructor(private val prefs: SharedPreferences)
             val updated = _sessionData.toMutableMap()
             updated[key] = value
             _sessionData = updated
-            persistMap(KEY_SESSION) { flatMapToJson(updated) }
+            persistMap(KEY_SESSION) { flatMapToJson(updated, it) }
         }
     }
 
@@ -146,19 +146,24 @@ class SessionDataStore private constructor(private val prefs: SharedPreferences)
 
     /**
      * Persists [key] from [buildJson]. `JSONObject.put` THROWS on a NaN / infinite number, and that
-     * exception used to escape into the host's `setSessionData` / onboarding completion call. Now a
-     * value that cannot be written as JSON — or one over the size cap — is logged (the key only, never
-     * the values) and the saved copy is cleared, so the store holds nothing rather than a stale copy.
-     * The in-memory value stays readable for the rest of the session. Same rule as iOS
-     * `SessionDataStore.persistDict`.
+     * exception used to escape into the host's `setSessionData` / onboarding completion call. Now each
+     * entry is written on its own and an entry that cannot be written as JSON is left out of the saved
+     * copy — logged by its name only, never the values. It used to drop the WHOLE store, so the next
+     * launch lost every other value because one was NaN. A store over the size cap is logged and its
+     * saved copy cleared. The in-memory value stays readable for the rest of the session. Same rule as
+     * iOS `SessionDataStore.persistDict`.
      */
-    private fun persistMap(key: String, buildJson: () -> String) {
+    private fun persistMap(key: String, buildJson: (skipped: MutableList<String>) -> String) {
+        val skipped = mutableListOf<String>()
         val json = try {
-            buildJson()
+            buildJson(skipped)
         } catch (e: org.json.JSONException) {
-            Log.warning("SessionDataStore: $key holds a value that is not valid JSON (a NaN / infinite number or a non-JSON type) — not persisted; the saved copy is cleared")
+            Log.warning("SessionDataStore: $key could not be encoded — not persisted; the saved copy is cleared")
             prefs.edit().remove(key).apply()
             return
+        }
+        if (skipped.isNotEmpty()) {
+            Log.warning("SessionDataStore: $key entries ${skipped.sorted()} hold a value that is not valid JSON (a NaN / infinite number or a non-JSON type) — those entries are not persisted")
         }
         val bytes = json.toByteArray(Charsets.UTF_8)
         if (bytes.size > MAX_STORAGE_BYTES) {
@@ -206,20 +211,29 @@ class SessionDataStore private constructor(private val prefs: SharedPreferences)
         return map
     }
 
-    private fun flatMapToJson(map: Map<String, Any>): String {
+    /** One entry per key; a value `JSONObject` refuses (a NaN / infinite number) is skipped and named in [skipped]. */
+    private fun flatMapToJson(map: Map<String, Any>, skipped: MutableList<String>): String {
         val obj = JSONObject()
         for ((k, v) in map) {
-            obj.put(k, v)
+            try {
+                obj.put(k, v)
+            } catch (_: org.json.JSONException) {
+                skipped += k
+            }
         }
         return obj.toString()
     }
 
-    private fun mapToJson(map: Map<String, Map<String, Any>>): String {
+    private fun mapToJson(map: Map<String, Map<String, Any>>, skipped: MutableList<String>): String {
         val obj = JSONObject()
         for ((k, v) in map) {
             val inner = JSONObject()
             for ((ik, iv) in v) {
-                inner.put(ik, iv)
+                try {
+                    inner.put(ik, iv)
+                } catch (_: org.json.JSONException) {
+                    skipped += "$k.$ik"
+                }
             }
             obj.put(k, inner)
         }

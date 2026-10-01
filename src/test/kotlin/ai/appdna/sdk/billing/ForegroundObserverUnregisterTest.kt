@@ -48,4 +48,19 @@ class ForegroundObserverUnregisterTest {
         s.mgr.destroy()
         assertEquals(before, registry().observerCount)
     }
+
+    /**
+     * NEGATIVE CONTROL: the flag was a plain var set inside the launched coroutine, so registrations made
+     * before that coroutine ran (here: two on Main and four from other threads) each launched one.
+     */
+    @Test fun `concurrent registrations launch one observer registration`() {
+        val s = BillingScenario(ctx).also { sc = it }
+        val before = registry().observerCount
+        s.mgr.registerForegroundObserver()
+        s.mgr.registerForegroundObserver()
+        (1..4).map { thread { s.mgr.registerForegroundObserver() } }.forEach { it.join() }
+        s.idle()
+        assertEquals(1, s.mgr.foregroundObserverLaunches.get())
+        assertEquals(before + 1, registry().observerCount)
+    }
 }

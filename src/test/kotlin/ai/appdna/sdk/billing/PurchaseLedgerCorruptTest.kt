@@ -12,8 +12,8 @@ import org.robolectric.annotation.Config
 
 /**
  * An undecodable ledger value (the delivery queue, the reported set, …) is read as empty — and the
- * next write replaces it. It is now logged and its raw value kept under `<key>.corrupt`.
- * NEGATIVE CONTROL: without `keepCorrupt`, the `.corrupt` key is null and nothing is logged.
+ * next write replaces it. It is now logged and its raw value kept under `<key>.corrupt.<epoch-ms>`
+ * (at most three copies). NEGATIVE CONTROL: without `keepCorrupt`, no copy exists and nothing is logged.
  */
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [34])
@@ -38,11 +38,11 @@ class PurchaseLedgerCorruptTest {
         val out = captureOut { read = ledger.deliveries() }
         assertEquals(emptyList<PendingDelivery>(), read)
         assertTrue(out, out.contains("[AppDNA][ERROR]") && out.contains(PurchaseLedger.KEY_DELIVERIES))
-        assertEquals(raw, storage.getString(PurchaseLedger.KEY_DELIVERIES + PurchaseLedger.CORRUPT_SUFFIX))
+        assertEquals(raw, copy(storage, ledger, PurchaseLedger.KEY_DELIVERIES))
 
         // A later write replaces the live key; the corrupt copy survives it. Logged once per value.
         ledger.write(deliveries = emptyList())
-        assertEquals(raw, storage.getString(PurchaseLedger.KEY_DELIVERIES + PurchaseLedger.CORRUPT_SUFFIX))
+        assertEquals(raw, copy(storage, ledger, PurchaseLedger.KEY_DELIVERIES))
         storage.setStringsSync(mapOf(PurchaseLedger.KEY_DELIVERIES to raw))
         val again = captureOut { ledger.deliveries() }
         assertTrue(again, !again.contains("[AppDNA][ERROR]"))
@@ -54,7 +54,29 @@ class PurchaseLedgerCorruptTest {
         storage.setStringsSync(mapOf(PurchaseLedger.KEY_REPORTED to "{not an array", PurchaseLedger.KEY_CLASS_CACHE to "[x"))
         assertEquals(emptyList<ReportedToken>(), ledger.reported())
         assertTrue(ledger.classCache().isEmpty())
-        assertEquals("{not an array", storage.getString(PurchaseLedger.KEY_REPORTED + PurchaseLedger.CORRUPT_SUFFIX))
-        assertEquals("[x", storage.getString(PurchaseLedger.KEY_CLASS_CACHE + PurchaseLedger.CORRUPT_SUFFIX))
+        assertEquals("{not an array", copy(storage, ledger, PurchaseLedger.KEY_REPORTED))
+        assertEquals("[x", copy(storage, ledger, PurchaseLedger.KEY_CLASS_CACHE))
+    }
+
+    private fun copy(storage: LocalStorage, ledger: PurchaseLedger, key: String): String? =
+        ledger.corruptCopyKeys(key).lastOrNull()?.let { storage.getString(it) }
+
+    /**
+     * NEGATIVE CONTROL: one `<key>.corrupt` slot — a second unreadable value overwrote the first. Now each
+     * distinct value gets a timestamped copy and the oldest beyond three are removed.
+     */
+    @Test fun `corrupt copies are timestamped and capped at three`() {
+        val storage = LocalStorage(ctx)
+        var now = 1_000L
+        val ledger = PurchaseLedger(storage, clock = { now })
+        for (i in 0 until 5) {
+            storage.setStringsSync(mapOf(PurchaseLedger.KEY_DELIVERIES to "bad-$i"))
+            ledger.deliveries()
+            now += 1_000
+        }
+        val key = PurchaseLedger.KEY_DELIVERIES + PurchaseLedger.CORRUPT_SUFFIX
+        assertEquals(listOf("$key.3000", "$key.4000", "$key.5000"), ledger.corruptCopyKeys(PurchaseLedger.KEY_DELIVERIES))
+        assertEquals(listOf("bad-2", "bad-3", "bad-4"), ledger.corruptCopyKeys(PurchaseLedger.KEY_DELIVERIES).map { storage.getString(it) })
+        assertEquals(null, storage.getString("$key.1000"))
     }
 }

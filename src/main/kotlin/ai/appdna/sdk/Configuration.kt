@@ -62,14 +62,15 @@ sealed class BillingProvider(val type: String) {
     object None : BillingProvider("none")
 
     companion object {
+        /** Logged when an `adapty` provider arrives without its key (see [fromWire]). */
+        internal const val ADAPTY_NO_KEY_MESSAGE =
+            "billingProvider adapty has an empty apiKey — refused; the default billing provider is used instead. Pass your Adapty public SDK key."
+
         /**
          * Decode the wrapper wire form: a bare string for the value-less cases, or a tagged map for
          * [Adapty]. Returns null on anything else, so a caller can decide between a default and an
          * error rather than having one chosen for it.
          */
-        internal const val ADAPTY_NO_KEY_MESSAGE =
-            "billingProvider adapty has an empty apiKey — refused; the default billing provider is used instead. Pass your Adapty public SDK key."
-
         @JvmStatic
         fun fromWire(value: Any?): BillingProvider? = when (value) {
             is BillingProvider -> value
@@ -161,7 +162,17 @@ data class AppDNAOptions(
      * applying the hook's default. Surfaced through `diagnose()`.
      */
     val vetoTimeout: Long = 5L
-)
+) {
+    /**
+     * The same wait in exact (possibly fractional) seconds, as the host gave it — a wrapper bridge sets
+     * the value its own veto wait uses, e.g. 0.5. `diagnose()` reports this when set, so it shows 0.5 s
+     * instead of [vetoTimeout]'s whole seconds (rounded up to 1). Null: [vetoTimeout].
+     *
+     * A body property, not a constructor parameter, so the data class's constructors and `copy` keep
+     * their binary signatures; it is not part of `equals` / `hashCode` / `copy`.
+     */
+    var vetoTimeoutSeconds: Double? = null
+}
 
 /**
  * Internal logger.

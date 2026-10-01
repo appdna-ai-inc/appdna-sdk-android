@@ -28,7 +28,8 @@ import android.app.Activity
  * 4.x; also in 2.11+ and 3.x) and falls back to the older
  * `activate(Context, String)`; `restorePurchases` / `getProfile` take one
  * `ResultCallback` in all three; `AdaptyProfile.accessLevels` is Adapty's own
- * `ImmutableMap` (not a `java.util.Map`) in all three.
+ * `ImmutableMap` (not a `java.util.Map`) in all three, and `AdaptyProfile.AccessLevel` has
+ * `isActive()` and `getVendorProductId()` in all three.
  *
  * Reflection rationale (same as RevenueCatBridge):
  *   - We can't import `com.adapty.*` because that would force a runtime
@@ -59,7 +60,8 @@ internal class AdaptyBridge {
     /**
      * Configure Adapty with an API key. Safe to call multiple times.
      *
-     * Mirrors iOS `AdaptyBridge.swift:24-32` — calls `Adapty.activate(apiKey)`.
+     * iOS `AdaptyBridge.activate()` calls `Adapty.activate(apiKey)`; here the linked Adapty's
+     * `activate(Context, AdaptyConfig)` or `activate(Context, String)` is used ([activateReflectively]).
      */
     fun configure(apiKey: String) {
         if (apiKey.isBlank()) {
@@ -87,8 +89,8 @@ internal class AdaptyBridge {
     }
 
     /**
-     * Purchase a product through Adapty. Mirrors iOS
-     * `purchase(productId:)` (AdaptyBridge.swift:36).
+     * Purchase a product through Adapty — refused, as iOS `AdaptyBridge.purchase(productId:appAccountToken:)`
+     * refuses it (`BillingError.providerNotAvailable`).
      *
      * Like RevenueCatBridge, we throw a documented [PurchaseFailedException]
      * for the direct-purchase path because Adapty's purchase API requires
@@ -188,8 +190,8 @@ internal class AdaptyBridge {
     }
 
     /**
-     * Restore previously-purchased entitlements. Mirrors iOS
-     * `restore()` (AdaptyBridge.swift:97).
+     * Restore previously-purchased entitlements: the store products behind the active access levels
+     * ([profileToEntitlements]), the same ids as iOS `AdaptyBridge.restore(appAccountToken:)`.
      */
     suspend fun restore(): List<Entitlement> {
         if (!isAdaptyPresent()) return emptyList()
@@ -207,8 +209,8 @@ internal class AdaptyBridge {
     }
 
     /**
-     * Get current active access levels. Mirrors iOS
-     * `getEntitlements()` (AdaptyBridge.swift:120).
+     * The store products behind the current active access levels ([profileToEntitlements]), the same
+     * ids as iOS `AdaptyBridge.getEntitlements(appAccountToken:)`.
      */
     suspend fun getEntitlements(): List<Entitlement> {
         if (!isAdaptyPresent()) return emptyList()
@@ -315,22 +317,27 @@ internal class AdaptyBridge {
     }
 
     /**
-     * Convert an Adapty `AdaptyProfile` (received reflectively) into our
-     * canonical [Entitlement] list. Mirrors iOS
-     * `profile.accessLevels.filter(\.value.isActive).map(\.key)`
-     * (AdaptyBridge.swift:99-100, 124).
+     * Convert an Adapty `AdaptyProfile` (received reflectively) into our canonical [Entitlement] list:
+     * one entry per STORE PRODUCT behind an active access level (`AccessLevel.vendorProductId`), deduped —
+     * the same ids as iOS `AdaptyBridge.activeProductIds` (`profile.accessLevels.values.filter(\.isActive)
+     * .map(\.vendorProductId)`) and as every other bridge, which name store products. This used to return
+     * the access-level KEY (e.g. "premium"), so the two platforms reported different ids for one
+     * subscription. An access level whose product id cannot be read falls back to its key.
      */
     @Suppress("UNCHECKED_CAST")
     private fun profileToEntitlements(profile: Any?): List<Entitlement> {
         if (profile == null) return emptyList()
         return try {
             val accessLevelsObj = profile.javaClass.getMethod("getAccessLevels").invoke(profile)
+            val seen = HashSet<String>()
             accessLevelEntries(accessLevelsObj).mapNotNull { (key, accessLevel) ->
                 try {
                     val isActive = accessLevel.javaClass.getMethod("isActive").invoke(accessLevel) as? Boolean
                     if (isActive != true) return@mapNotNull null
+                    val productId = vendorProductId(accessLevel) ?: key
+                    if (!seen.add(productId)) return@mapNotNull null
                     Entitlement(
-                        productId = key,
+                        productId = productId,
                         store = "adapty",
                         status = "active",
                         expiresAt = null,
@@ -346,6 +353,13 @@ internal class AdaptyBridge {
             Log.warning("AdaptyBridge.profileToEntitlements failed: ${e.message}")
             emptyList()
         }
+    }
+
+    /** `AccessLevel.vendorProductId` (Adapty 2.x–4.x), or null when it is missing or blank. */
+    private fun vendorProductId(accessLevel: Any): String? = try {
+        (accessLevel.javaClass.getMethod("getVendorProductId").invoke(accessLevel) as? String)?.takeIf { it.isNotBlank() }
+    } catch (_: Exception) {
+        null
     }
 
     internal companion object {

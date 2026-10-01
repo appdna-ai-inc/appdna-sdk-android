@@ -1640,7 +1640,7 @@ object AppDNA {
             "consent.persisted: ${consentDecision?.toString() ?: "no decision yet"} " +
                 "(requireConsent=${options.requireConsent})"
         )
-        sb.appendLine("veto.timeout_seconds: ${options.vetoTimeout}")
+        sb.appendLine("veto.timeout_seconds: ${vetoTimeoutForDiagnose(options)}")
         sb.appendLine("veto.timeouts_observed: ${ai.appdna.sdk.core.VetoTimeoutCounter.count}")
         sb.appendLine("init.last_error: ${lastInitError?.message ?: "<none>"}")
         sb.appendLine("=== end ===")
@@ -1755,6 +1755,31 @@ object AppDNA {
     }
 
     /**
+     * The tap intents the PREVIOUS SDK version (Android 1.0.53 and earlier) put on its notifications,
+     * which predate the `appdna` marker. A notification still in the tray when the app updates keeps
+     * that intent, and without this it was ignored after the upgrade. Matched by the EXACT extra key
+     * set, which only that SDK produced — it wrote every key with `putExtra` even when the value was
+     * null, on a bare `getLaunchIntentForPackage` intent with no other extras:
+     *   - the body tap: `push_id`, `action_type`, `action_value`, `screen_id`, `deep_link`;
+     *   - a button tap: `push_id`, `action_id`, `action_type`, `action_value`.
+     * It used to match any intent that merely CONTAINED `push_id`, `action_type` and `action_value`, so a
+     * host's own notification with those common extra names was tracked and routed as an AppDNA tap.
+     */
+    internal fun isLegacyTapIntent(extras: android.os.Bundle): Boolean = legacyTapKeys(extras) != null
+
+    /** The legacy key set [extras] matches exactly, or null. */
+    private fun legacyTapKeys(extras: android.os.Bundle): Set<String>? {
+        if (extras.containsKey("appdna")) return null
+        val keys = extras.keySet()
+        return LEGACY_TAP_KEY_SETS.firstOrNull { it == keys }
+    }
+
+    private val LEGACY_TAP_KEY_SETS = listOf(
+        setOf("push_id", "action_type", "action_value", "screen_id", "deep_link"),
+        setOf("push_id", "action_id", "action_type", "action_value"),
+    )
+
+    /**
      * SPEC-070-A H.5 + H.9 — single entry point hosts call from
      * `Activity.onCreate(savedInstanceState)` / `onNewIntent(intent)` to:
      *   1. Track `push_tapped` (carries push_id, delivery_id + action_id),
@@ -1778,18 +1803,6 @@ object AppDNA {
      *
      * @return `true` if the intent was an AppDNA push tap (handled now, or a copy of one handled earlier).
      */
-    /**
-     * The tap intent the PREVIOUS SDK version put on its notifications: a launch intent carrying
-     * `push_id`, `action_type` and `action_value` — always as keys, even when a value was null — and
-     * no `appdna` marker (it predates the marker). A notification still in the tray when the app
-     * updates keeps that intent, and without this it was ignored after the upgrade. A host's own
-     * notification does not carry this exact set of keys.
-     */
-    private val LEGACY_TAP_EXTRAS = listOf("push_id", "action_type", "action_value")
-
-    internal fun isLegacyTapIntent(extras: android.os.Bundle): Boolean =
-        !extras.containsKey("appdna") && LEGACY_TAP_EXTRAS.all { extras.containsKey(it) }
-
     @JvmStatic
     fun handlePushTap(intent: android.content.Intent?): Boolean {
         if (intent == null) return false
@@ -1811,12 +1824,13 @@ object AppDNA {
             }
             ai.appdna.sdk.integrations.PushNotificationActions.cancelFor(push.context, intent)
         }
-        val legacy = isLegacyTapIntent(extras)
+        val legacyKeys = legacyTapKeys(extras)
+        val legacy = legacyKeys != null
         val handled = if (legacy) push.handleLegacyTap(data, data["action_id"]) else push.handleTap(data, data["action_id"])
-        if (handled && legacy) {
-            // The legacy signature (below) is what made it a tap: remove it too, or a re-created
-            // Activity routes it again (an unkeyed legacy tap has no persisted dedup key).
-            LEGACY_TAP_EXTRAS.forEach { intent.removeExtra(it) }
+        if (handled && legacyKeys != null) {
+            // The legacy signature is what made it a tap: remove it too, or a re-created Activity
+            // routes it again (an unkeyed legacy tap has no persisted dedup key).
+            legacyKeys.forEach { intent.removeExtra(it) }
         }
         if (handled) {
             // Make the intent INERT (I4 M8). The persisted dedup key holds only the LAST tap, so after
@@ -1980,6 +1994,15 @@ object AppDNA {
      */
     fun checkDeferredDeepLink(callback: (DeferredDeepLink?) -> Unit) {
         deferredDeepLinkManager?.checkDeferredDeepLink(callback) ?: callback(null)
+    }
+
+    /**
+     * The veto wait `diagnose()` reports: [AppDNAOptions.vetoTimeoutSeconds] as given (0.5 → "0.5",
+     * 8.0 → "8"), else the whole-second [AppDNAOptions.vetoTimeout].
+     */
+    internal fun vetoTimeoutForDiagnose(options: AppDNAOptions): String {
+        val exact = options.vetoTimeoutSeconds?.takeIf { it > 0 && it.isFinite() } ?: return options.vetoTimeout.toString()
+        return if (exact == kotlin.math.floor(exact) && exact < Long.MAX_VALUE) exact.toLong().toString() else exact.toString()
     }
 
     // MARK: - Public API: Ready callback

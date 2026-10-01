@@ -280,7 +280,15 @@ class NativeBillingManager internal constructor(
             scope.launch { reconcileSubscriptionState() }
         }
     }
-    private var foregroundObserverRegistered = false
+    /**
+     * Whether the observer is registered (or its registration is launched). Atomic: `initialize()` and
+     * `destroy()` run on any thread, and the flag used to be a plain var set only inside the launched
+     * coroutine, so two registrations before the first coroutine ran both launched one.
+     */
+    private val foregroundObserverRegistered = java.util.concurrent.atomic.AtomicBoolean(false)
+
+    /** Test seam: how many observer registrations were launched. */
+    internal val foregroundObserverLaunches = java.util.concurrent.atomic.AtomicInteger(0)
 
     /**
      * Play's purchase updates. Every owned-purchase branch goes through [completion].
@@ -502,12 +510,13 @@ class NativeBillingManager internal constructor(
     }
 
     internal fun registerForegroundObserver() {
-        if (foregroundObserverRegistered) return
+        if (!foregroundObserverRegistered.compareAndSet(false, true)) return
+        foregroundObserverLaunches.incrementAndGet()
         scope.launch {
             try {
                 ProcessLifecycleOwner.get().lifecycle.addObserver(foregroundObserver)
-                foregroundObserverRegistered = true
             } catch (e: Exception) {
+                foregroundObserverRegistered.set(false)
                 Log.warning("NativeBillingManager: failed to attach foreground observer: ${e.message}")
             }
         }
@@ -523,13 +532,12 @@ class NativeBillingManager internal constructor(
      */
     private fun unregisterForegroundObserver() {
         val remove = {
-            if (foregroundObserverRegistered) {
+            if (foregroundObserverRegistered.getAndSet(false)) {
                 try {
                     ProcessLifecycleOwner.get().lifecycle.removeObserver(foregroundObserver)
                 } catch (e: Exception) {
                     Log.warning("NativeBillingManager: failed to detach foreground observer: ${e.message}")
                 }
-                foregroundObserverRegistered = false
             }
         }
         if (android.os.Looper.myLooper() == android.os.Looper.getMainLooper()) {
@@ -594,7 +602,13 @@ class NativeBillingManager internal constructor(
         applySnapshotDiff(current)
     }
 
-    private suspend fun applySnapshotDiff(current: Map<String, SubSnapshot>) {
+    /**
+     * Load → (price warm-up) → diff → save, one reconcile at a time. The warm-up suspends on a Play query,
+     * and two reconciles (a foreground entry racing a purchase-path pass) used to both load the SAME old
+     * snapshot across it and both emit the renewal: two `subscription_renewed` for one renewal. Under
+     * [snapshotMutex] the second one loads the snapshot the first saved and finds nothing new.
+     */
+    private suspend fun applySnapshotDiff(current: Map<String, SubSnapshot>) = snapshotMutex.withLock {
         val previous = loadLastSnapshot()
         if (emitsLifecycleEvents) {
             warmRenewalPrices(previous, current)
@@ -602,6 +616,9 @@ class NativeBillingManager internal constructor(
         }
         saveSnapshot(current)
     }
+
+    /** Serialises [applySnapshotDiff]. */
+    private val snapshotMutex = kotlinx.coroutines.sync.Mutex()
 
     /**
      * `subscription_renewed` carries `price` / `currency` (the names `purchase_completed` uses) from the
@@ -710,8 +727,12 @@ class NativeBillingManager internal constructor(
                 now.originalTransactionId?.let { put("original_transaction_id", it) }
                 // The renewal's price: the base plan's recurring price (the last pricing phase — a renewal
                 // is never a trial), with the same `price` / `currency` names as `purchase_completed`.
-                // Omitted when the price is unknown (never sent as 0). Analytics only: gold books revenue
-                // only for a billing provider's renewal, never a device one.
+                // Omitted when the price is unknown (never sent as 0). Play's client API carries no charged
+                // amount for an order (`Purchase` has no price), so this is the catalogue price — not a
+                // promotional or grandfathered amount; iOS reports the charged `transaction.price`.
+                // Renewal props: product_id, purchase_time, transaction_id, original_transaction_id, price,
+                // currency and emitted_by — no `is_trial` (a renewal is never a trial); the server books a
+                // device renewal's revenue from these.
                 try {
                     priceResolver.cachedPriceInfo(productId)?.takeIf { it.currencyCode.isNotBlank() }?.let { info ->
                         put("price", info.priceMicros / 1_000_000.0)

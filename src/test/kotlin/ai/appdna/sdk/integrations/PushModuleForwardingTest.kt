@@ -187,6 +187,26 @@ class PushModuleForwardingTest {
         assertEquals(1, h.events().count { it.first == "push_tapped" })
     }
 
+    /**
+     * A host's own notification that merely carries `push_id` / `action_type` / `action_value` (common
+     * names) is not the previous SDK's tap. NEGATIVE CONTROL: the legacy check only asked whether those
+     * three keys were PRESENT, so these intents were tracked and routed as AppDNA taps.
+     */
+    @Test
+    fun `a host intent with similar extras is not a legacy tap`() {
+        val threeKeys = Intent().apply {
+            putExtra("push_id", "host_1"); putExtra("action_type", "deep_link"); putExtra("action_value", "host://a")
+        }
+        val legacyPlusHostExtra = legacyTapIntent("host_2", "host://b").apply { putExtra("campaign", "spring") }
+        assertFalse(AppDNA.isLegacyTapIntent(threeKeys.extras!!))
+        assertFalse(AppDNA.handlePushTap(threeKeys))
+        assertFalse(AppDNA.handlePushTap(legacyPlusHostExtra))
+        idle()
+        assertTrue(h.routes.isEmpty())
+        assertTrue(h.tapped.isEmpty())
+        assertTrue(AppDNA.isLegacyTapIntent(legacyTapIntent("p", null).extras!!))
+    }
+
     @Test
     fun `a pre-upgrade button tap routes the button action`() {
         val intent = Intent().apply {

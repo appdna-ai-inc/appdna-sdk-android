@@ -199,13 +199,39 @@ internal class PurchaseLedger(
     /**
      * An undecodable ledger value is read as empty — and the next write replaces it, so without this
      * the undelivered purchases / reported tokens it held would vanish without a trace. Log it loudly
-     * and keep the raw value under `<key>.corrupt` (once per distinct value) so it can be recovered.
+     * and keep the raw value under a timestamped key, `<key>.corrupt.<epoch-ms>`, so it can be recovered.
+     * At most [MAX_CORRUPT_COPIES] copies are kept per key (the oldest is removed; there used to be one
+     * `<key>.corrupt`, which a second unreadable value overwrote); a value equal to the newest copy is
+     * not copied (nor logged) again. The copy keys, oldest first, are listed under `<key>.corrupt.index`
+     * — the same scheme as iOS `CorruptStore`.
      */
     private fun keepCorrupt(key: String, raw: String, e: Exception) {
-        val corruptKey = "$key$CORRUPT_SUFFIX"
-        if (read(corruptKey) == raw) return
-        Log.error("PurchaseLedger: $key is unreadable (${e.message}) — read as empty; the raw value is kept in $corruptKey")
-        if (storage != null) storage.setStringsSync(mapOf(corruptKey to raw)) else memory[corruptKey] = raw
+        val copies = corruptCopyKeys(key).toMutableList()
+        if (copies.lastOrNull()?.let { read(it) } == raw) return
+        var stamp = clock()
+        while ("$key$CORRUPT_SUFFIX.$stamp" in copies) stamp++
+        val copyKey = "$key$CORRUPT_SUFFIX.$stamp"
+        copies += copyKey
+        val writes = LinkedHashMap<String, String?>()
+        writes[copyKey] = raw
+        while (copies.size > MAX_CORRUPT_COPIES) writes[copies.removeAt(0)] = null
+        writes[indexKey(key)] = JSONArray(copies).toString()
+        Log.error("PurchaseLedger: $key is unreadable (${e.message}) — read as empty; the raw value is kept in $copyKey (the newest $MAX_CORRUPT_COPIES copies are kept)")
+        if (storage != null) {
+            storage.setStringsSync(writes)
+        } else {
+            for ((k, v) in writes) if (v == null) memory.remove(k) else memory[k] = v
+        }
+    }
+
+    private fun indexKey(key: String) = "$key$CORRUPT_SUFFIX.index"
+
+    /** The keys of the corrupt copies kept for [key], oldest first. */
+    fun corruptCopyKeys(key: String): List<String> = try {
+        val arr = JSONArray(read(indexKey(key)) ?: "[]")
+        (0 until arr.length()).map { arr.getString(it) }
+    } catch (_: Exception) {
+        emptyList()
     }
 
     companion object {
@@ -215,6 +241,7 @@ internal class PurchaseLedger(
         const val KEY_DELIVERIES = "appdna.pending_deliveries_v1"
         const val KEY_IDENTIFIED = "appdna.identified_user_tokens_v1"
         const val CORRUPT_SUFFIX = ".corrupt"
+        const val MAX_CORRUPT_COPIES = 3
 
         const val CAP_REPORTED = 500
         const val CAP_VERIFY_ATTEMPTED = 500

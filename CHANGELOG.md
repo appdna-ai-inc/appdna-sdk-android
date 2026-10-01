@@ -51,6 +51,24 @@ Wraps iOS 1.0.82. Ships maps and host data (including "Show more").
 - `push_dismissed` was never tracked: `PushDismissReceiver` was not declared in the manifest, so the
   notification's delete intent reached no receiver. It is declared now.
 - A throwing `onElementInteraction` no longer crashes the app; it is treated as `null`.
+- A text-reply button's typed text reaches `onPushTapped` on Android 7–11: its PendingIntent carried
+  `FLAG_IMMUTABLE` there, so the system could not fill the text in. It is mutable now (`FLAG_MUTABLE`
+  on Android 12+, no mutability flag below); every other button stays immutable.
+- A push button with **Open app in foreground** off (and `dismiss`), tapped while the app was not
+  running, is tracked: the receiver waits up to 8 s for `configure` instead of dropping the tap. As on
+  iOS it does not open the app; the button's action is routed, and a route that needs the app on
+  screen takes effect only if the app is already in front.
+- The tap intent of a notification posted by SDK 1.0.53 or earlier is recognised by its exact extras
+  only; a host's own notification that merely carries `push_id` / `action_type` / `action_value` is no
+  longer tracked and routed as an AppDNA tap.
+- Adapty bridge: its entitlement and restore lists name the store product (`AccessLevel.vendorProductId`), as on iOS;
+  they named the access level (e.g. `premium`).
+- One renewal seen by two overlapping reconciles emits one `subscription_renewed` (it could emit two).
+- An unreadable billing-ledger value is kept under `<key>.corrupt.<epoch-ms>`; the newest three copies
+  per key are kept (listed under `<key>.corrupt.index`). A second unreadable value used to overwrite
+  the single `<key>.corrupt` copy.
+- `diagnose()` reports the veto timeout a wrapper was given (`0.5`, not the whole-second `1`): new
+  `AppDNAOptions.vetoTimeoutSeconds` (a body property, so the constructors and `copy` are unchanged).
 
 ### Binary compatibility
 - `ElementInteractionResult` gains `dataContext` and `AppliedInteraction` gains `inputValuePatches`
@@ -250,8 +268,8 @@ Needs the AppDNA server from the same release (purchase verification and push tr
   advanced the user past the sign-in step) and otherwise proceeds (with its `data`, if any). New
   `StepAdvanceResult.isExplicitBridgeDecision` / `bridgeSkipTarget` hold that rule for both bridges.
 - `setSessionData` / an onboarding answer holding a value that is not valid JSON (e.g. `Double.NaN`)
-  no longer throws `JSONException` into the caller: the value is not saved to disk, a warning is
-  logged and the previously saved copy is cleared.
+  no longer throws `JSONException` into the caller: that value is not saved to disk and a warning
+  naming it is logged. Every other saved value is kept.
 - `StoreKit2` purchases are now verified and acknowledged (the verify call was refused), instead of
   being refunded by Play after 3 days.
 - Location autocomplete no longer stores `0,0` for a suggestion that comes back without
@@ -270,7 +288,9 @@ Needs the AppDNA server from the same release (purchase verification and push tr
 - `EntitlementCache` counts `billing_retry` as active, like the server: `hasActiveSubscription()` and
   `isEntitled` are true while the store is still retrying a renewal payment.
 - `subscription_renewed` carries `price` and `currency` (the base plan's recurring price, the same
-  names as `purchase_completed`) when Play returns the product's price.
+  names as `purchase_completed`) when Play returns the product's price. Play's client API has no
+  charged amount for an order, so this is the catalogue price, not a promotional or grandfathered
+  amount; iOS reports the amount charged (`transaction.price`).
 - `TransactionInfo.environment` is `"sandbox"` for a Play test purchase — the value the AppDNA server
   decided when it verified the purchase (it was `"production"` for every purchase). It stays
   `"production"` when there is no verified answer (an older server, an already-owned re-tap,
@@ -287,8 +307,8 @@ Needs the AppDNA server from the same release (purchase verification and push tr
   bridge read as empty). An empty Adapty key is refused with an error log instead of silently.
 - `destroy()` / `AppDNA.shutdown()` called off the main thread now detaches the billing manager's
   process-lifecycle observer (the removal was rejected off Main and the old manager leaked).
-- The billing ledger logs an unreadable value and keeps it under `<key>.corrupt` instead of silently
-  reading it as empty and overwriting it.
+- The billing ledger logs an unreadable value and keeps a copy of it (see Fixed above for the key)
+  instead of silently reading it as empty and overwriting it.
 - An interactive Google map that has not finished loading after 15 s logs an error naming the usual
   cause (the key's Google Cloud project without "Maps SDK for Android", or an app restriction without
   this app). It stays a map; it is not swapped for the still image.

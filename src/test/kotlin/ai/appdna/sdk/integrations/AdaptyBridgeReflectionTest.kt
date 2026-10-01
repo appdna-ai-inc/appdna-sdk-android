@@ -46,6 +46,12 @@ class FakeAccessLevel(private val active: Boolean) {
     fun isActive(): Boolean = active
 }
 
+/** Adapty's `AccessLevel` with its store product (`vendorProductId`). */
+class FakeAccessLevelWithProduct(private val active: Boolean, private val product: String) {
+    fun isActive(): Boolean = active
+    fun getVendorProductId(): String = product
+}
+
 class FakeProfile(private val levels: Any) {
     fun getAccessLevels(): Any = levels
 }
@@ -104,6 +110,22 @@ class AdaptyBridgeReflectionTest {
             "premium" to FakeAccessLevel(true), "old" to FakeAccessLevel(false),
         )))) as List<ai.appdna.sdk.billing.Entitlement>
         assertEquals(listOf("premium"), out.map { it.productId })
+    }
+
+    /**
+     * The STORE product ids, as iOS returns (`vendorProductId`), deduped. NEGATIVE CONTROL: the access-level
+     * keys ("premium", "pro") were returned, so Android and iOS named one subscription differently.
+     */
+    @Test fun `profileToEntitlements returns the vendor product ids like iOS`() {
+        val bridge = AdaptyBridge()
+        val m = AdaptyBridge::class.java.getDeclaredMethod("profileToEntitlements", Any::class.java).apply { isAccessible = true }
+        @Suppress("UNCHECKED_CAST")
+        val out = m.invoke(bridge, FakeProfile(FakeImmutableMap(linkedMapOf(
+            "premium" to FakeAccessLevelWithProduct(true, "com.example.monthly"),
+            "pro" to FakeAccessLevelWithProduct(true, "com.example.monthly"),
+            "old" to FakeAccessLevelWithProduct(false, "com.example.weekly"),
+        )))) as List<ai.appdna.sdk.billing.Entitlement>
+        assertEquals(listOf("com.example.monthly"), out.map { it.productId })
     }
 
     private fun captureOut(block: () -> Unit): String {

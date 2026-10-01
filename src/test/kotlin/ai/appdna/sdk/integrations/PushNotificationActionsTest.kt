@@ -208,3 +208,51 @@ class PushNotificationActionsTest {
         assertEquals("appdna_sound_chime", PushSoundChannels.channelId("chime"))
     }
 }
+
+/**
+ * A background button tapped in a COLD process (the SDK is still bootstrapping): the receiver waits for
+ * `configure` and then tracks the tap. NEGATIVE CONTROL: it handled the tap at once, with no push
+ * pipeline — the tap was claimed untracked and never reported, and `onPushTapped` never fired.
+ */
+@RunWith(RobolectricTestRunner::class)
+@Config(sdk = [34])
+class PushActionReceiverColdProcessTest {
+    private val ctx: Context = ApplicationProvider.getApplicationContext()
+
+    @After
+    fun tearDown() {
+        PushActionReceiver.isReady = { AppDNA.push.manager != null }
+        PushActionReceiver.awaitReady = { callback -> AppDNA.onReady(callback) }
+    }
+
+    @Test
+    fun `a tap before configure is tracked once the SDK is ready`() {
+        val h = PushTestHarness(ctx, "cold-tap")
+        try {
+            var ready = false
+            var onReady: (() -> Unit)? = null
+            PushActionReceiver.isReady = { ready }
+            PushActionReceiver.awaitReady = { onReady = it }
+            val intent = Intent(ctx, PushActionReceiver::class.java).apply {
+                action = PushActionReceiver.ACTION_PUSH_ACTION
+                putExtra("appdna", "1"); putExtra("push_id", "p1"); putExtra("delivery_id", "d-cold")
+                putExtra("action_id", "later"); putExtra("action_type", "dismiss")
+            }
+            PushActionReceiver().onReceive(ctx, intent)
+            shadowOf(Looper.getMainLooper()).idle()
+            assertTrue("nothing handled before the SDK is ready", h.tapped.isEmpty())
+
+            ready = true
+            onReady!!.invoke()
+            shadowOf(Looper.getMainLooper()).idle()
+            assertEquals("later", h.tapped.single().second)
+            assertEquals("later", h.events().single { it.first == "push_tapped" }.second.optString("action"))
+
+            // The timeout fallback afterwards does not handle it a second time.
+            shadowOf(Looper.getMainLooper()).idleFor(java.time.Duration.ofMillis(PushActionReceiver.READY_WAIT_MS + 1))
+            assertEquals(1, h.tapped.size)
+        } finally {
+            h.close()
+        }
+    }
+}

@@ -95,8 +95,8 @@ internal object PushSoundChannels {
  *     the app with `action_id` + the button's `action_type` / `action_value`, and the host's
  *     `AppDNA.handlePushTap(intent)` tracks the tap, fires `onPushTapped(payload, actionId)` and routes
  *     the button's own action;
- *   - `dismiss`, and a `foreground: false` button, go to [PushActionReceiver]: the tap is tracked and
- *     `onPushTapped` fires without opening the app;
+ *   - `dismiss`, and a `foreground: false` button, go to [PushActionReceiver]: the tap is tracked,
+ *     `onPushTapped` fires and the button's action is routed without opening the app (as on iOS);
  *   - `text_reply` carries a [RemoteInput] (its value is the placeholder); the typed text reaches the
  *     host as `data["reply_text"]` in `onPushTapped`.
  * Either way the notification is removed (a button tap does not auto-cancel it).
@@ -156,12 +156,7 @@ internal object PushNotificationActions {
             intent.putExtra("action_value", button.value)
             intent.putExtra(EXTRA_NOTIFICATION_ID, notificationId.toString())
 
-            // A RemoteInput fills the intent in, so that one PendingIntent must be mutable (API 31+).
-            val mutability = if (isReply && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-                PendingIntent.FLAG_MUTABLE
-            } else {
-                PendingIntent.FLAG_IMMUTABLE
-            }
+            val mutability = pendingIntentMutability(isReply, Build.VERSION.SDK_INT)
             val requestCode = "$key:${button.id}".hashCode()
             val pending = if (opens) {
                 PendingIntent.getActivity(context, requestCode, intent, mutability or PendingIntent.FLAG_UPDATE_CURRENT)
@@ -180,6 +175,19 @@ internal object PushNotificationActions {
             }
             builder.addAction(actionBuilder.build())
         }
+    }
+
+    /**
+     * The mutability flag of a button's PendingIntent. A RemoteInput fills the reply's intent in, so the
+     * reply PendingIntent must be mutable: `FLAG_MUTABLE` on API 31+ (where one of the two flags is
+     * required), and NO mutability flag below 31 — a PendingIntent is mutable by default there, and
+     * `FLAG_IMMUTABLE` (API 23+) would make the system drop the typed text on Android 7–11. Every other
+     * button is `FLAG_IMMUTABLE`.
+     */
+    fun pendingIntentMutability(isReply: Boolean, sdkInt: Int): Int = when {
+        !isReply -> PendingIntent.FLAG_IMMUTABLE
+        sdkInt >= Build.VERSION_CODES.S -> PendingIntent.FLAG_MUTABLE
+        else -> 0
     }
 
     /** The typed reply of a `text_reply` button, if [intent] carries one. */
@@ -202,8 +210,19 @@ internal object PushNotificationActions {
 /**
  * Handles the buttons that do not open the app (`dismiss`, `foreground: false`): removes the
  * notification, then hands the tap to `AppDNA.push.handleTapData` — tracked as `push_tapped` with the
- * button's id, `onPushTapped(payload, actionId)` fires (with `data["reply_text"]` for a reply). Declared
- * in the SDK manifest (not exported).
+ * button's id, `onPushTapped(payload, actionId)` fires (with `data["reply_text"]` for a reply) and the
+ * button's own action is routed, without bringing the app to the foreground. That is what iOS does for
+ * the same button (an action without `.foreground`: the app handles the tap in the background). As on
+ * iOS, nothing is put on screen from the background: Android blocks an activity start from a
+ * notification-action receiver (Android 10+ background-start limits, Android 12+ trampoline limits), so
+ * a route that needs the app on screen takes effect only if the app is already in front. A button that
+ * must show something has to keep "Open app in foreground" on.
+ *
+ * A tap can arrive in a COLD process (the app was not running): the receiver then holds the broadcast
+ * open (`goAsync`) until the SDK is configured — the host's `Application.onCreate` calls `configure`
+ * before any receiver runs, and the bootstrap finishes asynchronously — for at most [READY_WAIT_MS],
+ * so the tap is tracked instead of being dropped by an SDK that had no event pipeline yet. Declared in
+ * the SDK manifest (not exported).
  */
 class PushActionReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
@@ -215,6 +234,24 @@ class PushActionReceiver : BroadcastReceiver() {
             (intent.extras?.get(k) as? String)?.let { data[k] = it }
         }
         PushNotificationActions.replyText(intent)?.let { data[PushNotificationActions.REPLY_DATA_KEY] = it }
+        if (isReady()) {
+            handle(data)
+            return
+        }
+        // Not configured yet: keep the broadcast alive until it is (or the wait runs out).
+        val pending: PendingResult? = try { goAsync() } catch (_: Throwable) { null }
+        val done = java.util.concurrent.atomic.AtomicBoolean(false)
+        val finish = {
+            if (done.compareAndSet(false, true)) {
+                handle(data)
+                try { pending?.finish() } catch (_: Throwable) { /* already finished */ }
+            }
+        }
+        awaitReady { finish() }
+        android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({ finish() }, READY_WAIT_MS)
+    }
+
+    private fun handle(data: Map<String, String>) {
         try {
             AppDNA.push.handleTapData(data, data["action_id"])
         } catch (e: Throwable) {
@@ -224,5 +261,16 @@ class PushActionReceiver : BroadcastReceiver() {
 
     companion object {
         const val ACTION_PUSH_ACTION = "ai.appdna.sdk.PUSH_ACTION"
+
+        /** How long a cold-process tap waits for `configure` (a broadcast may run for about 10 s). */
+        const val READY_WAIT_MS = 8_000L
+
+        /** Test seam: whether the SDK can track the tap now (its push pipeline is wired by `configure`). */
+        @Volatile
+        internal var isReady: () -> Boolean = { AppDNA.push.manager != null }
+
+        /** Test seam: runs the callback once the SDK is configured (`AppDNA.onReady`, on the main thread). */
+        @Volatile
+        internal var awaitReady: (() -> Unit) -> Unit = { callback -> AppDNA.onReady(callback) }
     }
 }

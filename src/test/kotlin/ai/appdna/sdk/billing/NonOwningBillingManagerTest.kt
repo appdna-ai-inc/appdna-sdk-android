@@ -12,6 +12,7 @@ import org.junit.runner.RunWith
 import org.robolectric.Robolectric
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
+import kotlinx.coroutines.launch
 
 /**
  * SPEC-497 §3.10 — with `ownsTransactions == false` the manager makes NO server call and NO store
@@ -134,5 +135,31 @@ class NonOwningBillingManagerTest {
         val props = pipe!!.props("subscription_renewed")
         assertTrue(!props.has("price"))
         assertTrue(!props.has("currency"))
+    }
+
+    /**
+     * Two reconciles at once (a foreground entry racing another pass), both parked on the renewal-price
+     * lookup. NEGATIVE CONTROL: without the snapshot mutex both loaded the old snapshot before the lookup
+     * and both emitted the renewal — two `subscription_renewed` for one renewal.
+     */
+    @Test fun `two concurrent reconciles emit one subscription_renewed`() {
+        val setup = JSONObject(unackedSub.toString()).put(
+            "product_details",
+            JSONObject("""{"monthly_sub":{"price_micros":9990000,"currency":"EUR","product_type":"subs"}}"""),
+        )
+        val s = scenario(owns = false, emits = true, setup = setup)
+        val prev = NativeBillingManager.SubSnapshot("monthly_sub", 1L, true, true, "GPA.1..0", "GPA.1")
+        s.mgr.saveSnapshot(mapOf("monthly_sub" to prev))
+        s.fake.owned.values.forEach { it.clear() }
+        s.fake.addOwned("subs", FakeBillingClient.purchase("monthly_sub", "tok_s", "GPA.1..1", acknowledged = true, purchaseTime = 2L, autoRenewing = true))
+        val gate = kotlinx.coroutines.CompletableDeferred<Unit>()
+        s.fake.productQueryGate = gate
+        s.mgr.scope.launch { s.mgr.reconcileSubscriptionState() }
+        s.mgr.scope.launch { s.mgr.reconcileSubscriptionState() }
+        s.idle()
+        gate.complete(Unit)
+        s.idle()
+        assertEquals(1, pipe!!.count("subscription_renewed"))
+        assertEquals(9.99, pipe!!.props("subscription_renewed").getDouble("price"), 1e-9)
     }
 }

@@ -336,10 +336,11 @@ internal object AppDNANotificationPoster {
 }
 
 /**
- * SPEC-070-A H.6: Receives the dismissal broadcast (deleteIntent) and emits
- * a `push_dismissed` event on behalf of the user. Registered dynamically by
- * the deleteIntent — no manifest entry needed because [PendingIntent.getBroadcast]
- * delivers via the standard broadcast pipeline.
+ * SPEC-070-A H.6: Receives the dismissal broadcast (the notification's deleteIntent, an explicit
+ * intent for this class) and emits a `push_dismissed` event on behalf of the user. It MUST be declared
+ * in the manifest — the SDK's own `AndroidManifest.xml` declares it (not exported): an explicit
+ * broadcast to an undeclared receiver is never delivered, which is why `push_dismissed` used to be
+ * tracked never.
  */
 internal class PushDismissReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
