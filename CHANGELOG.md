@@ -72,7 +72,8 @@ Wraps iOS 1.0.82. Ships maps and host data (including "Show more").
   Notifications", importance high). It was created from the first push's `channel_importance` /
   `channel_name` / `channel_description`, so one campaign sent at Low or Min importance fixed every
   later push without a custom sound at that importance. Those keys now apply to a custom-sound channel
-  only. A channel a push's custom data names (`channel_id`) is created the same way and named
+  only. The channel a campaign's Android Channel ID names (the server sends it as `channel_id` in the
+  message data; custom data cannot set that key) is created the same way and named
   "Push Notifications (<id>)"; it was named "Push Notifications" too, like the default channel.
 - An unreadable billing-ledger value is kept under `<key>.corrupt.<epoch-ms>`; the newest three copies
   per key are kept (listed under `<key>.corrupt.index`). A second unreadable value used to overwrite
