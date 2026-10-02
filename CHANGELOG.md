@@ -126,7 +126,8 @@ Wraps iOS 1.0.82. Ships maps and host data (including "Show more").
   after the zone); `+02` and a lowercase `z` failed on API 26+; a date-only value with a 5-digit year,
   Arabic-Indic or full-width digits or a trailing NBSP differed. As on iOS: seconds are required
   (`T10:00Z` is no date), `T` must be upper case, and an instant's day rolls over (`2026-02-30T…` is
-  2 March).
+  2 March). An instant whose date and time as written fall outside iOS's range — from
+  `-5877520-03-03T00:00:00` up to, not including, `5874898-06-04T00:00:00` — is no date, as on iOS.
 - A countdown's `target_datetime` is a zone-less `yyyy-MM-dd'T'HH:mm:ss` in UTC, as on iOS: a value
   with a zone (`…T10:00:00Z`, `+02:00`), a fraction or an impossible date (`2026-02-30T…`) now counts
   down `duration_seconds` (default 300), as iOS does. Android read the date-time prefix of such a value

@@ -177,6 +177,45 @@ class IsoInstantTest {
 
     @Test @Config(sdk = [33]) fun `api 33 - shared fixtures countdown_target_datetime and form_date_bounds_parsing`() = assertConfigDateFixtures()
 
+    /**
+     * Round 28 — the range edge, MEASURED on iOS (26.2 simulator = macOS 26.3 Foundation, 2026-10-02). iOS keeps
+     * the date as a Double of seconds, so its value at this magnitude is within 32 ms of the exact one.
+     * NEGATIVE CONTROL: with the old `year <= 5_900_000` cut-off, the nil rows below (06-04, 24:00 roll-over,
+     * 07-01, the rest of 5874898, 5874899…, and 01-01 / 03-02 of -5877520) answer a date and this fails.
+     */
+    private fun assertMeasuredEdge() {
+        val iosValue = mapOf(
+            "5874898-06-03T23:59:59Z" to 185331720383999008L,
+            "5874898-06-03T23:00:00-02:00" to 185331720387600000L,
+            "5874898-06-03T12:00:00Z" to 185331720340800000L,
+            "5874898-05-07T10:00:00Z" to 185331718000800000L,
+            "5874897-05-07T10:00:00Z" to 185331686464800000L,
+            "5874898-06-03T23:59:59.500Z" to 185331720383999488L,
+            "-5877520-03-03T00:00:00Z" to -185542587187200000L,
+            "-5877520-05-07T10:00:00Z" to -185542581535200000L,
+            "-5877520-12-31T23:59:59Z" to -185542560921600992L,
+            "-5877519-12-31T23:59:59-01:00" to -185542529382000992L,
+        )
+        for ((iso, ios) in iosValue) {
+            val got = IsoInstant.parseEpochMs(iso)
+            assertTrue("$iso: iOS=$ios android=$got", got != null && kotlin.math.abs(got - ios) <= 32)
+        }
+        for (iso in listOf(
+            "5874898-06-04T00:00:00Z", "5874898-06-03T24:00:00Z", "5874898-06-04T01:00:00+02:00",
+            "5874898-06-31T00:00:00Z", "5874898-07-01T00:00:00Z", "5874898-12-31T23:59:59Z",
+            "5874899-01-01T00:00:00Z", "5880000-01-01T00:00:00Z", "-5877520-01-01T00:00:00Z",
+            "-5877520-03-02T23:59:59Z", "-5877520-01-01T00:30:00+01:00", "-5880000-05-07T10:00:00Z",
+            "5874898-06-04T00:00:00.000Z",
+        )) assertNull("iOS answers nil for $iso", IsoInstant.parseEpochMs(iso))
+        // iOS answers a wrapped, meaningless date here; Android answers nil (documented, not reproduced).
+        assertNull(IsoInstant.parseEpochMs("5899999-05-07T10:00:00Z"))
+        assertNull(IsoInstant.parseEpochMs("-5899999-05-07T10:00:00Z"))
+    }
+
+    @Test @Config(sdk = [24]) fun `api 24 - the range edge iOS was measured at`() = assertMeasuredEdge()
+
+    @Test @Config(sdk = [33]) fun `api 33 - the range edge iOS was measured at`() = assertMeasuredEdge()
+
     @Test @Config(sdk = [24]) fun `api 24 - canonical instants`() = assertCanonical()
 
     @Test @Config(sdk = [33]) fun `api 33 - canonical instants`() = assertCanonical()
