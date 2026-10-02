@@ -252,6 +252,8 @@ class SharedFixtureTest(
             "decode_polyline" -> runDecodePolyline(action, spy)
             // An in-app message's start_date / end_date, through the REAL MessageManager reader.
             "parse_window_date" -> runParseWindowDate(action, spy)
+            "countdown_initial_seconds" -> runCountdownInitialSeconds(action, spy)
+            "form_date_bounds" -> runFormDateBounds(action, spy)
             "map_interactive_plan" -> runMapInteractivePlan(action, spy)
             // SPEC-497 §13h.3 — getLocationData over the stored answer.
             "location_data_from_answer" -> runLocationDataFromAnswer(action, spy)
@@ -1833,6 +1835,43 @@ class SharedFixtureTest(
             spy.state["results"] = (0 until cases.length()).map { i ->
                 val value = cases.getJSONObject(i).optString("value", null) ?: unsupported("parse_window_date case without value")
                 mm.parseWindowDate(value)?.time
+            }
+        } finally {
+            java.util.TimeZone.setDefault(saved)
+        }
+    }
+
+    /** The REAL `countdownInitialSeconds` (the countdown block's `target_datetime` reader) at `action.now_ms`. */
+    private fun runCountdownInitialSeconds(action: JSONObject, spy: Spy) {
+        val cases = action.optJSONArray("cases") ?: unsupported("countdown_initial_seconds without cases")
+        if (!action.has("now_ms")) unsupported("countdown_initial_seconds without now_ms")
+        val nowMs = action.getLong("now_ms")
+        spy.state["results"] = (0 until cases.length()).map { i ->
+            val c = cases.getJSONObject(i)
+            ai.appdna.sdk.onboarding.countdownInitialSeconds(
+                targetType = if (c.isNull("target_type")) null else c.optString("target_type"),
+                targetDatetime = if (c.isNull("target_datetime")) null else c.optString("target_datetime"),
+                durationSeconds = if (c.isNull("duration_seconds")) null else c.getInt("duration_seconds"),
+                nowMs = nowMs,
+            )
+        }
+    }
+
+    /** The REAL `formDateBounds` (a form date field's `min_date` / `max_date`) in `action.device_timezone`. */
+    private fun runFormDateBounds(action: JSONObject, spy: Spy) {
+        val cases = action.optJSONArray("cases") ?: unsupported("form_date_bounds without cases")
+        val saved = java.util.TimeZone.getDefault()
+        action.optString("device_timezone", "").takeIf { it.isNotEmpty() }?.let {
+            java.util.TimeZone.setDefault(java.util.TimeZone.getTimeZone(it))
+        }
+        try {
+            spy.state["results"] = (0 until cases.length()).map { i ->
+                val c = cases.getJSONObject(i)
+                val (lo, hi) = ai.appdna.sdk.onboarding.formDateBounds(
+                    if (c.isNull("min_date")) null else c.optString("min_date"),
+                    if (c.isNull("max_date")) null else c.optString("max_date"),
+                )
+                listOf(lo, hi)
             }
         } finally {
             java.util.TimeZone.setDefault(saved)

@@ -688,18 +688,12 @@ private fun DateField(
                 cal.get(Calendar.MONTH),
                 cal.get(Calendar.DAY_OF_MONTH)
             )
-            // SPEC-401-A — enforce min_date/max_date config; previously the
-            // schema accepted them but the picker ignored them. ISO8601
-            // `yyyy-MM-dd` parsed via SimpleDateFormat(Locale.US).
+            // Enforce min_date/max_date config, read as iOS reads them (formDateBounds).
+            val (minMs, maxMs) = formDateBounds(field.config?.min_date, field.config?.max_date)
             try {
-                val isoFmt = SimpleDateFormat("yyyy-MM-dd", Locale.US)
-                field.config?.min_date?.let { iso ->
-                    isoFmt.parse(iso)?.let { dialog.datePicker.minDate = it.time }
-                }
-                field.config?.max_date?.let { iso ->
-                    isoFmt.parse(iso)?.let { dialog.datePicker.maxDate = it.time }
-                }
-            } catch (_: Exception) { /* tolerate parse failure */ }
+                minMs?.let { dialog.datePicker.minDate = it }
+                maxMs?.let { dialog.datePicker.maxDate = it }
+            } catch (_: Exception) { /* tolerate a bound the picker rejects */ }
             dialog.show()
         },
         modifier = Modifier.fillMaxWidth(),
@@ -713,6 +707,25 @@ private fun DateField(
                 MaterialTheme.colorScheme.onSurface
         )
     }
+}
+
+/**
+ * A form date field's `min_date` / `max_date` as epoch millis (null = no bound), as iOS
+ * `FormStepView.dateRange` reads them: each a `yyyy-MM-dd` date at midnight in the device's time zone
+ * ([ai.appdna.sdk.core.IsoInstant.parseDateOnlyLocalMs]); a value that does not parse is no bound, and a
+ * descending pair is no bound at all. It used a lenient `SimpleDateFormat`, which read the date prefix of
+ * `2026-05-07T10:00:00Z`, rolled `2026-02-30` over to 2 March and passed a descending pair to the picker.
+ * Pinned by the shared fixture `dto_parsing/form_date_bounds_parsing`.
+ */
+internal fun formDateBounds(
+    minDate: String?,
+    maxDate: String?,
+    zone: java.util.TimeZone = java.util.TimeZone.getDefault(),
+): Pair<Long?, Long?> {
+    val lower = minDate?.let { ai.appdna.sdk.core.IsoInstant.parseDateOnlyLocalMs(it, zone) }
+    val upper = maxDate?.let { ai.appdna.sdk.core.IsoInstant.parseDateOnlyLocalMs(it, zone) }
+    if (lower != null && upper != null && lower > upper) return null to null
+    return lower to upper
 }
 
 @Composable

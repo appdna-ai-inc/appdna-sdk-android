@@ -87,10 +87,10 @@ class IsoInstantTest {
         }
     }
 
-    private fun fixtureFile(): File {
-        val rel = "packages/sdk-shared-fixtures/dto_parsing/message_window_date_parsing.fixture.json"
+    private fun fixtureFile(id: String = "message_window_date_parsing"): File {
+        val rel = "packages/sdk-shared-fixtures/dto_parsing/$id.fixture.json"
         System.getenv("APPDNA_SDK_FIXTURES_DIR")?.let { dir ->
-            File(dir, "dto_parsing/message_window_date_parsing.fixture.json").takeIf { it.isFile }?.let { return it }
+            File(dir, "dto_parsing/$id.fixture.json").takeIf { it.isFile }?.let { return it }
         }
         var here: File? = File(".").canonicalFile
         repeat(10) {
@@ -100,6 +100,82 @@ class IsoInstantTest {
         }
         error("Could not locate $rel. Set APPDNA_SDK_FIXTURES_DIR.")
     }
+
+    /**
+     * The countdown's `target_datetime` and a form date field's `min_date` / `max_date`, against iOS's
+     * MEASURED answers (`ios-config-date-corpus.tsv`: macOS Foundation `DateFormatter`, the two readers'
+     * exact configurations). NEGATIVE CONTROL: the previous `SimpleDateFormat` readers read the prefix of
+     * `2026-12-31T23:59:59Z`, rolled `2026-02-30` over and rejected `٢٠٢٦-…` and `T23 59 59`.
+     */
+    private fun assertConfigDateCorpus() {
+        val text = javaClass.classLoader!!.getResourceAsStream("ios-config-date-corpus.tsv")!!.bufferedReader().readText()
+        val mismatches = mutableListOf<String>()
+        var n = 0
+        for (line in text.split('\n')) {
+            if (line.isBlank() || line.startsWith("#")) continue
+            val (kind, zone, json, want) = line.split('\t')
+            val value = JSONArray("[$json]").getString(0)
+            val got = when (kind) {
+                "countdown" -> IsoInstant.parseZonelessUtcMs(value)
+                "dateonly", "dateonly_lmt" -> IsoInstant.parseDateOnlyLocalMs(value, TimeZone.getTimeZone(zone))
+                else -> error("unknown kind $kind")
+            }
+            val ios = ms(want)
+            val same = if (kind == "dateonly_lmt") {
+                // Before the zone had standard time iOS's tz data applies its local mean time and the JVM's
+                // does not: the same day, under an hour apart (see the corpus header).
+                got != null && ios != null && got != ios && kotlin.math.abs(got - ios) < 3_600_000L
+            } else {
+                got == ios
+            }
+            if (!same) mismatches += "$kind $zone $json: iOS=$want android=$got"
+            n++
+        }
+        assertEquals(201, n)
+        assertTrue("Android differs from iOS:\n" + mismatches.joinToString("\n"), mismatches.isEmpty())
+    }
+
+    /** `countdown_target_datetime` / `form_date_bounds_parsing` through the REAL Android functions. */
+    private fun assertConfigDateFixtures() {
+        val cd = JSONObject(fixtureFile("countdown_target_datetime").readText())
+        val cdAction = cd.getJSONObject("action")
+        val cdCases = cdAction.getJSONArray("cases")
+        val cdWant = cd.getJSONObject("expect").getJSONObject("state_after").getJSONArray("results")
+        for (i in 0 until cdCases.length()) {
+            val c = cdCases.getJSONObject(i)
+            val got = ai.appdna.sdk.onboarding.countdownInitialSeconds(
+                if (c.isNull("target_type")) null else c.getString("target_type"),
+                if (c.isNull("target_datetime")) null else c.getString("target_datetime"),
+                if (c.isNull("duration_seconds")) null else c.getInt("duration_seconds"),
+                cdAction.getLong("now_ms"),
+            )
+            assertEquals("countdown case $i $c", cdWant.getInt(i), got)
+        }
+        val fd = JSONObject(fixtureFile("form_date_bounds_parsing").readText())
+        val fdAction = fd.getJSONObject("action")
+        val fdCases = fdAction.getJSONArray("cases")
+        val fdWant = fd.getJSONObject("expect").getJSONObject("state_after").getJSONArray("results")
+        val zone = TimeZone.getTimeZone(fdAction.getString("device_timezone"))
+        for (i in 0 until fdCases.length()) {
+            val c = fdCases.getJSONObject(i)
+            val (lo, hi) = ai.appdna.sdk.onboarding.formDateBounds(
+                if (c.isNull("min_date")) null else c.getString("min_date"),
+                if (c.isNull("max_date")) null else c.getString("max_date"),
+                zone,
+            )
+            val w = fdWant.getJSONArray(i)
+            assertEquals("form case $i $c min", if (w.isNull(0)) null else w.getLong(0), lo)
+            assertEquals("form case $i $c max", if (w.isNull(1)) null else w.getLong(1), hi)
+        }
+    }
+
+    @Test @Config(sdk = [24]) fun `api 24 - countdown and form dates, every iOS-measured answer`() = assertConfigDateCorpus()
+
+    @Test @Config(sdk = [33]) fun `api 33 - countdown and form dates, every iOS-measured answer`() = assertConfigDateCorpus()
+
+    @Test @Config(sdk = [24]) fun `api 24 - shared fixtures countdown_target_datetime and form_date_bounds_parsing`() = assertConfigDateFixtures()
+
+    @Test @Config(sdk = [33]) fun `api 33 - shared fixtures countdown_target_datetime and form_date_bounds_parsing`() = assertConfigDateFixtures()
 
     @Test @Config(sdk = [24]) fun `api 24 - canonical instants`() = assertCanonical()
 

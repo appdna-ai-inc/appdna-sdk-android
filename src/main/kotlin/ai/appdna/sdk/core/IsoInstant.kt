@@ -13,6 +13,10 @@ import java.util.TimeZone
  *    `2026-05-07T10:00:00.000Z`, `2026-05-07T12:00:00+02:00`.
  *  - [parseDateOnlyUtcMs] = iOS `MessageManager.parseWindowDate`'s fallback: a `DateFormatter`
  *    `yyyy-MM-dd`, `en_US_POSIX`, UTC, non-lenient.
+ *  - [parseDateOnlyLocalMs] = the same formatter with no time zone set (iOS `FormStepView.dateRange`, a
+ *    form step's `min_date` / `max_date`): midnight in the device's time zone.
+ *  - [parseZonelessUtcMs] = iOS `CountdownTimerBlockView.initialRemainingSeconds` (a countdown's
+ *    `target_datetime`): a `DateFormatter` `yyyy-MM-dd'T'HH:mm:ss`, `en_US_POSIX`, UTC, non-lenient.
  *
  * Both iOS formatters are ICU parsers, and ICU is far more forgiving than `java.time` or
  * `SimpleDateFormat`. Android used `OffsetDateTime` on API 26+ and `SimpleDateFormat` on API 24/25,
@@ -42,28 +46,73 @@ import java.util.TimeZone
  * spaces (any Unicode space separator) and tabs may follow — a trailing newline makes it null, a leading
  * one does not.
  *
- * Pinned on iOS AND on Android at API 24 and 33 by the shared fixture
- * `dto_parsing/message_window_date_parsing` and by `IsoInstantTest`.
+ * Zone-less (the countdown): the date part as date-only, then `T` straight after the day (upper case, no
+ * whitespace before it), then hour, minute and second, each preceded by optional whitespace and separated
+ * by `:`, `.` or `-` (optionally preceded by whitespace) or by whitespace alone; `/`, `,` and `_` are not
+ * separators. Seconds are required. The date
+ * must exist, hour 0–23, minute and second 0–59, year 1–144683. After the second only spaces and tabs may
+ * follow — a zone (`Z`, `+02:00`), a fraction or a newline makes it null, as on iOS.
+ *
+ * Pinned on iOS AND on Android at API 24 and 33 by the shared fixtures
+ * `dto_parsing/message_window_date_parsing`, `dto_parsing/countdown_target_datetime` and
+ * `dto_parsing/form_date_bounds_parsing`, and by `IsoInstantTest`.
  */
 internal object IsoInstant {
 
     fun parseEpochMs(iso: String): Long? = parseInstant(iso, fractional = true) ?: parseInstant(iso, fractional = false)
 
     fun parseDateOnlyUtcMs(value: String): Long? {
+        val (year, month, day) = dateOnlyFields(value) ?: return null
+        return epochMs(year, month, day, 0, 0, 0, 0)
+    }
+
+    /**
+     * [parseDateOnlyUtcMs]'s rule, but midnight in [zone] (default: the device's time zone). The strings
+     * accepted and the day are iOS's; for a date before the zone had standard time (before 1883 in Los
+     * Angeles) the instant can be under an hour from iOS's, whose tz data applies the zone's local mean
+     * time where the JVM's does not (pinned in `IsoInstantTest`'s `dateonly_lmt` rows).
+     */
+    fun parseDateOnlyLocalMs(value: String, zone: TimeZone = TimeZone.getDefault()): Long? {
+        val (year, month, day) = dateOnlyFields(value) ?: return null
+        return GregorianCalendar(zone, Locale.US).apply {
+            clear()
+            set(year.toInt(), month.toInt() - 1, day.toInt())
+        }.timeInMillis
+    }
+
+    /** A zone-less `yyyy-MM-dd'T'HH:mm:ss` read in UTC, as iOS's non-lenient `DateFormatter` reads it. */
+    fun parseZonelessUtcMs(value: String): Long? {
+        val c = Cursor(value)
+        c.skipWhitespace()
+        val (year, month, day) = c.date(signedYear = false) ?: return null
+        if (c.atEnd || c.peek != 'T') return null
+        c.pos++
+        val hour = c.number() ?: return null
+        if (!c.zonelessTimeSeparator()) return null
+        val minute = c.number() ?: return null
+        if (!c.zonelessTimeSeparator()) return null
+        val second = c.number() ?: return null
+        if (!c.onlySpacesOrTabsLeft()) return null
+        if (!isRealDate(year, month, day) || hour > 23 || minute > 59 || second > 59) return null
+        return epochMs(year, month, day, hour, minute, second, 0)
+    }
+
+    /** The date-only rule's fields, or null (see the class comment). */
+    private fun dateOnlyFields(value: String): Triple<Long, Long, Long>? {
         val c = Cursor(value)
         c.skipWhitespace()
         val ymd = c.date(signedYear = false) ?: return null
-        while (!c.atEnd) {
-            val ch = c.peek
-            if (Character.getType(ch) != Character.SPACE_SEPARATOR.toInt() && ch != '\t') return null
-            c.pos++
-        }
+        if (!c.onlySpacesOrTabsLeft()) return null
         val (year, month, day) = ymd
-        if (year < 1 || year > 144_683 || month < 1 || month > 12 || day < 1) return null
-        val cal = utcCalendar().apply { set(year.toInt(), month.toInt() - 1, 1) }
-        if (day > cal.getActualMaximum(Calendar.DAY_OF_MONTH)) return null
-        return epochMs(year, month, day, 0, 0, 0, 0)
+        return if (isRealDate(year, month, day)) ymd else null
     }
+
+    private fun isRealDate(year: Long, month: Long, day: Long): Boolean {
+        if (year < 1 || year > 144_683 || month < 1 || month > 12 || day < 1) return false
+        val cal = utcCalendar().apply { set(year.toInt(), month.toInt() - 1, 1) }
+        return day <= cal.getActualMaximum(Calendar.DAY_OF_MONTH)
+    }
+
 
     /** One `ISO8601DateFormatter` (with or without `.withFractionalSeconds`). */
     private fun parseInstant(s: String, fractional: Boolean): Long? {
@@ -251,6 +300,30 @@ internal object IsoInstant {
                 return true
             }
             return false
+        }
+
+        /**
+         * Between the zone-less reader's time fields iOS's `DateFormatter` takes `:`, `.` or `-`, each
+         * optionally preceded by whitespace, or whitespace alone (measured) — not `/`, `,` or `_`.
+         */
+        fun zonelessTimeSeparator(): Boolean {
+            val start = pos
+            skipWhitespace()
+            if (!atEnd && peek in ":.-") {
+                pos++
+                return true
+            }
+            return pos > start
+        }
+
+        /** Consumes the rest; true when it was only Unicode space separators and tabs (not a newline). */
+        fun onlySpacesOrTabsLeft(): Boolean {
+            while (!atEnd) {
+                val ch = peek
+                if (Character.getType(ch) != Character.SPACE_SEPARATOR.toInt() && ch != '\t') return false
+                pos++
+            }
+            return true
         }
 
         fun date(signedYear: Boolean): Triple<Long, Long, Long>? {

@@ -1,0 +1,208 @@
+# iOS's MEASURED answers (macOS Foundation DateFormatter, en_US_POSIX, non-lenient; 2026-10-02).
+# kind	zone	value (JSON string)	epoch ms or null
+#  countdown = yyyy-MM-dd'T'HH:mm:ss in UTC (CountdownTimerBlockView.initialRemainingSeconds)
+#  dateonly  = yyyy-MM-dd in the device zone (FormStepView.dateRange)
+#  dateonly_lmt = a dateonly row before the zone had standard time: iOS's tz data applies the zone's local mean
+#                 time (Los Angeles -7:52:58), the JVM's does not, so Android is that many minutes off (< 1 h);
+#                 the reader's answer (accepted, which calendar day) is the same.
+countdown	UTC	"2026-12-31T23:59:59"	1798761599000
+countdown	UTC	"2026-12-31T23:59:59Z"	null
+countdown	UTC	"2026-12-31T23:59:59.000Z"	null
+countdown	UTC	"2026-12-31T23:59:59+02:00"	null
+countdown	UTC	"2026-12-31T23:59"	null
+countdown	UTC	"2026-12-31"	null
+countdown	UTC	"2026-12-31 23:59:59"	null
+countdown	UTC	" 2026-12-31T23:59:59"	1798761599000
+countdown	UTC	" 2026-12-31T23:59:59"	1798761599000
+countdown	UTC	"\n2026-12-31T23:59:59"	1798761599000
+countdown	UTC	"2026-12-31T23:59:59 "	1798761599000
+countdown	UTC	"2026-12-31T23:59:59\t"	1798761599000
+countdown	UTC	"2026-12-31T23:59:59\n"	null
+countdown	UTC	"2026-12-31t23:59:59"	null
+countdown	UTC	"2026-5-7T1:2:3"	1778115723000
+countdown	UTC	"2026-05-07T10:00:00"	1778148000000
+countdown	UTC	"2026-02-30T10:00:00"	null
+countdown	UTC	"2028-02-29T10:00:00"	1835431200000
+countdown	UTC	"2026-02-29T10:00:00"	null
+countdown	UTC	"2026-13-01T10:00:00"	null
+countdown	UTC	"2026-00-10T10:00:00"	null
+countdown	UTC	"2026-12-00T10:00:00"	null
+countdown	UTC	"2026-12-31T24:00:00"	null
+countdown	UTC	"2026-12-31T23:60:00"	null
+countdown	UTC	"2026-12-31T23:59:60"	null
+countdown	UTC	"٢٠٢٦-١٢-٣١T23:59:59"	1798761599000
+countdown	UTC	"２０２６-１２-３１T23:59:59"	1798761599000
+countdown	UTC	"2026\/12\/31T23:59:59"	1798761599000
+countdown	UTC	"2026.12.31T23:59:59"	1798761599000
+countdown	UTC	"2026 12 31T23:59:59"	1798761599000
+countdown	UTC	"12026-12-31T23:59:59"	1798761599000
+countdown	UTC	"0026-12-31T23:59:59"	-61315315201000
+countdown	UTC	"0000-12-31T23:59:59"	null
+countdown	UTC	"-2026-12-31T23:59:59"	null
+countdown	UTC	"+2026-12-31T23:59:59"	null
+countdown	UTC	"garbage"	null
+countdown	UTC	""	null
+countdown	UTC	"2026-12-31T23.59.59"	1798761599000
+countdown	UTC	"2026-12-31T 23:59:59"	1798761599000
+countdown	UTC	"2026-12-31 T23:59:59"	null
+countdown	UTC	"2026-12-31T23 :59:59"	1798761599000
+countdown	UTC	"2026-12-31TT23:59:59"	null
+countdown	UTC	"2026-12-31T23:59:59.5"	null
+countdown	UTC	"2026-12-31T23:59:59."	null
+countdown	UTC	"2026-12-31T23:59:59x"	null
+countdown	UTC	"2026-12-31T023:059:059"	1798761599000
+countdown	UTC	"2026-12-31T23:59:5"	1798761545000
+countdown	UTC	"02026-012-031T23:59:59"	1798761599000
+countdown	UTC	"2026-12-31T-1:59:59"	null
+countdown	UTC	"2026-12-31T23-59-59"	1798761599000
+countdown	UTC	"2026-12-31T23\/59\/59"	null
+countdown	UTC	"1582-10-10T00:00:00"	-12218860800000
+countdown	UTC	"0001-01-01T00:00:00"	-62135769600000
+countdown	UTC	"144683-12-31T00:00:00"	4503618748800000
+countdown	UTC	"144684-01-01T00:00:00"	null
+countdown	UTC	"99999-01-01T00:00:00"	3093496444800000
+countdown	UTC	"2026-12-31T23:59:59　"	1798761599000
+countdown	UTC	"2026-12-31T23:59:59 "	1798761599000
+countdown	UTC	"2026-12-31\tT23:59:59"	null
+countdown	UTC	"2026-12-31T\t23:59:59"	1798761599000
+countdown	UTC	"2026-12-31T23:59:059"	1798761599000
+countdown	UTC	"2026-12-31T23:59:59 Z"	null
+countdown	UTC	"2026-12-31T12:00:00 PM"	null
+countdown	UTC	"2026-12-31T23:59:59Zjunk"	null
+dateonly	America/Los_Angeles	"2026-05-07"	1778137200000
+dateonly	America/Los_Angeles	"2026-5-7"	1778137200000
+dateonly	America/Los_Angeles	"2026-02-30"	null
+dateonly	America/Los_Angeles	"2028-02-29"	1835424000000
+dateonly	America/Los_Angeles	"2026-13-01"	null
+dateonly	America/Los_Angeles	" 2026-05-07"	1778137200000
+dateonly	America/Los_Angeles	"\n2026-05-07"	1778137200000
+dateonly	America/Los_Angeles	"2026-05-07 "	1778137200000
+dateonly	America/Los_Angeles	"2026-05-07\t"	1778137200000
+dateonly	America/Los_Angeles	"2026-05-07\n"	null
+dateonly	America/Los_Angeles	"2026-05-07 "	1778137200000
+dateonly	America/Los_Angeles	"2026-05-07T10:00:00Z"	null
+dateonly	America/Los_Angeles	"2026-05-07T10:00:00"	null
+dateonly	America/Los_Angeles	"today"	null
+dateonly	America/Los_Angeles	""	null
+dateonly	America/Los_Angeles	"garbage"	null
+dateonly	America/Los_Angeles	"2026\/05\/07"	1778137200000
+dateonly	America/Los_Angeles	"2026.05.07"	1778137200000
+dateonly	America/Los_Angeles	"٢٠٢٦-٠٥-٠٧"	1778137200000
+dateonly	America/Los_Angeles	"12026-05-07"	1778137200000
+dateonly	America/Los_Angeles	"0000-01-01"	null
+dateonly_lmt	America/Los_Angeles	"0001-01-01"	-62135741222000
+dateonly_lmt	America/Los_Angeles	"0026-05-07"	-61335936422000
+dateonly	America/Los_Angeles	"-2026-05-07"	null
+dateonly	America/Los_Angeles	"+2026-05-07"	null
+dateonly	America/Los_Angeles	"2026-05-07x"	null
+dateonly	America/Los_Angeles	"144683-12-31"	4503618777600000
+dateonly	America/Los_Angeles	"144684-01-01"	null
+dateonly_lmt	America/Los_Angeles	"1582-10-10"	-12218832422000
+dateonly	America/Los_Angeles	"2026-03-08"	1772956800000
+dateonly	America/Los_Angeles	"2026-11-01"	1793516400000
+dateonly	Asia/Tokyo	"2026-05-07"	1778079600000
+dateonly	Asia/Tokyo	"2026-5-7"	1778079600000
+dateonly	Asia/Tokyo	"2026-02-30"	null
+dateonly	Asia/Tokyo	"2028-02-29"	1835362800000
+dateonly	Asia/Tokyo	"2026-13-01"	null
+dateonly	Asia/Tokyo	" 2026-05-07"	1778079600000
+dateonly	Asia/Tokyo	"\n2026-05-07"	1778079600000
+dateonly	Asia/Tokyo	"2026-05-07 "	1778079600000
+dateonly	Asia/Tokyo	"2026-05-07\t"	1778079600000
+dateonly	Asia/Tokyo	"2026-05-07\n"	null
+dateonly	Asia/Tokyo	"2026-05-07 "	1778079600000
+dateonly	Asia/Tokyo	"2026-05-07T10:00:00Z"	null
+dateonly	Asia/Tokyo	"2026-05-07T10:00:00"	null
+dateonly	Asia/Tokyo	"today"	null
+dateonly	Asia/Tokyo	""	null
+dateonly	Asia/Tokyo	"garbage"	null
+dateonly	Asia/Tokyo	"2026\/05\/07"	1778079600000
+dateonly	Asia/Tokyo	"2026.05.07"	1778079600000
+dateonly	Asia/Tokyo	"٢٠٢٦-٠٥-٠٧"	1778079600000
+dateonly	Asia/Tokyo	"12026-05-07"	1778079600000
+dateonly	Asia/Tokyo	"0000-01-01"	null
+dateonly_lmt	Asia/Tokyo	"0001-01-01"	-62135803139000
+dateonly_lmt	Asia/Tokyo	"0026-05-07"	-61335998339000
+dateonly	Asia/Tokyo	"-2026-05-07"	null
+dateonly	Asia/Tokyo	"+2026-05-07"	null
+dateonly	Asia/Tokyo	"2026-05-07x"	null
+dateonly	Asia/Tokyo	"144683-12-31"	4503618716400000
+dateonly	Asia/Tokyo	"144684-01-01"	null
+dateonly_lmt	Asia/Tokyo	"1582-10-10"	-12218894339000
+dateonly	Asia/Tokyo	"2026-03-08"	1772895600000
+dateonly	Asia/Tokyo	"2026-11-01"	1793458800000
+dateonly	America/Sao_Paulo	"2026-05-07"	1778122800000
+dateonly	America/Sao_Paulo	"2026-5-7"	1778122800000
+dateonly	America/Sao_Paulo	"2026-02-30"	null
+dateonly	America/Sao_Paulo	"2028-02-29"	1835406000000
+dateonly	America/Sao_Paulo	"2026-13-01"	null
+dateonly	America/Sao_Paulo	" 2026-05-07"	1778122800000
+dateonly	America/Sao_Paulo	"\n2026-05-07"	1778122800000
+dateonly	America/Sao_Paulo	"2026-05-07 "	1778122800000
+dateonly	America/Sao_Paulo	"2026-05-07\t"	1778122800000
+dateonly	America/Sao_Paulo	"2026-05-07\n"	null
+dateonly	America/Sao_Paulo	"2026-05-07 "	1778122800000
+dateonly	America/Sao_Paulo	"2026-05-07T10:00:00Z"	null
+dateonly	America/Sao_Paulo	"2026-05-07T10:00:00"	null
+dateonly	America/Sao_Paulo	"today"	null
+dateonly	America/Sao_Paulo	""	null
+dateonly	America/Sao_Paulo	"garbage"	null
+dateonly	America/Sao_Paulo	"2026\/05\/07"	1778122800000
+dateonly	America/Sao_Paulo	"2026.05.07"	1778122800000
+dateonly	America/Sao_Paulo	"٢٠٢٦-٠٥-٠٧"	1778122800000
+dateonly	America/Sao_Paulo	"12026-05-07"	1778122800000
+dateonly	America/Sao_Paulo	"0000-01-01"	null
+dateonly_lmt	America/Sao_Paulo	"0001-01-01"	-62135758412000
+dateonly_lmt	America/Sao_Paulo	"0026-05-07"	-61335953612000
+dateonly	America/Sao_Paulo	"-2026-05-07"	null
+dateonly	America/Sao_Paulo	"+2026-05-07"	null
+dateonly	America/Sao_Paulo	"2026-05-07x"	null
+dateonly	America/Sao_Paulo	"144683-12-31"	4503618759600000
+dateonly	America/Sao_Paulo	"144684-01-01"	null
+dateonly_lmt	America/Sao_Paulo	"1582-10-10"	-12218849612000
+dateonly	America/Sao_Paulo	"2026-03-08"	1772938800000
+dateonly	America/Sao_Paulo	"2026-11-01"	1793502000000
+countdown	UTC	"2026-12-31T23 59 59"	1798761599000
+countdown	UTC	"2026-12-31T23,59,59"	null
+countdown	UTC	"2026-12-31T2359:59"	null
+countdown	UTC	"2026-12-31T23::59:59"	null
+countdown	UTC	"2026-12-31T23:59:59 \t "	1798761599000
+countdown	UTC	"2026-12-31T23:59:59  x"	null
+countdown	UTC	"2026-12-31T7:5:3"	1798700703000
+countdown	UTC	"2026-12-31T23:59:59 \n"	null
+countdown	UTC	"​2026-12-31T23:59:59"	null
+countdown	UTC	"2026-12-31T23:-59:59"	null
+countdown	UTC	"2026-12-31T23 - 59 - 59"	1798761599000
+countdown	UTC	"2026-12-31T23\t:59:59"	1798761599000
+countdown	UTC	"2026-12-31T23. 59:59"	1798761599000
+countdown	UTC	"2026-12-31T23: 59:59"	1798761599000
+countdown	UTC	"2026-12-31T23 . 59 . 59"	1798761599000
+countdown	UTC	"2026-12-31T٢٣:٥٩:٥٩"	1798761599000
+countdown	UTC	"2026-12-31T23:59:59\r"	null
+countdown	UTC	"2026-12-31T23:59:59 "	null
+countdown	UTC	"2026-12-31T00:00:00"	1798675200000
+countdown	UTC	"2026-12-31T000000:00:00"	1798675200000
+countdown	UTC	"2026-12-31T23:59:0000059"	1798761599000
+countdown	UTC	"2026-12-31 T23:59:59"	null
+countdown	UTC	"2026-12-31-T23:59:59"	null
+countdown	UTC	"2026-12-31.T23:59:59"	null
+countdown	UTC	"2026-12-31T23:59"	null
+countdown	UTC	"2026-12-31T23:59:"	null
+countdown	UTC	"2026-12-31T23-59:59"	1798761599000
+countdown	UTC	"2026-12-31T23_59_59"	null
+countdown	UTC	"2026 - 12 - 31T23:59:59"	1798761599000
+countdown	UTC	"2026--12-31T23:59:59"	null
+countdown	UTC	"2026-12- 31T23:59:59"	1798761599000
+countdown	UTC	"2026-12-\t31T23:59:59"	1798761599000
+countdown	UTC	"2026　12　31T23:59:59"	1798761599000
+countdown	UTC	"1582-10-04T00:00:00"	-12219379200000
+countdown	UTC	"1582-10-15T00:00:00"	-12219292800000
+countdown	UTC	"1582-10-10T00:00:00"	-12218860800000
+countdown	UTC	"12099-01-01T00:00:00"	915148800000
+countdown	UTC	"12050-01-01T00:00:00"	-631152000000
+countdown	UTC	"11999-01-01T00:00:00"	316484668800000
+countdown	UTC	"12100-01-01T00:00:00"	319671964800000
+countdown	UTC	"2026-12-31T23:59:59.000"	null
+countdown	UTC	"9999999999-01-01T00:00:00"	null
+countdown	UTC	"2026-99999999999-01T00:00:00"	null
+countdown	UTC	"2026-12-31T99999999999:00:00"	null

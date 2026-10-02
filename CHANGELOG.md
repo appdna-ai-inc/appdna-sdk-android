@@ -118,14 +118,25 @@ Wraps iOS 1.0.82. Ships maps and host data (including "Show more").
   to hide an auto-triggered screen for good, and a zone-less one was read in the device's time zone. An
   in-app message's window also takes a whole `yyyy-MM-dd` date (UTC midnight; it must be a real date),
   and no longer takes the date part of a zone-less instant or rolls an impossible date over.
-- Every date the SDK reads from its config (schedule windows, chat transcript timestamps) is read
-  exactly as iOS reads it, on every API level. The SDK used `java.time` on API 26+ and `SimpleDateFormat`
+- Every date the SDK reads from its config is read exactly as iOS reads it, on every API level: schedule
+  windows, chat transcript timestamps, a countdown block's `target_datetime` and a form step date
+  field's `min_date` / `max_date`. The SDK used `java.time` on API 26+ and `SimpleDateFormat`
   on API 24 / 25, and both differed from iOS and from each other: `2026-5-7T10:00:00Z` parsed only on API
   24 / 25; a space around an instant was trimmed (iOS skips only leading whitespace and ignores anything
   after the zone); `+02` and a lowercase `z` failed on API 26+; a date-only value with a 5-digit year,
   Arabic-Indic or full-width digits or a trailing NBSP differed. As on iOS: seconds are required
   (`T10:00Z` is no date), `T` must be upper case, and an instant's day rolls over (`2026-02-30T…` is
   2 March).
+- A countdown's `target_datetime` is a zone-less `yyyy-MM-dd'T'HH:mm:ss` in UTC, as on iOS: a value
+  with a zone (`…T10:00:00Z`, `+02:00`), a fraction or an impossible date (`2026-02-30T…`) now counts
+  down `duration_seconds` (default 300), as iOS does. Android read the date-time prefix of such a value
+  and rolled an impossible date over.
+- A form step date field's `min_date` / `max_date` is a real `yyyy-MM-dd` date at midnight in the
+  device's time zone, as on iOS; a value that is not one (`2026-02-30`, `2026-05-07T10:00:00Z`) is no
+  bound, and a `min_date` after the `max_date` applies neither. Android rolled an impossible date over,
+  read the date prefix of a longer value and passed a descending pair to the picker. (A date before
+  the device's zone had standard time — before 1883 in Los Angeles — can be under an hour from iOS's
+  midnight: iOS applies the zone's local mean time there.)
 - After `shutdown()`, `remoteConfig` and `features` no longer keep the torn-down manager: an `onChanged`
   callback registered before the next `configure()` goes to the new manager only.
 - An in-app message delegate or async veto set on another thread while `configure()` runs is no longer
