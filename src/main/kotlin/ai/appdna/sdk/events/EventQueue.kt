@@ -68,8 +68,10 @@ internal class EventQueue(
         // A new queue (a new `configure()`) starts unpaused; so does the gate the background uploader reads,
         // which this queue owns from now on (a queue ended before it can no longer write it).
         pauseOwner = UploadPauseGate.claim(context)
-        // Load persisted events from SQLite
-        val stored = eventDatabase.loadAll()
+        // Load persisted events from SQLite — only the in-memory window (the newest MAX_IN_MEMORY_EVENTS;
+        // SQLite keeps them all). This runs inside `configure()`, on the caller's thread: reading and parsing
+        // every stored row made a 10,000-event backlog a 10,000-row parse there.
+        val stored = eventDatabase.loadNewest(MAX_IN_MEMORY_EVENTS)
         for (json in stored) {
             try {
                 queue.add(JSONObject(json))
@@ -122,7 +124,7 @@ internal class EventQueue(
         }
         queue.add(event)
         // SPEC-067: Persist to SQLite (truth-of-record; survives process death)
-        eventDatabase.insertEvent(event.toString())
+        eventDatabase.insertEvent(event)
         // SPEC-428 STEP-4: insertEvent is synchronous, so the event is durable here — safe to run the
         // dropped-meta counter decrement (only decrement after the meta is on disk, never a zero-reset).
         onPersisted?.invoke()
