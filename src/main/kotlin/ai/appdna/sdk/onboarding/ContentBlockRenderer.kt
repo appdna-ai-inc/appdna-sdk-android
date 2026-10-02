@@ -4782,16 +4782,19 @@ private fun SocialLoginBlock(
  * that does not parse — a trailing `Z` or offset included, as on iOS — falls back to `duration_seconds`
  * (default 300). It used a lenient `SimpleDateFormat`, which read the prefix of `…T10:00:00Z` and rolled
  * `02-30` over.
+ *
+ * A `Long`, as iOS's `Int` is 64-bit: it was capped at `Int.MAX_VALUE` seconds (about 68 years), so a target
+ * further out showed 24855 days where iOS showed the real count. The tick and the display carry the `Long`.
  * Pinned by the shared fixture `dto_parsing/countdown_target_datetime`.
  */
-internal fun countdownInitialSeconds(targetType: String?, targetDatetime: String?, durationSeconds: Int?, nowMs: Long): Int {
+internal fun countdownInitialSeconds(targetType: String?, targetDatetime: String?, durationSeconds: Int?, nowMs: Long): Long {
     if (targetType == "fixed_datetime" && !targetDatetime.isNullOrEmpty()) {
         val target = ai.appdna.sdk.core.IsoInstant.parseZonelessUtcMs(targetDatetime)
         if (target != null) {
-            return ((target - nowMs) / 1000L).coerceIn(0L, Int.MAX_VALUE.toLong()).toInt()
+            return ((target - nowMs) / 1000L).coerceAtLeast(0L)
         }
     }
-    return durationSeconds ?: 300
+    return (durationSeconds ?: 300).toLong()
 }
 
 /**
@@ -4815,7 +4818,7 @@ private fun CountdownTimerBlock(block: ContentBlock, onAction: (String) -> Unit)
         countdownInitialSeconds(block.target_type, block.target_datetime, block.duration_seconds, System.currentTimeMillis())
     }
 
-    var remainingSeconds by remember { mutableIntStateOf(initialSeconds) }
+    var remainingSeconds by remember { mutableLongStateOf(initialSeconds) }
     var expired by remember { mutableStateOf(initialSeconds <= 0) }
 
     val textColor = StyleEngine.parseColor(block.text_color ?: "#000000")
@@ -5008,7 +5011,7 @@ private fun CountdownTimerBlock(block: ContentBlock, onAction: (String) -> Unit)
         else -> {
             // Digital variant: columns of time units
             // Build list of (value, label) pairs to display
-            val timeUnits = mutableListOf<Triple<Int, String, Boolean>>()
+            val timeUnits = mutableListOf<Triple<Long, String, Boolean>>()
             if (showDays && days > 0) timeUnits.add(Triple(days, daysLabel, true))
             if (showHours) timeUnits.add(Triple(hours, hoursLabel, true))
             if (showMinutes) timeUnits.add(Triple(minutes, minutesLabel, showSeconds))

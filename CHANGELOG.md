@@ -132,6 +132,11 @@ Wraps iOS 1.0.82. Ships maps and host data (including "Show more").
   with a zone (`…T10:00:00Z`, `+02:00`), a fraction or an impossible date (`2026-02-30T…`) now counts
   down `duration_seconds` (default 300), as iOS does. Android read the date-time prefix of such a value
   and rolled an impossible date over.
+- A countdown whose `target_datetime` is more than about 68 years away counts the real time, as on iOS: the
+  remaining seconds were capped at `Int.MAX_VALUE` (2,147,483,647 s, shown as 24855 days).
+- After `identify` switches to another user, a Firestore entitlement snapshot of the previous user that was
+  already on its way to the main thread is dropped; it could land in the new user's freshly cleared
+  entitlement cache.
 - A form step date field's `min_date` / `max_date` is a real `yyyy-MM-dd` date at midnight in the
   device's time zone, as on iOS; a value that is not one (`2026-02-30`, `2026-05-07T10:00:00Z`) is no
   bound, and a `min_date` after the `max_date` applies neither. Android rolled an impossible date over,

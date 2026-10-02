@@ -149,7 +149,7 @@ class IsoInstantTest {
                 if (c.isNull("duration_seconds")) null else c.getInt("duration_seconds"),
                 cdAction.getLong("now_ms"),
             )
-            assertEquals("countdown case $i $c", cdWant.getInt(i), got)
+            assertEquals("countdown case $i $c", cdWant.getLong(i), got)
         }
         val fd = JSONObject(fixtureFile("form_date_bounds_parsing").readText())
         val fdAction = fd.getJSONObject("action")

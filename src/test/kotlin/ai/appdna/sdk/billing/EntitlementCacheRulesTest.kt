@@ -101,4 +101,26 @@ class EntitlementCacheRulesTest {
         c.clear()
         assertEquals(emptyList<Entitlement>(), seen)
     }
+
+    /**
+     * `identify(user_a)` → `identify(user_b)` with a snapshot of user_a's entitlement document already handed
+     * to the main thread: `stopObserving()` cannot take it back, and it used to land in user_b's cleared cache.
+     * NEGATIVE CONTROL: without the identity check at the top of `onSnapshot`, user_a's `monthly` is cached
+     * (and persisted) for user_b — this test fails.
+     */
+    @Test fun `a snapshot of the previous user after a switch is dropped`() {
+        val c = cache()
+        val subs = mapOf<String, Any?>("subscriptions" to listOf(mapOf(
+            "product_id" to "monthly", "store" to "google_play", "status" to "active",
+            "expires_at" to "2026-10-30T00:00:00Z", "is_trial" to false,
+        )))
+        c.onSnapshot("user_a", subs, fromCache = false)
+        assertEquals(listOf("monthly"), c.getAll().map { it.productId })   // control: the current user's applies
+
+        user = "user_b"                       // identify(user_b): stop → clear
+        c.stopObserving(); c.clear()
+        c.onSnapshot("user_a", subs, fromCache = false)
+        assertEquals(emptyList<Entitlement>(), c.getAll())
+        assertEquals(emptyList<Entitlement>(), cache().getAll())             // nothing persisted for user_b
+    }
 }

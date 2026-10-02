@@ -232,35 +232,44 @@ internal class EntitlementCache(
                     Log.error("EntitlementCache Firestore error: ${error.message}")
                     return@addSnapshotListener
                 }
-
-                // SPEC-070-A H.25: empty-snapshot debounce. A null/missing
-                // snapshot can happen during a reconnect or when the doc has
-                // not yet been provisioned for this user — both are
-                // **transient** states that must NOT clobber a non-empty
-                // cache. We only treat the snapshot as authoritative when:
-                //   - the doc EXISTS and
-                //   - it explicitly carries a `subscriptions` field (even
-                //     an empty array means "the server says no entitlements").
-                //
-                // Previously, an empty snapshot during reconnect would clear
-                // the cache and stamp out an active subscription locally,
-                // briefly toggling paywalls back on for the user.
-                val data = snapshot?.data
-                if (snapshot == null || !snapshot.exists() || data == null) {
-                    Log.debug("EntitlementCache: empty/missing snapshot — preserving cached entitlements")
-                    return@addSnapshotListener
-                }
-                if (!data.containsKey("subscriptions")) {
-                    Log.debug("EntitlementCache: snapshot has no `subscriptions` field — preserving cached entitlements")
-                    return@addSnapshotListener
-                }
-
-                val newEntitlements = parseSubscriptions(data)
-                Log.debug("EntitlementCache: received ${newEntitlements.size} entitlements from Firestore")
-                // The snapshot owns `subs`; cached in-app entries survive it (R30).
-                applySnapshot(newEntitlements)
-                if (!snapshot.metadata.isFromCache) listenerActive = true
+                onSnapshot(userId, if (snapshot != null && snapshot.exists()) snapshot.data else null,
+                    fromCache = snapshot?.metadata?.isFromCache ?: true)
             }
+    }
+
+    /**
+     * One snapshot of [observedUserId]'s entitlement document (`data` null: missing or not provisioned).
+     *
+     * 🔴 A snapshot of a user who is no longer the current identity is dropped. `identify(A)` → `identify(B)`
+     * stops A's listener and clears the cache, but `remove()` does not take back a snapshot callback already
+     * handed to the main thread: A's subscriptions would then land in B's freshly cleared cache (and be
+     * persisted as B's). The listener is re-pointed by `startObserving`, which checks the identity the same way.
+     *
+     * SPEC-070-A H.25: empty-snapshot debounce. A null/missing snapshot can happen during a reconnect or when
+     * the doc has not yet been provisioned for this user — both are **transient** states that must NOT
+     * clobber a non-empty cache. The snapshot is authoritative only when the doc EXISTS and explicitly carries
+     * a `subscriptions` field (even an empty array means "the server says no entitlements"). Previously, an
+     * empty snapshot during reconnect would clear the cache and stamp out an active subscription locally,
+     * briefly toggling paywalls back on for the user. `internal` — a test seam.
+     */
+    internal fun onSnapshot(observedUserId: String, data: Map<String, Any?>?, fromCache: Boolean) {
+        if (observedUserId != currentUserId()) {
+            Log.debug("EntitlementCache: dropping a snapshot of a user who is no longer the current identity")
+            return
+        }
+        if (data == null) {
+            Log.debug("EntitlementCache: empty/missing snapshot — preserving cached entitlements")
+            return
+        }
+        if (!data.containsKey("subscriptions")) {
+            Log.debug("EntitlementCache: snapshot has no `subscriptions` field — preserving cached entitlements")
+            return
+        }
+        val newEntitlements = parseSubscriptions(data)
+        Log.debug("EntitlementCache: received ${newEntitlements.size} entitlements from Firestore")
+        // The snapshot owns `subs`; cached in-app entries survive it (R30).
+        applySnapshot(newEntitlements)
+        if (!fromCache) listenerActive = true
     }
 
     /**
