@@ -47,9 +47,12 @@ class RuntimeSettingsBootstrapTest {
         val srv = TestHttpServer { path, _ ->
             if (path.startsWith("/api/v1/sdk/bootstrap")) {
                 val i = bootstraps.getAndIncrement()
-                plan[i]?.invoke() ?: (401 to "{}")
+                // An unplanned bootstrap fails with a 503: retried (a 401 / 403 now ends the recovery loop).
+                plan[i]?.invoke() ?: (503 to "{}")
             } else {
-                401 to "{}"
+                // Everything else (event uploads included) succeeds, so nothing is dropped and no
+                // `_sdk_events_dropped` meta event leaks into a later test's pipeline.
+                200 to "{}"
             }
         }
         server = srv
@@ -65,8 +68,7 @@ class RuntimeSettingsBootstrapTest {
         AppDNA.lastInitError = null
         BatchSizeCapGate.set(ctx, null)
         server?.close()
-        // Event uploads here are answered 401 and dropped; the persisted drop counter would otherwise emit a
-        // `_sdk_events_dropped` meta event into the next test's pipeline (SharedFixtureTest counts events).
+        // Belt and braces: no persisted drop count may survive into the next test (SharedFixtureTest counts events).
         ctx.getSharedPreferences("appdna_dropped_events", Context.MODE_PRIVATE).edit().clear().commit()
     }
 
