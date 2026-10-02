@@ -86,11 +86,19 @@ internal class EventDatabase(
 
     companion object {
         private const val DATABASE_NAME = "appdna_events.db"
-        private const val DATABASE_VERSION = 2 // SPEC-428 STEP-7: v2 adds idx_events_created_at on upgrade
+        // SPEC-428 STEP-7: v2 adds idx_events_created_at on upgrade. v3 adds the event_id / ts_ms /
+        // meta_count columns, so a flush's prune and removal are SQL statements, not a JSON parse of every row.
+        private const val DATABASE_VERSION = 3
         private const val TABLE_EVENTS = "pending_events"
         private const val COL_ID = "_id"
         private const val COL_EVENT_JSON = "event_json"
         private const val COL_CREATED_AT = "created_at"
+        private const val COL_EVENT_ID = "event_id"
+        private const val COL_TS_MS = "ts_ms"
+        /** The `count` a `_sdk_events_dropped` meta carries; NULL for a normal event (which counts 1). */
+        private const val COL_META_COUNT = "meta_count"
+        /** SQLite's default bound-parameter limit is 999. */
+        private const val IN_CHUNK = 500
 
         const val MAX_EVENTS = 10_000
         const val MAX_DISK_BYTES = 5 * 1024 * 1024 // 5 MB
@@ -119,10 +127,14 @@ internal class EventDatabase(
             CREATE TABLE $TABLE_EVENTS (
                 $COL_ID INTEGER PRIMARY KEY AUTOINCREMENT,
                 $COL_EVENT_JSON TEXT NOT NULL,
-                $COL_CREATED_AT INTEGER NOT NULL DEFAULT (strftime('%s', 'now') * 1000)
+                $COL_CREATED_AT INTEGER NOT NULL DEFAULT (strftime('%s', 'now') * 1000),
+                $COL_EVENT_ID TEXT,
+                $COL_TS_MS INTEGER,
+                $COL_META_COUNT INTEGER
             )
         """.trimIndent())
         db.execSQL("CREATE INDEX IF NOT EXISTS idx_events_created_at ON $TABLE_EVENTS($COL_CREATED_AT)")
+        createLookupIndexes(db)
     }
 
     override fun onUpgrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) {
@@ -131,6 +143,46 @@ internal class EventDatabase(
         if (oldVersion < 2) {
             db.execSQL("CREATE INDEX IF NOT EXISTS idx_events_created_at ON $TABLE_EVENTS($COL_CREATED_AT)")
         }
+        // v3: the lookup columns, filled once from the stored JSON (the only full parse the table ever needs).
+        if (oldVersion < 3) {
+            db.execSQL("ALTER TABLE $TABLE_EVENTS ADD COLUMN $COL_EVENT_ID TEXT")
+            db.execSQL("ALTER TABLE $TABLE_EVENTS ADD COLUMN $COL_TS_MS INTEGER")
+            db.execSQL("ALTER TABLE $TABLE_EVENTS ADD COLUMN $COL_META_COUNT INTEGER")
+            db.query(TABLE_EVENTS, arrayOf(COL_ID, COL_EVENT_JSON), null, null, null, null, null).use { c ->
+                while (c.moveToNext()) {
+                    val values = lookupValues(c.getString(1)) ?: continue
+                    db.update(TABLE_EVENTS, values, "$COL_ID = ?", arrayOf(c.getLong(0).toString()))
+                }
+            }
+            createLookupIndexes(db)
+        }
+    }
+
+    private fun createLookupIndexes(db: SQLiteDatabase) {
+        db.execSQL("CREATE INDEX IF NOT EXISTS idx_events_event_id ON $TABLE_EVENTS($COL_EVENT_ID)")
+        db.execSQL("CREATE INDEX IF NOT EXISTS idx_events_ts_ms ON $TABLE_EVENTS($COL_TS_MS)")
+    }
+
+    /** JSON parses of stored or inserted events (test seam: a flush must add none). */
+    private val jsonParses = java.util.concurrent.atomic.AtomicInteger(0)
+    internal val jsonParsesForTest: Int get() = jsonParses.get()
+
+    /** The lookup columns of one event: `event_id`, `ts_ms`, and a dropped-events meta's carried `count`. */
+    private fun lookupValues(eventJson: String): ContentValues? {
+        jsonParses.incrementAndGet()
+        val obj = try { JSONObject(eventJson) } catch (_: Exception) { return null }
+        return lookupValues(obj)
+    }
+
+    private fun lookupValues(obj: JSONObject): ContentValues = ContentValues().apply {
+        val id = obj.optString("event_id", "")
+        if (id.isNotEmpty()) put(COL_EVENT_ID, id) else putNull(COL_EVENT_ID)
+        // A missing or non-numeric ts_ms stays NULL: such a row is never stale (the old parse used `now`).
+        if (obj.has("ts_ms") && !obj.isNull("ts_ms") && obj.opt("ts_ms") is Number) put(COL_TS_MS, obj.getLong("ts_ms"))
+        else putNull(COL_TS_MS)
+        if (obj.optString("event_name") == "_sdk_events_dropped")
+            put(COL_META_COUNT, obj.optJSONObject("properties")?.optInt("count", 0) ?: 0)
+        else putNull(COL_META_COUNT)
     }
 
     /**
@@ -138,9 +190,19 @@ internal class EventDatabase(
      * Enforces count and disk quotas after insert.
      */
     fun insertEvent(eventJson: String) {
+        insertRow(eventJson, lookupValues(eventJson))
+    }
+
+    /** The event queue's insert: the event is already parsed, so its lookup columns cost nothing. */
+    fun insertEvent(event: JSONObject) {
+        insertRow(event.toString(), lookupValues(event))
+    }
+
+    private fun insertRow(eventJson: String, lookup: ContentValues?) {
         try {
             val db = writableDatabase
             val values = ContentValues().apply {
+                lookup?.let { putAll(it) }
                 put(COL_EVENT_JSON, eventJson)
                 put(COL_CREATED_AT, System.currentTimeMillis()) // SPEC-428 CL-6: milliseconds, not seconds
             }
@@ -162,6 +224,7 @@ internal class EventDatabase(
             try {
                 for (eventJson in events) {
                     val values = ContentValues().apply {
+                        lookupValues(eventJson)?.let { putAll(it) }
                         put(COL_EVENT_JSON, eventJson)
                         put(COL_CREATED_AT, System.currentTimeMillis()) // SPEC-428 CL-6: milliseconds, not seconds
                     }
@@ -197,6 +260,26 @@ internal class EventDatabase(
         } catch (e: Exception) {
             Log.error("Failed to load events: ${e.message}")
         }
+        return events
+    }
+
+    /**
+     * The [limit] newest pending events, oldest first — the event queue's in-memory window. Reads only
+     * those rows, so building a queue (inside `configure()`) costs the window, not the backlog.
+     */
+    fun loadNewest(limit: Int): List<String> {
+        val events = ArrayList<String>()
+        try {
+            readableDatabase.query(
+                TABLE_EVENTS, arrayOf(COL_EVENT_JSON),
+                null, null, null, null,
+                "$COL_CREATED_AT DESC, $COL_ID DESC",
+                limit.toString()
+            ).use { while (it.moveToNext()) events.add(it.getString(0)) }
+        } catch (e: Exception) {
+            Log.error("Failed to load events: ${e.message}")
+        }
+        events.reverse()
         return events
     }
 
@@ -245,18 +328,15 @@ internal class EventDatabase(
      * never-uploaded rows (LOSS) and leave the uploaded rows behind (DUP on the next flush).
      */
     fun removeByEventIds(eventIds: Set<String>) {
-        if (eventIds.isEmpty()) return
+        val ids = eventIds.filter { it.isNotEmpty() }
+        if (ids.isEmpty()) return
         try {
+            // An indexed DELETE on the event_id column — the cost of the batch, not of every stored row.
             val db = writableDatabase
-            val toDelete = mutableListOf<Long>()
-            val cursor = db.query(TABLE_EVENTS, arrayOf(COL_ID, COL_EVENT_JSON), null, null, null, null, null)
-            cursor.use {
-                while (it.moveToNext()) {
-                    val eid = runCatching { org.json.JSONObject(it.getString(1)).getString("event_id") }.getOrNull()
-                    if (eid != null && eid in eventIds) toDelete.add(it.getLong(0))
-                }
+            for (chunk in ids.chunked(IN_CHUNK)) {
+                val placeholders = chunk.joinToString(",") { "?" }
+                db.delete(TABLE_EVENTS, "$COL_EVENT_ID IN ($placeholders)", chunk.toTypedArray())
             }
-            removeByIds(toDelete)
         } catch (e: Exception) {
             Log.error("Failed to remove events by event_id: ${e.message}")
         }
@@ -278,24 +358,22 @@ internal class EventDatabase(
             // both could count the same 7-day-stale rows. beginTransaction takes the write lock — the second
             // caller blocks until the first commits, then its scan sees the rows gone and counts 0. This is
             // what makes pruneStale the true SINGLE count source on Android (as it already is on iOS).
+            //
+            // The stale test is SQL on the ts_ms column — `isStale` (age > horizon, and not past the
+            // implausible-age clamp) as a range — so the transaction lasts milliseconds whatever the backlog. It
+            // used to parse every row's JSON while holding the write lock, on every flush.
             db.beginTransaction()
             try {
-                val delIds = mutableListOf<Long>()
-                db.query(TABLE_EVENTS, arrayOf(COL_ID, COL_EVENT_JSON), null, null, null, null, null).use { c ->
-                    while (c.moveToNext()) {
-                        runCatching {
-                            val obj = org.json.JSONObject(c.getString(1))
-                            if (isStale(obj.optLong("ts_ms", now), now, horizonMs)) {
-                                delIds.add(c.getLong(0))
-                                // SPEC-428 STEP-4: meta-aware — a stale `_sdk_events_dropped` carries N drops.
-                                lost += if (obj.optString("event_name") == "_sdk_events_dropped")
-                                    obj.optJSONObject("properties")?.optInt("count", 0) ?: 0
-                                else 1
-                            }
-                        }
-                    }
+                val where = "$COL_TS_MS IS NOT NULL AND $COL_TS_MS < ? AND $COL_TS_MS >= ?"
+                val args = arrayOf((now - horizonMs).toString(), (now - IMPLAUSIBLE_AGE_MS).toString())
+                db.rawQuery(
+                    "SELECT COUNT(*), COALESCE(SUM(COALESCE($COL_META_COUNT, 1)), 0) FROM $TABLE_EVENTS WHERE $where",
+                    args,
+                ).use { c ->
+                    // SPEC-428 STEP-4: meta-aware — a stale `_sdk_events_dropped` carries N drops.
+                    if (c.moveToFirst()) { pruned = c.getInt(0); lost = c.getInt(1) }
                 }
-                if (delIds.isNotEmpty()) { removeByIds(delIds); pruned = delIds.size }
+                if (pruned > 0) db.delete(TABLE_EVENTS, where, args)
                 db.setTransactionSuccessful()
             } finally {
                 db.endTransaction()
@@ -362,19 +440,11 @@ internal class EventDatabase(
     // normal event, but the carried N for a `_sdk_events_dropped` META event, so evicting the meta before
     // delivery re-adds (and re-emits) the N drops it represented instead of under-counting them to 1.
     private fun evictionLoss(db: SQLiteDatabase, limit: Int): Int {
-        var loss = 0
-        db.query(TABLE_EVENTS, arrayOf(COL_EVENT_JSON), null, null, null, null,
-            "$COL_CREATED_AT ASC, $COL_ID ASC", limit.toString()).use { c ->
-            while (c.moveToNext()) {
-                loss += try {
-                    val obj = org.json.JSONObject(c.getString(0))
-                    if (obj.optString("event_name") == "_sdk_events_dropped")
-                        obj.optJSONObject("properties")?.optInt("count", 0) ?: 0
-                    else 1
-                } catch (e: Exception) { 1 }
-            }
-        }
-        return loss
+        db.rawQuery(
+            "SELECT COALESCE(SUM(COALESCE($COL_META_COUNT, 1)), 0) FROM (SELECT $COL_META_COUNT FROM $TABLE_EVENTS " +
+                "ORDER BY $COL_CREATED_AT ASC, $COL_ID ASC LIMIT $limit)",
+            null,
+        ).use { c -> return if (c.moveToFirst()) c.getInt(0) else 0 }
     }
 
     private fun enforceQuotas(db: SQLiteDatabase) {

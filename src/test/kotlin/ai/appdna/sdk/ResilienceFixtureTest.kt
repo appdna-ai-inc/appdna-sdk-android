@@ -378,6 +378,8 @@ class ResilienceFixtureTest {
                         assertEquals("[$id] $setting: $c", want, got)
                     }
                 }
+                // A flush's store work parses no stored row: the prune and the removal are SQL on columns.
+                "flush_cost_bounded" -> assertFlushCostBounded(id, block.getJSONObject("cost"))
 
                 else -> fail("[$id] unknown resilience contract '$contract' — this runner must assert it, never skip it")
             }
@@ -388,9 +390,57 @@ class ResilienceFixtureTest {
         assertEquals(
             "every resilience contract must be covered by a fixture",
             setOf("transient_status", "retry_after", "stale_horizon", "permanent_failure", "backoff", "flush_pause_gate",
-                "bootstrap_recovery", "resolved_events_not_resent", "runtime_settings"),
+                "bootstrap_recovery", "resolved_events_not_resent", "runtime_settings", "flush_cost_bounded"),
             seenContracts,
         )
+    }
+
+    private fun assertFlushCostBounded(id: String, cost: JSONObject) {
+        val ctx = androidx.test.core.app.ApplicationProvider.getApplicationContext<android.content.Context>()
+        val backlogs = cost.getJSONArray("backlogs").let { a -> (0 until a.length()).map { a.getInt(it) } }
+        val stale = cost.getInt("stale")
+        val batch = cost.getInt("batch")
+        val flushes = cost.getInt("flushes")
+        ai.appdna.sdk.events.DroppedEventsCounter.init(ctx)
+        val saved = ai.appdna.sdk.events.DroppedEventsCounter.getAndReset()
+        try {
+            for (backlog in backlogs) {
+                ai.appdna.sdk.events.DroppedEventsCounter.getAndReset()
+                val db = EventDatabase(ctx, 10_000, "flush_cost_${System.nanoTime()}.db")
+                try {
+                    val now = System.currentTimeMillis()
+                    val old = now - EventDatabase.REDELIVERY_HORIZON_MS - 60_000
+                    fun ev(name: String, ts: Long) = JSONObject().put("event_id", "$name-${System.nanoTime()}")
+                        .put("event_name", name).put("ts_ms", ts).put("properties", JSONObject().put("k", "v")).toString()
+                    db.insertEvents((0 until stale).map { ev("stale_$it", old) } + (0 until backlog).map { ev("e_$it", now) })
+                    assertEquals("[$id] seeded", stale + backlog, db.count())
+                    val before = db.jsonParsesForTest
+                    var returned = 0
+                    var pruned = 0
+                    repeat(flushes) {
+                        pruned += db.pruneStale(EventDatabase.REDELIVERY_HORIZON_MS)
+                        val rows = db.loadBatch(batch)
+                        returned += rows.size
+                        // The queue knows its batch's event ids (it holds the events); the runner reads them here.
+                        db.removeByEventIds(rows.map { JSONObject(it.second).getString("event_id") }.toSet())
+                    }
+                    val extra = db.jsonParsesForTest - before
+                    assertEquals("[$id] backlog $backlog: rows parsed by the store during the flushes",
+                        cost.getInt("extra_lines_decoded"), extra)
+                    assertEquals("[$id] backlog $backlog: stale events pruned", stale, pruned)
+                    assertEquals("[$id] backlog $backlog: the prune is counted", stale,
+                        ai.appdna.sdk.events.DroppedEventsCounter.peek())
+                    assertEquals("[$id] backlog $backlog: batches taken", batch * flushes, returned)
+                    assertEquals("[$id] backlog $backlog: events left", backlog - batch * flushes, db.count())
+                } finally {
+                    db.clearAll()
+                    db.close()
+                }
+            }
+        } finally {
+            ai.appdna.sdk.events.DroppedEventsCounter.getAndReset()
+            if (saved > 0) ai.appdna.sdk.events.DroppedEventsCounter.increment(saved)
+        }
     }
 
     private fun assertQueueDoesNotResend(id: String, row: JSONObject) {

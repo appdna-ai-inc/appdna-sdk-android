@@ -64,6 +64,12 @@ Wraps iOS 1.0.82. Ships maps and host data (including "Show more").
   uploads nothing (the pause is persisted, so a run in a fresh process sees it); before, backgrounding
   started exactly the uploads the pause stops. The persisted pause belongs to the newest queue: the last
   upload of a queue `shutdown()` ended can no longer pause the next `configure()`'s session.
+- **A large event backlog no longer slows every upload or `configure()`.** Removing a delivered batch and
+  dropping events older than 7 days parsed every stored event (the second inside a write transaction that a
+  `configure()` running at the same time waited on), and building the event queue in `configure()` read and
+  parsed every stored event. The event database now keeps each event's id and timestamp in their own
+  columns, filled once from the stored events on the first launch after the update, so both are single SQL
+  statements; `configure()` reads only the 1,000 newest events, the ones the queue holds in memory.
 - **Wi-Fi dropping while cellular is up no longer stops uploads.** Any lost network set the connection to
   "none" — an upload batch size of 0 — even with another network still up, until the next network change.
   The SDK now re-reads the active network when one is lost.
