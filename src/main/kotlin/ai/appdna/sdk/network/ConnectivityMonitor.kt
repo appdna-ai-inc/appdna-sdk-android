@@ -61,16 +61,25 @@ internal class ConnectivityMonitor(context: Context) {
             regainedIfWasNone(wasNone)
         }
 
+        // One network lost is not necessarily all of them: Wi-Fi dropping while cellular is up leaves the
+        // device online. Re-read what the active network is now (NONE only when there is none) instead of
+        // setting NONE for any loss — which emptied the batch size and stopped uploads while online.
         override fun onLost(network: Network) {
-            currentConnectionType = ConnectionType.NONE
-            Log.debug("Network lost")
+            readActiveNetwork(lost = network)
+            Log.debug("Network lost — now $currentConnectionType")
         }
     }
 
-    init {
-        // Check current state
-        val activeNetwork = connectivityManager.activeNetwork
-        val capabilities = activeNetwork?.let { connectivityManager.getNetworkCapabilities(it) }
+    /**
+     * Set the state from the active network ([lost]: a network just reported lost, which the system may
+     * still name as active for a moment — it counts as gone).
+     */
+    private fun readActiveNetwork(lost: Network? = null) {
+        val current: Network? = try { connectivityManager.activeNetwork } catch (_: Throwable) { null }
+        val activeNetwork = current?.takeIf { it != lost }
+        val capabilities = activeNetwork?.let {
+            try { connectivityManager.getNetworkCapabilities(it) } catch (_: Throwable) { null }
+        }
         if (capabilities != null) {
             currentConnectionType = when {
                 capabilities.hasTransport(NetworkCapabilities.TRANSPORT_WIFI) -> ConnectionType.WIFI
@@ -82,6 +91,14 @@ internal class ConnectivityMonitor(context: Context) {
         } else {
             currentConnectionType = ConnectionType.NONE
         }
+    }
+
+    /** Test seam: the callback the system calls. */
+    internal val networkCallbackForTest: ConnectivityManager.NetworkCallback get() = networkCallback
+
+    init {
+        // Check current state
+        readActiveNetwork()
 
         // Register for updates
         val request = NetworkRequest.Builder()

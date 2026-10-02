@@ -2081,7 +2081,9 @@ object AppDNA {
     // MARK: - Public API: Ready callback
 
     /**
-     * Register a callback that fires when the SDK is fully initialized.
+     * Register a callback that fires once the bootstrap has succeeded or failed and the modules are ready
+     * (at once if that has already happened). The cached and bundled config are applied first; the remote
+     * config fetch is started but not awaited — observe remote config changes for fresh values.
      */
     fun onReady(callback: () -> Unit) {
         // SPEC-401-A R76 (Lens B P2) — always invoke `callback` on the main
@@ -2171,7 +2173,11 @@ object AppDNA {
 
         // Round-10 #14 — retry the cold-start bootstrap on transient 5xx/network blips (iOS parity),
         // instead of degrading to cached config on the first failure.
-        val result = client.getWithRetry("/api/v1/sdk/bootstrap")
+        val answer = client.getWithRetryResult("/api/v1/sdk/bootstrap")
+        val result = (answer as? ApiClient.GetResult.Ok)?.json
+        // 401 / 403: the server refused the key — retrying the bootstrap cannot help.
+        val keyRefused = answer is ApiClient.GetResult.Failed &&
+            BootstrapRecovery.outcomeForFailure(answer.status, answer.retryAfterSeconds) == BootstrapRecovery.Outcome.Stop
         // 🔴 A BOOTSTRAP THAT OUTLIVES ITS CONFIGURE IS DROPPED — see [configureEpoch]. Checked here so
         // none of the side effects below run, and again under the lock at every write (authoritative).
         if (!isCurrentConfigure(epoch)) return dropStaleBootstrap(epoch)
@@ -2234,7 +2240,10 @@ object AppDNA {
             }
         }
 
-        if (bootstrapFailed) startBootstrapRecovery(client, remoteCfg, tracker, epoch)
+        if (bootstrapFailed) {
+            if (keyRefused) Log.warning("Bootstrap not retried — the server refused the API key")
+            else startBootstrapRecovery(client, remoteCfg, tracker, epoch)
+        }
     }
 
     /** How applying a bootstrap answer ended. */
@@ -2363,27 +2372,31 @@ object AppDNA {
             bootstrapRecovery?.stop()
             bootstrapRecovery = recovery
         }
-        monitor?.onConnectivityRegained = { recovery.trigger() }
+        val regained: () -> Unit = { recovery.trigger() }
+        monitor?.onConnectivityRegained = regained
+        // However the loop ends (applied, refused, out of attempts, stopped), it stops listening.
+        recovery.onEnded = { if (monitor != null && monitor.onConnectivityRegained === regained) monitor.onConnectivityRegained = null }
         recovery.start(scope) {
-            if (!isCurrentConfigure(epoch)) return@start true
-            val answer = try { client.getWithRetry("/api/v1/sdk/bootstrap") } catch (e: Exception) {
-                Log.debug("Bootstrap retry failed: ${e.message}"); null
+            if (!isCurrentConfigure(epoch)) return@start BootstrapRecovery.Outcome.Done
+            val got = try { client.getWithRetryResult("/api/v1/sdk/bootstrap") } catch (e: Exception) {
+                Log.debug("Bootstrap retry failed: ${e.message}"); ApiClient.GetResult.Failed(null)
             }
-            if (!isCurrentConfigure(epoch)) return@start true
-            if (answer == null) return@start false
+            if (!isCurrentConfigure(epoch)) return@start BootstrapRecovery.Outcome.Done
+            // 401 / 403 end the retries; a 429's Retry-After holds the next one back.
+            if (got is ApiClient.GetResult.Failed) return@start BootstrapRecovery.outcomeForFailure(got.status, got.retryAfterSeconds)
+            val answer = (got as ApiClient.GetResult.Ok).json ?: return@start BootstrapRecovery.Outcome.Retry
             when (applyBootstrapAnswer(answer, remoteCfg, tracker, epoch)) {
-                BootstrapApply.STALE -> true
-                BootstrapApply.INVALID -> false
+                BootstrapApply.STALE -> BootstrapRecovery.Outcome.Done
+                BootstrapApply.INVALID -> BootstrapRecovery.Outcome.Retry
                 BootstrapApply.APPLIED -> {
                     synchronized(this@AppDNA) {
                         if (lastInitError is AppDNAInitError.BootstrapFailed) lastInitError = null
                         if (bootstrapRecovery === recovery) bootstrapRecovery = null
                     }
-                    monitor?.onConnectivityRegained = null
                     recovery.stop()
                     bootstrapsRecovered.incrementAndGet()
                     Log.info("Bootstrap recovered — Firestore config and listeners are live")
-                    true
+                    BootstrapRecovery.Outcome.Done
                 }
             }
         }

@@ -313,7 +313,22 @@ internal class ApiClient(
      * cached config on any blip, stranding Android on stale config for the whole session. A 401/4xx is
      * permanent — returned immediately without retry (retrying an auth/permanent error is pointless).
      */
-    suspend fun getWithRetry(path: String, maxAttempts: Int = 3): JSONObject? {
+    suspend fun getWithRetry(path: String, maxAttempts: Int = 3): JSONObject? =
+        (getWithRetryResult(path, maxAttempts) as? GetResult.Ok)?.json
+
+    /** What [getWithRetryResult] came to: the 2xx answer (null when its body is empty), or the failure. */
+    sealed class GetResult {
+        data class Ok(val json: JSONObject?) : GetResult()
+        /** [status] null: no HTTP answer (network error). [retryAfterSeconds]: a 429's parsed `Retry-After`. */
+        data class Failed(val status: Int?, val retryAfterSeconds: Long? = null) : GetResult()
+    }
+
+    /**
+     * [getWithRetry] with the failure kept: its HTTP status (a 401 / 403 ends the bootstrap retries) and a
+     * 429's `Retry-After` (which holds the next retry back). Same retry rules: 5xx and network errors are
+     * retried here, any 4xx is returned at once.
+     */
+    suspend fun getWithRetryResult(path: String, maxAttempts: Int = 3): GetResult {
         return withContext(Dispatchers.IO) {
             var attempt = 0
             while (true) {
@@ -327,7 +342,7 @@ internal class ApiClient(
 
                     client.newCall(request).execute().use { response ->
                         if (response.isSuccessful) {
-                            return@withContext response.body?.string()?.let { JSONObject(it) }
+                            return@withContext GetResult.Ok(response.body?.string()?.let { JSONObject(it) })
                         }
                         if (response.code == 401) {
                             val (errCode, errMsg) = decodeErrorBody(response)
@@ -335,27 +350,31 @@ internal class ApiClient(
                                 "API auth failed (HTTP 401, GET): Invalid API key or SDK suspended. " +
                                     "path=$path code=${errCode ?: "n/a"} msg=${errMsg ?: "n/a"}"
                             )
-                            return@withContext null
+                            return@withContext GetResult.Failed(401)
                         }
                         // Only 5xx is transient; other 4xx are permanent. Give up once attempts exhausted.
                         if (response.code < 500 || attempt >= maxAttempts) {
                             Log.warning("GET failed (${response.code}): $path")
-                            return@withContext null
+                            val retryAfter = if (response.code == 429) parseRetryAfter(response.header("Retry-After")) else null
+                            return@withContext GetResult.Failed(response.code, retryAfter)
                         }
                         Log.warning("GET transient (${response.code}), retry $attempt/$maxAttempts: $path")
                     }
                 } catch (e: IOException) {
                     if (attempt >= maxAttempts) {
                         Log.error("GET error (final attempt $attempt): ${e.message}")
-                        return@withContext null
+                        return@withContext GetResult.Failed(null)
                     }
                     Log.warning("GET network error, retry $attempt/$maxAttempts: ${e.message}")
+                } catch (e: org.json.JSONException) {
+                    Log.error("GET unreadable answer: ${e.message}")
+                    return@withContext GetResult.Failed(null)
                 }
                 // Exponential backoff: 1s, 2s, 4s (mirrors iOS bootstrap policy).
-                delay(1000L * (1L shl (attempt - 1)))
+                delay((getRetryBaseDelayMsForTest ?: 1000L) * (1L shl (attempt - 1)))
             }
             @Suppress("UNREACHABLE_CODE")
-            null
+            GetResult.Failed(null)
         }
     }
 
@@ -480,6 +499,9 @@ internal class ApiClient(
     // MARK: SPEC-067 — Deflate Compression (matches iOS COMPRESSION_ZLIB raw deflate, SPEC-070-A A.15)
 
     companion object {
+        /** Test seam: the base of [getWithRetryResult]'s 1 s / 2 s / 4 s backoff (null in production). */
+        @Volatile internal var getRetryBaseDelayMsForTest: Long? = null
+
         /** Upper bound on an honored `Retry-After`, in seconds. Matches iOS. */
         const val MAX_RETRY_AFTER_SECONDS = 120L
 
