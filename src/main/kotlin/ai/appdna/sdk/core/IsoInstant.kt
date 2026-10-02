@@ -53,18 +53,18 @@ internal object IsoInstant {
         return null
     }
 
-    private val DATE_ONLY = Regex("""\d{4}-\d{2}-\d{2}""")
-
     /**
      * A date-only `yyyy-MM-dd` (the WHOLE string, a real calendar date) at UTC midnight, or null — iOS
      * `MessageManager.parseWindowDate`'s fallback (a non-lenient `DateFormatter`, UTC). Only the in-app
      * message window uses it; iOS's screen and auto-trigger windows have no such fallback.
      * `SimpleDateFormat.parse(String)` read a PREFIX, so a zone-less `2026-05-07T10:00:00` became
-     * that day's UTC midnight here while iOS treats it as no constraint.
+     * that day's UTC midnight here while iOS treats it as no constraint. Like iOS's formatter, a field
+     * may have fewer or more digits (`2026-5-7`) and surrounding spaces are ignored; the shared fixture
+     * `dto_parsing/message_window_date_parsing` pins both platforms to the same answers.
      */
     fun parseDateOnlyUtcMs(value: String): Long? {
         val s = value.trim()
-        if (!DATE_ONLY.matches(s)) return null
+        if (s.isEmpty()) return null
         val f = SimpleDateFormat("yyyy-MM-dd", Locale.US).apply {
             isLenient = false
             timeZone = TimeZone.getTimeZone("UTC")

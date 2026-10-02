@@ -250,6 +250,8 @@ class SharedFixtureTest(
             "bridge_timeout_floor" -> runBridgeTimeoutFloor(action, spy)
             // SPEC-497 §7.7 — the pure polyline decoder and the interactive map plan.
             "decode_polyline" -> runDecodePolyline(action, spy)
+            // An in-app message's start_date / end_date, through the REAL MessageManager reader.
+            "parse_window_date" -> runParseWindowDate(action, spy)
             "map_interactive_plan" -> runMapInteractivePlan(action, spy)
             // SPEC-497 §13h.3 — getLocationData over the stored answer.
             "location_data_from_answer" -> runLocationDataFromAnswer(action, spy)
@@ -1818,6 +1820,24 @@ class SharedFixtureTest(
     }
 
     private fun points(l: List<Pair<Double, Double>>?): List<List<Double>>? = l?.map { listOf(it.first, it.second) }
+
+    /** The REAL `MessageManager.parseWindowDate`, with the device time zone set to `action.device_timezone`. */
+    private fun runParseWindowDate(action: JSONObject, spy: Spy) {
+        val cases = action.optJSONArray("cases") ?: unsupported("parse_window_date without cases")
+        val saved = java.util.TimeZone.getDefault()
+        action.optString("device_timezone", "").takeIf { it.isNotEmpty() }?.let {
+            java.util.TimeZone.setDefault(java.util.TimeZone.getTimeZone(it))
+        }
+        try {
+            val mm = ai.appdna.sdk.messages.MessageManager(ctx, { emptyMap() })
+            spy.state["results"] = (0 until cases.length()).map { i ->
+                val value = cases.getJSONObject(i).optString("value", null) ?: unsupported("parse_window_date case without value")
+                mm.parseWindowDate(value)?.time
+            }
+        } finally {
+            java.util.TimeZone.setDefault(saved)
+        }
+    }
 
     /** The REAL decoder — a sample, a malformed table, or decode(encode(stops)) with the REAL encoder. */
     private fun runDecodePolyline(action: JSONObject, spy: Spy) {

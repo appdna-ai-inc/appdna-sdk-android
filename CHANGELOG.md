@@ -108,8 +108,9 @@ Wraps iOS 1.0.82. Ships maps and host data (including "Show more").
 - Schedule windows read dates as iOS does. A screen's or auto-trigger's `start_date` / `end_date` is an
   ISO-8601 instant with its zone (`Z` or an offset); anything else is no constraint. A bad `end_date` used
   to hide an auto-triggered screen for good, and a zone-less one was read in the device's time zone. An
-  in-app message's window also takes exactly `yyyy-MM-dd` (UTC midnight), and no longer takes the date
-  part of a zone-less instant or rolls an impossible date over.
+  in-app message's window also takes a whole `yyyy-MM-dd` date (UTC midnight; as on iOS, a field may have
+  fewer digits, `2026-5-7`, and surrounding spaces are ignored), and no longer takes the date part of a
+  zone-less instant or rolls an impossible date over.
 - After `shutdown()`, `remoteConfig` and `features` no longer keep the torn-down manager: an `onChanged`
   callback registered before the next `configure()` goes to the new manager only.
 - An in-app message delegate or async veto set on another thread while `configure()` runs is no longer
