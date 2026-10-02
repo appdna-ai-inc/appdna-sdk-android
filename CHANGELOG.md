@@ -50,6 +50,12 @@ Wraps iOS 1.0.82. Ships maps and host data (including "Show more").
   when the same view is reused for a new presentation.
 
 ### Fixed
+- A `shutdown()` that landed after the bootstrap response had arrived but before `configure` finished (for
+  example from the runtime-lock delegate) left the SDK marked ready: `onReady` fired, and every later
+  `configure()` was ignored as "called multiple times" until the app restarted. After `shutdown()` and a new
+  `configure()`, the first configure's late bootstrap could also mark the new one ready, and fire its
+  `onReady`, before the new bootstrap had answered. A bootstrap that finishes after `shutdown()`, or after a
+  newer `configure()`, is now ignored.
 - **Android 8.0 / 8.1 crash on a push with a channel group.** A push whose data carried
   `channel_group` called `NotificationManager.getNotificationChannelGroup`, which is API 28, under an
   API 26 guard: the messaging service threw `NoSuchMethodError` and the app crashed. Below API 28 the

@@ -563,6 +563,35 @@ object AppDNA {
     private var scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
     private val readyCallbacks = mutableListOf<() -> Unit>()
 
+    /**
+     * Monotonic configure generation, bumped under `synchronized(this)` by every accepted `configure()`
+     * AND by every `shutdown()`. `performBootstrap` carries the value it was launched with and drops its
+     * result once the epoch has moved on — iOS `configureEpoch` (AppDNA.swift), same rule.
+     *
+     * Cancelling `scope` in `shutdown()` is not enough on its own: the bootstrap body has no suspension
+     * point after the network call, so a `shutdown()` that lands once the response is in (a runtime-lock
+     * delegate that shuts the SDK down, Firestore fetch, bundle load) used to run on to `isConfigured =
+     * true` on a shut-down SDK — which then refused every later `configure()` as "called multiple
+     * times". Across `shutdown(); configure()` the same late bootstrap marked the NEW configure ready
+     * (and fired its `onReady`) before the new bootstrap had answered.
+     */
+    private var configureEpoch = 0
+
+    /** True while [epoch] is still the live configure (no `shutdown()` / later `configure()` since). */
+    private fun isCurrentConfigure(epoch: Int): Boolean = synchronized(this) { configureEpoch == epoch }
+
+    /** Test-only: bootstrap results applied (ready) and dropped as stale. Each bootstrap ends in one. */
+    private val bootstrapsApplied = java.util.concurrent.atomic.AtomicInteger(0)
+    private val bootstrapsDropped = java.util.concurrent.atomic.AtomicInteger(0)
+    internal fun bootstrapOutcomesForTest(): Pair<Int, Int> = bootstrapsApplied.get() to bootstrapsDropped.get()
+    internal fun isReadyForTest(): Boolean = synchronized(this) { isConfigured }
+    internal fun bootstrapOrgIdForTest(): String? = synchronized(this) { bootstrapOrgId }
+
+    private fun dropStaleBootstrap(epoch: Int) {
+        Log.info("Bootstrap result for configure #$epoch, since shut down or replaced — dropped")
+        bootstrapsDropped.incrementAndGet()
+    }
+
     // SPEC-070-A G.18: pre-init event buffer. Calls to track() that arrive before
     // configure() finishes wiring the EventTracker land here. Drained on first
     // setEventQueue call (after configure completes constructing the EventQueue).
@@ -612,6 +641,8 @@ object AppDNA {
                 return
             }
             isConfiguring = true
+            configureEpoch += 1
+            val epoch = configureEpoch
 
             this.apiKey = apiKey
             this.environment = environment
@@ -941,7 +972,7 @@ object AppDNA {
 
             // 7. Bootstrap (fetch orgId/appId, then Firestore configs)
             scope.launch {
-                performBootstrap(client, remoteCfg, tracker)
+                performBootstrap(client, remoteCfg, tracker, epoch)
             }
         }
     }
@@ -2111,7 +2142,8 @@ object AppDNA {
     private suspend fun performBootstrap(
         client: ApiClient,
         remoteCfg: RemoteConfigManager,
-        tracker: EventTracker
+        tracker: EventTracker,
+        epoch: Int,
     ) {
         // SPEC-070-A A.31a — Firebase asset I/O moved off the configure-thread.
         // Reads google-services-appdna.json from assets + parses JSON; we run
@@ -2125,11 +2157,17 @@ object AppDNA {
         // BillingModule.manager so AppDNA.billing.purchase() / restore() /
         // getProducts() / getEntitlements() all work. Was never set,
         // resulting in silent no-ops every time the host called billing.
+        // A `shutdown(); configure()` before this coroutine got here must not build billing from the OLD
+        // configure's tracker and client into the new one.
+        if (!isCurrentConfigure(epoch)) return dropStaleBootstrap(epoch)
         initBillingModuleIfNeeded(tracker, client)
 
         // Round-10 #14 — retry the cold-start bootstrap on transient 5xx/network blips (iOS parity),
         // instead of degrading to cached config on the first failure.
         val result = client.getWithRetry("/api/v1/sdk/bootstrap")
+        // 🔴 A BOOTSTRAP THAT OUTLIVES ITS CONFIGURE IS DROPPED — see [configureEpoch]. Checked here so
+        // none of the side effects below run, and again under the lock at every write (authoritative).
+        if (!isCurrentConfigure(epoch)) return dropStaleBootstrap(epoch)
         if (result != null) {
             try {
                 val orgId = result.optString("orgId", "").ifEmpty { throw IllegalArgumentException("Missing orgId") }
@@ -2171,6 +2209,7 @@ object AppDNA {
                 }
 
                 synchronized(this@AppDNA) {
+                    if (configureEpoch != epoch) return dropStaleBootstrap(epoch)
                     bootstrapOrgId = orgId
                     bootstrapAppId = appId
 
@@ -2209,6 +2248,7 @@ object AppDNA {
 
         // Wire module namespaces (v1.0)
         synchronized(this@AppDNA) {
+            if (configureEpoch != epoch) return dropStaleBootstrap(epoch)
             onboarding.manager = onboardingFlowManager
             paywall.manager = paywallManager
             remoteConfig.manager = remoteConfigManager
@@ -2222,7 +2262,9 @@ object AppDNA {
 
         // Mark ready
         synchronized(this@AppDNA) {
+            if (configureEpoch != epoch) return dropStaleBootstrap(epoch)
             isConfigured = true
+            bootstrapsApplied.incrementAndGet()
             // SPEC-070-A final audit pass H F3 — release the in-flight
             // configure-guard so future shutdown-then-configure cycles can
             // re-arm it. Together with `scope` reassign in shutdown() this
@@ -2493,6 +2535,9 @@ object AppDNA {
      */
     fun shutdown() {
         synchronized(this) {
+            // First, before anything below can throw: this ends the current configure's generation, so a
+            // bootstrap still running for it is stale from here on (see [configureEpoch]).
+            configureEpoch += 1
             eventQueue?.shutdown()
             // SPEC-067: Schedule background upload for remaining events
             val ctx = appContext
