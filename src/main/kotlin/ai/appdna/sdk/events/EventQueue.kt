@@ -40,6 +40,8 @@ internal class EventQueue(
 ) {
     private val queue = CopyOnWriteArrayList<JSONObject>()
     private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
+    /** The one final upload attempt [shutdown] makes, after [scope] is cancelled. */
+    private val shutdownFlushScope = CoroutineScope(Dispatchers.IO + SupervisorJob())
     private var flushJob: Job? = null
 
     /** SPEC-070-A A.16: Track in-flight retry/backoff state. */
@@ -118,24 +120,47 @@ internal class EventQueue(
         // dropped-meta counter decrement (only decrement after the meta is on disk, never a zero-reset).
         onPersisted?.invoke()
 
-        // SPEC-067: Check adaptive threshold
+        // SPEC-067: Check adaptive threshold. A threshold flush KEEPS the failure pause: it used to call
+        // the public [flush], which clears it, so during an outage every `track()` that reached the batch
+        // size ran a full 1 + 3-attempt upload cycle. iOS keeps the pause here too.
         val currentBatchSize = effectiveBatchSize
         if (currentBatchSize > 0 && queue.size >= currentBatchSize) {
-            flush()
+            flush(FlushTrigger.THRESHOLD)
         }
     }
 
     /**
-     * Force flush all queued events.
+     * Who asked for a flush — and so whether it clears the failure pause ([paused] after
+     * [MAX_CONSECUTIVE_FAILURES]). Only the app coming to the foreground and the host's own
+     * `AppDNA.flush()` give a paused queue another chance; the batch threshold, the interval timer,
+     * backgrounding and [shutdown] keep the pause. iOS `EventQueue.FlushTrigger` is the same table; the
+     * shared `flush_pause_gate` fixture asserts both.
+     */
+    internal enum class FlushTrigger(val clearsPauseGate: Boolean) {
+        THRESHOLD(false),
+        SCHEDULED(false),
+        BACKGROUND(false),
+        SHUTDOWN(false),
+        FOREGROUND(true),
+        EXPLICIT(true),
+    }
+
+    /**
+     * Force flush all queued events — the host's `AppDNA.flush()`.
      * SPEC-070-A A.16: Manual flush also resets the "paused after N failures" gate.
      */
-    fun flush() {
-        scope.launch {
-            // Manual flush implies user/UI intent — give the server another chance.
+    fun flush() = flush(FlushTrigger.EXPLICIT)
+
+    internal fun flush(trigger: FlushTrigger) {
+        scope.launch { runFlush(trigger) }
+    }
+
+    private suspend fun runFlush(trigger: FlushTrigger, maxRetries: Int = MAX_RETRIES) {
+        if (trigger.clearsPauseGate) {
             paused = false
             consecutiveFailures = 0
-            performFlushWithRetry()
         }
+        flushMutex.withLock { performFlushLocked(maxRetries) }
     }
 
     /**
@@ -153,23 +178,15 @@ internal class EventQueue(
     /** SPEC-070-A A.18: Public hook for foreground events to retry the queue. */
     internal fun onAppForeground() {
         // Reset the pause gate on foreground (matches iOS "until next session" semantics).
-        paused = false
-        consecutiveFailures = 0
-        flush()
+        flush(FlushTrigger.FOREGROUND)
     }
 
     /** SPEC-070-A A.18: Background hook — flush in-flight then hand off to WorkManager. */
     internal fun onAppBackground() {
         scope.launch {
-            performFlushWithRetry()
+            runFlush(FlushTrigger.BACKGROUND)
             // Even if some events remain, hand off to WorkManager so they upload while suspended.
             backgroundUploadScheduler?.scheduleIfNeeded()
-        }
-    }
-
-    private suspend fun performFlushWithRetry() {
-        flushMutex.withLock {
-            performFlushLocked()
         }
     }
 
@@ -193,7 +210,7 @@ internal class EventQueue(
         eventDatabase.pruneStale(redeliveryHorizonMs)
     }
 
-    private suspend fun performFlushLocked() {
+    private suspend fun performFlushLocked(maxRetries: Int = MAX_RETRIES) {
         if (paused) {
             Log.debug("Event flush paused after $consecutiveFailures consecutive failures — waiting for next foreground/manual flush")
             return
@@ -230,7 +247,7 @@ internal class EventQueue(
         // SPEC-070-A A.16 retry policy:
         // initial + up to MAX_RETRIES retries; backoff [1s, 2s, 4s] with ±25% jitter.
         var attempt = 0
-        while (attempt <= MAX_RETRIES) {
+        while (attempt <= maxRetries) {
             val result = apiClient.postEventsBatch("/api/v1/ingest/events", body)
             when (result) {
                 is EventUploadResult.Success -> {
@@ -264,8 +281,8 @@ internal class EventQueue(
                 }
                 is EventUploadResult.TransientFailure -> {
                     attempt++
-                    if (attempt > MAX_RETRIES) {
-                        Log.warning("Flush exhausted ${MAX_RETRIES} retries; will try again on next flush cycle.")
+                    if (attempt > maxRetries) {
+                        Log.warning("Flush exhausted $maxRetries retries; will try again on next flush cycle.")
                         bumpFailureCounter()
                         return
                     }
@@ -276,7 +293,7 @@ internal class EventQueue(
                     val delayMs = serverHintMs
                         ?: jittered(RETRY_DELAYS_MS[(attempt - 1).coerceAtMost(RETRY_DELAYS_MS.size - 1)])
                     val why = if (serverHintMs != null) "Retry-After" else "backoff"
-                    Log.debug("Flush failed (transient HTTP=${result.statusCode}), retrying in ${delayMs}ms via $why (attempt $attempt/$MAX_RETRIES)")
+                    Log.debug("Flush failed (transient HTTP=${result.statusCode}), retrying in ${delayMs}ms via $why (attempt $attempt/$maxRetries)")
                     delay(delayMs.coerceAtLeast(0L))
                 }
             }
@@ -305,7 +322,7 @@ internal class EventQueue(
             val intervalMs = autoFlushIntervalMs(flushInterval)
             while (isActive) {
                 delay(intervalMs)
-                performFlushWithRetry()
+                runFlush(FlushTrigger.SCHEDULED)
             }
         }
     }
@@ -346,6 +363,16 @@ internal class EventQueue(
         // any other launched coroutines (retry backoff, app-foreground flush)
         // are torn down too. Without this, SDK shutdown leaks IO threads.
         try { scope.cancel() } catch (_: Throwable) {}
+        // One last upload attempt of the queued events — the same one attempt iOS makes in
+        // `AppDNA.shutdown()` — outside the cancelled scope, with no retry backoff, so it ends with its
+        // one request (bounded by the client's call timeout). It keeps the failure pause and the
+        // single-upload claim; whatever it does not send stays in SQLite for the WorkManager upload
+        // `AppDNA.shutdown()` schedules and for the next `configure`.
+        shutdownFlushScope.launch {
+            try { runFlush(FlushTrigger.SHUTDOWN, maxRetries = 0) } catch (e: Throwable) {
+                Log.debug("Final flush on shutdown failed: ${e.message}")
+            }
+        }
         // Detach lifecycle observer (must run on main thread).
         val obs = lifecycleObserver
         if (obs != null) {

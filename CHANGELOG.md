@@ -50,6 +50,13 @@ Wraps iOS 1.0.82. Ships maps and host data (including "Show more").
   when the same view is reused for a new presentation.
 
 ### Fixed
+- **Event uploads during an outage.** After 5 consecutive upload failures the queue pauses, but every
+  `track()` that filled a batch cleared the pause again and ran a full upload cycle (one attempt and up
+  to three retries). Now only the app coming to the foreground and `AppDNA.flush()` clear the pause, as on
+  iOS; the batch threshold, the interval timer, backgrounding and `shutdown()` keep it.
+- `AppDNA.shutdown()` now makes one last attempt to upload the queued events, as iOS does. Before, it only
+  scheduled the background upload. Events the attempt cannot send stay on the device for that background
+  upload and the next `configure()`.
 - A `shutdown()` that landed after the bootstrap response had arrived but before `configure` finished (for
   example from the runtime-lock delegate) left the SDK marked ready: `onReady` fired, and every later
   `configure()` was ignored as "called multiple times" until the app restarted. After `shutdown()` and a new

@@ -196,6 +196,24 @@ class ResilienceFixtureTest {
                     )
                 }
 
+                // Which flush triggers clear the paused-after-N-failures gate. Drives the real
+                // `EventQueue.FlushTrigger` every flush path goes through, and the table must name every
+                // trigger of the enum — a new trigger with no row fails here instead of slipping by.
+                "flush_pause_gate" -> {
+                    val named = mutableSetOf<EventQueue.FlushTrigger>()
+                    for (i in 0 until cases.length()) {
+                        val c = cases.getJSONObject(i)
+                        val trigger = EventQueue.FlushTrigger.valueOf(c.getString("trigger").uppercase())
+                        named.add(trigger)
+                        assertEquals(
+                            "[$id] does a ${c.getString("trigger")} flush clear the pause?",
+                            c.getBoolean("clears_pause"),
+                            trigger.clearsPauseGate,
+                        )
+                    }
+                    assertEquals("[$id] the table must name every FlushTrigger", EventQueue.FlushTrigger.values().toSet(), named)
+                }
+
                 else -> fail("[$id] unknown resilience contract '$contract' — this runner must assert it, never skip it")
             }
         }
@@ -204,7 +222,7 @@ class ResilienceFixtureTest {
         // and this suite would still go green on the survivors.
         assertEquals(
             "every resilience contract must be covered by a fixture",
-            setOf("transient_status", "retry_after", "stale_horizon", "permanent_failure", "backoff"),
+            setOf("transient_status", "retry_after", "stale_horizon", "permanent_failure", "backoff", "flush_pause_gate"),
             seenContracts,
         )
     }

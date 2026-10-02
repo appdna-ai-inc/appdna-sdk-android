@@ -23,6 +23,8 @@ import kotlinx.coroutines.launch
  */
 @OptIn(kotlinx.coroutines.DelicateCoroutinesApi::class)
 internal class TestHttpServer(
+    /** Extra headers written on every answer, e.g. `Cache-Control` to see whether a client caches. */
+    private val responseHeaders: Map<String, String> = emptyMap(),
     private val respond: (path: String, body: String) -> Pair<Int, String>?,
 ) : AutoCloseable {
     private val server = ServerSocket(0, 50, InetAddress.getLoopbackAddress())
@@ -85,6 +87,7 @@ internal class TestHttpServer(
                 val out = s.getOutputStream()
                 out.write(
                     ("HTTP/1.1 ${answer.first} X\r\nContent-Type: application/json\r\n" +
+                        responseHeaders.entries.joinToString("") { "${it.key}: ${it.value}\r\n" } +
                         "Content-Length: ${payload.size}\r\n\r\n").toByteArray(Charsets.UTF_8),
                 )
                 out.write(payload)
