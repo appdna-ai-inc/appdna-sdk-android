@@ -435,17 +435,16 @@ class MessageManager internal constructor(
 
     /**
      * The server serializes `start_date`/`end_date` via `.toISOString()` — a full ISO-8601 instant
-     * with time-of-day and `Z`. Parse that instant first (exact precision, and identical to iOS's
-     * `ISO8601` parser), and only fall back to a date-only `yyyy-MM-dd` shape (hand-authored/legacy
-     * configs) at UTC midnight. The old code used the `yyyy-MM-dd` formatter directly, which
-     * leniently read the date prefix of the full string and silently dropped the authored
-     * time-of-day; combined with iOS's device-local midnight that produced a same-field, different-
-     * day divergence across platforms. Unparsable → null (treated as no scheduling constraint).
+     * with time-of-day and `Z`. Read it as iOS does (`MessageManager.parseWindowDate`): first as an
+     * instant, as iOS's `ISO8601.date(from:)` reads it, then — for hand-authored / legacy values — as a
+     * date at UTC midnight, as iOS's UTC `yyyy-MM-dd` `DateFormatter` reads it. Both readers are
+     * [ai.appdna.sdk.core.IsoInstant], which reproduces iOS's ICU parsing, leniencies included (see its
+     * KDoc), so one string opens the window at the same instant on both platforms. Unparsable → null
+     * (treated as no scheduling constraint). Pinned by the shared fixture
+     * `dto_parsing/message_window_date_parsing`.
      */
     internal fun parseWindowDate(iso: String): Date? {
         val ms = ai.appdna.sdk.core.IsoInstant.parseEpochMs(iso)
-            // Exactly `yyyy-MM-dd` (as iOS's non-lenient formatter): `SimpleDateFormat.parse` read a
-            // prefix, so a zone-less instant became a UTC midnight here and no constraint on iOS.
             ?: ai.appdna.sdk.core.IsoInstant.parseDateOnlyUtcMs(iso)
         return ms?.let { Date(it) }
     }
