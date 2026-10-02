@@ -486,6 +486,17 @@ object AppDNA {
     @Volatile private var eventTracker: EventTracker? = null
     private val preInitLock = Any()
     private var eventQueue: EventQueue? = null
+
+    /**
+     * The runtime settings in force ([ai.appdna.sdk.events.RuntimeSettings]): resolved at configure, re-resolved
+     * when a bootstrap answer is applied.
+     */
+    @Volatile private var runtimeSettings: ai.appdna.sdk.events.RuntimeSettings.Resolved? = null
+
+    /** Test readers: the runtime settings in force and the current event queue. */
+    internal val runtimeSettingsForTest: ai.appdna.sdk.events.RuntimeSettings.Resolved? get() = runtimeSettings
+    internal val eventQueueForTest: EventQueue? get() = eventQueue
+    internal val remoteConfigManagerForTest: RemoteConfigManager? get() = remoteConfigManager
     private var remoteConfigManager: RemoteConfigManager? = null
     private var featureFlagManager: FeatureFlagManager? = null
     private var experimentManager: ExperimentManager? = null
@@ -749,12 +760,15 @@ object AppDNA {
                 }
             }
 
+            // Runtime settings before any bootstrap: the host's values, else the built-in defaults.
+            val initialRuntime = ai.appdna.sdk.events.RuntimeSettings.resolveAll(options, null)
+            runtimeSettings = initialRuntime
             val eq = EventQueue(
                 apiClient = client,
                 eventDatabase = eventDb,
                 connectivityMonitor = connMonitor,
-                batchSize = options.batchSize,
-                flushInterval = options.flushInterval,
+                batchSizeCap = initialRuntime.batchSizeCap,
+                flushInterval = initialRuntime.flushInterval,
                 context = appContext,
                 backgroundUploadScheduler = bgScheduler
             )
@@ -830,7 +844,7 @@ object AppDNA {
             val remoteCfg = RemoteConfigManager(
                 firestorePath = null, // Set after bootstrap
                 storage = storage,
-                configTTL = options.configTTL
+                configTTL = initialRuntime.configTTL
             )
             // SPEC-070-A G.4: wire EventTracker so RemoteConfigManager.fetchConfigs()
             // can emit a `config_fetched` event after each successful refresh.
@@ -2297,6 +2311,9 @@ object AppDNA {
                 // Without this assignment, fetchConfigs() always falls through
                 // to "No Firestore path available — serving cached config only"
                 // because the manager was constructed with a null path.
+                // Runtime settings: host option > this answer's `settings` (if positive) > default.
+                applyRuntimeSettings(result.optJSONObject("settings"), remoteCfg)
+
                 remoteCfg.setFirestorePath(firestorePath)
 
                 // v0.3: Create deferred deep link manager
@@ -2324,6 +2341,21 @@ object AppDNA {
             Log.error("Bootstrap parse error: ${e.message}")
             return BootstrapApply.INVALID
         }
+    }
+
+    /**
+     * Resolve the runtime settings against a bootstrap answer's `settings` ([ai.appdna.sdk.events.RuntimeSettings]:
+     * host option > bootstrap value > default; a non-positive bootstrap value is ignored) and apply them: the
+     * event queue's batch cap and flush timer, and the config manager's TTL. Under the AppDNA lock, before the
+     * config fetch, so the first TTL timer already uses the resolved TTL.
+     */
+    private fun applyRuntimeSettings(settings: JSONObject?, remoteCfg: RemoteConfigManager) {
+        val resolved = ai.appdna.sdk.events.RuntimeSettings.resolveAll(
+            options, ai.appdna.sdk.events.RuntimeSettings.Bootstrap.from(settings),
+        )
+        runtimeSettings = resolved
+        eventQueue?.applyRuntimeSettings(resolved.batchSizeCap, resolved.flushInterval)
+        remoteCfg.setConfigTTL(resolved.configTTL)
     }
 
     /** Test reader: the event queue the last `shutdown()` ended (its final upload attempt may still run). */
@@ -2417,7 +2449,7 @@ object AppDNA {
      * Returns null if the file is not found or cannot be parsed.
      */
     /** Recursively convert JSONObject to Map<String, Any> for parse methods. */
-    private fun jsonObjectToMap(obj: JSONObject): Map<String, Any> {
+    internal fun jsonObjectToMap(obj: JSONObject): Map<String, Any> {
         val map = mutableMapOf<String, Any>()
         for (key in obj.keys()) {
             val value = obj.get(key)

@@ -2,6 +2,7 @@ package ai.appdna.sdk
 
 import ai.appdna.sdk.events.EventQueue
 import ai.appdna.sdk.events.EventUploadCoordinator
+import ai.appdna.sdk.events.RuntimeSettings
 import ai.appdna.sdk.network.ApiClient
 import ai.appdna.sdk.network.EventUploadDisposition
 import ai.appdna.sdk.storage.EventDatabase
@@ -307,6 +308,46 @@ class ResilienceFixtureTest {
                     }
                 }
 
+                // Host option > bootstrap value (positive only) > default, and the batch size in effect. Drives
+                // the real `RuntimeSettings.resolveAll` (through `AppDNAOptions`, so explicit vs unset is the one a
+                // host makes, and through `Bootstrap.from`, the parser of the answer's `settings`) and
+                // `effectiveBatchSize`, the seam the queue and the WorkManager uploader both size batches with.
+                "runtime_settings" -> {
+                    val d = block.getJSONObject("defaults")
+                    assertEquals("[$id] default flushInterval", d.getLong("flush_interval"), RuntimeSettings.DEFAULT_FLUSH_INTERVAL)
+                    assertEquals("[$id] default configTTL", d.getLong("config_ttl"), RuntimeSettings.DEFAULT_CONFIG_TTL)
+                    assertEquals("[$id] default batchSize cap", if (d.isNull("batch_size")) null else d.getInt("batch_size"),
+                        RuntimeSettings.resolveAll(AppDNAOptions(), null).batchSizeCap)
+                    fun num(c: JSONObject, k: String): Number? = if (!c.has(k) || c.isNull(k)) null else c.get(k) as Number
+                    for (i in 0 until cases.length()) {
+                        val c = cases.getJSONObject(i)
+                        val setting = c.getString("setting")
+                        val want = num(c, "expected")?.toLong()
+                        if (setting == "effective_batch_size") {
+                            assertEquals("[$id] effective batch size, $c", want?.toInt(),
+                                RuntimeSettings.effectiveBatchSize(c.getInt("adaptive"), num(c, "cap")?.toInt()))
+                            continue
+                        }
+                        val explicit = num(c, "explicit")
+                        val settings = JSONObject()
+                        val wireKey = when (setting) { "flush_interval" -> "flushInterval"; "config_ttl" -> "configTTL"; else -> "batchSize" }
+                        num(c, "bootstrap")?.let { settings.put(wireKey, it) }
+                        val options = when (setting) {
+                            "flush_interval" -> AppDNAOptions(flushInterval = explicit?.toLong())
+                            "config_ttl" -> AppDNAOptions(configTTL = explicit?.toLong())
+                            "batch_size" -> AppDNAOptions(batchSize = explicit?.toInt())
+                            else -> { fail("[$id] unknown runtime setting '$setting'"); return }
+                        }
+                        val r = RuntimeSettings.resolveAll(options, RuntimeSettings.Bootstrap.from(settings))
+                        val got: Long? = when (setting) {
+                            "flush_interval" -> r.flushInterval
+                            "config_ttl" -> r.configTTL
+                            else -> r.batchSizeCap?.toLong()
+                        }
+                        assertEquals("[$id] $setting: $c", want, got)
+                    }
+                }
+
                 else -> fail("[$id] unknown resilience contract '$contract' — this runner must assert it, never skip it")
             }
         }
@@ -316,7 +357,7 @@ class ResilienceFixtureTest {
         assertEquals(
             "every resilience contract must be covered by a fixture",
             setOf("transient_status", "retry_after", "stale_horizon", "permanent_failure", "backoff", "flush_pause_gate",
-                "bootstrap_recovery", "resolved_events_not_resent"),
+                "bootstrap_recovery", "resolved_events_not_resent", "runtime_settings"),
             seenContracts,
         )
     }

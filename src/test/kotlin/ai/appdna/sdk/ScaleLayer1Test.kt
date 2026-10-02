@@ -104,8 +104,11 @@ class ScaleLayer1Test {
 
     @Test
     fun `default config TTL is one hour`() {
+        // Not set by the host → null; the SDK resolves bootstrap `settings.configTTL`, else 3600.
         val options = AppDNAOptions()
-        assertEquals("Default config TTL should be 3600 seconds", 3600L, options.configTTL)
+        org.junit.Assert.assertNull(options.configTTL)
+        assertEquals("Default config TTL should be 3600 seconds", 3600L,
+            ai.appdna.sdk.events.RuntimeSettings.resolveAll(options, null).configTTL)
     }
 
     @Test
@@ -117,9 +120,11 @@ class ScaleLayer1Test {
     // MARK: - Batch Size
 
     @Test
-    fun `default batch size is 20`() {
+    fun `default batch size is no cap`() {
+        // Not set by the host → null: no cap of its own; the network sizes batches (bootstrap may cap).
         val options = AppDNAOptions()
-        assertEquals("Default batch size should remain 20", 20, options.batchSize)
+        org.junit.Assert.assertNull(options.batchSize)
+        org.junit.Assert.assertNull(ai.appdna.sdk.events.RuntimeSettings.resolveAll(options, null).batchSizeCap)
     }
 
     // MARK: - Disk Quota (EventDatabase constants)

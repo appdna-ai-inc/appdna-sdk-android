@@ -71,7 +71,7 @@ class PurchaseEventsEmittedOnceTest {
                 apiClient = ApiClient("adn_test_purchase_once", Environment.PRODUCTION),
                 eventDatabase = db,
                 connectivityMonitor = null,
-                batchSize = 0,
+                batchSizeCap = 0,
                 flushInterval = Long.MAX_VALUE,
             ),
         )

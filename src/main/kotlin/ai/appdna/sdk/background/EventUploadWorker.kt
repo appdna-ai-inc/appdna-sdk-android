@@ -41,7 +41,8 @@ internal class EventUploadWorker(
         val apiKey = inputData.getString(KEY_API_KEY)
         val baseUrl = inputData.getString(KEY_BASE_URL)
         val paused = ai.appdna.sdk.events.UploadPauseGate.isPaused(applicationContext)
-        return when (uploadPending(eventDatabase, apiKey, baseUrl, paused)) {
+        val cap = ai.appdna.sdk.events.BatchSizeCapGate.cap(applicationContext)
+        return when (uploadPending(eventDatabase, apiKey, baseUrl, paused, cap)) {
             Outcome.DONE -> Result.success()
             Outcome.RETRY -> Result.retry()
             Outcome.FAILED -> Result.failure()
@@ -65,12 +66,31 @@ internal class EventUploadWorker(
          * waited for the next `configure()`. A run also used to send ONE batch and succeed with the rest
          * still queued.
          */
-        internal fun uploadPending(eventDatabase: EventDatabase, apiKey: String?, baseUrl: String?, paused: Boolean = false): Outcome {
+        /**
+         * Events per background upload: the network-agnostic 100, capped by the queue's persisted `batchSize`
+         * cap ([ai.appdna.sdk.events.BatchSizeCapGate]) — the most the in-process queue sends at once too.
+         */
+        internal fun uploadBatchSize(cap: Int?): Int =
+            ai.appdna.sdk.events.RuntimeSettings.effectiveBatchSize(BATCH_SIZE, cap)
+
+        internal fun uploadPending(
+            eventDatabase: EventDatabase,
+            apiKey: String?,
+            baseUrl: String?,
+            paused: Boolean = false,
+            batchSizeCap: Int? = null,
+        ): Outcome {
             // The queue's failure pause holds for this uploader too ([ai.appdna.sdk.events.UploadPauseGate]): a
             // paused app uploads nothing until a foreground or `AppDNA.flush()`. Done, not retried — retrying
             // would only poll the pause; the next foreground flushes, and backgrounding schedules a fresh run.
             if (paused) {
                 Log.debug("Background upload skipped — uploads are paused after repeated failures")
+                return Outcome.DONE
+            }
+            // The host holds events on the device (batchSize 0): nothing to send, nothing to retry.
+            val batchSize = uploadBatchSize(batchSizeCap)
+            if (batchSize <= 0) {
+                Log.debug("Background upload skipped — batchSize 0 holds events on the device")
                 return Outcome.DONE
             }
             // SPEC-428 CL-9/D4: single upload owner — never POST the rows the in-process flush is sending.
@@ -101,7 +121,7 @@ internal class EventUploadWorker(
                     .readTimeout(30, TimeUnit.SECONDS)
                     .build()
                 repeat(MAX_BATCHES_PER_RUN) {
-                    val batch = eventDatabase.loadBatch(BATCH_SIZE)
+                    val batch = eventDatabase.loadBatch(batchSize)
                     if (batch.isEmpty()) return Outcome.DONE
                     when (val o = uploadBatch(client, eventDatabase, batch, apiKey, baseUrl)) {
                         null -> Unit // sent (or dropped on a 4xx); next batch

@@ -73,7 +73,7 @@ class FlowRenderingTest {
                 apiClient = ApiClient("adn_test_flow", Environment.PRODUCTION),
                 eventDatabase = db,
                 connectivityMonitor = null,
-                batchSize = 0,
+                batchSizeCap = 0,
                 flushInterval = Long.MAX_VALUE,
             ),
         )

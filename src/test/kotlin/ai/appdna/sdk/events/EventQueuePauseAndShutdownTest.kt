@@ -69,7 +69,7 @@ class EventQueuePauseAndShutdownTest {
         apiClient = ApiClient("adn_test_pause_gate", server.baseUrl),
         eventDatabase = db,
         connectivityMonitor = null,
-        batchSize = batchSize,
+        batchSizeCap = batchSize,
         flushInterval = Long.MAX_VALUE,
     ).also { queues += it }
 

@@ -26,7 +26,7 @@ import kotlinx.coroutines.launch
 internal class RemoteConfigManager(
     firestorePath: String?,
     private val storage: LocalStorage,
-    private val configTTL: Long,
+    configTTL: Long,
     /**
      * SPEC-070-B PN row 7 — injectable so a Robolectric test can advance the TTL timer. Robolectric
      * cannot advance `kotlinx.coroutines.delay` on a production dispatcher, which would make the
@@ -38,6 +38,21 @@ internal class RemoteConfigManager(
     // WorkManager has a 15-minute floor, so a host asking for a 5-minute TTL silently got 15.
     // `configTTL` was previously accepted and never read: dead code on Android while iOS honored it.
     private val ttlScope = CoroutineScope(ttlDispatcher + SupervisorJob())
+
+    /** Seconds before fetched config is stale; changed by a bootstrap's `configTTL` ([setConfigTTL]). */
+    @Volatile
+    private var configTTL: Long = configTTL
+
+    /** The TTL in force. */
+    internal val currentConfigTTL: Long get() = configTTL
+
+    /**
+     * Apply a TTL resolved after a bootstrap ([ai.appdna.sdk.events.RuntimeSettings]). Takes effect at the
+     * next staleness test and when the next refresh timer is armed (after the next fetch).
+     */
+    fun setConfigTTL(seconds: Long) {
+        configTTL = seconds
+    }
 
     @Volatile
     private var lastFetchAtMs: Long = 0L

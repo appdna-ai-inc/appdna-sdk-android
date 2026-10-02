@@ -67,7 +67,7 @@ class SubscriptionStartedEventTest {
                 apiClient = ApiClient("adn_test_subscription_started", Environment.PRODUCTION),
                 eventDatabase = db,
                 connectivityMonitor = null,
-                batchSize = 0,
+                batchSizeCap = 0,
                 flushInterval = Long.MAX_VALUE,
             ),
         )

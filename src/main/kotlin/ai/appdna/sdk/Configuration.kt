@@ -116,12 +116,23 @@ sealed class BillingProvider(val type: String) {
  * Configuration options for the AppDNA SDK.
  */
 data class AppDNAOptions(
-    /** Automatic flush interval in seconds. Default: 30. */
-    val flushInterval: Long = 30L,
-    /** Number of events per flush batch. Default: 20. */
-    val batchSize: Int = 20,
-    /** Remote config cache TTL in seconds. Default: 3600 (1 hour). SPEC-067. */
-    val configTTL: Long = 3600L,
+    /**
+     * Automatic flush interval in seconds; null (the default) when the host does not set it — then the
+     * bootstrap answer's `settings.flushInterval` (if positive) applies once the bootstrap succeeds, else 30.
+     */
+    val flushInterval: Long? = null,
+    /**
+     * The most events one upload sends, and the queue length that triggers a flush: a cap on the
+     * network-sized batch (100 on Wi-Fi or wired, 50 on cellular, 20 on a metered connection). null (the
+     * default): no cap of the host's own — the bootstrap answer's `settings.batchSize` (if positive) is the
+     * cap, else none. 0 holds every event on the device.
+     */
+    val batchSize: Int? = null,
+    /**
+     * Remote config cache TTL in seconds; null (the default) when the host does not set it — then the
+     * bootstrap answer's `settings.configTTL` (if positive), else 3600 (1 hour).
+     */
+    val configTTL: Long? = null,
     /** Log verbosity. Default: WARNING. */
     val logLevel: LogLevel = LogLevel.WARNING,
     /**

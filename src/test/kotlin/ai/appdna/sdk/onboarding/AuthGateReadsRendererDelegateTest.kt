@@ -72,7 +72,7 @@ class AuthGateReadsRendererDelegateTest {
                 apiClient = ApiClient("adn_test_auth_gate", Environment.PRODUCTION),
                 eventDatabase = db,
                 connectivityMonitor = null,
-                batchSize = 0,
+                batchSizeCap = 0,
                 flushInterval = Long.MAX_VALUE,
             ),
         )

@@ -42,6 +42,12 @@ Wraps iOS 1.0.82. Ships maps and host data (including "Show more").
   takes precedence. No code change needed.
 
 ### Changed
+- **`flushInterval`, `batchSize` and `configTTL` are `null` unless you set them** (`Long?` / `Int?` / `Long?`).
+  Each setting now resolves as: your option > the value the server returns with the bootstrap request (if
+  positive) > the built-in default (30 s, no cap, 3600 s). `batchSize` now works: it caps the network-sized
+  batch (100 / 50 / 20) — the flush threshold and the most one upload sends, in the WorkManager uploader too;
+  `0` keeps every event on the device. Before, `batchSize` was used only without a connectivity monitor (never),
+  and the bootstrap's settings were not read. Code that reads these three properties now gets a nullable value.
 - `onElementInteraction` behaviour for every flow: `inputValuePatches` merge onto the answers as they
   are when the reply lands (a pick made during the call is kept); a reply that arrives after the user
   left the step — or started a newer presentation of it — is dropped, `advance` included; the

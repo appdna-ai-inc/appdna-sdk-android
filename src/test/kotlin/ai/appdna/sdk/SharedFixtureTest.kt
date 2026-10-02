@@ -155,7 +155,7 @@ class SharedFixtureTest(
                     apiClient = ApiClient("adn_test_fixture", Environment.PRODUCTION),
                     eventDatabase = db,
                     connectivityMonitor = null,
-                    batchSize = 0,
+                    batchSizeCap = 0,
                     flushInterval = Long.MAX_VALUE,
                 ),
             )

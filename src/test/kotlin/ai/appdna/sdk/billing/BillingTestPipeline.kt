@@ -33,7 +33,7 @@ internal class BillingTestPipeline(ctx: Context, name: String) {
             apiClient = ApiClient("adn_test_billing", Environment.PRODUCTION),
             eventDatabase = db,
             connectivityMonitor = null,
-            batchSize = 0,
+            batchSizeCap = 0,
             flushInterval = Long.MAX_VALUE,
         )
         tracker.setEventQueue(queue)

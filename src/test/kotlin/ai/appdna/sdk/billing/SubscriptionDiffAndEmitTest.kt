@@ -54,7 +54,7 @@ class SubscriptionDiffAndEmitTest {
                 apiClient = ApiClient("adn_test_sub_diff", Environment.PRODUCTION),
                 eventDatabase = db,
                 connectivityMonitor = null,
-                batchSize = 0, // never trips the flush threshold → nothing uploaded, envelopes readable
+                batchSizeCap = 0, // never trips the flush threshold → nothing uploaded, envelopes readable
                 flushInterval = Long.MAX_VALUE,
             ),
         )

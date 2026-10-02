@@ -33,8 +33,8 @@ internal class EventQueue(
     private val apiClient: ApiClient,
     private val eventDatabase: EventDatabase,
     private val connectivityMonitor: ConnectivityMonitor?,
-    private val batchSize: Int,
-    private val flushInterval: Long, // seconds
+    batchSizeCap: Int?,
+    flushInterval: Long, // seconds
     private val context: Context? = null,
     private val backgroundUploadScheduler: BackgroundUploadScheduler? = null
 ) {
@@ -58,13 +58,46 @@ internal class EventQueue(
     /** SPEC-070-A A.18: Lifecycle observer registered on ProcessLifecycleOwner.get(). */
     private var lifecycleObserver: DefaultLifecycleObserver? = null
 
-    /** SPEC-067: Returns adaptive batch size based on network conditions. */
+    /** The host's / the bootstrap's cap on the adaptive batch size ([RuntimeSettings]); null: no cap. */
+    @Volatile private var batchSizeCap: Int? = batchSizeCap
+    /** Seconds between scheduled flushes. */
+    @Volatile private var flushInterval: Long = flushInterval
+
+    /**
+     * SPEC-067: The current effective batch size — the network-sized one (100 without a connectivity
+     * monitor), capped by [batchSizeCap].
+     */
     private val effectiveBatchSize: Int
-        get() = connectivityMonitor?.adaptiveBatchSize ?: batchSize
+        get() = RuntimeSettings.effectiveBatchSize(
+            connectivityMonitor?.adaptiveBatchSize ?: NO_MONITOR_ADAPTIVE_BATCH_SIZE, batchSizeCap,
+        )
+
+    /** Test readers: the cap and interval in force, and the effective batch size. */
+    internal val batchSizeCapForTesting: Int? get() = batchSizeCap
+    internal val flushIntervalForTesting: Long get() = flushInterval
+    internal val effectiveBatchSizeForTesting: Int get() = effectiveBatchSize
+
+    /**
+     * Apply runtime settings resolved after a bootstrap ([RuntimeSettings]): the cap takes effect at the next
+     * threshold check and upload (and in the WorkManager uploader); a changed interval restarts the timer.
+     */
+    fun applyRuntimeSettings(batchSizeCap: Int?, flushInterval: Long) {
+        this.batchSizeCap = batchSizeCap
+        BatchSizeCapGate.set(context, batchSizeCap)
+        if (this.flushInterval != flushInterval) {
+            this.flushInterval = flushInterval
+            if (scope.isActive) {
+                flushJob?.cancel()
+                startAutoFlush()
+            }
+        }
+    }
 
     init {
         // A new queue (a new `configure()`) starts unpaused; so does the gate the background uploader reads.
         UploadPauseGate.set(context, false)
+        // The background uploader sends batches no larger than this queue does.
+        BatchSizeCapGate.set(context, batchSizeCap)
         // Load persisted events from SQLite
         val stored = eventDatabase.loadAll()
         for (json in stored) {
@@ -99,9 +132,9 @@ internal class EventQueue(
     constructor(
         apiClient: ApiClient,
         storage: LocalStorage,
-        batchSize: Int,
+        batchSizeCap: Int?,
         flushInterval: Long
-    ) : this(apiClient, EventDatabase(storage.context), null, batchSize, flushInterval, null, null)
+    ) : this(apiClient, EventDatabase(storage.context), null, batchSizeCap, flushInterval, null, null)
 
     /**
      * Add an event to the queue.
@@ -442,6 +475,9 @@ internal class EventQueue(
         shutdownFlushDone.await(timeoutMs, java.util.concurrent.TimeUnit.MILLISECONDS)
 
     companion object {
+        /** The adaptive size a queue built without a connectivity monitor (tests, legacy constructor) uses. */
+        internal const val NO_MONITOR_ADAPTIVE_BATCH_SIZE = 100
+
         /**
          * The auto-flush period in ms for an interval in seconds. `flushInterval * 1000` overflowed for
          * a very large interval (e.g. Long.MAX_VALUE, which every test pipeline passes to mean "never")
