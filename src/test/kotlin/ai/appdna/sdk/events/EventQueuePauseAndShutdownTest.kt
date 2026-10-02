@@ -35,10 +35,13 @@ class EventQueuePauseAndShutdownTest {
     private val ctx: Context = ApplicationProvider.getApplicationContext()
     private lateinit var db: EventDatabase
     private val queues = mutableListOf<EventQueue>()
+    /** The dropped-events counter before this test: its 401s drop batches into it (see tearDown). */
+    private var savedDropped = 0
 
     @Before
     fun setUp() {
         DroppedEventsCounter.init(ctx)
+        savedDropped = DroppedEventsCounter.peek()
         db = EventDatabase(ctx, 10_000, "pause_gate_${UUID.randomUUID()}.db")
         db.clearAll()
         TestHttpServer.settleIoDispatcher()
@@ -47,6 +50,13 @@ class EventQueuePauseAndShutdownTest {
     @After
     fun tearDown() {
         queues.forEach { it.shutdown() }
+        // The 401 batches this test dropped went into the process-wide dropped-events counter (its
+        // SharedPreferences handle outlives the test), and every later test's tracker would then emit an
+        // `_sdk_events_dropped` event first. Let the last upload resolve, then put the counter back.
+        waitFor { EventUploadCoordinator.tryAcquire().also { if (it) EventUploadCoordinator.release() } }
+        Thread.sleep(200)
+        DroppedEventsCounter.getAndReset()
+        DroppedEventsCounter.increment(savedDropped)
         db.clearAll()
     }
 
