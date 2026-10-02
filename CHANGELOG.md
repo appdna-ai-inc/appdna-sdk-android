@@ -50,6 +50,16 @@ Wraps iOS 1.0.82. Ships maps and host data (including "Show more").
   when the same view is reused for a new presentation.
 
 ### Fixed
+- **Experiments: Traffic Allocation and targeting are applied on the device.** The experiment's traffic
+  allocation and its targeting rules (countries — the device region; minimum app version — `versionName`;
+  new users only — `PackageInfo.firstInstallTime` at or after the experiment's start; user trait
+  conditions) now decide whether the user is in the experiment before a variant is assigned. A user who is
+  not in gets `null` from `getVariant` / `getExperimentConfig`, `false` from `isInVariant`, the live
+  entity on a servable surface, and no `experiment_exposure`. Before, every user on a targeted platform
+  got a variant (the SDK read a top-level `segments` key nothing writes). Allocation uses its own hash
+  (`<experimentId>.<salt>.<userId>.allocation`), so the variant split is unchanged and raising the
+  allocation keeps everyone who was in. `ExperimentConfig` gains `trafficAllocation`, `targeting` and
+  `startedAtMs`; a doc without them still serves everyone.
 - **Event uploads during an outage.** After 5 consecutive upload failures the queue pauses, but every
   `track()` that filled a batch cleared the pause again and ran a full upload cycle (one attempt and up
   to three retries). Now only the app coming to the foreground and `AppDNA.flush()` clear the pause, as on
