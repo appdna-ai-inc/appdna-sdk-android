@@ -54,6 +54,8 @@ internal class EventQueue(
     private val redeliveryHorizonMs = 7L * 24 * 60 * 60 * 1000
     @Volatile private var consecutiveFailures = 0
     @Volatile private var paused = false
+    /** This queue's token for [UploadPauseGate] (see [UploadPauseGate.claim]). */
+    private val pauseOwner: Long
 
     /** SPEC-070-A A.18: Lifecycle observer registered on ProcessLifecycleOwner.get(). */
     private var lifecycleObserver: DefaultLifecycleObserver? = null
@@ -63,8 +65,9 @@ internal class EventQueue(
         get() = connectivityMonitor?.adaptiveBatchSize ?: batchSize
 
     init {
-        // A new queue (a new `configure()`) starts unpaused; so does the gate the background uploader reads.
-        UploadPauseGate.set(context, false)
+        // A new queue (a new `configure()`) starts unpaused; so does the gate the background uploader reads,
+        // which this queue owns from now on (a queue ended before it can no longer write it).
+        pauseOwner = UploadPauseGate.claim(context)
         // Load persisted events from SQLite
         val stored = eventDatabase.loadAll()
         for (json in stored) {
@@ -163,7 +166,7 @@ internal class EventQueue(
         if (trigger.clearsPauseGate) {
             paused = false
             consecutiveFailures = 0
-            UploadPauseGate.set(context, false)
+            UploadPauseGate.set(context, false, pauseOwner)
         }
         flushMutex.withLock { performFlushLocked(maxRetries) }
     }
@@ -332,7 +335,7 @@ internal class EventQueue(
         consecutiveFailures++
         if (consecutiveFailures >= MAX_CONSECUTIVE_FAILURES) {
             paused = true
-            UploadPauseGate.set(context, true)
+            UploadPauseGate.set(context, true, pauseOwner)
             Log.warning("Too many consecutive flush failures ($consecutiveFailures). Event uploads paused until next foreground/manual flush.")
         }
     }
@@ -431,8 +434,14 @@ internal class EventQueue(
     internal fun pauseForTest() {
         consecutiveFailures = MAX_CONSECUTIVE_FAILURES
         paused = true
-        UploadPauseGate.set(context, true)
+        UploadPauseGate.set(context, true, pauseOwner)
     }
+
+    /** Test seam: one upload cycle with no retries (the cycle `shutdown()` makes); a failure counts toward the pause. */
+    internal suspend fun flushCycleForTest() = runFlush(FlushTrigger.SCHEDULED, maxRetries = 0)
+
+    /** Test reader: failed upload cycles in a row (the queue pauses at [MAX_CONSECUTIVE_FAILURES]). */
+    internal val consecutiveFailuresForTest: Int get() = consecutiveFailures
 
     /** Test reader: the database this queue persists to (and closes after its final flush). */
     internal val eventDatabaseForTest: EventDatabase get() = eventDatabase

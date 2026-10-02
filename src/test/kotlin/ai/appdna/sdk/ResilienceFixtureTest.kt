@@ -250,7 +250,7 @@ class ResilienceFixtureTest {
                         q.shutdown()
                         q.awaitShutdownFlush(10_000)
                     }
-                    ai.appdna.sdk.events.UploadPauseGate.set(ctx, false)
+                    ai.appdna.sdk.events.UploadPauseGate.setForTest(ctx, false)
                 }
 
                 // The retry loop of a failed bootstrap: its backoff schedule and bound, and — driving the real
@@ -258,27 +258,55 @@ class ResilienceFixtureTest {
                 // attempt is made only for a trigger while online.
                 "bootstrap_recovery" -> {
                     assertEquals("[$id] max_attempts", block.getInt("max_attempts"), BootstrapRecovery.DEFAULT_MAX_ATTEMPTS)
+                    assertEquals("[$id] jitter_pct", block.getDouble("jitter_pct"), BootstrapRecovery.JITTER_PCT, 0.0)
+                    assertEquals("[$id] trigger_delay_max_ms", block.getLong("trigger_delay_max_ms"), BootstrapRecovery.DEFAULT_TRIGGER_DELAY_MAX_MS)
+                    val pct = block.getDouble("jitter_pct")
+                    // The jitter spans exactly ±pct of the base, and is not a constant.
+                    assertEquals("[$id] lowest jitter", (10_000 * (1 - pct)).toLong(), BootstrapRecovery.jittered(10_000, 0.0))
+                    assertEquals("[$id] middle jitter", 10_000L, BootstrapRecovery.jittered(10_000, 0.5))
+                    assertTrue("[$id] highest jitter", BootstrapRecovery.jittered(10_000, 0.999_999) <= (10_000 * (1 + pct)).toLong())
+                    fun outcome(status: Int, retryAfter: Long?) =
+                        BootstrapRecovery.outcomeForFailure(if (status == 0) null else status, retryAfter)
                     for (i in 0 until cases.length()) {
                         val c = cases.getJSONObject(i)
+                        val retryAfter = if (c.has("retry_after_s")) c.getLong("retry_after_s") else null
                         if (c.has("attempt_index")) {
                             val index = c.getInt("attempt_index")
                             assertEquals("[$id] backoff before attempt ${index + 1}", c.getLong("backoff_ms"),
                                 BootstrapRecovery.defaultBackoffMs(index))
-                        } else {
+                        } else if (c.has("online")) {
                             val online = c.getBoolean("online")
-                            val triggered = c.getBoolean("triggered")
+                            val triggers = if (c.has("triggers")) c.getInt("triggers") else if (c.optBoolean("triggered")) 1 else 0
+                            val answer = if (c.has("failure_status")) outcome(c.getInt("failure_status"), retryAfter) else BootstrapRecovery.Outcome.Done
                             val want = c.getInt("attempts_made")
                             val made = java.util.concurrent.atomic.AtomicInteger(0)
                             val scope = kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.Default)
-                            val recovery = BootstrapRecovery(isOnline = { online }, backoffMs = { 3_600_000L })
-                            recovery.start(scope) { made.incrementAndGet(); true }
-                            if (triggered) recovery.trigger()
-                            val deadline = System.currentTimeMillis() + 500
-                            while (System.currentTimeMillis() < deadline && made.get() < maxOf(want, 1)) Thread.sleep(20)
+                            val recovery = BootstrapRecovery(isOnline = { online }, backoffMs = { 3_600_000L },
+                                random = { 0.0 }, triggerDelayMaxMs = 0L)
+                            recovery.start(scope) { made.incrementAndGet(); answer }
+                            for (t in 0 until triggers) {
+                                recovery.trigger()
+                                val deadline = System.currentTimeMillis() + 500
+                                while (System.currentTimeMillis() < deadline && made.get() <= t) Thread.sleep(20)
+                            }
                             Thread.sleep(100)
                             recovery.stop()
                             scope.coroutineContext[kotlinx.coroutines.Job]?.cancel()
-                            assertEquals("[$id] attempts with online=$online triggered=$triggered", want, made.get())
+                            assertEquals("[$id] attempts with online=$online triggers=$triggers failure=${c.opt("failure_status")}", want, made.get())
+                        } else if (c.has("failure_status")) {
+                            val status = c.getInt("failure_status")
+                            val got = when (val o = outcome(status, retryAfter)) {
+                                BootstrapRecovery.Outcome.Stop -> "stop"
+                                BootstrapRecovery.Outcome.Retry -> "retry"
+                                BootstrapRecovery.Outcome.Done -> "done"
+                                is BootstrapRecovery.Outcome.RetryAfter -> {
+                                    assertEquals("[$id] the Retry-After honoured after $status", retryAfter!! * 1000L, o.ms)
+                                    "retry_after"
+                                }
+                            }
+                            assertEquals("[$id] what follows a failed attempt with $status", c.getString("recovery"), got)
+                        } else {
+                            fail("[$id] bootstrap_recovery case needs attempt_index+backoff_ms, online+attempts_made, or failure_status+recovery")
                         }
                     }
                 }
@@ -302,6 +330,9 @@ class ResilienceFixtureTest {
                         EventUploadCoordinator.markResolved((0..max).map { "bound-$it" })
                         assertTrue("[$id] the registry is not bounded", !EventUploadCoordinator.wasResolved("bound-0"))
                         assertTrue(EventUploadCoordinator.wasResolved("bound-$max"))
+                        // A real queue: it loaded these events from its store; another owner then resolved some
+                        // of them; its next upload sends only the rest.
+                        assertQueueDoesNotResend(id, block.getJSONObject("queue"))
                     } finally {
                         EventUploadCoordinator.clearResolvedForTest()
                     }
@@ -319,6 +350,40 @@ class ResilienceFixtureTest {
                 "bootstrap_recovery", "resolved_events_not_resent"),
             seenContracts,
         )
+    }
+
+    private fun assertQueueDoesNotResend(id: String, row: JSONObject) {
+        fun strings(key: String) = row.getJSONArray(key).let { a -> (0 until a.length()).map { a.getString(it) } }
+        EventUploadCoordinator.clearResolvedForTest()
+        ai.appdna.sdk.network.TestHttpServer.settleIoDispatcher()
+        val server = ai.appdna.sdk.network.TestHttpServer { _, _ -> 200 to "{}" }
+        val ctx = androidx.test.core.app.ApplicationProvider.getApplicationContext<android.content.Context>()
+        val db = EventDatabase(ctx, 10_000, "resolved_queue_${System.nanoTime()}.db")
+        try {
+            for (name in strings("loaded")) {
+                db.insertEvent(JSONObject().put("event_id", name).put("event_name", "resolved_queue")
+                    .put("ts_ms", System.currentTimeMillis()).toString())
+            }
+            val q = EventQueue(ApiClient("adn_test_resolved_queue", server.baseUrl), db, null, 100, Long.MAX_VALUE, ctx, null)
+            EventUploadCoordinator.markResolved(strings("resolved_elsewhere"))
+            q.flush()
+            val deadline = System.currentTimeMillis() + 10_000
+            fun ingests() = synchronized(server.rawBodies) { server.rawBodies.filter { it.first.startsWith("/api/v1/ingest/events") } }
+            while (System.currentTimeMillis() < deadline && ingests().isEmpty()) Thread.sleep(20)
+            Thread.sleep(300)
+            val sent = ingests().flatMap { (_, raw) ->
+                val json = java.util.zip.InflaterInputStream(java.io.ByteArrayInputStream(raw), java.util.zip.Inflater(true))
+                    .readBytes().toString(Charsets.UTF_8)
+                val batch = JSONObject(json).getJSONArray("batch")
+                (0 until batch.length()).map { batch.getJSONObject(it).getString("event_id") }
+            }
+            assertEquals("[$id] the queue sent events another owner had already resolved", strings("sent").sorted(), sent.sorted())
+            q.shutdown()
+            q.awaitShutdownFlush(10_000)
+        } finally {
+            server.close()
+            EventUploadCoordinator.clearResolvedForTest()
+        }
     }
 
     private fun loadResilienceFixtures(): List<Pair<String, JSONObject>> {
