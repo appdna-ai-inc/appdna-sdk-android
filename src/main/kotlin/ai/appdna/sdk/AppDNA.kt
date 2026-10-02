@@ -734,11 +734,14 @@ object AppDNA {
             // SPEC-070-A A.18: pass the application context + a background scheduler
             // so EventQueue can register a ProcessLifecycleOwner observer and hand
             // off remaining events to WorkManager when the app is backgrounded.
+            // The base this configure resolved, not the property at call time: the queue's final flush
+            // schedules through this after `shutdown()`, when a later `configure()` may have changed it.
+            val workerBaseUrl = resolvedBaseUrl
             val bgScheduler = object : ai.appdna.sdk.events.BackgroundUploadScheduler {
                 override fun scheduleIfNeeded() {
                     try {
                         ai.appdna.sdk.background.EventUploadWorker.scheduleIfNeeded(
-                            appContext, apiKey, resolvedBaseUrl, eventDb
+                            appContext, apiKey, workerBaseUrl, eventDb
                         )
                     } catch (e: Throwable) {
                         Log.warning("Background upload schedule failed: ${e.message}")
@@ -2168,82 +2171,23 @@ object AppDNA {
         // 🔴 A BOOTSTRAP THAT OUTLIVES ITS CONFIGURE IS DROPPED — see [configureEpoch]. Checked here so
         // none of the side effects below run, and again under the lock at every write (authoritative).
         if (!isCurrentConfigure(epoch)) return dropStaleBootstrap(epoch)
+        val bootstrapFailed: Boolean
         if (result != null) {
-            try {
-                val orgId = result.optString("orgId", "").ifEmpty { throw IllegalArgumentException("Missing orgId") }
-                val appId = result.optString("appId", "").ifEmpty { throw IllegalArgumentException("Missing appId") }
-                val firestorePath = result.optString("firestorePath", "").ifEmpty { throw IllegalArgumentException("Missing firestorePath") }
-
-                Log.info("Bootstrap successful: orgId=$orgId, appId=$appId")
-
-                // SPEC-404 — reconcile runtime lock state. Fire delegate
-                // callbacks ONLY on state transitions (idle <-> locked), not
-                // on every bootstrap. Repeated bootstraps in the same state
-                // are a no-op for the delegate.
-                val newLock: Pair<String, String>? = result.optJSONObject("runtime_lock")?.let { lockObj ->
-                    val reason = lockObj.optString("reason", "")
-                    val lockedAt = lockObj.optString("locked_at", "")
-                    if (reason.isNotEmpty() && lockedAt.isNotEmpty()) Pair(reason, lockedAt) else null
-                }
-                // SPEC-451 — the customer's own Mapbox token, absent when they have not set one up.
-                applyRemoteMapboxToken(
-                    result.optJSONObject("settings")?.optString("mapboxToken", "")?.ifEmpty { null },
-                )
-                // SPEC-495 §B — same path, same ownership rules, for the Google provider.
-                applyRemoteGoogleMapsKey(
-                    result.optJSONObject("settings")?.optString("googleMapsApiKey", "")?.ifEmpty { null },
-                )
-                // SPEC-495 — the engine those two keys select between, same delivery path.
-                applyRemoteMapProvider(
-                    result.optJSONObject("settings")?.optString("mapProvider", "")?.ifEmpty { null },
-                )
-
-                val previousLock = runtimeLock
-                runtimeLock = newLock
-                if (previousLock == null && newLock != null) {
-                    Log.warning("AppDNA runtime locked by backend (reason=${newLock.first}, locked_at=${newLock.second}) — pausing paywall/message/survey presentation")
-                    lifecycleDelegate?.onSdkRuntimeLocked(newLock.first, newLock.second)
-                } else if (previousLock != null && newLock == null) {
-                    Log.info("AppDNA runtime lock cleared — restoring normal SDK behaviour")
-                    lifecycleDelegate?.onSdkRuntimeUnlocked()
-                }
-
-                synchronized(this@AppDNA) {
-                    if (configureEpoch != epoch) return dropStaleBootstrap(epoch)
-                    bootstrapOrgId = orgId
-                    bootstrapAppId = appId
-
-                    // Propagate the Firestore tenant scope into RemoteConfigManager.
-                    // Without this assignment, fetchConfigs() always falls through
-                    // to "No Firestore path available — serving cached config only"
-                    // because the manager was constructed with a null path.
-                    remoteCfg.setFirestorePath(firestorePath)
-
-                    // v0.3: Create deferred deep link manager
-                    appContext?.let { ctx ->
-                        deferredDeepLinkManager = DeferredDeepLinkManager(ctx, orgId, appId, tracker)
-                    }
-
-                    // Start web entitlement observer if user is already identified
-                    identityManager?.currentIdentity?.userId?.let { userId ->
-                        webEntitlementManager?.startObserving(orgId, appId, userId)
-                        // SPEC-203: pending-messages listener when already identified.
-                        pendingMessageListener?.startObserving(orgId, appId, userId)
-                        // SPEC-497 R33: the Firestore entitlement listener — it never ran before, because
-                        // billing init sees no orgId. The user id is re-read under this lock; only when
-                        // the SDK owns transactions (the doc is written by AppDNA's own verification).
-                        billing.manager?.takeIf { it.ownsTransactions }?.entitlementCache
-                            ?.startObserving(orgId, appId, userId)
-                    }
-                }
-
-                // Fetch Firestore configs
-                remoteCfg.fetchConfigs()
-            } catch (e: Exception) {
-                Log.error("Bootstrap parse error: ${e.message}")
+            when (applyBootstrapAnswer(result, remoteCfg, tracker, epoch)) {
+                BootstrapApply.APPLIED -> bootstrapFailed = false
+                BootstrapApply.STALE -> return dropStaleBootstrap(epoch)
+                BootstrapApply.INVALID -> bootstrapFailed = true
             }
         } else {
             Log.warning("Bootstrap failed — using cached config")
+            bootstrapFailed = true
+        }
+        if (bootstrapFailed) {
+            // A failed bootstrap IS the degraded state (iOS `AppDNAInitError.bootstrapFailed`): the host is
+            // told through `onInitDegraded` / `lastInitError`, and the SDK keeps retrying it (below).
+            reportInitDegraded(AppDNAInitError.BootstrapFailed(
+                if (result == null) "no answer (offline, unreachable, timed out or rejected)" else "malformed answer"
+            ))
         }
 
         // Wire module namespaces (v1.0)
@@ -2285,6 +2229,161 @@ object AppDNA {
                 main.post(cb)
             }
         }
+
+        if (bootstrapFailed) startBootstrapRecovery(client, remoteCfg, tracker, epoch)
+    }
+
+    /** How applying a bootstrap answer ended. */
+    private enum class BootstrapApply { APPLIED, STALE, INVALID }
+
+    /**
+     * Apply a successful bootstrap answer: map keys, runtime lock, org / app ids, the Firestore path and the
+     * remote config fetch, the deferred deep-link manager, and the Firestore listeners of an identified
+     * user. The first bootstrap and a later recovery ([startBootstrapRecovery]) go through this one path,
+     * so a recovered session is the session a first-time success would have built. It does NOT mark the SDK
+     * ready, fire `onReady` or track `sdk_initialized`: the caller does that once per configure.
+     */
+    private fun applyBootstrapAnswer(
+        result: JSONObject,
+        remoteCfg: RemoteConfigManager,
+        tracker: EventTracker,
+        epoch: Int,
+    ): BootstrapApply {
+        try {
+            val orgId = result.optString("orgId", "").ifEmpty { throw IllegalArgumentException("Missing orgId") }
+            val appId = result.optString("appId", "").ifEmpty { throw IllegalArgumentException("Missing appId") }
+            val firestorePath = result.optString("firestorePath", "").ifEmpty { throw IllegalArgumentException("Missing firestorePath") }
+
+            Log.info("Bootstrap successful: orgId=$orgId, appId=$appId")
+
+            // SPEC-404 — reconcile runtime lock state. Fire delegate
+            // callbacks ONLY on state transitions (idle <-> locked), not
+            // on every bootstrap. Repeated bootstraps in the same state
+            // are a no-op for the delegate.
+            val newLock: Pair<String, String>? = result.optJSONObject("runtime_lock")?.let { lockObj ->
+                val reason = lockObj.optString("reason", "")
+                val lockedAt = lockObj.optString("locked_at", "")
+                if (reason.isNotEmpty() && lockedAt.isNotEmpty()) Pair(reason, lockedAt) else null
+            }
+            // SPEC-451 — the customer's own Mapbox token, absent when they have not set one up.
+            applyRemoteMapboxToken(
+                result.optJSONObject("settings")?.optString("mapboxToken", "")?.ifEmpty { null },
+            )
+            // SPEC-495 §B — same path, same ownership rules, for the Google provider.
+            applyRemoteGoogleMapsKey(
+                result.optJSONObject("settings")?.optString("googleMapsApiKey", "")?.ifEmpty { null },
+            )
+            // SPEC-495 — the engine those two keys select between, same delivery path.
+            applyRemoteMapProvider(
+                result.optJSONObject("settings")?.optString("mapProvider", "")?.ifEmpty { null },
+            )
+
+            val previousLock = runtimeLock
+            runtimeLock = newLock
+            if (previousLock == null && newLock != null) {
+                Log.warning("AppDNA runtime locked by backend (reason=${newLock.first}, locked_at=${newLock.second}) — pausing paywall/message/survey presentation")
+                lifecycleDelegate?.onSdkRuntimeLocked(newLock.first, newLock.second)
+            } else if (previousLock != null && newLock == null) {
+                Log.info("AppDNA runtime lock cleared — restoring normal SDK behaviour")
+                lifecycleDelegate?.onSdkRuntimeUnlocked()
+            }
+
+            synchronized(this@AppDNA) {
+                if (configureEpoch != epoch) return BootstrapApply.STALE
+                bootstrapOrgId = orgId
+                bootstrapAppId = appId
+
+                // Propagate the Firestore tenant scope into RemoteConfigManager.
+                // Without this assignment, fetchConfigs() always falls through
+                // to "No Firestore path available — serving cached config only"
+                // because the manager was constructed with a null path.
+                remoteCfg.setFirestorePath(firestorePath)
+
+                // v0.3: Create deferred deep link manager
+                appContext?.let { ctx ->
+                    deferredDeepLinkManager = DeferredDeepLinkManager(ctx, orgId, appId, tracker)
+                }
+
+                // Start web entitlement observer if user is already identified
+                identityManager?.currentIdentity?.userId?.let { userId ->
+                    webEntitlementManager?.startObserving(orgId, appId, userId)
+                    // SPEC-203: pending-messages listener when already identified.
+                    pendingMessageListener?.startObserving(orgId, appId, userId)
+                    // SPEC-497 R33: the Firestore entitlement listener — it never ran before, because
+                    // billing init sees no orgId. The user id is re-read under this lock; only when
+                    // the SDK owns transactions (the doc is written by AppDNA's own verification).
+                    billing.manager?.takeIf { it.ownsTransactions }?.entitlementCache
+                        ?.startObserving(orgId, appId, userId)
+                }
+            }
+
+            // Fetch Firestore configs
+            remoteCfg.fetchConfigs()
+            return BootstrapApply.APPLIED
+        } catch (e: Exception) {
+            Log.error("Bootstrap parse error: ${e.message}")
+            return BootstrapApply.INVALID
+        }
+    }
+
+    /** Test reader: the event queue the last `shutdown()` ended (its final upload attempt may still run). */
+    @Volatile internal var lastShutdownEventQueueForTest: EventQueue? = null
+
+    /** The retry loop of this configure's failed bootstrap; stopped by `shutdown()`. */
+    private var bootstrapRecovery: BootstrapRecovery? = null
+
+    /** Test seam: the backoff the next [BootstrapRecovery] uses (null: the default schedule). */
+    @Volatile internal var bootstrapRetryBackoffForTest: ((Int) -> Long)? = null
+    /** Test seam: whether the next [BootstrapRecovery] sees a network (null: the connectivity monitor). */
+    @Volatile internal var bootstrapRetryOnlineForTest: (() -> Boolean)? = null
+    /** Test reader: bootstrap recoveries applied since the process started. */
+    private val bootstrapsRecovered = java.util.concurrent.atomic.AtomicInteger(0)
+    internal fun bootstrapsRecoveredForTest(): Int = bootstrapsRecovered.get()
+    internal fun bootstrapRecoveryForTest(): BootstrapRecovery? = synchronized(this) { bootstrapRecovery }
+
+    /**
+     * The bootstrap of configure [epoch] failed: keep trying it ([BootstrapRecovery] — when the network comes
+     * back, on foreground, and after a bounded backoff). The first answer that applies is applied exactly as a
+     * first-time success ([applyBootstrapAnswer]); the SDK is already ready, so `onReady` does not fire again
+     * and `sdk_initialized` is not tracked again. `lastInitError` returns to null if the failed bootstrap is
+     * still what it holds. An attempt for a configure that has ended (`shutdown()`, a later `configure()`)
+     * applies nothing and ends the loop.
+     */
+    private fun startBootstrapRecovery(client: ApiClient, remoteCfg: RemoteConfigManager, tracker: EventTracker, epoch: Int) {
+        val monitor = connectivityMonitor
+        val online = bootstrapRetryOnlineForTest ?: { monitor?.isConnected ?: true }
+        val backoff = bootstrapRetryBackoffForTest ?: BootstrapRecovery::defaultBackoffMs
+        val recovery = BootstrapRecovery(isOnline = online, backoffMs = backoff)
+        synchronized(this) {
+            if (configureEpoch != epoch) return
+            bootstrapRecovery?.stop()
+            bootstrapRecovery = recovery
+        }
+        monitor?.onConnectivityRegained = { recovery.trigger() }
+        recovery.start(scope) {
+            if (!isCurrentConfigure(epoch)) return@start true
+            val answer = try { client.getWithRetry("/api/v1/sdk/bootstrap") } catch (e: Exception) {
+                Log.debug("Bootstrap retry failed: ${e.message}"); null
+            }
+            if (!isCurrentConfigure(epoch)) return@start true
+            if (answer == null) return@start false
+            when (applyBootstrapAnswer(answer, remoteCfg, tracker, epoch)) {
+                BootstrapApply.STALE -> true
+                BootstrapApply.INVALID -> false
+                BootstrapApply.APPLIED -> {
+                    synchronized(this@AppDNA) {
+                        if (lastInitError is AppDNAInitError.BootstrapFailed) lastInitError = null
+                        if (bootstrapRecovery === recovery) bootstrapRecovery = null
+                    }
+                    monitor?.onConnectivityRegained = null
+                    recovery.stop()
+                    bootstrapsRecovered.incrementAndGet()
+                    Log.info("Bootstrap recovered — Firestore config and listeners are live")
+                    true
+                }
+            }
+        }
+        recovery.observeForeground()
     }
 
     // MARK: - Config Bundle (v1.0 offline-first)
@@ -2538,12 +2637,19 @@ object AppDNA {
             // First, before anything below can throw: this ends the current configure's generation, so a
             // bootstrap still running for it is stale from here on (see [configureEpoch]).
             configureEpoch += 1
+            // A failed bootstrap's retry loop belongs to the configure that just ended.
+            bootstrapRecovery?.stop()
+            bootstrapRecovery = null
+            // The queue's final upload attempt owns the event database from here: when it has finished it
+            // schedules the WorkManager upload for what is left and closes the database (EventQueue.shutdown).
+            val queueOwnsDatabase = eventQueue != null
             eventQueue?.shutdown()
-            // SPEC-067: Schedule background upload for remaining events
+            // SPEC-067: Schedule background upload for remaining events — here only when there is no queue
+            // (a configure that failed before building it); otherwise the queue does it after its attempt.
             val ctx = appContext
             val key = apiKey
             val db = eventDatabase
-            if (ctx != null && key != null && db != null) {
+            if (!queueOwnsDatabase && ctx != null && key != null && db != null) {
                 // 🔴 SPEC-070-B W13 — this was UNGUARDED, while the identical call in `configure()`
                 // (the `bgScheduler` lambda) is wrapped. `WorkManager.getInstance()` THROWS
                 // `IllegalStateException` in any app that disables `WorkManagerInitializer` — a
@@ -2629,7 +2735,10 @@ object AppDNA {
             // SPEC-070-A H.24: close the SQLite handle. EventDatabase extends
             // SQLiteOpenHelper, so close() releases the underlying db file
             // without losing pending rows (they live on disk until uploaded).
-            try { eventDatabase?.close() } catch (_: Throwable) {}
+            // Not while the queue's final upload attempt may still use it: that attempt closes it when done.
+            if (!queueOwnsDatabase) {
+                try { eventDatabase?.close() } catch (_: Throwable) {}
+            }
 
             scope.cancel()
 
@@ -2637,6 +2746,7 @@ object AppDNA {
             // refs so a subsequent `configure()` doesn't leak the prior
             // EventTracker/SessionManager/etc. iOS does the equivalent via
             // ARC (`shared.eventTracker = nil` etc. at AppDNA.swift:1126).
+            lastShutdownEventQueueForTest = eventQueue
             eventQueue = null
             eventTracker = null
             eventDatabase = null

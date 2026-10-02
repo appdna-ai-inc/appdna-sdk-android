@@ -53,10 +53,29 @@ Wraps iOS 1.0.82. Ships maps and host data (including "Show more").
 - **Event uploads during an outage.** After 5 consecutive upload failures the queue pauses, but every
   `track()` that filled a batch cleared the pause again and ran a full upload cycle (one attempt and up
   to three retries). Now only the app coming to the foreground and `AppDNA.flush()` clear the pause, as on
-  iOS; the batch threshold, the interval timer, backgrounding and `shutdown()` keep it.
+  iOS; the batch threshold, the interval timer, backgrounding and `shutdown()` keep it. The pause now also
+  holds for the WorkManager upload: backgrounding a paused app schedules none, and one that runs while paused
+  uploads nothing (the pause is persisted, so a run in a fresh process sees it); before, backgrounding
+  started exactly the uploads the pause stops.
 - `AppDNA.shutdown()` now makes one last attempt to upload the queued events, as iOS does. Before, it only
-  scheduled the background upload. Events the attempt cannot send stay on the device for that background
-  upload and the next `configure()`.
+  scheduled the background upload. When the attempt has finished, the events it did not send are handed to
+  the background upload, which sends every remaining batch; they also stay on the device for the next
+  `configure()`. The background upload no longer gives up when another upload is running (it ran during the
+  attempt, found it running and ended without sending anything — the rest waited for the next
+  `configure()`): it retries after WorkManager's backoff. It also used to send one batch of 100 per run.
+- `AppDNA.shutdown()` no longer closes the event database under that last attempt, which reopened it (a
+  connection left open on every shutdown — every React Native reload) or failed to remove the events it had
+  sent, so they were sent again. The attempt closes the database when it has finished.
+- After `shutdown()` and a new `configure()`, the new session no longer sends again the events the old
+  session's last upload delivered, and no upload sends an event another upload already delivered.
+- **A failed bootstrap no longer lasts the whole session.** When the bootstrap request fails (for example,
+  the app starts offline), the SDK still becomes ready on cached and bundled config, now reports
+  `AppDNAInitError.BootstrapFailed` through `onInitDegraded` / `lastInitError` (as iOS does), and retries the
+  bootstrap: when the network comes back, when the app comes to the foreground, and otherwise after 5 s,
+  doubling to 5 min — at most 10 retries per `configure()`, none while offline. A retry that succeeds is
+  applied as a first success would be: remote config is fetched, the Firestore listeners of a signed-in user
+  start, the runtime lock applies, and `lastInitError` returns to `null`; `onReady` does not fire again.
+  Before, the SDK stayed on cached config, without listeners, until the next `configure()`.
 - A `shutdown()` that landed after the bootstrap response had arrived but before `configure` finished (for
   example from the runtime-lock delegate) left the SDK marked ready: `onReady` fired, and every later
   `configure()` was ignored as "called multiple times" until the app restarted. After `shutdown()` and a new

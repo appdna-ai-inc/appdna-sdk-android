@@ -30,6 +30,8 @@ internal class TestHttpServer(
     private val server = ServerSocket(0, 50, InetAddress.getLoopbackAddress())
     val baseUrl: String = "http://127.0.0.1:${server.localPort}"
     val requests: MutableList<Pair<String, String>> = Collections.synchronizedList(mutableListOf())
+    /** Every request's body as sent (`requests` decodes it as UTF-8, which a deflated body does not survive). */
+    val rawBodies: MutableList<Pair<String, ByteArray>> = Collections.synchronizedList(mutableListOf())
     val requestSeen = CountDownLatch(1)
     val connectionClosedByClient = CountDownLatch(1)
     private val sockets = Collections.synchronizedList(mutableListOf<Socket>())
@@ -70,6 +72,7 @@ internal class TestHttpServer(
                 val parts = requestLine.split(" ")
                 val path = parts.getOrElse(1) { "" }
                 val body = String(bodyBytes, Charsets.UTF_8)
+                rawBodies += path to bodyBytes
                 requests += "${parts[0]} $path" to body
                 requestSeen.countDown()
                 val answer = respond(path, body)

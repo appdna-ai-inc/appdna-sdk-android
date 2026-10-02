@@ -43,6 +43,8 @@ internal class EventQueue(
     /** The one final upload attempt [shutdown] makes, after [scope] is cancelled. */
     private val shutdownFlushScope = CoroutineScope(Dispatchers.IO + SupervisorJob())
     private var flushJob: Job? = null
+    /** Counts down when the final flush [shutdown] starts has finished, scheduled and closed the database. */
+    internal val shutdownFlushDone = java.util.concurrent.CountDownLatch(1)
 
     /** SPEC-070-A A.16: Track in-flight retry/backoff state. */
     private val flushMutex = Mutex()
@@ -61,6 +63,8 @@ internal class EventQueue(
         get() = connectivityMonitor?.adaptiveBatchSize ?: batchSize
 
     init {
+        // A new queue (a new `configure()`) starts unpaused; so does the gate the background uploader reads.
+        UploadPauseGate.set(context, false)
         // Load persisted events from SQLite
         val stored = eventDatabase.loadAll()
         for (json in stored) {
@@ -159,6 +163,7 @@ internal class EventQueue(
         if (trigger.clearsPauseGate) {
             paused = false
             consecutiveFailures = 0
+            UploadPauseGate.set(context, false)
         }
         flushMutex.withLock { performFlushLocked(maxRetries) }
     }
@@ -185,8 +190,13 @@ internal class EventQueue(
     internal fun onAppBackground() {
         scope.launch {
             runFlush(FlushTrigger.BACKGROUND)
-            // Even if some events remain, hand off to WorkManager so they upload while suspended.
-            backgroundUploadScheduler?.scheduleIfNeeded()
+            // Even if some events remain, hand off to WorkManager so they upload while suspended — unless the
+            // queue is paused: backgrounding keeps the pause, and a background upload would bypass it.
+            if (paused) {
+                Log.debug("Uploads paused — no background upload scheduled until the next foreground / AppDNA.flush()")
+            } else {
+                backgroundUploadScheduler?.scheduleIfNeeded()
+            }
         }
     }
 
@@ -231,6 +241,15 @@ internal class EventQueue(
             return
         }
         try {
+        // Events another upload owner already resolved — the WorkManager uploader, or the final flush of a
+        // queue that `shutdown()` ended while this one loaded the same rows from SQLite — are not sent
+        // again: that owner removed them from disk, but this queue still holds its in-memory copies.
+        val resolvedElsewhere = queue.filter { EventUploadCoordinator.wasResolved(it.optString("event_id")) }
+        if (resolvedElsewhere.isNotEmpty()) {
+            queue.removeAll(resolvedElsewhere.toSet())
+            Log.debug("Skipped ${resolvedElsewhere.size} event(s) another upload already delivered")
+        }
+        if (queue.isEmpty()) return
 
         val takeCount = currentBatchSize.coerceAtMost(queue.size)
         val batch = ArrayList(queue.take(takeCount))
@@ -248,11 +267,16 @@ internal class EventQueue(
         // initial + up to MAX_RETRIES retries; backoff [1s, 2s, 4s] with ±25% jitter.
         var attempt = 0
         while (attempt <= maxRetries) {
-            val result = apiClient.postEventsBatch("/api/v1/ingest/events", body)
+            // NonCancellable: `shutdown()` cancels [scope] while a flush's request may be in flight. The
+            // request is blocking and completes anyway; a cancellable call then threw on return, so a batch
+            // the server had accepted was neither removed from memory nor from SQLite, and the final flush
+            // sent it again. The answer is always applied.
+            val result = withContext(NonCancellable) { apiClient.postEventsBatch("/api/v1/ingest/events", body) }
             when (result) {
                 is EventUploadResult.Success -> {
                     queue.removeAll(batch.toSet())
                     eventDatabase.removeByEventIds(batchEventIds)
+                    EventUploadCoordinator.markResolved(batchEventIds)
                     consecutiveFailures = 0
                     Log.debug("Flushed ${batch.size} events (deflate compressed)")
                     return
@@ -275,6 +299,7 @@ internal class EventQueue(
                     if (loss > 0) DroppedEventsCounter.increment(loss)
                     queue.removeAll(batch.toSet())
                     eventDatabase.removeByEventIds(batchEventIds)
+                    EventUploadCoordinator.markResolved(batchEventIds)
                     // 4xx is a permanent failure, not a transient one — count toward pause
                     bumpFailureCounter()
                     return
@@ -307,6 +332,7 @@ internal class EventQueue(
         consecutiveFailures++
         if (consecutiveFailures >= MAX_CONSECUTIVE_FAILURES) {
             paused = true
+            UploadPauseGate.set(context, true)
             Log.warning("Too many consecutive flush failures ($consecutiveFailures). Event uploads paused until next foreground/manual flush.")
         }
     }
@@ -365,12 +391,25 @@ internal class EventQueue(
         try { scope.cancel() } catch (_: Throwable) {}
         // One last upload attempt of the queued events — the same one attempt iOS makes in
         // `AppDNA.shutdown()` — outside the cancelled scope, with no retry backoff, so it ends with its
-        // one request (bounded by the client's call timeout). It keeps the failure pause and the
-        // single-upload claim; whatever it does not send stays in SQLite for the WorkManager upload
-        // `AppDNA.shutdown()` schedules and for the next `configure`.
+        // one request (bounded by the client's call timeout). It keeps the failure pause and holds the
+        // single-upload claim while it runs. When it has finished — the claim released — it hands what is
+        // left in SQLite to the WorkManager uploader, and only then closes the database: this attempt owns
+        // the handle after `shutdown()`. Scheduling the worker earlier (at `shutdown()`) let it run while
+        // the claim was still held; it skipped, and the rest waited for the next `configure`. Closing the
+        // database earlier made this attempt reopen it (a connection nobody closed) or fail its removal
+        // (the batch was then sent again).
         shutdownFlushScope.launch {
-            try { runFlush(FlushTrigger.SHUTDOWN, maxRetries = 0) } catch (e: Throwable) {
+            try {
+                runFlush(FlushTrigger.SHUTDOWN, maxRetries = 0)
+            } catch (e: Throwable) {
                 Log.debug("Final flush on shutdown failed: ${e.message}")
+            } finally {
+                // Not while paused: the pause holds until a foreground or `AppDNA.flush()` (the next session's).
+                if (!paused) try { backgroundUploadScheduler?.scheduleIfNeeded() } catch (e: Throwable) {
+                    Log.warning("Background upload schedule after the final flush failed: ${e.message}")
+                }
+                try { eventDatabase.close() } catch (_: Throwable) {}
+                shutdownFlushDone.countDown()
             }
         }
         // Detach lifecycle observer (must run on main thread).
@@ -387,6 +426,20 @@ internal class EventQueue(
         }
         // Events are already persisted to SQLite on enqueue
     }
+
+    /** Test seam: the state after [MAX_CONSECUTIVE_FAILURES] failed cycles (the pause, and its persisted gate). */
+    internal fun pauseForTest() {
+        consecutiveFailures = MAX_CONSECUTIVE_FAILURES
+        paused = true
+        UploadPauseGate.set(context, true)
+    }
+
+    /** Test reader: the database this queue persists to (and closes after its final flush). */
+    internal val eventDatabaseForTest: EventDatabase get() = eventDatabase
+
+    /** Test seam: wait for the final flush [shutdown] started. True when it has finished. */
+    internal fun awaitShutdownFlush(timeoutMs: Long): Boolean =
+        shutdownFlushDone.await(timeoutMs, java.util.concurrent.TimeUnit.MILLISECONDS)
 
     companion object {
         /**
@@ -451,4 +504,32 @@ internal object EventUploadCoordinator {
     private val uploading = java.util.concurrent.atomic.AtomicBoolean(false)
     fun tryAcquire(): Boolean = uploading.compareAndSet(false, true)
     fun release() { uploading.set(false) }
+
+    /**
+     * The `event_id`s an upload owner resolved (delivered, or dropped on a 4xx) in this process, most
+     * recent [MAX_RESOLVED]. The claim stops two owners POSTing at once, not one owner re-sending what
+     * the other has already sent: a queue holds in-memory copies of the rows it loaded from SQLite, and
+     * the WorkManager uploader — or the final flush of a queue `shutdown()` ended, while the next
+     * `configure()`'s queue loaded the same rows — removes them from disk only. Every owner records what
+     * it resolved here, while it holds the claim; a queue drops those from memory before it uploads.
+     */
+    const val MAX_RESOLVED = 10_000
+    private val resolved = LinkedHashSet<String>()
+
+    @Synchronized
+    fun markResolved(eventIds: Collection<String>) {
+        for (id in eventIds) {
+            if (id.isEmpty()) continue
+            resolved.remove(id)
+            resolved.add(id)
+        }
+        val it = resolved.iterator()
+        while (resolved.size > MAX_RESOLVED && it.hasNext()) { it.next(); it.remove() }
+    }
+
+    @Synchronized
+    fun wasResolved(eventId: String): Boolean = eventId.isNotEmpty() && eventId in resolved
+
+    @Synchronized
+    internal fun clearResolvedForTest() = resolved.clear()
 }

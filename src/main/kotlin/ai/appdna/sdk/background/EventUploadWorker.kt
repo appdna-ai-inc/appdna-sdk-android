@@ -37,119 +37,153 @@ internal class EventUploadWorker(
         }
     }
 
-    private suspend fun doUploadInner(eventDatabase: EventDatabase): Result {
-        // SPEC-428 CL-9/D4: single upload owner — if the in-process flush holds the claim, skip so
-        // the same rows are never POSTed by both paths. Released in the finally below.
-        if (!ai.appdna.sdk.events.EventUploadCoordinator.tryAcquire()) {
-            Log.debug("Background upload skipped — in-process flush is active")
-            return Result.success()
-        }
-        try {
-        val pendingCount = eventDatabase.count()
-        if (pendingCount == 0) {
-            Log.debug("No pending events for background upload")
-            return Result.success()
-        }
-
-        // SPEC-428 CL-2/D5: WorkManager can run hours/days after the events were queued — prune past the
-        // redelivery horizon BEFORE upload so a stale event isn't re-sent past the server dedup window
-        // (double-count). The in-process EventQueue prunes too; the store method covers both paths.
-        eventDatabase.pruneStale(ai.appdna.sdk.storage.EventDatabase.REDELIVERY_HORIZON_MS)
-
-        // Load a batch from SQLite
-        val batch = eventDatabase.loadBatch(100)
-        if (batch.isEmpty()) {
-            return Result.success()
-        }
-
-        // Build batch JSON
-        val batchArray = JSONArray()
-        for ((_, eventJson) in batch) {
-            try {
-                batchArray.put(JSONObject(eventJson))
-            } catch (_: Exception) {}
-        }
-
-        val body = JSONObject().apply {
-            put("batch", batchArray)
-        }.toString()
-
-        // SPEC-070-A A.15: Compress with deflate (parity with iOS APIClient.deflateCompress)
-        val compressed = ApiClient.deflateCompress(body.toByteArray(Charsets.UTF_8))
-        Log.debug("Background upload: ${batch.size} events, ${body.length} → ${compressed.size} bytes")
-
-        // SPEC-070-A A.1 + A.12b: API key required; baseUrl required (no host fallback).
-        val apiKey = inputData.getString(KEY_API_KEY) ?: run {
-            Log.error("Background upload: missing API key — refusing to upload")
-            return Result.failure()
-        }
-        val baseUrl = inputData.getString(KEY_BASE_URL) ?: run {
-            Log.error("Background upload: missing baseUrl input data — refusing to upload (set KEY_BASE_URL via scheduleIfNeeded)")
-            return Result.failure()
-        }
-
-        try {
-            val client = okhttp3.OkHttpClient.Builder()
-                .connectTimeout(10, TimeUnit.SECONDS)
-                .readTimeout(30, TimeUnit.SECONDS)
-                .build()
-
-            val request = okhttp3.Request.Builder()
-                .url("$baseUrl/api/v1/ingest/events")
-                .header("x-api-key", apiKey) // SPEC-070-A A.1
-                .header("Content-Type", "application/json")
-                .header("Content-Encoding", "deflate") // SPEC-070-A A.15
-                .header("Accept-Encoding", "gzip, deflate")
-                .post(compressed.toRequestBody("application/json".toMediaType()))
-                .build()
-
-            client.newCall(request).execute().use { response ->
-                val code = response.code
-                if (response.isSuccessful) {
-                    eventDatabase.removeByIds(batch.map { it.first })
-                    Log.info("Background upload successful: ${batch.size} events")
-
-                    val remaining = eventDatabase.count()
-                    if (remaining > 0) {
-                        Log.debug("$remaining events still pending after background upload")
-                    }
-
-                    return Result.success()
-                } else if (code == 429 || code in 500..599) {
-                    Log.warning("Background upload transient failure (HTTP $code) — will retry")
-                    return Result.retry()
-                } else if (code in 400..499) {
-                    Log.error("Background upload rejected (HTTP $code) — dropping batch (retry won't help)")
-                    // SPEC-428 D2/STEP-4: the WHOLE dropped batch is a loss — count EVERY normal event (+1)
-                    // AND re-add any _sdk_events_dropped meta's carried N, so nothing is silently lost on a
-                    // background 4xx drop. A FRESH meta re-emits the total later. Mirrors EventQueue.
-                    var loss = 0
-                    for ((_, json) in batch) {
-                        runCatching {
-                            val obj = org.json.JSONObject(json)
-                            loss += if (obj.optString("event_name") == "_sdk_events_dropped")
-                                obj.optJSONObject("properties")?.optInt("count", 0) ?: 0
-                            else 1
-                        }
-                    }
-                    if (loss > 0) ai.appdna.sdk.events.DroppedEventsCounter.increment(loss)
-                    eventDatabase.removeByIds(batch.map { it.first })
-                    return Result.failure()
-                } else {
-                    Log.warning("Background upload unexpected status (HTTP $code) — will retry")
-                    return Result.retry()
-                }
-            }
-        } catch (e: Exception) {
-            Log.error("Background upload error: ${e.message}")
-            return Result.retry()
-        }
-        } finally {
-            ai.appdna.sdk.events.EventUploadCoordinator.release() // SPEC-428 CL-9
+    private fun doUploadInner(eventDatabase: EventDatabase): Result {
+        val apiKey = inputData.getString(KEY_API_KEY)
+        val baseUrl = inputData.getString(KEY_BASE_URL)
+        val paused = ai.appdna.sdk.events.UploadPauseGate.isPaused(applicationContext)
+        return when (uploadPending(eventDatabase, apiKey, baseUrl, paused)) {
+            Outcome.DONE -> Result.success()
+            Outcome.RETRY -> Result.retry()
+            Outcome.FAILED -> Result.failure()
         }
     }
 
+    /** What one run of the uploader came to; [doWork] maps it to a WorkManager `Result`. */
+    internal enum class Outcome { DONE, RETRY, FAILED }
+
     companion object {
+        /** Batches one run uploads at most (100 events each) before it hands the rest to a new run. */
+        internal const val MAX_BATCHES_PER_RUN = 50
+        private const val BATCH_SIZE = 100
+
+        /**
+         * One run: upload every pending event, batch by batch, until none is left.
+         *
+         * When another owner holds the process-wide upload claim (the in-process flush — e.g. the final
+         * attempt `AppDNA.shutdown()` makes), this run answers [Outcome.RETRY], so WorkManager runs it again
+         * after its backoff. It used to answer success and do nothing; what the other owner did not send then
+         * waited for the next `configure()`. A run also used to send ONE batch and succeed with the rest
+         * still queued.
+         */
+        internal fun uploadPending(eventDatabase: EventDatabase, apiKey: String?, baseUrl: String?, paused: Boolean = false): Outcome {
+            // The queue's failure pause holds for this uploader too ([ai.appdna.sdk.events.UploadPauseGate]): a
+            // paused app uploads nothing until a foreground or `AppDNA.flush()`. Done, not retried — retrying
+            // would only poll the pause; the next foreground flushes, and backgrounding schedules a fresh run.
+            if (paused) {
+                Log.debug("Background upload skipped — uploads are paused after repeated failures")
+                return Outcome.DONE
+            }
+            // SPEC-428 CL-9/D4: single upload owner — never POST the rows the in-process flush is sending.
+            if (!ai.appdna.sdk.events.EventUploadCoordinator.tryAcquire()) {
+                Log.debug("Background upload deferred — another upload is active; retrying after backoff")
+                return Outcome.RETRY
+            }
+            try {
+                if (eventDatabase.count() == 0) {
+                    Log.debug("No pending events for background upload")
+                    return Outcome.DONE
+                }
+                // SPEC-070-A A.1 + A.12b: API key required; baseUrl required (no host fallback).
+                if (apiKey == null) {
+                    Log.error("Background upload: missing API key — refusing to upload")
+                    return Outcome.FAILED
+                }
+                if (baseUrl == null) {
+                    Log.error("Background upload: missing baseUrl input data — refusing to upload (set KEY_BASE_URL via scheduleIfNeeded)")
+                    return Outcome.FAILED
+                }
+                // SPEC-428 CL-2/D5: WorkManager can run hours/days after the events were queued — prune past
+                // the redelivery horizon BEFORE upload so a stale event isn't re-sent past the server dedup
+                // window (double-count). The in-process EventQueue prunes too; the store method covers both.
+                eventDatabase.pruneStale(EventDatabase.REDELIVERY_HORIZON_MS)
+                val client = okhttp3.OkHttpClient.Builder()
+                    .connectTimeout(10, TimeUnit.SECONDS)
+                    .readTimeout(30, TimeUnit.SECONDS)
+                    .build()
+                repeat(MAX_BATCHES_PER_RUN) {
+                    val batch = eventDatabase.loadBatch(BATCH_SIZE)
+                    if (batch.isEmpty()) return Outcome.DONE
+                    when (val o = uploadBatch(client, eventDatabase, batch, apiKey, baseUrl)) {
+                        null -> Unit // sent (or dropped on a 4xx); next batch
+                        else -> return o
+                    }
+                }
+                // More than one run's worth: a fresh run takes the rest.
+                return if (eventDatabase.count() > 0) Outcome.RETRY else Outcome.DONE
+            } finally {
+                ai.appdna.sdk.events.EventUploadCoordinator.release() // SPEC-428 CL-9
+            }
+        }
+
+        /** Upload one batch. Null: resolved (sent, or dropped on a permanent 4xx) — go on; else the run's outcome. */
+        private fun uploadBatch(
+            client: okhttp3.OkHttpClient,
+            eventDatabase: EventDatabase,
+            batch: List<Pair<Long, String>>,
+            apiKey: String,
+            baseUrl: String,
+        ): Outcome? {
+            val batchArray = JSONArray()
+            val eventIds = mutableListOf<String>()
+            for ((_, eventJson) in batch) {
+                try {
+                    val obj = JSONObject(eventJson)
+                    batchArray.put(obj)
+                    obj.optString("event_id").takeIf { it.isNotEmpty() }?.let { eventIds += it }
+                } catch (_: Exception) {}
+            }
+            val body = JSONObject().apply { put("batch", batchArray) }.toString()
+            // SPEC-070-A A.15: Compress with deflate (parity with iOS APIClient.deflateCompress)
+            val compressed = ApiClient.deflateCompress(body.toByteArray(Charsets.UTF_8))
+            Log.debug("Background upload: ${batch.size} events, ${body.length} → ${compressed.size} bytes")
+            return try {
+                val request = okhttp3.Request.Builder()
+                    .url("$baseUrl/api/v1/ingest/events")
+                    .header("x-api-key", apiKey) // SPEC-070-A A.1
+                    .header("Content-Type", "application/json")
+                    .header("Content-Encoding", "deflate") // SPEC-070-A A.15
+                    .header("Accept-Encoding", "gzip, deflate")
+                    .post(compressed.toRequestBody("application/json".toMediaType()))
+                    .build()
+                client.newCall(request).execute().use { response ->
+                    val code = response.code
+                    if (response.isSuccessful) {
+                        eventDatabase.removeByIds(batch.map { it.first })
+                        ai.appdna.sdk.events.EventUploadCoordinator.markResolved(eventIds)
+                        Log.info("Background upload successful: ${batch.size} events")
+                        null
+                    } else if (code == 429 || code in 500..599) {
+                        Log.warning("Background upload transient failure (HTTP $code) — will retry")
+                        Outcome.RETRY
+                    } else if (code in 400..499) {
+                        Log.error("Background upload rejected (HTTP $code) — dropping batch (retry won't help)")
+                        // SPEC-428 D2/STEP-4: the WHOLE dropped batch is a loss — count EVERY normal event (+1)
+                        // AND re-add any _sdk_events_dropped meta's carried N, so nothing is silently lost on a
+                        // background 4xx drop. A FRESH meta re-emits the total later. Mirrors EventQueue.
+                        var loss = 0
+                        for ((_, json) in batch) {
+                            runCatching {
+                                val obj = JSONObject(json)
+                                loss += if (obj.optString("event_name") == "_sdk_events_dropped")
+                                    obj.optJSONObject("properties")?.optInt("count", 0) ?: 0
+                                else 1
+                            }
+                        }
+                        if (loss > 0) ai.appdna.sdk.events.DroppedEventsCounter.increment(loss)
+                        eventDatabase.removeByIds(batch.map { it.first })
+                        ai.appdna.sdk.events.EventUploadCoordinator.markResolved(eventIds)
+                        Outcome.FAILED
+                    } else {
+                        Log.warning("Background upload unexpected status (HTTP $code) — will retry")
+                        Outcome.RETRY
+                    }
+                }
+            } catch (e: Exception) {
+                Log.error("Background upload error: ${e.message}")
+                Outcome.RETRY
+            }
+        }
+
         const val KEY_API_KEY = "api_key"
         const val KEY_BASE_URL = "base_url"
         private const val UNIQUE_WORK_NAME = "ai.appdna.sdk.eventUpload"

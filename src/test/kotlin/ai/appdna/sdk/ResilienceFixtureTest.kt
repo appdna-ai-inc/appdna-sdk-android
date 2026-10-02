@@ -1,6 +1,7 @@
 package ai.appdna.sdk
 
 import ai.appdna.sdk.events.EventQueue
+import ai.appdna.sdk.events.EventUploadCoordinator
 import ai.appdna.sdk.network.ApiClient
 import ai.appdna.sdk.network.EventUploadDisposition
 import ai.appdna.sdk.storage.EventDatabase
@@ -212,6 +213,98 @@ class ResilienceFixtureTest {
                         )
                     }
                     assertEquals("[$id] the table must name every FlushTrigger", EventQueue.FlushTrigger.values().toSet(), named)
+
+                    // The pause holds for the OS background uploader: drives the real `onAppBackground` of a real
+                    // queue (paused / not) and the real `EventUploadWorker.uploadPending` with the gate it reads.
+                    val os = block.getJSONObject("os_upload")
+                    val ctx = androidx.test.core.app.ApplicationProvider.getApplicationContext<android.content.Context>()
+                    for (paused in listOf(true, false)) {
+                        val scheduled = java.util.concurrent.atomic.AtomicInteger(0)
+                        val db = EventDatabase(ctx, 10_000, "pause_os_${System.nanoTime()}.db")
+                        val q = EventQueue(
+                            ApiClient("adn_test_pause_os", "http://127.0.0.1:9"), db, null, 100, Long.MAX_VALUE, ctx,
+                            object : ai.appdna.sdk.events.BackgroundUploadScheduler {
+                                override fun scheduleIfNeeded() { scheduled.incrementAndGet() }
+                            },
+                        )
+                        if (paused) q.pauseForTest()
+                        q.onAppBackground()
+                        val deadline = System.currentTimeMillis() + 2_000
+                        while (System.currentTimeMillis() < deadline && scheduled.get() == 0) Thread.sleep(20)
+                        assertEquals("[$id] does backgrounding schedule the background upload (paused=$paused)?",
+                            os.getBoolean(if (paused) "background_schedules_when_paused" else "background_schedules_when_unpaused"),
+                            scheduled.get() > 0)
+                        db.insertEvent(JSONObject().put("event_id", "os-${System.nanoTime()}").put("event_name", "e")
+                            .put("ts_ms", System.currentTimeMillis()).toString())
+                        val outcome = ai.appdna.sdk.background.EventUploadWorker.uploadPending(
+                            db, "adn_test_pause_os", "http://127.0.0.1:9",
+                            ai.appdna.sdk.events.UploadPauseGate.isPaused(ctx),
+                        )
+                        // Paused: done at once, the event untouched. Not paused: it tries (the closed port → retry).
+                        val uploaded = outcome != ai.appdna.sdk.background.EventUploadWorker.Outcome.DONE
+                        assertEquals("[$id] does a background run upload (paused=$paused)?",
+                            os.getBoolean(if (paused) "worker_uploads_when_paused" else "worker_uploads_when_unpaused"),
+                            uploaded)
+                        assertEquals(1, db.count())
+                        db.clearAll()
+                        q.shutdown()
+                        q.awaitShutdownFlush(10_000)
+                    }
+                    ai.appdna.sdk.events.UploadPauseGate.set(ctx, false)
+                }
+
+                // The retry loop of a failed bootstrap: its backoff schedule and bound, and — driving the real
+                // `BootstrapRecovery` with a long backoff, so only a trigger can start an attempt — that an
+                // attempt is made only for a trigger while online.
+                "bootstrap_recovery" -> {
+                    assertEquals("[$id] max_attempts", block.getInt("max_attempts"), BootstrapRecovery.DEFAULT_MAX_ATTEMPTS)
+                    for (i in 0 until cases.length()) {
+                        val c = cases.getJSONObject(i)
+                        if (c.has("attempt_index")) {
+                            val index = c.getInt("attempt_index")
+                            assertEquals("[$id] backoff before attempt ${index + 1}", c.getLong("backoff_ms"),
+                                BootstrapRecovery.defaultBackoffMs(index))
+                        } else {
+                            val online = c.getBoolean("online")
+                            val triggered = c.getBoolean("triggered")
+                            val want = c.getInt("attempts_made")
+                            val made = java.util.concurrent.atomic.AtomicInteger(0)
+                            val scope = kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.Default)
+                            val recovery = BootstrapRecovery(isOnline = { online }, backoffMs = { 3_600_000L })
+                            recovery.start(scope) { made.incrementAndGet(); true }
+                            if (triggered) recovery.trigger()
+                            val deadline = System.currentTimeMillis() + 500
+                            while (System.currentTimeMillis() < deadline && made.get() < maxOf(want, 1)) Thread.sleep(20)
+                            Thread.sleep(100)
+                            recovery.stop()
+                            scope.coroutineContext[kotlinx.coroutines.Job]?.cancel()
+                            assertEquals("[$id] attempts with online=$online triggered=$triggered", want, made.get())
+                        }
+                    }
+                }
+
+                // The process-wide registry every upload owner records its resolved event ids in (and a queue
+                // consults before it uploads). Drives the real `EventUploadCoordinator`; cases run in order.
+                "resolved_events_not_resent" -> {
+                    assertEquals("[$id] max_resolved", block.getInt("max_resolved"), EventUploadCoordinator.MAX_RESOLVED)
+                    EventUploadCoordinator.clearResolvedForTest()
+                    try {
+                        for (i in 0 until cases.length()) {
+                            val c = cases.getJSONObject(i)
+                            val mark = c.optJSONArray("mark")
+                            EventUploadCoordinator.markResolved((0 until (mark?.length() ?: 0)).map { mark!!.getString(it) })
+                            assertEquals("[$id] is '${c.getString("query")}' resolved?", c.getBoolean("resolved"),
+                                EventUploadCoordinator.wasResolved(c.getString("query")))
+                        }
+                        // The bound: the oldest id leaves once max_resolved newer ones are recorded.
+                        val max = block.getInt("max_resolved")
+                        EventUploadCoordinator.clearResolvedForTest()
+                        EventUploadCoordinator.markResolved((0..max).map { "bound-$it" })
+                        assertTrue("[$id] the registry is not bounded", !EventUploadCoordinator.wasResolved("bound-0"))
+                        assertTrue(EventUploadCoordinator.wasResolved("bound-$max"))
+                    } finally {
+                        EventUploadCoordinator.clearResolvedForTest()
+                    }
                 }
 
                 else -> fail("[$id] unknown resilience contract '$contract' — this runner must assert it, never skip it")
@@ -222,7 +315,8 @@ class ResilienceFixtureTest {
         // and this suite would still go green on the survivors.
         assertEquals(
             "every resilience contract must be covered by a fixture",
-            setOf("transient_status", "retry_after", "stale_horizon", "permanent_failure", "backoff", "flush_pause_gate"),
+            setOf("transient_status", "retry_after", "stale_horizon", "permanent_failure", "backoff", "flush_pause_gate",
+                "bootstrap_recovery", "resolved_events_not_resent"),
             seenContracts,
         )
     }
