@@ -65,6 +65,9 @@ class RuntimeSettingsBootstrapTest {
         AppDNA.lastInitError = null
         BatchSizeCapGate.set(ctx, null)
         server?.close()
+        // Event uploads here are answered 401 and dropped; the persisted drop counter would otherwise emit a
+        // `_sdk_events_dropped` meta event into the next test's pipeline (SharedFixtureTest counts events).
+        ctx.getSharedPreferences("appdna_dropped_events", Context.MODE_PRIVATE).edit().clear().commit()
     }
 
     private fun body(settings: JSONObject) = 200 to JSONObject()

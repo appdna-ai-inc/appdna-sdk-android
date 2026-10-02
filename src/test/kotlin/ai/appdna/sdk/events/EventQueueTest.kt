@@ -25,15 +25,17 @@ class EventQueueTest {
 
     @Test
     fun `default batch size matches iOS defaultBatchSize`() {
-        // iOS source-of-truth: `Events/EventQueue.swift` `defaultBatchSize = 20`.
-        // Android `AppDNAOptions.batchSize` defaults to 20 — ensures parity.
-        assertEquals(20, ai.appdna.sdk.AppDNAOptions().batchSize)
+        // iOS and Android: no batchSize option means no cap of the host's own — the network-sized batch
+        // (capped by the bootstrap's settings.batchSize once one arrives). See RuntimeSettings.
+        assertEquals(null, ai.appdna.sdk.AppDNAOptions().batchSize)
+        assertEquals(null, RuntimeSettings.resolveAll(ai.appdna.sdk.AppDNAOptions(), null).batchSizeCap)
     }
 
     @Test
     fun `default flush interval is 30s matching iOS`() {
-        // iOS `Events/EventQueue.swift` `defaultFlushInterval = 30`.
-        assertEquals(30L, ai.appdna.sdk.AppDNAOptions().flushInterval)
+        // iOS `RuntimeSettings.defaultFlushInterval = 30`; the option itself is unset by default.
+        assertEquals(null, ai.appdna.sdk.AppDNAOptions().flushInterval)
+        assertEquals(30L, RuntimeSettings.resolveAll(ai.appdna.sdk.AppDNAOptions(), null).flushInterval)
     }
 
     @Test

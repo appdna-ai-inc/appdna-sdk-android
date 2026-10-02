@@ -136,7 +136,7 @@ class SharedFixtureTest(
     }
 
     /**
-     * A REAL event pipeline: EventTracker → EventQueue → EventDatabase. `batchSize = 0` means
+     * A REAL event pipeline: EventTracker → EventQueue → EventDatabase. The internal cap seam `batchSizeCap = 0` means
      * `enqueue` never trips the flush threshold (EventQueue.kt:123 `currentBatchSize > 0 && ...`),
      * so no network call is ever made; the envelopes are read straight back out of SQLite.
      */
