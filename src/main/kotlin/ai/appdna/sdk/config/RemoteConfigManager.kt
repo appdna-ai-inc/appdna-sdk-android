@@ -430,7 +430,7 @@ internal class RemoteConfigManager(
                         } else null
                     } ?: emptyList()
 
-                    // SPEC-070-A F.9: parse `segments` for audience targeting (iOS parity).
+                    // Legacy top-level key nothing writes; kept so an old cached doc still parses. Not evaluated.
                     val segments = (map["segments"] as? List<*>)?.filterIsInstance<String>()
 
                     parsed[key] = ExperimentConfig(
@@ -443,6 +443,10 @@ internal class RemoteConfigManager(
                         platforms = (map["platforms"] as? List<*>)?.filterIsInstance<String>() ?: listOf("android"),
                         variants = variants,
                         segments = segments,
+                        // The audience gate the device evaluates (ExperimentEligibility), as served.
+                        trafficAllocation = (map["traffic_allocation"] as? Number)?.toDouble(),
+                        targeting = ExperimentTargeting.fromAny(map["targeting"]),
+                        startedAtMs = (map["started_at_ms"] as? Number)?.toLong(),
                     )
                 } catch (e: Exception) {
                     Log.warning("Failed to parse experiment '$key': ${e.message}")
@@ -843,8 +847,7 @@ internal class RemoteConfigManager(
 }
 
 /**
- * Experiment config model. Mirrors iOS `Config/RemoteConfigManager.swift`
- * `ExperimentConfig`. SPEC-070-A F.9 adds `segments` for audience targeting.
+ * Experiment config model. Mirrors iOS `Config/RemoteConfigManager.swift` `ExperimentConfig`.
  */
 data class ExperimentConfig(
     val id: String,
@@ -861,8 +864,14 @@ data class ExperimentConfig(
     val salt: String,
     val platforms: List<String>,
     val variants: List<ExperimentVariant>,
-    /** Optional segment IDs gating which users see this experiment (iOS parity). */
+    /** Legacy top-level key that nothing writes; not evaluated (there is no segment targeting — see [targeting]). */
     val segments: List<String>? = null,
+    /** Share of users in the experiment (0…1). Absent on docs written before it was served = everyone. */
+    val trafficAllocation: Double? = null,
+    /** The audience rules the device evaluates ([ExperimentEligibility]); nested, as the server has always written it. */
+    val targeting: ExperimentTargeting? = null,
+    /** When the experiment started (epoch ms) — "new users only" compares the install date with it. */
+    val startedAtMs: Long? = null,
 )
 
 /**
