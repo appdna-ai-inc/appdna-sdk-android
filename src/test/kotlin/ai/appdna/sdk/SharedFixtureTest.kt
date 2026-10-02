@@ -39,7 +39,10 @@ package ai.appdna.sdk
 
 import ai.appdna.sdk.billing.BillingError
 import ai.appdna.sdk.billing.billingErrorType
+import ai.appdna.sdk.config.ExperimentEligibility
+import ai.appdna.sdk.config.ExperimentEligibilityContext
 import ai.appdna.sdk.config.ExperimentManager
+import ai.appdna.sdk.config.MurmurHash3
 import ai.appdna.sdk.config.RemoteConfigManager
 import ai.appdna.sdk.onboarding.mapPlacement
 import ai.appdna.sdk.onboarding.RequiredFieldGate
@@ -240,6 +243,7 @@ class SharedFixtureTest(
             // Round 19 — the notification channels the REAL poster creates (Android only).
             "post_push_notification" -> runPostPushNotification(action, spy)
             "present_surface_under_experiment" -> runPresentSurfaceUnderExperiment(action, spy)
+            "get_variant" -> runGetVariant(action, spy)
             // SPEC-496 §H — the raw host-data pass, through the REAL HostDataResolver.
             "resolve_block" -> runResolveBlock(spy)
             // SPEC-496 — a presented onboarding step driven through the REAL step pipeline.
@@ -2234,7 +2238,8 @@ class SharedFixtureTest(
             }
         }
 
-        val em = ExperimentManager(rcm, p.identity, p.tracker)
+        sessionData.optStringOrNull("user_id")?.let { p.identity.identify(it, emptyMap()) }
+        val em = ExperimentManager(rcm, p.identity, p.tracker, eligibilityContextFromSession())
         val surfaceType = action.getString("surface_type")
         val entityId = action.getString("entity_id")
         val activeEntityId = cfg.optString("active_entity_id", entityId)
@@ -2256,6 +2261,42 @@ class SharedFixtureTest(
         spy.events += p.envelopes().map { it.toEventPair() }
     }
 
+
+    // ---------------------------------------------------------------------------------------------
+    // get_variant — REAL RemoteConfigManager parse (nested targeting, traffic_allocation, started_at_ms) +
+    // ExperimentManager.getVariant against the device facts the fixture declares in session_data. The user is
+    // identified with session_data.user_id so both buckets are deterministic; the SDK emits the exposure itself.
+    // ---------------------------------------------------------------------------------------------
+
+    private fun runGetVariant(action: JSONObject, spy: Spy) {
+        val p = Pipeline(fixtureName).also { pipeline = it }
+        val expJson = config?.optJSONObject("experiment") ?: unsupported("get_variant without setup.config.experiment")
+        val expId = action.optStringOrNull("experiment_id") ?: unsupported("get_variant without action.experiment_id")
+        val userId = sessionData.optStringOrNull("user_id") ?: unsupported("get_variant without session_data.user_id")
+        p.identity.identify(userId, userTraits)
+
+        val rcm = RemoteConfigManager(null, p.storage, 3600L)
+        rcm.loadBundledConfig(mapOf("experiments" to mapOf(expId to expJson.asMap().filterValues { it != null })))
+        val em = ExperimentManager(rcm, p.identity, p.tracker, eligibilityContextFromSession())
+
+        val before = p.envelopes().size
+        val variant = em.getVariant(expId)
+        em.getVariant(expId) // a second call must not track a second exposure
+        spy.state["variant"] = variant
+        val decoded = rcm.getAllExperiments()[expId]
+        val salt = decoded?.salt?.ifBlank { expId } ?: expId
+        spy.state["variant_bucket"] = (MurmurHash3.hash32("$expId.$salt.$userId") % 10000u).toInt()
+        spy.state["allocation_bucket"] = ExperimentEligibility.allocationBucket(expId, salt, userId).toInt()
+        spy.events += p.envelopes().drop(before).map { it.toEventPair() }
+    }
+
+    /** The device facts a fixture declares in session_data (absent / null = unknown). */
+    private fun eligibilityContextFromSession(): (Map<String, Any>) -> ExperimentEligibilityContext {
+        val appVersion = sessionData.optStringOrNull("app_version")
+        val region = sessionData.optStringOrNull("device_region")
+        val installed = (sessionData.opt("install_epoch_ms") as? Number)?.toLong()
+        return { traits -> ExperimentEligibilityContext("android", appVersion, region, installed, traits) }
+    }
 
     // ---------------------------------------------------------------------------------------------
     // SPEC-497 billing — the REAL billing core (BillingOwnership, NativeBillingManager, PurchaseCompletion,

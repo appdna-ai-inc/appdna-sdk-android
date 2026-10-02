@@ -860,7 +860,11 @@ object AppDNA {
             val expManager = ExperimentManager(
                 remoteConfigManager = remoteCfg,
                 identityManager = identityMgr,
-                eventTracker = tracker
+                eventTracker = tracker,
+                // Targeting reads the app version and first-install time from the package info.
+                eligibilityContext = { traits ->
+                    ai.appdna.sdk.config.ExperimentEligibilityContext.current(appContext, traits)
+                },
             )
             this.experimentManager = expManager
 

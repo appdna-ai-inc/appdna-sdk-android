@@ -6,21 +6,26 @@ import ai.appdna.sdk.events.EventTracker
 
 /**
  * Manages experiment variant assignment via deterministic MurmurHash3 bucketing.
- * Tracks exposure events once per session per experiment.
+ * A user is in an experiment only when it is running, targets this platform, every targeting rule passes and the user
+ * falls inside the traffic allocation ([ExperimentEligibility]); only then is a variant assigned and an exposure
+ * tracked. Exposures are tracked once per experiment until `reset()` or the next app launch (kept in memory).
  *
  * MurmurHash3 implementation MUST produce identical output to the iOS Swift version.
  */
 internal class ExperimentManager(
     private val remoteConfigManager: RemoteConfigManager,
     private val identityManager: IdentityManager,
-    private val eventTracker: EventTracker
+    private val eventTracker: EventTracker,
+    /** The device facts targeting is evaluated against (injectable for tests). */
+    private val eligibilityContext: (traits: Map<String, Any>) -> ExperimentEligibilityContext =
+        { traits -> ExperimentEligibilityContext.current(null, traits) },
 ) {
     private val exposedExperiments = mutableMapOf<String, String>()
 
     /**
-     * SPEC-070-A I.14 — Get the variant id for an experiment, or `null` if
-     * the user is not eligible. Auto-tracks an exposure event on first call
-     * per session. Return type matches iOS `getVariant(experimentId:) -> String?`.
+     * SPEC-070-A I.14 — Get the variant id for an experiment, or `null` if the user is not in it (not running,
+     * platform / targeting / traffic allocation excludes them). Auto-tracks the exposure on the first assignment.
+     * Return type matches iOS `getVariant(experimentId:) -> String?`.
      *
      * Use [getVariantPayload] when callers need the full [ExperimentVariant]
      * object (config payload).
@@ -31,13 +36,12 @@ internal class ExperimentManager(
 
     /**
      * Internal: returns the assigned [ExperimentVariant] (id + weight + payload).
-     * Auto-tracks exposure on first call per session.
+     * Auto-tracks the exposure on the first assignment.
      */
     fun getVariantPayload(experimentId: String): ExperimentVariant? {
-        val config = resolveConfig(experimentId) ?: return null
-
         val identity = identityManager.currentIdentity
         val userId = identity.userId ?: identity.anonId
+        val config = resolveConfig(experimentId, userId) ?: return null
 
         // SPEC-070-A A.22 — fall back to experimentId when salt is blank, so a
         // missing/empty salt produces identical bucketing to iOS
@@ -119,6 +123,9 @@ internal class ExperimentManager(
 
             val identity = identityManager.currentIdentity
             val userId = identity.userId ?: identity.anonId
+            // Targeting + traffic allocation (same gate as getVariant): a user who is not in the experiment sees the
+            // live entity and is not exposed.
+            if (!isInExperiment(experimentId, config, userId)) continue
             val effectiveSalt = config.salt.ifBlank { experimentId }
             val variant = assignVariant(
                 experimentId = experimentId,
@@ -127,8 +134,7 @@ internal class ExperimentManager(
                 variants = config.variants,
             ) ?: continue
 
-            // Track exposure once per session regardless of bucket — the user
-            // WAS exposed by seeing the surface.
+            // Track the exposure once regardless of bucket — the user WAS exposed by seeing the surface.
             trackExposure(experimentId, variant.id)
 
             // Control bucket → render the live active entity. Treatment WITHOUT
@@ -161,7 +167,8 @@ internal class ExperimentManager(
     }
 
     /**
-     * Reset exposure tracking (called on identity reset or new session).
+     * Reset exposure tracking (called by `reset()`; exposures are otherwise kept until the app is relaunched — a new
+     * session does not reset them).
      */
     fun resetExposures() {
         synchronized(exposedExperiments) {
@@ -171,7 +178,8 @@ internal class ExperimentManager(
 
     // MARK: - Private
 
-    private fun resolveConfig(experimentId: String): ExperimentConfig? {
+    /** Running, on this platform, and the user is in the experiment (targeting + traffic allocation). */
+    private fun resolveConfig(experimentId: String, userId: String): ExperimentConfig? {
         val config = remoteConfigManager.getExperimentConfig(experimentId) ?: run {
             Log.debug("Experiment '$experimentId' not found in config")
             return null
@@ -187,7 +195,23 @@ internal class ExperimentManager(
             return null
         }
 
+        if (!isInExperiment(experimentId, config, userId)) return null
         return config
+    }
+
+    /** Targeting rules, then the traffic allocation. Logs why a user is out. */
+    private fun isInExperiment(experimentId: String, config: ExperimentConfig, userId: String): Boolean {
+        val traits = identityManager.currentIdentity.traits ?: emptyMap()
+        val failed = ExperimentEligibility.failedRule(config.targeting, config.startedAtMs, eligibilityContext(traits))
+        if (failed != null) {
+            Log.debug("Experiment '$experimentId': user not in the audience (${failed.wire})")
+            return false
+        }
+        if (!ExperimentEligibility.isAllocated(experimentId, config.salt.ifBlank { experimentId }, userId, config.trafficAllocation)) {
+            Log.debug("Experiment '$experimentId': user outside the traffic allocation")
+            return false
+        }
+        return true
     }
 
     private fun assignVariant(
