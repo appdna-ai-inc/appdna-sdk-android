@@ -90,7 +90,7 @@ internal class EventUploadWorker(
             // The host holds events on the device (batchSize 0): nothing to send, nothing to retry.
             val batchSize = uploadBatchSize(batchSizeCap)
             if (batchSize <= 0) {
-                Log.debug("Background upload skipped — batchSize 0 holds events on the device")
+                Log.debug("Background upload skipped — batch-size cap 0 (internal test seam) holds events on the device")
                 return Outcome.DONE
             }
             // SPEC-428 CL-9/D4: single upload owner — never POST the rows the in-process flush is sending.

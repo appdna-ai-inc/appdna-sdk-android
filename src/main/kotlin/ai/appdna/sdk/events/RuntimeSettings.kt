@@ -11,12 +11,13 @@ import org.json.JSONObject
  * Precedence, per setting: a value the host passed to `configure` ([AppDNAOptions], non-null) > the value the
  * bootstrap answer carries in `settings` > the built-in default. The built-in default applies until a
  * bootstrap answer arrives, and stays when none does or when it does not carry the field. A bootstrap value
- * of 0 or less is ignored, so a server answer can never stop uploads; a host value is used as given.
+ * of 0 or less is ignored, so a server answer can never stop uploads; so is a host value of 0 or less (logged as a
+ * warning): the setting then resolves as if the host had not set it.
  *
  * `batchSize` is a cap on the adaptive, network-sized batch (100 on Wi-Fi or wired, 50 on cellular, 20 on a
  * metered connection, 0 offline): the effective size is the adaptive one when no cap is set, otherwise the
- * smaller of the two. It is both the queue length that triggers a flush and the most one upload sends. A cap
- * of 0 holds every event on the device. iOS `RuntimeSettings`, same rules; both are pinned by the shared
+ * smaller of the two. It is both the queue length that triggers a flush and the most one upload sends. Only an
+ * internal test seam can install a cap of 0 (which holds every event on the device); no option or answer can. iOS `RuntimeSettings`, same rules; both are pinned by the shared
  * fixture `resilience/runtime_settings_precedence`.
  */
 internal object RuntimeSettings {
@@ -42,15 +43,27 @@ internal object RuntimeSettings {
         }
     }
 
-    /** explicit > bootstrap (positive only) > fallback. */
+    /** explicit (positive only) > bootstrap (positive only) > fallback. */
     fun resolveLong(explicit: Long?, bootstrap: Long?, fallback: Long?): Long? =
-        explicit ?: bootstrap?.takeIf { it > 0 } ?: fallback
+        explicit?.takeIf { it > 0 } ?: bootstrap?.takeIf { it > 0 } ?: fallback
 
     fun resolveInt(explicit: Int?, bootstrap: Int?, fallback: Int?): Int? =
-        explicit ?: bootstrap?.takeIf { it > 0 } ?: fallback
+        explicit?.takeIf { it > 0 } ?: bootstrap?.takeIf { it > 0 } ?: fallback
+
+    /** A host value below 1 is not used; say so. */
+    private fun warnIgnored(name: String, value: Long?) {
+        if (value != null && value <= 0) ai.appdna.sdk.Log.warning("AppDNAOptions.$name must be 1 or more; $value is ignored and the default applies.")
+    }
 
     /** Resolve all three settings. [bootstrap] is null before (or without) a successful bootstrap. */
-    fun resolveAll(options: AppDNAOptions, bootstrap: Bootstrap?): Resolved = Resolved(
+    fun resolveAll(options: AppDNAOptions, bootstrap: Bootstrap?): Resolved {
+        warnIgnored("flushInterval", options.flushInterval)
+        warnIgnored("batchSize", options.batchSize?.toLong())
+        warnIgnored("configTTL", options.configTTL)
+        return resolved(options, bootstrap)
+    }
+
+    private fun resolved(options: AppDNAOptions, bootstrap: Bootstrap?): Resolved = Resolved(
         flushInterval = resolveLong(options.flushInterval, bootstrap?.flushInterval, DEFAULT_FLUSH_INTERVAL)
             ?: DEFAULT_FLUSH_INTERVAL,
         batchSizeCap = resolveInt(options.batchSize, bootstrap?.batchSize, null),

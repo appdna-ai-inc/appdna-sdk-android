@@ -147,7 +147,18 @@ class RuntimeSettingsTest {
         }
     }
 
-    /** A cap of 0 holds every event: no threshold upload, and the host's flush sends nothing. */
+    /** A host value below 1 is ignored (as if not set): it can never make the cap 0 and stop uploads. */
+    @Test
+    fun aHostValueBelowOneIsIgnored() {
+        val r = RuntimeSettings.resolveAll(ai.appdna.sdk.AppDNAOptions(flushInterval = 0L, batchSize = 0, configTTL = -1L), null)
+        assertNull("batchSize 0 must not become a cap of 0", r.batchSizeCap)
+        assertEquals(30L, r.flushInterval)
+        assertEquals(3600L, r.configTTL)
+        val withBootstrap = RuntimeSettings.resolveAll(ai.appdna.sdk.AppDNAOptions(batchSize = -3), RuntimeSettings.Bootstrap(null, 20, null))
+        assertEquals(20, withBootstrap.batchSizeCap)
+    }
+
+    /** The queue's internal cap seam at 0 holds every event (no option or answer can install it): no threshold upload, and the host's flush sends nothing. */
     @Test
     fun aCapOfZeroHoldsEveryEvent() {
         TestHttpServer { _, _ -> 200 to "{}" }.use { server ->

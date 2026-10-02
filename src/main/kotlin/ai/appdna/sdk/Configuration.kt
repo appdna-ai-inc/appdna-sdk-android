@@ -125,7 +125,8 @@ data class AppDNAOptions(
      * The most events one upload sends, and the queue length that triggers a flush: a cap on the
      * network-sized batch (100 on Wi-Fi or wired, 50 on cellular, 20 on a metered connection). null (the
      * default): no cap of the host's own — the bootstrap answer's `settings.batchSize` (if positive) is the
-     * cap, else none. 0 holds every event on the device.
+     * cap, else none. A value below 1 is ignored (logged as a warning), as if the host had not set it; the
+     * same holds for `flushInterval` and `configTTL`.
      */
     val batchSize: Int? = null,
     /**
