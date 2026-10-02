@@ -55,9 +55,11 @@ Wraps iOS 1.0.82. Ships maps and host data (including "Show more").
 - Dismissing a paywall, onboarding flow, screen, message or survey while another presentation was
   queued behind it crashed on every Android version below 15 (`NoSuchMethodError`:
   `List.removeFirst`, an API 35 method). The queued presentation now runs.
-- On Android 7 (API 24 / 25) ISO-8601 dates with a zone — message and screen schedule windows,
-  auto-trigger start dates, chat transcript timestamps — are parsed with their zone. They were read in
-  the device's time zone, or as the date only, because `java.time` is API 26.
+- On Android 7 (API 24 / 25) ISO-8601 dates with a zone are parsed with their zone. `java.time` is
+  API 26, and without it each caller fell back differently: screen schedule windows and auto-trigger
+  start dates were read in the device's time zone (the zone was ignored); in-app message schedule
+  windows kept only the date, at UTC midnight; and the timestamps of a restored chat transcript were
+  replaced with the current time.
 - `AppDNA.features.onChanged` fires: it registered nothing (the listener was a stub). It delivers every
   flag with its `isEnabled` value.
 - `AppDNA.remoteConfig.onChanged` and `AppDNA.features.onChanged` callbacks registered before
