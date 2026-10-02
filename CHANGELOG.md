@@ -9,6 +9,8 @@ the project uses [Semantic Versioning](https://semver.org/).
 Wraps iOS 1.0.82. Ships maps and host data (including "Show more").
 
 ### Added
+- `AppDNA.isPushTapIntent(intent)`: whether `handlePushTap(intent)` would answer `true`, without tracking,
+  routing or changing anything; it works before `configure`.
 - **Push action buttons and custom sound from the Console.** A notification the SDK builds shows the
   push's buttons. A button that opens the app routes its own action through `handlePushTap`
   (`open_url` now routes like `deep_link`). `dismiss` and buttons set not to open the app go to the
@@ -108,9 +110,16 @@ Wraps iOS 1.0.82. Ships maps and host data (including "Show more").
 - Schedule windows read dates as iOS does. A screen's or auto-trigger's `start_date` / `end_date` is an
   ISO-8601 instant with its zone (`Z` or an offset); anything else is no constraint. A bad `end_date` used
   to hide an auto-triggered screen for good, and a zone-less one was read in the device's time zone. An
-  in-app message's window also takes a whole `yyyy-MM-dd` date (UTC midnight; as on iOS, a field may have
-  fewer digits, `2026-5-7`, and surrounding spaces are ignored), and no longer takes the date part of a
-  zone-less instant or rolls an impossible date over.
+  in-app message's window also takes a whole `yyyy-MM-dd` date (UTC midnight; it must be a real date),
+  and no longer takes the date part of a zone-less instant or rolls an impossible date over.
+- Every date the SDK reads from its config (schedule windows, chat transcript timestamps) is read
+  exactly as iOS reads it, on every API level. The SDK used `java.time` on API 26+ and `SimpleDateFormat`
+  on API 24 / 25, and both differed from iOS and from each other: `2026-5-7T10:00:00Z` parsed only on API
+  24 / 25; a space around an instant was trimmed (iOS skips only leading whitespace and ignores anything
+  after the zone); `+02` and a lowercase `z` failed on API 26+; a date-only value with a 5-digit year,
+  Arabic-Indic or full-width digits or a trailing NBSP differed. As on iOS: seconds are required
+  (`T10:00Z` is no date), `T` must be upper case, and an instant's day rolls over (`2026-02-30T…` is
+  2 March).
 - After `shutdown()`, `remoteConfig` and `features` no longer keep the torn-down manager: an `onChanged`
   callback registered before the next `configure()` goes to the new manager only.
 - An in-app message delegate or async veto set on another thread while `configure()` runs is no longer

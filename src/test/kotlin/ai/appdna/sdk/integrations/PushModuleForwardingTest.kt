@@ -218,6 +218,35 @@ class PushModuleForwardingTest {
         assertEquals(listOf("deep_link" to "x://btn_old"), h.routes)
     }
 
+    /**
+     * `isPushTapIntent` is `handlePushTap`'s answer without its effects — what the Flutter plugin answers
+     * Dart's `handlePushTap()` with while the tap still waits for the SDK. For every shape, the classifier
+     * (asked first, on the same intent) agrees with `handlePushTap`, and asking tracks, routes and strips
+     * nothing.
+     */
+    @Test
+    fun `isPushTapIntent answers as handlePushTap does, with no effect`() {
+        val shapes = listOf(
+            "keyed tap" to tapIntent("pK", "dK", "x://k"),
+            "push_id only" to Intent().apply { putExtra("appdna", "1"); putExtra("push_id", "pP") },
+            "marker without a key" to Intent().apply { putExtra("appdna", "1"); putExtra("push_id", " ") },
+            "marker not \"1\"" to Intent().apply { putExtra("appdna", "true"); putExtra("push_id", "pX") },
+            "legacy body tap" to legacyTapIntent("", "x://legacy"),
+            "legacy plus a host extra" to legacyTapIntent("p", "x://l2").apply { putExtra("campaign", "c") },
+            "host intent" to Intent().apply { putExtra("push_id", "host"); putExtra("action_type", "deep_link") },
+            "no extras" to Intent(),
+        )
+        for ((name, intent) in shapes) {
+            val keys = intent.extras?.keySet()?.toSet()
+            val answer = AppDNA.isPushTapIntent(intent)
+            assertEquals("$name: asking changes nothing", keys, intent.extras?.keySet()?.toSet())
+            assertEquals("$name: isPushTapIntent agrees with handlePushTap", AppDNA.handlePushTap(intent), answer)
+        }
+        assertFalse(AppDNA.isPushTapIntent(null))
+        idle()
+        assertTrue(h.routes.containsAll(listOf("deep_link" to "x://k", "deep_link" to "x://legacy")))
+    }
+
     // ---------------------------------------------------------------------------------------------
     // SPEC-497 I4 M8 / minors 31–34
     // ---------------------------------------------------------------------------------------------

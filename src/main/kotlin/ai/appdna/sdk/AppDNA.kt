@@ -1819,13 +1819,7 @@ object AppDNA {
     fun handlePushTap(intent: android.content.Intent?): Boolean {
         if (intent == null) return false
         val extras = intent.extras ?: return false
-        // Every string extra: the SDK's notification copies the payload keys, and an FCM
-        // background-notification tap carries every data key as an extra.
-        val data = HashMap<String, String>()
-        for (k in extras.keySet()) {
-            @Suppress("DEPRECATION")
-            (extras.get(k) as? String)?.let { data[k] = it }
-        }
+        val data = stringExtras(extras)
         // SPEC-497 §17 item 28 — a button tap: the typed text of a `text_reply` button reaches
         // `onPushTapped` as `data["reply_text"]`, and the notification is removed (a button tap does
         // not auto-cancel it). Only for AppDNA pushes.
@@ -1854,6 +1848,35 @@ object AppDNA {
             intent.removeExtra("delivery_id")
         }
         return handled
+    }
+
+    /**
+     * Whether [handlePushTap] answers `true` for [intent]: it carries the AppDNA marker (`appdna = "1"`)
+     * and a `delivery_id` or `push_id`, or it is the tap intent of a notification the previous SDK version
+     * posted (see [isLegacyTapIntent]). Only reads the intent — tracks, routes and changes nothing — and
+     * works before `configure` and after `shutdown`. The Flutter plugin answers Dart's
+     * `AppDNAPush.handlePushTap()` with it while the tap still waits for the SDK to be ready.
+     */
+    @JvmStatic
+    fun isPushTapIntent(intent: android.content.Intent?): Boolean {
+        val extras = intent?.extras ?: return false
+        if (isLegacyTapIntent(extras)) return true
+        val data = stringExtras(extras)
+        if (!push.isAppDNAMessage(data)) return false
+        return !(data["delivery_id"]?.takeIf { it.isNotBlank() } ?: data["push_id"]).isNullOrBlank()
+    }
+
+    /**
+     * Every string extra: the SDK's notification copies the payload keys, and an FCM
+     * background-notification tap carries every data key as an extra.
+     */
+    private fun stringExtras(extras: android.os.Bundle): HashMap<String, String> {
+        val data = HashMap<String, String>()
+        for (k in extras.keySet()) {
+            @Suppress("DEPRECATION")
+            (extras.get(k) as? String)?.let { data[k] = it }
+        }
+        return data
     }
 
     // SPEC-070-A finalization (Lens D P0) — pre-configure FCM token buffer.
