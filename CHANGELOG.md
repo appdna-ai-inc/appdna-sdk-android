@@ -62,7 +62,11 @@ Wraps iOS 1.0.82. Ships maps and host data (including "Show more").
   iOS; the batch threshold, the interval timer, backgrounding and `shutdown()` keep it. The pause now also
   holds for the WorkManager upload: backgrounding a paused app schedules none, and one that runs while paused
   uploads nothing (the pause is persisted, so a run in a fresh process sees it); before, backgrounding
-  started exactly the uploads the pause stops.
+  started exactly the uploads the pause stops. The persisted pause belongs to the newest queue: the last
+  upload of a queue `shutdown()` ended can no longer pause the next `configure()`'s session.
+- **Wi-Fi dropping while cellular is up no longer stops uploads.** Any lost network set the connection to
+  "none" — an upload batch size of 0 — even with another network still up, until the next network change.
+  The SDK now re-reads the active network when one is lost.
 - `AppDNA.shutdown()` now makes one last attempt to upload the queued events, as iOS does. Before, it only
   scheduled the background upload. When the attempt has finished, the events it did not send are handed to
   the background upload, which sends every remaining batch; they also stay on the device for the next
@@ -77,8 +81,10 @@ Wraps iOS 1.0.82. Ships maps and host data (including "Show more").
 - **A failed bootstrap no longer lasts the whole session.** When the bootstrap request fails (for example,
   the app starts offline), the SDK still becomes ready on cached and bundled config, now reports
   `AppDNAInitError.BootstrapFailed` through `onInitDegraded` / `lastInitError` (as iOS does), and retries the
-  bootstrap: when the network comes back, when the app comes to the foreground, and otherwise after 5 s,
-  doubling to 5 min — at most 10 retries per `configure()`, none while offline. A retry that succeeds is
+  bootstrap: when the network comes back, when the app comes to the foreground (after a random delay of up to
+  1 s), and otherwise after 5 s, doubling to 5 min, each wait ±25 % — at most 10 retries per `configure()`,
+  none while offline. A 401 or 403 (the server refused the API key) ends the retries, and one at
+  `configure()` starts none; a 429's `Retry-After` (up to 120 s) holds the next retry back. A retry that succeeds is
   applied as a first success would be: remote config is fetched, the Firestore listeners of a signed-in user
   start, the runtime lock applies, and `lastInitError` returns to `null`; `onReady` does not fire again.
   Before, the SDK stayed on cached config, without listeners, until the next `configure()`.
