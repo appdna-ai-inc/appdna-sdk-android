@@ -865,7 +865,7 @@ class RemoteConfigModule internal constructor() {
     internal var manager: RemoteConfigManager? = null
         set(value) {
             field = value
-            value?.let { attach(it) }
+            if (value == null) detach() else attach(value)
         }
 
     /** Attaches the held callbacks to [m] once (configure calls it as soon as the manager exists). */
@@ -874,6 +874,16 @@ class RemoteConfigModule internal constructor() {
         if (attachedTo === m) return
         attachedTo = m
         changeCallbacks.forEach { m.addChangeListener(it) }
+    }
+
+    /**
+     * `shutdown()` clears [manager]: forget the torn-down one too, so it is not kept alive here and a
+     * callback registered before the next `configure()` is not attached to it (it reaches the next
+     * manager through [attach]).
+     */
+    @Synchronized
+    private fun detach() {
+        attachedTo = null
     }
 
     /** Get a config value. */
@@ -908,7 +918,7 @@ class FeaturesModule internal constructor() {
     internal var manager: FeatureFlagManager? = null
         set(value) {
             field = value
-            value?.let { attach(it) }
+            if (value == null) detach() else attach(value)
         }
 
     /** Attaches the held callbacks to [m] once (configure calls it as soon as the manager exists). */
@@ -917,6 +927,16 @@ class FeaturesModule internal constructor() {
         if (attachedTo === m) return
         attachedTo = m
         changeCallbacks.forEach { m.addChangeListener(it) }
+    }
+
+    /**
+     * `shutdown()` clears [manager]: forget the torn-down one too, so it is not kept alive here and a
+     * callback registered before the next `configure()` is not attached to it (it reaches the next
+     * manager through [attach]).
+     */
+    @Synchronized
+    private fun detach() {
+        attachedTo = null
     }
 
     /** Check if a feature flag is enabled. */
@@ -946,6 +966,7 @@ class InAppMessagesModule internal constructor() {
      * in lockstep via `setDelegate(...)` so callers querying
      * `AppDNA.inAppMessages` see the same instance.
      */
+    @Volatile
     var delegate: AppDNAInAppMessageDelegate? = null
         private set
 
@@ -963,7 +984,13 @@ class InAppMessagesModule internal constructor() {
         AppDNA.messageManager?.suppressDisplay(suppress)
     }
 
-    /** SPEC-070-A A.11: Set a delegate for in-app message lifecycle events. Kept across `configure()`. */
+    /**
+     * SPEC-070-A A.11: Set a delegate for in-app message lifecycle events. Kept across `configure()`.
+     * Synchronized with [applyTo], and `configure()` publishes the manager BEFORE applying: a delegate
+     * set while `configure()` runs on another thread either sees the published manager here, or is
+     * read by the [applyTo] that follows the publish — never lost, never overwritten by an older one.
+     */
+    @Synchronized
     fun setDelegate(delegate: AppDNAInAppMessageDelegate?) {
         this.delegate = delegate
         AppDNA.messageManager?.delegate = delegate
@@ -974,12 +1001,14 @@ class InAppMessagesModule internal constructor() {
      * Forwards to `MessageManager.asyncShouldShowMessage`, which awaits it (in
      * addition to the sync delegate veto) before presenting. Null clears it. Kept across `configure()`.
      */
+    @Synchronized
     fun setAsyncShouldShowMessage(veto: (suspend (String) -> Boolean)?) {
         this.asyncShouldShowMessage = veto
         AppDNA.messageManager?.asyncShouldShowMessage = veto
     }
 
-    /** Hands the held delegate and veto to a manager `configure()` just built. */
+    /** Hands the held delegate and veto to a manager `configure()` just built AND published. */
+    @Synchronized
     internal fun applyTo(manager: ai.appdna.sdk.messages.MessageManager) {
         manager.delegate = delegate
         manager.asyncShouldShowMessage = asyncShouldShowMessage

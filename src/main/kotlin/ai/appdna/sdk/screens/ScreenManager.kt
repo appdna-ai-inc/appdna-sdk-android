@@ -109,18 +109,12 @@ class ScreenManager private constructor() {
     }
 
     /**
-     * SPEC-070-A audit attempt 5 F2 helper — lenient ISO8601 → epoch millis.
-     * Tries `OffsetDateTime` (with offset), then `Instant.parse` (Z-suffixed),
-     * then a `SimpleDateFormat` fallback shape used by AutoTriggerEngine.
-     * Returns `null` on any failure so callers fall through (treat unparsable
-     * dates as "no scheduling constraint" rather than "always blocked").
+     * SPEC-070-A audit attempt 5 F2 helper — ISO8601 instant WITH its zone → epoch millis, as iOS
+     * `ISO8601.date(from:)`. Returns `null` otherwise, so callers fall through (an unparsable or
+     * zone-less date is "no scheduling constraint", as on iOS). The zone-less `SimpleDateFormat`
+     * fallback it used to have read such a value in the device's time zone instead.
      */
-    private fun parseIsoToEpochMs(iso: String): Long? {
-        return ai.appdna.sdk.core.IsoInstant.parseEpochMs(iso) ?: try {
-            val sdf = java.text.SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss", java.util.Locale.US)
-            sdf.parse(iso)?.time
-        } catch (_: Throwable) { null }
-    }
+    internal fun parseIsoToEpochMs(iso: String): Long? = ai.appdna.sdk.core.IsoInstant.parseEpochMs(iso)
 
     fun showScreen(screenId: String, callback: ((ScreenResult) -> Unit)? = null) {
         // Acquire lock once for the entire nesting check + config lookup + decrement

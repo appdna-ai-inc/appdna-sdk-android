@@ -103,6 +103,15 @@ Wraps iOS 1.0.82. Ships maps and host data (including "Show more").
   as the oldest copy and is removed like one.
 - `diagnose()` reports the veto timeout a wrapper was given (`0.5`, not the whole-second `1`): new
   `AppDNAOptions.vetoTimeoutSeconds` (a body property, so the constructors and `copy` are unchanged).
+- Schedule windows read dates as iOS does. A screen's or auto-trigger's `start_date` / `end_date` is an
+  ISO-8601 instant with its zone (`Z` or an offset); anything else is no constraint. A bad `end_date` used
+  to hide an auto-triggered screen for good, and a zone-less one was read in the device's time zone. An
+  in-app message's window also takes exactly `yyyy-MM-dd` (UTC midnight), and no longer takes the date
+  part of a zone-less instant or rolls an impossible date over.
+- After `shutdown()`, `remoteConfig` and `features` no longer keep the torn-down manager: an `onChanged`
+  callback registered before the next `configure()` goes to the new manager only.
+- An in-app message delegate or async veto set on another thread while `configure()` runs is no longer
+  lost: the manager is published first, then given them.
 
 ### Binary compatibility
 - `ElementInteractionResult` gains `dataContext` and `AppliedInteraction` gains `inputValuePatches`

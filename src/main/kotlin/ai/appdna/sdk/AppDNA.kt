@@ -510,7 +510,11 @@ object AppDNA {
     // SPEC-070-A A.8/A.9: SessionManager + MessageManager wired in configure().
     // Snapshot of the active message catalog kept alongside the manager so the
     // configProvider lambda has a stable read path when triggers evaluate.
+    @Volatile
     internal var messageManager: ai.appdna.sdk.messages.MessageManager? = null
+    /** Test seam: runs between building the MessageManager and publishing it (a host thread's call landing there). */
+    @Volatile
+    internal var beforeMessageManagerPublishForTesting: (() -> Unit)? = null
     internal var sessionManager: ai.appdna.sdk.core.SessionManager? = null
     @Volatile
     private var activeMessages: Map<String, ai.appdna.sdk.messages.MessageConfig> = emptyMap()
@@ -894,9 +898,13 @@ object AppDNA {
                         configProvider = { remoteConfigManager?.getActiveMessages() ?: activeMessages },
                         // SPEC-036-F §1.2 — experiment-aware presentation.
                         experimentManager = expManager,
-                    ).also { inAppMessages.applyTo(it) }
+                    )
                 }
-            }
+            }.also { beforeMessageManagerPublishForTesting?.invoke() }
+            // Published first, THEN given the host's delegate / veto: a `setDelegate` on another thread
+            // between the two either sees this manager or is read by `applyTo` (both synchronized on the
+            // module). Applied before publishing, a delegate set in that window reached neither.
+            this.messageManager?.let { inAppMessages.applyTo(it) }
 
             // SPEC-070-A A.10: NavigationInterceptor — observes Activity resume to
             // fire registered hooks. Compose-only screens use AppDNA.notifyScreenAppeared(...).

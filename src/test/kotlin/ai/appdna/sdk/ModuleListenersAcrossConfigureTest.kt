@@ -47,6 +47,7 @@ class ModuleListenersAcrossConfigureTest {
 
     @After
     fun tearDown() {
+        AppDNA.beforeMessageManagerPublishForTesting = null
         AppDNA.inAppMessages.setDelegate(null)
         AppDNA.inAppMessages.setAsyncShouldShowMessage(null)
         AppDNA.shutdown()
@@ -143,5 +144,62 @@ class ModuleListenersAcrossConfigureTest {
         assertEquals("off", configChanges.last()["dark_mode"])
         assertEquals(1, flagChanges.count { it.containsKey("dark_mode") })
         assertEquals("a flag map carries isEnabled values", false, flagChanges.last()["dark_mode"])
+    }
+
+    // ── Round 25 ────────────────────────────────────────────────────────────
+
+    /**
+     * `shutdown()` nulls `remoteConfig.manager` / `features.manager`, but `attachedTo` kept the torn-down
+     * manager: it stayed reachable from the module, and a callback registered after shutdown (before the
+     * next configure) was attached to the dead manager too.
+     * NEGATIVE CONTROL: with the setter's `value?.let { attach(it) }` (no detach) `attachedTo` is the
+     * old manager after shutdown and the dead manager fires the late callback.
+     */
+    @Test
+    fun `shutdown forgets the torn-down remoteConfig and features manager`() {
+        configure()
+        val dead = remoteConfigManager()
+        AppDNA.shutdown()
+
+        fun attachedTo(module: Any): Any? =
+            module.javaClass.getDeclaredField("attachedTo").apply { isAccessible = true }.get(module)
+        assertNull("remoteConfig must not pin the torn-down manager", attachedTo(AppDNA.remoteConfig))
+        assertNull("features must not pin the torn-down manager", attachedTo(AppDNA.features))
+
+        val late = mutableListOf<Map<String, Any>>()
+        AppDNA.remoteConfig.onChanged { late += it }
+        dead.parseFlagDocForTesting("after_shutdown", mapOf("value" to true, "type" to "boolean"))
+        assertEquals("a callback registered after shutdown is not attached to the dead manager", 0, late.size)
+
+        configure()
+        remoteConfigManager().parseFlagDocForTesting("next_sdk", mapOf("value" to true, "type" to "boolean"))
+        assertEquals("…and reaches the next one", true, late.lastOrNull()?.get("next_sdk"))
+    }
+
+    /**
+     * A host thread's `setDelegate` landing between `configure()` building the MessageManager and
+     * publishing it: `applyTo` ran inside the build (before the window) and `setDelegate` found no
+     * manager yet, so the configured manager never got the delegate.
+     * NEGATIVE CONTROL: with `.also { inAppMessages.applyTo(it) }` back on the builder (applied before
+     * the publish) the manager's delegate and veto are null.
+     */
+    @Test
+    fun `an in-app delegate set while configure publishes the manager is not lost`() {
+        AppDNA.beforeMessageManagerPublishForTesting = {
+            AppDNA.inAppMessages.setDelegate(delegate)
+            AppDNA.inAppMessages.setAsyncShouldShowMessage(veto)
+        }
+        configure()
+        assertSame(delegate, messageManager().delegate)
+        assertSame(veto, messageManager().asyncShouldShowMessage)
+    }
+
+    /** The module's delegate is read and written on different threads: volatile, like the manager's. */
+    @Test
+    fun `the in-app delegate fields are volatile and the publish is volatile`() {
+        val module = AppDNA.inAppMessages.javaClass.getDeclaredField("delegate")
+        assert(java.lang.reflect.Modifier.isVolatile(module.modifiers)) { "InAppMessagesModule.delegate must be @Volatile" }
+        val published = AppDNA::class.java.getDeclaredField("messageManager")
+        assert(java.lang.reflect.Modifier.isVolatile(published.modifiers)) { "AppDNA.messageManager must be @Volatile" }
     }
 }

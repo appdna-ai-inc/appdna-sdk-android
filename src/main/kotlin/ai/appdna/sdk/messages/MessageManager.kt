@@ -28,10 +28,7 @@ import androidx.savedstate.setViewTreeSavedStateRegistryOwner
 import ai.appdna.sdk.AppDNA
 import ai.appdna.sdk.AppDNAInAppMessageDelegate
 import ai.appdna.sdk.Log
-import java.text.SimpleDateFormat
 import java.util.Date
-import java.util.Locale
-import java.util.TimeZone
 import java.util.concurrent.atomic.AtomicBoolean
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -445,13 +442,12 @@ class MessageManager internal constructor(
      * time-of-day; combined with iOS's device-local midnight that produced a same-field, different-
      * day divergence across platforms. Unparsable → null (treated as no scheduling constraint).
      */
-    private fun parseWindowDate(iso: String): Date? {
-        ai.appdna.sdk.core.IsoInstant.parseEpochMs(iso)?.let { return Date(it) }
-        return try {
-            SimpleDateFormat("yyyy-MM-dd", Locale.US)
-                .apply { timeZone = TimeZone.getTimeZone("UTC") }
-                .parse(iso)
-        } catch (_: Throwable) { null }
+    internal fun parseWindowDate(iso: String): Date? {
+        val ms = ai.appdna.sdk.core.IsoInstant.parseEpochMs(iso)
+            // Exactly `yyyy-MM-dd` (as iOS's non-lenient formatter): `SimpleDateFormat.parse` read a
+            // prefix, so a zone-less instant became a UTC midnight here and no constraint on iOS.
+            ?: ai.appdna.sdk.core.IsoInstant.parseDateOnlyUtcMs(iso)
+        return ms?.let { Date(it) }
     }
 
     private fun checkDateRange(config: MessageConfig): Boolean {

@@ -2,7 +2,6 @@ package ai.appdna.sdk.screens
 
 import ai.appdna.sdk.core.AudienceRuleEvaluator
 import ai.appdna.sdk.core.ConditionEvaluator
-import java.text.SimpleDateFormat
 import java.util.*
 
 internal class AutoTriggerEngine {
@@ -41,8 +40,9 @@ internal class AutoTriggerEngine {
         currentScreenName: String?, now: Long,
     ): Boolean {
         // Check scheduling
-        entry.startDate?.let { if (parseISODate(it) > now) return false }
-        entry.endDate?.let { if (parseISODate(it) < now) return false }
+        // An unparsable or zone-less date is no constraint (iOS: `ISO8601.date(from:)` is nil → skipped).
+        entry.startDate?.let { parseISODate(it) }?.let { if (it > now) return false }
+        entry.endDate?.let { parseISODate(it) }?.let { if (it < now) return false }
 
         // Check audience
         if (entry.audienceRules != null && !AudienceRuleEvaluator.evaluate(entry.audienceRules, userTraits)) return false
@@ -120,14 +120,10 @@ internal class AutoTriggerEngine {
     }
 
     /**
-     * SPEC-070-A finalization B6 P2 — ISO-8601 parser that handles `Z`
-     * suffix and offset notation. Mirrors iOS `ISO8601DateFormatter`. The
-     * old SimpleDateFormat path silently returned 0 for "2026-05-07T10:00:00Z"
-     * (no offset support), making `start_date` always pass.
+     * SPEC-070-A finalization B6 P2 — ISO-8601 instant WITH its zone (`Z` or an offset), as iOS
+     * `ISO8601.date(from:)`; null otherwise. The zone-less `SimpleDateFormat` fallback this used to
+     * have read a zone-less value in the device's time zone, and returned 0 for anything else — so a
+     * bad `end_date` blocked the screen for ever (0 < now) where iOS shows it.
      */
-    private fun parseISODate(iso: String): Long {
-        return ai.appdna.sdk.core.IsoInstant.parseEpochMs(iso) ?: try {
-            SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss", Locale.US).parse(iso)?.time ?: 0
-        } catch (_: Exception) { 0 }
-    }
+    internal fun parseISODate(iso: String): Long? = ai.appdna.sdk.core.IsoInstant.parseEpochMs(iso)
 }
