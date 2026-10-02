@@ -99,8 +99,10 @@ internal object IsoInstant {
             else -> return null
         }
         if (month < 1 || month > 12 || day < 1 || day > 31 || hour > 24 || minute > 59 || second > 59) return null
-        if (year > MAX_EXTENDED_YEAR || year < -MAX_EXTENDED_YEAR) return null
-        return epochMs(year, month, day, hour, minute, second, millis) - offset
+        if (year > YEAR_GUARD || year < -YEAR_GUARD) return null
+        val local = epochMs(year, month, day, hour, minute, second, millis)
+        if (local < FIRST_LOCAL_MS || local >= END_LOCAL_MS) return null
+        return local - offset
     }
 
     /**
@@ -187,10 +189,25 @@ internal object IsoInstant {
     private const val MINUTE = 60_000L
     private const val SECOND = 1_000L
     /**
-     * Beyond about ±5.8 million years (ICU's calendar range) iOS returns a wrapped, meaningless date
-     * (`9999999-05-07T10:00:00Z` comes back about 1.76 million years BC); Android answers null there.
+     * iOS's range, MEASURED (iOS 26.2 simulator and macOS 26.3 Foundation, 2026-10-02): an instant parses
+     * when its date and time AS WRITTEN — before the zone offset is applied, after day / hour roll-over — is
+     * from `-5877520-03-03T00:00:00` up to, not including, `5874898-06-04T00:00:00`.
+     * `5874898-06-03T23:59:59Z` and `5874898-06-03T23:00:00-02:00` (an instant past the end) parse;
+     * `5874898-06-04T00:00:00Z`, `5874898-06-03T24:00:00Z`, `5874898-06-04T01:00:00+02:00` and
+     * `-5877520-03-02T23:59:59Z` are nil. Both bounds are these local date-times in epoch ms.
+     *
+     * Not reproduced: (1) iOS keeps the date as a `Double` of seconds, so in the last ~16 ms before the end
+     * (`5874898-06-03T23:59:59.999Z`) it rounds up to the end and answers nil, where Android answers the
+     * instant; (2) further out iOS answers again, with a WRAPPED, meaningless date
+     * (`5899999-05-07T10:00:00Z` → about 5.86 million years BC, `9999999-…` → about 1.76 million years BC),
+     * between stretches of nil (`5880000-01-01T00:00:00Z`, `-5880000-05-07T10:00:00Z`); Android answers nil
+     * everywhere outside the range. It used to accept every year up to ±5,900,000, so it answered a date
+     * where iOS answers nil from `5874898-06-04` (and before `-5877520-03-03`).
      */
-    private const val MAX_EXTENDED_YEAR = 5_900_000L
+    private const val FIRST_LOCAL_MS = -185_542_587_187_200_000L // -5877520-03-03T00:00:00
+    private const val END_LOCAL_MS = 185_331_720_384_000_000L    // 5874898-06-04T00:00:00 (excluded)
+    /** Keeps the calendar arithmetic inside `Int` years; everything this far out is outside the range anyway. */
+    private const val YEAR_GUARD = 5_900_000L
 
     private fun utcCalendar() = GregorianCalendar(TimeZone.getTimeZone("UTC"), Locale.US).apply {
         clear()

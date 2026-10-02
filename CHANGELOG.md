@@ -119,7 +119,8 @@ Wraps iOS 1.0.82. Ships maps and host data (including "Show more").
   after the zone); `+02` and a lowercase `z` failed on API 26+; a date-only value with a 5-digit year,
   Arabic-Indic or full-width digits or a trailing NBSP differed. As on iOS: seconds are required
   (`T10:00Z` is no date), `T` must be upper case, and an instant's day rolls over (`2026-02-30T…` is
-  2 March).
+  2 March). An instant whose date and time as written fall outside iOS's range — from
+  `-5877520-03-03T00:00:00` up to, not including, `5874898-06-04T00:00:00` — is no date, as on iOS.
 - After `shutdown()`, `remoteConfig` and `features` no longer keep the torn-down manager: an `onChanged`
   callback registered before the next `configure()` goes to the new manager only.
 - An in-app message delegate or async veto set on another thread while `configure()` runs is no longer
