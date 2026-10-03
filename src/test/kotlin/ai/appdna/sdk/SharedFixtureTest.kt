@@ -2290,13 +2290,42 @@ class SharedFixtureTest(
         spy.events += p.envelopes().drop(before).map { it.toEventPair() }
     }
 
+    /** Sets the device's locales and telephony countries, reads `DeviceRegion.current(context)`, restores them. */
+    private fun regionFromDeviceSources(sources: JSONObject): String? {
+        val ctx = androidx.test.core.app.ApplicationProvider.getApplicationContext<android.content.Context>()
+        val savedLocale = java.util.Locale.getDefault()
+        val savedList = android.os.LocaleList.getDefault()
+        val tm = ctx.getSystemService(android.content.Context.TELEPHONY_SERVICE) as android.telephony.TelephonyManager
+        val shadowTm = org.robolectric.Shadows.shadowOf(tm)
+        try {
+            val locale = java.util.Locale.forLanguageTag(sources.optString("locale", ""))
+            val prefs = sources.optJSONArray("preferred_languages")
+            val list = (0 until (prefs?.length() ?: 0)).map { java.util.Locale.forLanguageTag(prefs!!.getString(it)) }
+            java.util.Locale.setDefault(locale)
+            android.os.LocaleList.setDefault(android.os.LocaleList(*list.toTypedArray()))
+            shadowTm.setSimCountryIso(sources.optString("sim_country", ""))
+            shadowTm.setNetworkCountryIso(sources.optString("network_country", ""))
+            return ai.appdna.sdk.config.DeviceRegion.current(ctx)
+        } finally {
+            java.util.Locale.setDefault(savedLocale)
+            android.os.LocaleList.setDefault(savedList)
+            shadowTm.setSimCountryIso("")
+            shadowTm.setNetworkCountryIso("")
+        }
+    }
+
     /** The device facts a fixture declares in session_data (absent / null = unknown). */
     private fun eligibilityContextFromSession(): (Map<String, Any>) -> ExperimentEligibilityContext {
         val appVersion = sessionData.optStringOrNull("app_version")
         // `region_candidates` (instead of `device_region`): the raw locale / SIM regions, resolved by the REAL
         // DeviceRegion.resolve — the first ISO-3166 alpha-2 code.
+        // `device_sources` (instead of either): the device's locale settings and its SIM / network countries, set on
+        // the (Robolectric) device and read by the REAL DeviceRegion.current(context).
+        val sources = sessionData.optJSONObject("device_sources")
         val candidates = sessionData.optJSONArray("region_candidates")
-        val region = if (candidates != null) {
+        val region = if (sources != null) {
+            regionFromDeviceSources(sources)
+        } else if (candidates != null) {
             ai.appdna.sdk.config.DeviceRegion.resolve((0 until candidates.length()).map { if (candidates.isNull(it)) null else candidates.optString(it) })
         } else sessionData.optStringOrNull("device_region")
         val installed = (sessionData.opt("install_epoch_ms") as? Number)?.toLong()

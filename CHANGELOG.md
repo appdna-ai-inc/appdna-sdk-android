@@ -206,6 +206,8 @@ Wraps iOS 1.0.82. Ships maps and host data (including "Show more").
   callback registered before the next `configure()` goes to the new manager only.
 - An in-app message delegate or async veto set on another thread while `configure()` runs is no longer
   lost: the manager is published first, then given them.
+- The consumer ProGuard rules keep the names of the SDK's exception classes, so a minified app reports the same
+  error names as a debug build (the Flutter and React Native wrappers send them to Dart / JS).
 - The event database's v2 → v3 upgrade (lookup columns for a 10,000-event backlog) runs as one chunked
   back-fill with one compiled statement, not a statement per row, on the thread that first opens the database.
 - Two helpers upgrading the same event database (the queue's and the WorkManager uploader's) no longer fail
@@ -215,10 +217,24 @@ Wraps iOS 1.0.82. Ships maps and host data (including "Show more").
 - The 5 MB event quota measures the queued events' bytes (each event's JSON plus one byte, as iOS) instead of
   the SQLite file, and evicts the oldest 10 % until they fit (it evicted 10 % once per insert, measuring pages,
   indexes and the free list — a small quota emptied the table).
-- The WorkManager uploader drops and counts a permanently rejected batch and goes on with the next one (it
-  ended the run, leaving the rest for the next scheduling), and retries a 408 (it dropped it as permanent).
+- The WorkManager uploader drops and counts a permanently rejected batch and ends its run; a fresh run (after
+  WorkManager's backoff) sends the rest, as on iOS. It used to go on with up to 50 more batches at once. A 408 is
+  retried (it was dropped as permanent).
+- **A 401 or 403 (an invalid or revoked API key) pauses uploads at once** until the next foreground or
+  `AppDNA.flush()`, in the in-process queue and the WorkManager uploader alike (iOS the same). Every later batch
+  would be rejected the same way; the queue used to pause only after 5 failed cycles, dropping a batch on each, and
+  the uploader did not pause. Any other permanent 4xx still drops only its batch.
 - The in-process queue reloads its in-memory window from the database once it drains, so a backlog larger than
-  1,000 events is sent without waiting for the background uploader or the next launch.
+  1,000 events is sent without waiting for the background uploader or the next launch. Events another upload had
+  already delivered but that were still stored are removed when the reload skips them; a front of 1,000 of them
+  used to stop the reload for good.
+- Queuing an event (`track()`) no longer reads the whole event table: the disk quota reads running totals the
+  database keeps (it summed the table on every insert, on the calling thread — usually the main one). The totals
+  are rebuilt from the table when an open finds them missing or off.
+- An eviction counts its dropped events once, after it commits: a rolled-back eviction counts nothing (it counted
+  each pass inside its transaction).
+- Two helpers creating a new event database at once (the queue's and the WorkManager uploader's) no longer fail
+  with "table pending_events already exists": creation is idempotent.
 - A 429 from the bootstrap at `configure()` holds the first bootstrap retry back for its `Retry-After` (only a
   retry's own 429 was honoured), and a network-back or foreground trigger that arrives while a retry is in
   flight no longer starts the next retry 0–1 s later: a failed retry is followed by its backoff.
@@ -228,12 +244,27 @@ Wraps iOS 1.0.82. Ships maps and host data (including "Show more").
   and cached surveys reach the survey manager at start-up instead of after the next fetch. Cached values keep
   the number types they had online (a whole-number double such as `2.0` came back as the integer `2`, so a
   remote-config value read as a `Double` was null).
-- Experiment targeting answers as on iOS: the device country falls back to the locale list, then the SIM and
-  the network country (a region-less locale gave none; an area code such as `419` is not a country); a
+- Experiment targeting answers as on iOS: the device country falls back to the locale list (a region-less
+  default locale gave none; an area code such as `419` is not a country) — the SIM's and the mobile network's
+  country are not read, as iOS has none; a malformed entry of `variants` (an id that is not a string, a weight
+  that is not a number …) is dropped on its own (a bad id read as "unknown" and a bad weight as 0, so users
+  bucketed into a variant iOS did not have); a `started_at_ms` outside the 64-bit range is absent (it saturated, so
+  "new users only" let everyone in); a
   `traffic_allocation` that is not a number allocates no one (was everyone); a trait condition with a missing or
   non-string trait, or a non-string operator, excludes the user.
 - Losing Wi-Fi while cellular is up no longer leaves the SDK offline (batch size 0) when the system has not yet
-  switched its default network, and a VPN or other connected network counts as connected on every path.
+  switched its default network, and a VPN or other connected network counts as connected on every path. A
+  capabilities change on a network that is not the default one (cellular staying up behind Wi-Fi) no longer sets
+  the connection type: the default network decides it.
+
+### Rolling back
+
+- **Do not roll back to 1.0.53 or earlier after shipping this version.** This version's event database is schema
+  version 4. 1.0.53 and earlier cannot open a newer database (they have no downgrade path): a user who installs an
+  app update that goes back to them stores and sends no events until the app is reinstalled or its data cleared.
+  Roll back to 1.0.54 or later only. (From 1.0.54 on, an older SDK keeps a newer database's events — see Fixed.)
+- The Flutter and React Native wrappers carry the same database: Flutter plugin 1.0.19 and React Native 1.0.18 and
+  earlier use Android SDK 1.0.53 or earlier.
 
 ### Binary compatibility
 

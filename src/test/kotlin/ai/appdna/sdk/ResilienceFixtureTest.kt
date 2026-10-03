@@ -143,6 +143,8 @@ class ResilienceFixtureTest {
                             latched,
                         )
                     }
+                    assertRejectionRuns(id, block.optJSONObject("rejection_runs")
+                        ?: error("[$id] permanent_failure must state `rejection_runs`"))
                 }
 
                 // AC-35 — bounded AND jittered. Both halves, because each hides the other's failure:
@@ -349,6 +351,8 @@ class ResilienceFixtureTest {
                         // A real queue: it loaded these events from its store; another owner then resolved some
                         // of them; its next upload sends only the rest.
                         assertQueueDoesNotResend(id, block.getJSONObject("queue"))
+                        assertReloadRemovesResolvedEvents(id, block.optJSONObject("reload")
+                            ?: error("[$id] resolved_events_not_resent needs the `reload` row"))
                     } finally {
                         EventUploadCoordinator.clearResolvedForTest()
                     }
@@ -456,6 +460,121 @@ class ResilienceFixtureTest {
         } finally {
             ai.appdna.sdk.events.DroppedEventsCounter.getAndReset()
             if (saved > 0) ai.appdna.sdk.events.DroppedEventsCounter.increment(saved)
+        }
+    }
+
+    /**
+     * Each row: every event upload answers `status`. The real WorkManager run ([EventUploadWorker.uploadPending]) on a
+     * `backlog`, then one cycle of a real in-process queue on another `backlog`.
+     */
+    private fun assertRejectionRuns(id: String, runs: JSONObject) {
+        val ctx = androidx.test.core.app.ApplicationProvider.getApplicationContext<android.content.Context>()
+        val backlog = runs.getInt("backlog")
+        val batch = runs.getInt("batch")
+        val rows = runs.getJSONArray("rows")
+        ai.appdna.sdk.events.DroppedEventsCounter.init(ctx)
+        val saved = ai.appdna.sdk.events.DroppedEventsCounter.getAndReset()
+        ai.appdna.sdk.network.TestHttpServer.settleIoDispatcher()
+        fun events(tag: String) = (0 until backlog).map {
+            JSONObject().put("event_id", "$tag-$it-${System.nanoTime()}").put("event_name", "reject_$it")
+                .put("ts_ms", System.currentTimeMillis()).put("properties", JSONObject().put("n", it)).toString()
+        }
+        try {
+            for (i in 0 until rows.length()) {
+                val row = rows.getJSONObject(i)
+                val status = row.getInt("status")
+                val pauses = row.getBoolean("pauses_uploads")
+                assertEquals("[$id] does HTTP $status pause uploads?", pauses, ApiClient.rejectionPausesUploads(status))
+                ai.appdna.sdk.network.TestHttpServer { path, _ -> if (path.contains("/ingest/events")) status to "{}" else 200 to "{}" }.use { server ->
+                    fun ingests() = synchronized(server.rawBodies) { server.rawBodies.count { it.first.contains("/ingest/events") } }
+
+                    // The WorkManager run.
+                    ai.appdna.sdk.events.UploadPauseGate.setForTest(ctx, false)
+                    EventUploadCoordinator.clearResolvedForTest()
+                    val db = EventDatabase(ctx, 10_000, "reject_run_${System.nanoTime()}.db")
+                    try {
+                        db.insertEvents(events("bg"))
+                        val outcome = ai.appdna.sdk.background.EventUploadWorker.uploadPending(
+                            db, "adn_test_reject", server.baseUrl, batchSizeCap = batch, context = ctx)
+                        assertEquals("[$id] HTTP $status: event uploads in one background run", row.getInt("background_requests"), ingests())
+                        assertEquals("[$id] HTTP $status: events left after the run", row.getInt("pending_after"), db.count())
+                        assertEquals("[$id] HTTP $status: another run scheduled?", row.getBoolean("background_reschedules"),
+                            outcome == ai.appdna.sdk.background.EventUploadWorker.Outcome.RETRY)
+                        assertEquals("[$id] HTTP $status: background run paused uploads?", pauses,
+                            ai.appdna.sdk.events.UploadPauseGate.isPaused(ctx))
+                    } finally {
+                        db.clearAll(); db.close()
+                    }
+
+                    // One cycle of the in-process queue (a new queue claims — clears — the gate).
+                    val qdb = EventDatabase(ctx, 10_000, "reject_queue_${System.nanoTime()}.db")
+                    qdb.insertEvents(events("q"))
+                    val q = EventQueue(ApiClient("adn_test_reject", server.baseUrl), qdb, null, batch, Long.MAX_VALUE, ctx, null)
+                    try {
+                        assertTrue("[$id] a new queue starts unpaused", !ai.appdna.sdk.events.UploadPauseGate.isPaused(ctx))
+                        kotlinx.coroutines.runBlocking { q.flushCycleForTest() }
+                        assertEquals("[$id] HTTP $status: the queue drops the rejected batch", backlog - batch, qdb.count())
+                        assertEquals("[$id] HTTP $status: failed cycles counted (5 = paused)",
+                            if (pauses) EventQueue.MAX_CONSECUTIVE_FAILURES else 1, q.consecutiveFailuresForTest)
+                        assertEquals("[$id] HTTP $status: queue paused uploads?", pauses,
+                            ai.appdna.sdk.events.UploadPauseGate.isPaused(ctx))
+                    } finally {
+                        q.shutdown()
+                        q.awaitShutdownFlush(10_000)
+                        qdb.clearAll(); qdb.close()
+                    }
+                }
+            }
+        } finally {
+            ai.appdna.sdk.events.UploadPauseGate.setForTest(ctx, false)
+            EventUploadCoordinator.clearResolvedForTest()
+            ai.appdna.sdk.events.DroppedEventsCounter.getAndReset()
+            if (saved > 0) ai.appdna.sdk.events.DroppedEventsCounter.increment(saved)
+        }
+    }
+
+    /**
+     * A real queue over a database holding `resolved_front` resolved events, then `unresolved_behind` others, flushed
+     * until the database is empty (the window reloads from it as it drains).
+     */
+    private fun assertReloadRemovesResolvedEvents(id: String, row: JSONObject) {
+        EventUploadCoordinator.clearResolvedForTest()
+        ai.appdna.sdk.network.TestHttpServer.settleIoDispatcher()
+        val ctx = androidx.test.core.app.ApplicationProvider.getApplicationContext<android.content.Context>()
+        val server = ai.appdna.sdk.network.TestHttpServer { _, _ -> 200 to "{}" }
+        val db = EventDatabase(ctx, 10_000, "resolved_reload_${System.nanoTime()}.db")
+        fun events(tag: String, n: Int) = (0 until n).map {
+            JSONObject().put("event_id", "$tag-$it-${System.nanoTime()}").put("event_name", "reload_$it")
+                .put("ts_ms", System.currentTimeMillis()).put("properties", JSONObject().put("n", it))
+        }
+        val resolved = events("resolved", row.getInt("resolved_front"))
+        val unresolved = events("unresolved", row.getInt("unresolved_behind"))
+        val storedAfter = row.getInt("stored_after")
+        try {
+            db.insertEvents((resolved + unresolved).map { it.toString() })
+            EventUploadCoordinator.markResolved(resolved.map { it.getString("event_id") })
+            val q = EventQueue(ApiClient("adn_test_resolved_reload", server.baseUrl), db, null, 100, Long.MAX_VALUE, ctx, null)
+            try {
+                repeat(60) { if (db.count() > storedAfter) kotlinx.coroutines.runBlocking { q.flushCycleForTest() } }
+                val sent = synchronized(server.rawBodies) { server.rawBodies.filter { it.first.startsWith("/api/v1/ingest/events") } }
+                    .flatMap { (_, raw) ->
+                        val json = java.util.zip.InflaterInputStream(java.io.ByteArrayInputStream(raw), java.util.zip.Inflater(true))
+                            .readBytes().toString(Charsets.UTF_8)
+                        val batch = JSONObject(json).getJSONArray("batch")
+                        (0 until batch.length()).map { batch.getJSONObject(it).getString("event_id") }
+                    }
+                assertEquals("[$id] events left in the database", storedAfter, db.count())
+                assertEquals("[$id] events sent", row.getInt("sent"), sent.size)
+                assertEquals("[$id] a resolved event was sent, or an unresolved one was not",
+                    unresolved.map { it.getString("event_id") }.toSet(), sent.toSet())
+            } finally {
+                q.shutdown()
+                q.awaitShutdownFlush(10_000)
+            }
+        } finally {
+            db.clearAll(); db.close()
+            server.close()
+            EventUploadCoordinator.clearResolvedForTest()
         }
     }
 

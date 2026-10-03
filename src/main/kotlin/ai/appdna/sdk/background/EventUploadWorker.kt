@@ -42,7 +42,7 @@ internal class EventUploadWorker(
         val baseUrl = inputData.getString(KEY_BASE_URL)
         val paused = ai.appdna.sdk.events.UploadPauseGate.isPaused(applicationContext)
         val cap = ai.appdna.sdk.events.BatchSizeCapGate.cap(applicationContext)
-        return when (uploadPending(eventDatabase, apiKey, baseUrl, paused, cap)) {
+        return when (uploadPending(eventDatabase, apiKey, baseUrl, paused, cap, applicationContext)) {
             Outcome.DONE -> Result.success()
             Outcome.RETRY -> Result.retry()
             Outcome.FAILED -> Result.failure()
@@ -58,7 +58,9 @@ internal class EventUploadWorker(
         private const val BATCH_SIZE = 100
 
         /**
-         * One run: upload every pending event, batch by batch, until none is left.
+         * One run: upload the pending events batch by batch, until none is left ([Outcome.DONE]), a batch fails
+         * transiently ([Outcome.RETRY]) or a batch is rejected permanently — dropped and counted; the run ends,
+         * paused after a 401 / 403, otherwise retried for the rest ([uploadBatch]).
          *
          * When another owner holds the process-wide upload claim (the in-process flush — e.g. the final
          * attempt `AppDNA.shutdown()` makes), this run answers [Outcome.RETRY], so WorkManager runs it again
@@ -79,6 +81,8 @@ internal class EventUploadWorker(
             baseUrl: String?,
             paused: Boolean = false,
             batchSizeCap: Int? = null,
+            /** Where a 401 / 403 sets the upload pause ([ai.appdna.sdk.events.UploadPauseGate]); null: nowhere. */
+            context: Context? = null,
         ): Outcome {
             // The queue's failure pause holds for this uploader too ([ai.appdna.sdk.events.UploadPauseGate]): a
             // paused app uploads nothing until a foreground or `AppDNA.flush()`. Done, not retried — retrying
@@ -123,8 +127,8 @@ internal class EventUploadWorker(
                 repeat(MAX_BATCHES_PER_RUN) {
                     val batch = eventDatabase.loadBatch(batchSize)
                     if (batch.isEmpty()) return Outcome.DONE
-                    when (val o = uploadBatch(client, eventDatabase, batch, apiKey, baseUrl)) {
-                        null -> Unit // sent (or dropped on a 4xx); next batch
+                    when (val o = uploadBatch(client, eventDatabase, batch, apiKey, baseUrl, context)) {
+                        null -> Unit // sent; next batch
                         else -> return o
                     }
                 }
@@ -135,13 +139,14 @@ internal class EventUploadWorker(
             }
         }
 
-        /** Upload one batch. Null: resolved (sent, or dropped on a permanent 4xx) — go on; else the run's outcome. */
+        /** Upload one batch. Null: sent — go on with the next one; else the run's outcome. */
         private fun uploadBatch(
             client: okhttp3.OkHttpClient,
             eventDatabase: EventDatabase,
             batch: List<Pair<Long, String>>,
             apiKey: String,
             baseUrl: String,
+            context: Context?,
         ): Outcome? {
             val batchArray = JSONArray()
             val eventIds = mutableListOf<String>()
@@ -192,9 +197,20 @@ internal class EventUploadWorker(
                         if (loss > 0) ai.appdna.sdk.events.DroppedEventsCounter.increment(loss)
                         eventDatabase.removeByIds(batch.map { it.first })
                         ai.appdna.sdk.events.EventUploadCoordinator.markResolved(eventIds)
-                        // Resolved: go on with the next batch. The run used to end FAILED here, so the events
-                        // behind a rejected batch waited for the next scheduling; iOS goes on too.
-                        null
+                        // The run ends here, as iOS `BackgroundUploader`'s does. A 401 / 403
+                        // ([ApiClient.rejectionPausesUploads]) rejects every batch the same way: uploads pause — the
+                        // in-process queue's rule — until the next foreground or `AppDNA.flush()`, and nothing is
+                        // retried. Any other rejection was about this batch: a fresh run (after WorkManager's backoff)
+                        // sends the events behind it. It used to go on at once with up to 50 batches, with no pause.
+                        if (ApiClient.rejectionPausesUploads(code)) {
+                            ai.appdna.sdk.events.UploadPauseGate.pauseFromBackgroundUpload(context)
+                            Log.error("Background upload: the API key was rejected — uploads paused until the next foreground / AppDNA.flush()")
+                            Outcome.DONE
+                        } else if (eventDatabase.count() > 0) {
+                            Outcome.RETRY
+                        } else {
+                            Outcome.DONE
+                        }
                     } else {
                         Log.warning("Background upload transient failure (HTTP $code) — will retry")
                         Outcome.RETRY

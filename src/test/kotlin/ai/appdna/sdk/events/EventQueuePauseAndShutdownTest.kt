@@ -35,7 +35,7 @@ class EventQueuePauseAndShutdownTest {
     private val ctx: Context = ApplicationProvider.getApplicationContext()
     private lateinit var db: EventDatabase
     private val queues = mutableListOf<EventQueue>()
-    /** The dropped-events counter before this test: its 401s drop batches into it (see tearDown). */
+    /** The dropped-events counter before this test: its 400s drop batches into it (see tearDown). */
     private var savedDropped = 0
 
     @Before
@@ -50,7 +50,7 @@ class EventQueuePauseAndShutdownTest {
     @After
     fun tearDown() {
         queues.forEach { it.shutdown() }
-        // The 401 batches this test dropped went into the process-wide dropped-events counter (its
+        // The 400 batches this test dropped went into the process-wide dropped-events counter (its
         // SharedPreferences handle outlives the test), and every later test's tracker would then emit an
         // `_sdk_events_dropped` event first. Let the last upload resolve, then put the counter back.
         waitFor { EventUploadCoordinator.tryAcquire().also { if (it) EventUploadCoordinator.release() } }
@@ -82,7 +82,7 @@ class EventQueuePauseAndShutdownTest {
         return condition()
     }
 
-    /** Five threshold flushes, each one 401 (a dropped batch counts toward the pause): paused. */
+    /** Five threshold flushes, each one 400 (a dropped batch counts toward the pause; a 401 / 403 would pause at once): paused. */
     private fun pauseAfterFiveFailures(q: EventQueue, server: TestHttpServer) {
         for (i in 1..5) {
             q.enqueue(event(i))
@@ -99,7 +99,7 @@ class EventQueuePauseAndShutdownTest {
 
     @Test
     fun aThresholdFlushKeepsThePauseAndTheHostsFlushClearsIt() {
-        TestHttpServer { _, _ -> 401 to "{}" }.use { server ->
+        TestHttpServer { _, _ -> 400 to "{}" }.use { server ->
             val q = queue(server, batchSize = 1)
             pauseAfterFiveFailures(q, server)
             assertAThresholdFlushKeepsThePause(q, server)
@@ -111,7 +111,7 @@ class EventQueuePauseAndShutdownTest {
 
     @Test
     fun backgroundKeepsThePauseAndForegroundClearsIt() {
-        TestHttpServer { _, _ -> 401 to "{}" }.use { server ->
+        TestHttpServer { _, _ -> 400 to "{}" }.use { server ->
             val q = queue(server, batchSize = 1)
             pauseAfterFiveFailures(q, server)
             assertAThresholdFlushKeepsThePause(q, server)

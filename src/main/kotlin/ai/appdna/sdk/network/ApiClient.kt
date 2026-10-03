@@ -520,6 +520,16 @@ internal class ApiClient(
          * disagreed on 429 in production, and nothing could see it because the decision only existed
          * inside a `when` over a live OkHttp `Response`.
          */
+        /**
+         * Whether a permanent rejection with this status pauses every upload path until the next foreground or
+         * `AppDNA.flush()`: 401 / 403 — the API key is wrong or revoked, so every later batch would be rejected
+         * (and dropped as a loss) the same way. Any other permanent 4xx (400, 404, 413 …) is about the batch: it is
+         * dropped and uploads go on. The in-process queue and the WorkManager uploader both apply it; iOS
+         * `APIClient.rejectionPausesUploads`, same table (fixture `permanent_4xx_dropped`, `rejection_pauses`).
+         */
+        @JvmStatic
+        fun rejectionPausesUploads(code: Int): Boolean = code == 401 || code == 403
+
         @JvmStatic
         fun dispositionFor(code: Int): EventUploadDisposition = when {
             code in 200..299 -> EventUploadDisposition.SUCCESS

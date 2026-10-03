@@ -413,6 +413,45 @@ internal class RemoteConfigManager(
         }
     }
 
+    /** One served variant, or null when the entry is malformed (see [parseExperiments]). */
+    @Suppress("UNCHECKED_CAST")
+    private fun parseVariant(v: Any?): ExperimentVariant? {
+        if (v !is Map<*, *>) return null
+        val id = v["id"] as? String
+        if (id.isNullOrEmpty()) return null
+        fun <T> field(key: String, ok: (Any) -> T?): Pair<Boolean, T?> {
+            val raw = v[key] ?: return true to null       // absent or null: fine
+            val value = ok(raw) ?: return false to null    // present with the wrong type: malformed
+            return true to value
+        }
+        val (weightOk, weight) = field("weight") { (it as? Number)?.toDouble() }
+        val (payloadOk, payload) = field("payload") { it as? Map<String, Any> }
+        val (refOk, configRef) = field("config_ref") { it as? String }
+        val (controlOk, isControl) = field("is_control") { it as? Boolean }
+        val (docOk, variantDoc) = field("variant_doc") { it as? String }
+        if (!(weightOk && payloadOk && refOk && controlOk && docOk)) return null
+        // `payload` is the canonical key; older SDKs wrote `config` (kept as a fallback, never a reason to drop).
+        val config = payload ?: (v["config"] as? Map<String, Any>) ?: emptyMap()
+        return ExperimentVariant(
+            id = id,
+            weight = weight ?: 0.0,
+            config = config,
+            configRef = configRef,
+            isControl = isControl,
+            variantDoc = variantDoc,
+        )
+    }
+
+    /** A whole number in the Long range, or a finite fraction inside it (truncated); anything else → null. */
+    private fun startedAtMs(v: Any?): Long? = when (v) {
+        is Long -> v
+        is Int -> v.toLong()
+        is Short -> v.toLong()
+        is Byte -> v.toLong()
+        is Number -> v.toDouble().takeIf { it.isFinite() && kotlin.math.abs(it) < 9.2e18 }?.toLong()
+        else -> null
+    }
+
     @Suppress("UNCHECKED_CAST")
     private fun parseExperiments(data: Map<String, Any>) {
         // Unwrap "experiments" wrapper if present
@@ -423,34 +462,12 @@ internal class RemoteConfigManager(
                 @Suppress("UNCHECKED_CAST")
                 val map = value as Map<String, Any>
                 try {
-                    val variants = (map["variants"] as? List<*>)?.mapNotNull { v ->
-                        if (v is Map<*, *>) {
-                            @Suppress("UNCHECKED_CAST")
-                            val vm = v as Map<String, Any>
-                            // SPEC-070-A F.10: iOS canonical key is `payload`; legacy SDKs wrote
-                            // `config`. Accept both — prefer `payload` when present.
-                            @Suppress("UNCHECKED_CAST")
-                            val variantData =
-                                (vm["payload"] as? Map<String, Any>)
-                                    ?: (vm["config"] as? Map<String, Any>)
-                                    ?: emptyMap()
-                            ExperimentVariant(
-                                // Round-35 — retain variants with a missing id/weight (default
-                                // "unknown"/0.0) instead of dropping them, matching iOS's optional
-                                // decode. Dropping diverged the variant LIST, so the same user could
-                                // bucket into a DIFFERENT variant per platform (corrupting experiment
-                                // analytics). Well-formed console configs always carry id + weight.
-                                id = vm["id"] as? String ?: "unknown",
-                                weight = (vm["weight"] as? Number)?.toDouble() ?: 0.0,
-                                config = variantData,
-                                // SPEC-036-F §1.2 — served per-variant fields.
-                                configRef = vm["config_ref"] as? String,
-                                isControl = vm["is_control"] as? Boolean,
-                                // SPEC-036-H — per_item variant-doc pointer.
-                                variantDoc = vm["variant_doc"] as? String,
-                            )
-                        } else null
-                    } ?: emptyList()
+                    // A malformed entry — not an object, no non-empty string `id`, or a field of the wrong type
+                    // (`weight` not a number, `payload` not an object, `config_ref` / `variant_doc` not a string,
+                    // `is_control` not a bool) — is dropped on its own; the others are kept, in order. iOS
+                    // `ExperimentConfig`, same rule. A bad id used to read as "unknown" and a bad weight as 0 here, while
+                    // iOS dropped every variant, so the same user bucketed into different variants per platform.
+                    val variants = (map["variants"] as? List<*>)?.mapNotNull { v -> parseVariant(v) } ?: emptyList()
 
                     // Legacy top-level key nothing writes; kept so an old cached doc still parses. Not evaluated.
                     val segments = (map["segments"] as? List<*>)?.filterIsInstance<String>()
@@ -474,11 +491,9 @@ internal class RemoteConfigManager(
                             else -> Double.NaN
                         },
                         targeting = ExperimentTargeting.fromAny(map["targeting"]),
-                        // Not a number → absent, so "new users only" fails closed; a fraction is truncated.
-                        startedAtMs = (map["started_at_ms"] as? Number)?.let { n ->
-                            if (n is Double || n is Float) n.toDouble().takeIf { !it.isNaN() && !it.isInfinite() }?.toLong()
-                            else n.toLong()
-                        },
+                        // Not a number → absent, so "new users only" fails closed; a fraction is truncated; a number
+                        // outside the Long range → absent (it used to saturate to Long.MIN / MAX). iOS, same rule.
+                        startedAtMs = startedAtMs(map["started_at_ms"]),
                     )
                 } catch (e: Exception) {
                     Log.warning("Failed to parse experiment '$key': ${e.message}")

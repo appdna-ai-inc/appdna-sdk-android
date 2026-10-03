@@ -283,9 +283,11 @@ internal class EventQueue(
         // Events another upload owner already resolved — the WorkManager uploader, or the final flush of a
         // queue that `shutdown()` ended while this one loaded the same rows from SQLite — are not sent
         // again: that owner removed them from disk, but this queue still holds its in-memory copies.
+        // Removed from SQLite too: the other owner's removal may not have reached it.
         val resolvedElsewhere = queue.filter { EventUploadCoordinator.wasResolved(it.optString("event_id")) }
         if (resolvedElsewhere.isNotEmpty()) {
             queue.removeAll(resolvedElsewhere.toSet())
+            eventDatabase.removeByEventIds(resolvedElsewhere.mapTo(HashSet()) { it.optString("event_id") })
             Log.debug("Skipped ${resolvedElsewhere.size} event(s) another upload already delivered")
         }
         if (queue.isEmpty()) return
@@ -339,7 +341,13 @@ internal class EventQueue(
                     queue.removeAll(batch.toSet())
                     eventDatabase.removeByEventIds(batchEventIds)
                     EventUploadCoordinator.markResolved(batchEventIds)
-                    // 4xx is a permanent failure, not a transient one — count toward pause
+                    // 4xx is a permanent failure, not a transient one — count toward pause. A 401 / 403
+                    // ([ApiClient.rejectionPausesUploads]) is about the key, not the batch: every later batch would
+                    // be rejected and dropped the same way, so uploads pause now (the WorkManager uploader too,
+                    // through the gate) until the next foreground or `AppDNA.flush()`. iOS `EventQueue`, same rule.
+                    if (ApiClient.rejectionPausesUploads(result.statusCode)) {
+                        consecutiveFailures = maxOf(consecutiveFailures, MAX_CONSECUTIVE_FAILURES - 1)
+                    }
                     bumpFailureCounter()
                     return
                 }
@@ -372,24 +380,42 @@ internal class EventQueue(
      * window (the constructor loads only the newest [MAX_IN_MEMORY_EVENTS]), or events that left the window when
      * it was full. Load the oldest of them, so the in-process queue keeps sending them. Before, a drained window
      * stayed empty until the next `track()` or launch, and only the WorkManager uploader sent the rest. Under
-     * [flushMutex]. iOS `EventQueue.reloadWindowFromDisk`, same rule.
+     * [flushMutex].
+     *
+     * Events another owner already resolved are not loaded — and are removed from SQLite here: they can still be
+     * stored when that owner's removal did not reach the database. Left there, a front of [MAX_IN_MEMORY_EVENTS] of
+     * them made every reload find nothing, and the rows behind them were never sent by the queue. iOS
+     * `EventQueue.reloadWindowFromDisk`, same rule.
      */
     private fun reloadWindowFromDisk() {
-        if (eventDatabase.count() == 0) return
-        val rows = eventDatabase.loadBatch(MAX_IN_MEMORY_EVENTS)
-        // A `track()` racing this reload is already in memory (and may be in `rows` too): never twice.
-        val present = queue.mapTo(HashSet()) { it.optString("event_id") }
-        val older = ArrayList<JSONObject>(rows.size)
-        for ((_, json) in rows) {
-            val obj = try { JSONObject(json) } catch (_: Exception) { continue }
-            val id = obj.optString("event_id")
-            if (id in present || EventUploadCoordinator.wasResolved(id)) continue
-            older.add(obj)
+        // Each pass removes what it skips, so the next one reads further; the bound only guards a database that keeps
+        // failing to delete (each pass is one window).
+        repeat(MAX_RELOAD_PASSES) {
+            if (eventDatabase.count() == 0) return
+            val rows = eventDatabase.loadBatch(MAX_IN_MEMORY_EVENTS)
+            // A `track()` racing this reload is already in memory (and may be in `rows` too): never twice.
+            val present = queue.mapTo(HashSet()) { it.optString("event_id") }
+            val older = ArrayList<JSONObject>(rows.size)
+            val resolved = HashSet<String>()
+            for ((_, json) in rows) {
+                val obj = try { JSONObject(json) } catch (_: Exception) { continue }
+                val id = obj.optString("event_id")
+                if (EventUploadCoordinator.wasResolved(id)) { resolved += id; continue }
+                if (id in present) continue
+                older.add(obj)
+            }
+            if (resolved.isNotEmpty()) {
+                eventDatabase.removeByEventIds(resolved)
+                Log.debug("Removed ${resolved.size} stored event(s) another upload already delivered")
+            }
+            if (older.isNotEmpty()) {
+                queue.addAll(0, older)
+                trimInMemoryCap()
+                Log.debug("Reloaded ${older.size} persisted events into the drained in-memory window")
+                return
+            }
+            if (resolved.isEmpty()) return
         }
-        if (older.isEmpty()) return
-        queue.addAll(0, older)
-        trimInMemoryCap()
-        Log.debug("Reloaded ${older.size} persisted events into the drained in-memory window")
     }
 
     /** Test reader: the events in the in-memory window. */
@@ -556,6 +582,8 @@ internal class EventQueue(
         }
         /** SPEC-070-A A.16: Pause uploads after this many back-to-back batch failures. */
         const val MAX_CONSECUTIVE_FAILURES = 5
+        /** Window reloads one drain makes at most ([reloadWindowFromDisk]). */
+        internal const val MAX_RELOAD_PASSES = 20
         /** SPEC-070-A A.17: Cap in-memory copy at 1000 events (matches iOS EventQueue.swift `maxInMemoryEvents`). */
         const val MAX_IN_MEMORY_EVENTS = 1000
     }

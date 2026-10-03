@@ -159,4 +159,37 @@ class ConnectivityMonitorTest {
             monitor.shutdown()
         }
     }
+
+    /**
+     * The callback reports every network with internet, not only the default one. A capabilities change on a
+     * NON-default network (cellular staying up in the background while Wi-Fi is the default) changes nothing: the
+     * default network decides the type. When cellular becomes the default, its change applies.
+     * NEGATIVE CONTROL: `onCapabilitiesChanged` applying the changed network's capabilities again → CELLULAR, batch
+     * 50, while Wi-Fi is the default.
+     */
+    @Test fun aNonDefaultNetworkChangeDoesNotDecideTheType() {
+        activate(ConnectivityManager.TYPE_WIFI)
+        val wifi = cm.activeNetwork!!
+        shadowOf(cm).setNetworkCapabilities(wifi, caps(NetworkCapabilities.TRANSPORT_WIFI))
+        val monitor = ConnectivityMonitor(ctx)
+        try {
+            monitor.networkCallbackForTest.onCapabilitiesChanged(wifi, caps(NetworkCapabilities.TRANSPORT_WIFI))
+            val backgroundCellular = ShadowNetwork.newInstance(4243)
+            monitor.networkCallbackForTest.onCapabilitiesChanged(backgroundCellular,
+                caps(NetworkCapabilities.TRANSPORT_CELLULAR, metered = true))
+            assertEquals("a non-default network decided the type", ConnectivityMonitor.ConnectionType.WIFI, monitor.currentConnectionType)
+            assertFalse(monitor.isMetered)
+            assertEquals(100, monitor.adaptiveBatchSize)
+
+            // Cellular becomes the default network: its change now applies.
+            activate(ConnectivityManager.TYPE_MOBILE)
+            val cellular = cm.activeNetwork!!
+            shadowOf(cm).setNetworkCapabilities(cellular, caps(NetworkCapabilities.TRANSPORT_CELLULAR))
+            monitor.networkCallbackForTest.onCapabilitiesChanged(cellular, caps(NetworkCapabilities.TRANSPORT_CELLULAR, metered = true))
+            assertEquals(ConnectivityMonitor.ConnectionType.CELLULAR, monitor.currentConnectionType)
+            assertEquals("the default network's newest capabilities (metered)", 20, monitor.adaptiveBatchSize)
+        } finally {
+            monitor.shutdown()
+        }
+    }
 }

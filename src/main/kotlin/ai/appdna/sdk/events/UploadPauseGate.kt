@@ -41,6 +41,14 @@ internal object UploadPauseGate {
         write(context, paused)
     }
 
+    /**
+     * The WorkManager uploader's pause after a 401 / 403 ([ai.appdna.sdk.network.ApiClient.rejectionPausesUploads]).
+     * It owns no token — it may run in a process with no queue — so it sets the gate whoever owns it; the owning
+     * queue clears it at the next foreground or `AppDNA.flush()`, and a new queue clears it when it claims the gate.
+     */
+    @Synchronized
+    fun pauseFromBackgroundUpload(context: Context?) = write(context, true)
+
     /** Test seam: set the gate whoever owns it. */
     @Synchronized
     fun setForTest(context: Context?, paused: Boolean) = write(context, paused)
