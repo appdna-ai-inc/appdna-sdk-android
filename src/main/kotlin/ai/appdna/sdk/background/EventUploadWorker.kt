@@ -14,7 +14,7 @@ import org.json.JSONObject
 import java.util.concurrent.TimeUnit
 
 /**
- * SPEC-067: WorkManager-based background event upload.
+ * WorkManager-based background event upload.
  * Ensures queued events are delivered when the app is backgrounded or killed.
  */
 internal class EventUploadWorker(
@@ -25,7 +25,7 @@ internal class EventUploadWorker(
     override suspend fun doWork(): Result = withContext(Dispatchers.IO) {
         Log.info("Background event upload started")
 
-        // SPEC-070-A H.24: own the EventDatabase handle for exactly the duration
+        // Own the EventDatabase handle for exactly the duration
         // of this run via try/finally so the SQLite file is always closed —
         // including on exception paths. Previously each WorkManager run leaked
         // a SQLiteOpenHelper.

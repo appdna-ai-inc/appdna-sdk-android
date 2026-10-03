@@ -17,7 +17,7 @@ import org.robolectric.annotation.Config
 import java.io.File
 
 /**
- * SPEC-070-B AC-35 — resilience behavioral fixtures (packages/sdk-shared-fixtures/resilience/).
+ * Resilience behavioral fixtures (packages/sdk-shared-fixtures/resilience/).
  *
  * These are the upload/queue SURVIVAL contracts, and every one of them lives below the bridge:
  * a wrapper cannot observe an HTTP status, a `Retry-After` header, or a prune decision. So — exactly
@@ -99,7 +99,7 @@ class ResilienceFixtureTest {
                     }
                 }
 
-                // AC-35 — the full three-way classification, plus the latch expectation. Android has
+                // The full three-way classification, plus the latch expectation. Android has
                 // no `eventUploadPermanentlyFailed` flag (it drops the batch and pauses via
                 // bumpFailureCounter), so the `latch` sequence is asserted against the SAME
                 // classifier, carried forward — a status that is not DROP_PERMANENT may neither set
@@ -147,7 +147,7 @@ class ResilienceFixtureTest {
                         ?: error("[$id] permanent_failure must state `rejection_runs`"))
                 }
 
-                // AC-35 — bounded AND jittered. Both halves, because each hides the other's failure:
+                // Bounded AND jittered. Both halves, because each hides the other's failure:
                 // a `return base` regression satisfies every bound, and an unbounded jitter is still
                 // "jittered". Drives the real `EventQueue.jittered`, not a copy of its arithmetic.
                 "backoff" -> {

@@ -65,7 +65,7 @@ private class NoBackupContext(base: Context, dbName: String) : ContextWrapper(ba
 }
 
 /**
- * SPEC-067: SQLite-based event persistence replacing SharedPreferences.
+ * SQLite-based event persistence replacing SharedPreferences.
  * Provides atomic row-level operations that survive process kills.
  * Enforces both event count cap (10K) and disk quota (5 MB of LIVE event bytes — each stored event's UTF-8
  * JSON plus one byte, the newline iOS stores after each line — the same measure as iOS `EventStore`, not the
@@ -75,7 +75,7 @@ private class NoBackupContext(base: Context, dbName: String) : ContextWrapper(ba
  */
 internal class EventDatabase(
     context: Context,
-    // SPEC-428: injectable so the shared behavioral fixtures (events/ category) drive eviction at a
+    // Injectable so the shared behavioral fixtures (events/ category) drive eviction at a
     // small cap with an isolated db. Production callers use the defaults.
     private val maxEvents: Int = MAX_EVENTS,
     dbName: String = DATABASE_NAME,
@@ -84,7 +84,7 @@ internal class EventDatabase(
 ) : SQLiteOpenHelper(NoBackupContext(context, dbName), dbName, null, DATABASE_VERSION) {
 
     init {
-        // SPEC-428 CL-1/D2: wire the dropped-events counter to this app context.
+        // Wire the dropped-events counter to this app context.
         ai.appdna.sdk.events.DroppedEventsCounter.init(context)
     }
 
@@ -119,11 +119,11 @@ internal class EventDatabase(
 
         const val MAX_EVENTS = 10_000
         const val MAX_DISK_BYTES = 5 * 1024 * 1024 // 5 MB
-        // SPEC-428 CL-2/D5: client redelivery horizon (7d, tracking SPEC-426's server dedup window).
+        // Client redelivery horizon (7d, tracking the server's dedup window).
         const val REDELIVERY_HORIZON_MS = 7L * 24 * 60 * 60 * 1000
 
         /**
-         * SPEC-070-B PN row 19 (W14) — an age past this is not a stale event, it is a broken clock.
+         * An age past this is not a stale event, it is a broken clock.
          * The horizon compares wall clocks, so a forward clock jump makes every queued event look
          * older than 7 days at once and prunes it **unsent**. Beyond this bound, and for any negative
          * age (the clock moved backwards), we keep the event: a retained event costs a retry, a pruned
@@ -395,7 +395,7 @@ internal class EventDatabase(
                 lookup?.let { putAll(it) }
                 put(COL_EVENT_JSON, eventJson)
                 put(COL_PAYLOAD_BYTES, eventJson.toByteArray(Charsets.UTF_8).size)
-                put(COL_CREATED_AT, System.currentTimeMillis()) // SPEC-428 CL-6: milliseconds, not seconds
+                put(COL_CREATED_AT, System.currentTimeMillis()) // Milliseconds, not seconds
             }
             db.insert(TABLE_EVENTS, null, values)
             enforceQuotas(db)
@@ -418,7 +418,7 @@ internal class EventDatabase(
                         lookupValues(eventJson)?.let { putAll(it) }
                         put(COL_EVENT_JSON, eventJson)
                         put(COL_PAYLOAD_BYTES, eventJson.toByteArray(Charsets.UTF_8).size)
-                        put(COL_CREATED_AT, System.currentTimeMillis()) // SPEC-428 CL-6: milliseconds, not seconds
+                        put(COL_CREATED_AT, System.currentTimeMillis()) // Milliseconds, not seconds
                     }
                     db.insert(TABLE_EVENTS, null, values)
                 }
@@ -514,7 +514,7 @@ internal class EventDatabase(
     }
 
     /**
-     * SPEC-428 CL-4/D3 — CONTENT-ADDRESSED removal: delete exactly the rows whose event's `event_id`
+     * CONTENT-ADDRESSED removal: delete exactly the rows whose event's `event_id`
      * was in the UPLOADED batch, never a re-derived "globally-oldest N". After a CL-1 in-memory
      * eviction the in-mem batch diverges from the DB's oldest N, so deleting the oldest N would drop
      * never-uploaded rows (LOSS) and leave the uploaded rows behind (DUP on the next flush).
@@ -535,9 +535,9 @@ internal class EventDatabase(
     }
 
     /**
-     * SPEC-428 CL-2/D5: drop events past the redelivery horizon so NO consumer — the in-process flush OR
+     * Drop events past the redelivery horizon so NO consumer — the in-process flush OR
      * the WorkManager uploader that fires hours/days later — re-sends an event past the server dedup window
-     * (double-count). This lives at the STORE so both paths are covered. Counted (CL-1). Returns # dropped.
+     * (double-count). This lives at the STORE so both paths are covered. Counted. Returns # dropped.
      */
     fun pruneStale(horizonMs: Long = REDELIVERY_HORIZON_MS): Int {
         val now = System.currentTimeMillis()
@@ -581,7 +581,7 @@ internal class EventDatabase(
     }
 
     /**
-     * SPEC-424 STEP-1a (CL-7): purge ALL persisted events WITHOUT uploading — analytics consent was
+     * Purge ALL persisted events WITHOUT uploading — analytics consent was
      * revoked, so queued-but-unsent events must never be transmitted.
      */
     fun clearAll() {

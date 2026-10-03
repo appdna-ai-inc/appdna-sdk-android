@@ -22,10 +22,10 @@ import java.util.zip.DeflaterOutputStream
 
 /**
  * HTTP client for SDK API communication with retry and backoff.
- * SPEC-067: Supports deflate compression for request bodies and Accept-Encoding for responses.
- * SPEC-070-A A.1: Uses x-api-key header to match iOS APIClient.
- * SPEC-070-A A.15: Switched compression from gzip to deflate to match iOS Network/APIClient.swift:143.
- * SPEC-070-A H.1/H.2/H.13/H.15: 401 differentiation + UA/x-sdk-version headers + typed-body decode +
+ * Supports deflate compression for request bodies and Accept-Encoding for responses.
+ * Uses x-api-key header to match iOS APIClient.
+ * Switched compression from gzip to deflate to match iOS Network/APIClient.swift:143.
+ * 401 differentiation + UA/x-sdk-version headers + typed-body decode +
  * callTimeout / 30s connectTimeout to match iOS resource caps.
  */
 internal class ApiClient(
@@ -39,16 +39,16 @@ internal class ApiClient(
     /** Existing callers (and tests) that pass an [Environment] keep compiling unchanged. */
     constructor(apiKey: String, environment: Environment) : this(apiKey, environment.baseUrl)
 
-    // SPEC-070-A H.15: bump connectTimeout to 30s (iOS default) and add a wall-clock
+    // Bump connectTimeout to 30s (iOS default) and add a wall-clock
     // callTimeout so a stalled write/read can never hold the queue indefinitely.
     private val client = OkHttpClient.Builder()
         .connectTimeout(30, TimeUnit.SECONDS)
         .readTimeout(30, TimeUnit.SECONDS)
         .writeTimeout(30, TimeUnit.SECONDS)
         .callTimeout(60, TimeUnit.SECONDS)
-        // SPEC-067: Add Accept-Encoding: gzip for response decompression (OkHttp handles this automatically)
+        // Add Accept-Encoding: gzip for response decompression (OkHttp handles this automatically)
         .addInterceptor(AcceptEncodingInterceptor())
-        // SPEC-070-A H.2: stamp every outgoing request with a stable
+        // Stamp every outgoing request with a stable
         // User-Agent + x-sdk-version header so the backend can attribute
         // traffic and roll out version gates without parsing User-Agent.
         .addInterceptor(SdkIdentityInterceptor())
@@ -58,7 +58,7 @@ internal class ApiClient(
 
     private val retryDelays = longArrayOf(1000L, 2000L, 4000L)
 
-    // SPEC-070-A G.2: long-lived scope for fire-and-forget posts so we don't
+    // Long-lived scope for fire-and-forget posts so we don't
     // create a fresh CoroutineScope per call (which would leak on cancellation).
     private val fireAndForgetScope = kotlinx.coroutines.CoroutineScope(
         Dispatchers.IO + kotlinx.coroutines.SupervisorJob()
@@ -83,10 +83,10 @@ internal class ApiClient(
                         if (response.isSuccessful) {
                             return@withContext response.body?.string()
                         }
-                        // SPEC-070-A H.1: 401 means the API key is invalid or
-                        // the SDK is suspended (SPEC-322). Retrying won't fix
+                        // 401 means the API key is invalid or
+                        // the SDK is suspended. Retrying won't fix
                         // it; surface a loud error and break out of the retry
-                        // loop. SPEC-070-A H.13: decode the typed error body
+                        // loop. Decode the typed error body
                         // ({error_code, message}) for richer logging.
                         if (response.code == 401) {
                             val (errCode, errMsg) = decodeErrorBody(response)
@@ -96,7 +96,7 @@ internal class ApiClient(
                             )
                             return@withContext null
                         }
-                        // SPEC-070-A H.13: log structured 4xx errors so callers
+                        // Log structured 4xx errors so callers
                         // see the backend's reason string instead of a generic
                         // status code.
                         if (response.code in 400..499) {
@@ -105,7 +105,7 @@ internal class ApiClient(
                                 "API request failed (${response.code}): $path " +
                                     "code=${errCode ?: "n/a"} msg=${errMsg ?: "n/a"}"
                             )
-                            // Round-18 — a 4xx is a PERMANENT client error (bad request / rejected receipt
+                            // A 4xx is a PERMANENT client error (bad request / rejected receipt
                             // / not-found / unprocessable / rate-limited). Retrying won't help and only
                             // triples load + delays the user-facing failure ~7s. iOS's generic request()
                             // treats ANY 4xx as terminal, and the event-upload disposition table already
@@ -204,7 +204,7 @@ internal class ApiClient(
         }
 
     /**
-     * SPEC-067: POST a JSON body with gzip compression for event ingestion.
+     * POST a JSON body with gzip compression for event ingestion.
      * Returns the response body string, or null on failure.
      */
     suspend fun postCompressed(path: String, body: String): String? {
@@ -253,7 +253,7 @@ internal class ApiClient(
     }
 
     /**
-     * SPEC-070-A G.2: Fire-and-forget POST. Used for the identify alias call,
+     * Fire-and-forget POST. Used for the identify alias call,
      * where we don't want a transient backend hiccup to delay the synchronous
      * SDK API. Behaves identically to [post] except the network work is launched
      * on a background scope and the caller never blocks. Transient/network
@@ -307,7 +307,7 @@ internal class ApiClient(
     }
 
     /**
-     * Round-10 #14 — GET with bounded retry on TRANSIENT failures only (5xx + network), used for the
+     * GET with bounded retry on TRANSIENT failures only (5xx + network), used for the
      * cold-start bootstrap. iOS retries the `.bootstrap` request 3× with 1/2/4s backoff
      * (Network/APIClient.swift); the plain [get] made a single attempt and immediately degraded to
      * cached config on any blip, stranding Android on stale config for the whole session. A 401/4xx is
@@ -379,11 +379,11 @@ internal class ApiClient(
     }
 
     /**
-     * SPEC-070-A A.16: Single-attempt event-batch upload with structured result.
+     * Single-attempt event-batch upload with structured result.
      *
      * Unlike [postCompressed] (which performs its own internal retry loop), this method
      * makes ONE network attempt and returns an [EventUploadResult] so the caller
-     * (EventQueue) can apply the SPEC-070-A retry policy:
+     * (EventQueue) can apply the retry policy:
      *   - 2xx → Success
      *   - 4xx (except 429) → ClientError (drop the batch — retrying won't help)
      *   - 5xx + 429 + network error → TransientFailure (retry with backoff)
@@ -407,7 +407,7 @@ internal class ApiClient(
 
                 client.newCall(request).execute().use { response ->
                     val code = response.code
-                    // SPEC-070-B AC-35: the CLASSIFICATION is [dispositionFor], a pure function the
+                    // The CLASSIFICATION is [dispositionFor], a pure function the
                     // shared `permanent_4xx_dropped` fixture asserts on both platforms. It used to
                     // live only in the branches of this `when` — reachable exclusively through a real
                     // OkHttp round trip, so no test could ask whether a 429 drops a batch. On iOS the
@@ -418,7 +418,7 @@ internal class ApiClient(
                         EventUploadDisposition.DROP_PERMANENT -> {
                             val (errCode, errMsg) = decodeErrorBody(response)
                             if (code == 401) {
-                                // SPEC-070-A H.1: surface invalid API key explicitly
+                                // Surface invalid API key explicitly
                                 // so EventQueue can drop the batch (retrying won't help).
                                 Log.error(
                                     "Event upload auth failed (HTTP 401): Invalid API key or SDK suspended. " +
@@ -456,7 +456,7 @@ internal class ApiClient(
     }
 
     /**
-     * SPEC-070-A H.13: best-effort decode of `{error_code, message}` from a 4xx
+     * Best-effort decode of `{error_code, message}` from a 4xx
      * response. Returns (errorCode, message) when the body parses as JSON;
      * (null, null) otherwise. Always safe to call — never throws.
      */
@@ -496,7 +496,7 @@ internal class ApiClient(
         }
     }
 
-    // MARK: SPEC-067 — Deflate Compression (matches iOS COMPRESSION_ZLIB raw deflate, SPEC-070-A A.15)
+    // MARK: Deflate Compression (matches iOS COMPRESSION_ZLIB raw deflate)
 
     companion object {
         /** Test seam: the base of [getWithRetryResult]'s 1 s / 2 s / 4 s backoff (null in production). */
@@ -515,7 +515,7 @@ internal class ApiClient(
         val TRANSIENT_STATUS_CODES: Set<Int> = setOf(408, 429)
 
         /**
-         * SPEC-070-B AC-35 — the pure classifier the shared `permanent_4xx_dropped` fixture asserts.
+         * The pure classifier the shared `permanent_4xx_dropped` fixture asserts.
          * Mirrors iOS `APIClient.disposition(for:)` exactly, which is the point: the two SDKs
          * disagreed on 429 in production, and nothing could see it because the decision only existed
          * inside a `when` over a live OkHttp `Response`.
@@ -543,7 +543,7 @@ internal class ApiClient(
          * `compression_encode_buffer(... COMPRESSION_ZLIB)` byte stream exactly.
          *
          * Java's `Deflater(level, nowrap=true)` produces RFC 1951 raw deflate output
-         * (the same format iOS sends with Content-Encoding: deflate per SPEC-067).
+         * (the same format iOS sends with Content-Encoding: deflate).
          */
         fun deflateCompress(data: ByteArray): ByteArray {
             val deflater = Deflater(Deflater.DEFAULT_COMPRESSION, /* nowrap = */ true)
@@ -555,7 +555,7 @@ internal class ApiClient(
     }
 
     /**
-     * SPEC-067: OkHttp interceptor that adds Accept-Encoding: gzip, deflate to all requests
+     * OkHttp interceptor that adds Accept-Encoding: gzip, deflate to all requests
      * (matching iOS APIClient.swift:195). OkHttp automatically decompresses gzip responses
      * when this header is present; deflate response bodies (rare on AppDNA backend) fall
      * through to caller decoding.
@@ -570,7 +570,7 @@ internal class ApiClient(
     }
 
     /**
-     * SPEC-070-A H.2: stamp every outgoing request with a User-Agent + x-sdk-version
+     * Stamp every outgoing request with a User-Agent + x-sdk-version
      * header so the backend can attribute traffic by SDK version + platform without
      * parsing User-Agent. Mirrors iOS APIClient header injection.
      */
@@ -590,8 +590,8 @@ internal class ApiClient(
 }
 
 /**
- * SPEC-070-A A.16: Outcome of a single event-batch upload attempt.
- * Lets [EventQueue] apply the differentiated retry policy described in §3.1 P0.
+ * Outcome of a single event-batch upload attempt.
+ * Lets [EventQueue] apply the differentiated retry policy (permanent 4xx dropped, transient retried).
  */
 internal sealed class EventUploadResult {
     /** 2xx response — batch is delivered, drop from disk + memory. */
@@ -615,7 +615,7 @@ internal sealed class EventUploadResult {
 }
 
 /**
- * SPEC-070-B AC-35 — what an event-upload HTTP status MEANS, independent of any network.
+ * What an event-upload HTTP status MEANS, independent of any network.
  *
  * Mirrors iOS `APIClient.EventUploadDisposition`. It is a separate type from [EventUploadResult]
  * because a result carries the response (status, Retry-After); a disposition is the pure decision

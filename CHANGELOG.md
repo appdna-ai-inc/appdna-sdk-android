@@ -545,7 +545,7 @@ Wraps iOS 1.0.79. Publishable version and feature-parity marker move independent
 
 ### Fixed
 - A stray grey **"Skip"** drew under the CTA of *every* screen. The render was gated on the skip
-  handler being non-null, and SPEC-476 had just made that handler unconditional — so the proxy for
+  handler being non-null, and an earlier change had just made that handler unconditional — so the proxy for
   "is skipping allowed" stopped meaning anything. It reads `skip_enabled` now, which is the flag the
   console actually writes. (#653)
 - **`horizontal_align` did nothing on a width-constrained block.** A block with `element_width` of
@@ -558,7 +558,7 @@ Wraps iOS 1.0.79. Publishable version and feature-parity marker move independent
   so the last lines of a summary were unreachable — the scroll range ended before them. The reserve
   is the zone's measured height now, and stays 0 when there is no bottom zone so short centred
   screens stay centred. (#655)
-- **Summary cards vanished** when a single token did not resolve. SPEC-446 dropped the whole stat,
+- **Summary cards vanished** when a single token did not resolve. The SDK dropped the whole stat,
   so one missing key in the host payload took the row with it. A card is dropped only when it would
   say nothing at all: an unresolved *value* keeps the card and shows an em-dash, an unresolved
   *label* keeps the value and drops the caption. (#660)
@@ -671,7 +671,7 @@ are unchanged.
 
 ## [1.0.38] — 2026-05-30
 
-SPEC-036-H — per-item remote-config serving (read side). Feature flags and
+per-item remote-config serving (read side). Feature flags and
 in-app messages are now read via their per-item index (`config/flag_index`,
 `config/message_index`) with per-item documents fetched on demand, falling
 back to the legacy mega-doc when no index is present. The index is
@@ -686,7 +686,7 @@ Feature parity marker: `appdnaFeatureParity=1.0.66`.
 
 ## [1.0.37] — 2026-05-26
 
-SPEC-036-F Phase 1 — experiment-aware presentation. The four served surface
+experiment-aware presentation. The four served surface
 managers (`PaywallManager`, `OnboardingFlowManager`, `MessageManager`,
 `SurveyManager`) now consult `ExperimentManager` at present-time: when a
 `running` experiment's served `type` matches the surface and its control
@@ -702,8 +702,8 @@ Feature parity marker: `appdnaFeatureParity=1.0.65`.
 
 ## [1.0.36] — 2026-05-18
 
-SPEC-404 — hard SDK suspension. When the backend signals the SDK is in
-locked mode (per-key suspended at day 20+ via the SPEC-322 sweep, OR org
+Hard SDK suspension. When the backend signals the SDK is in
+locked mode (per-key suspended at day 20+ via the sweep, OR org
 cancelled), the SDK enters runtime-locked mode and pauses paywall /
 message / survey presentation. The lock is delivered via the
 `/sdk/bootstrap` response's new optional `runtime_lock` field; SDK
@@ -855,8 +855,8 @@ auth-action validation.
 Android SDK uses its own version sequence (independent of iOS — Android
 last released `1.0.31`). The `appdnaFeatureParity=1.0.61` marker in
 `gradle.properties` declares which iOS SDK version this Android release
-wraps for cross-platform feature parity: SPEC-070-A brought Android to iOS
-1.0.60 parity, and SPEC-401 Phase D mirrored the 4 iOS 1.0.61
+wraps for cross-platform feature parity: an earlier release brought Android to iOS
+1.0.60 parity, and a later one mirrored the 4 iOS 1.0.61
 entitlement-aware paywall fixes (entitlement gate, bridge restore,
 auto-dismiss, identify-time cache refresh) onto Android in the same
 release tag. Note: an earlier draft of this changelog tagged this release
@@ -864,8 +864,8 @@ as `1.0.60`; that was a mis-merge of the iOS version into the Android
 sequence and has been corrected.
 
 Cross-platform feature parity catch-up to iOS — closes the gap from previous
-Android-only follow-up debt across SPEC-038, SPEC-082, SPEC-083, SPEC-084,
-SPEC-085, SPEC-205, SPEC-206, and SPEC-400 in a single release.
+Android-only follow-up debt (rich media, theming, auth and restore, network,
+push, identity and events) in a single release.
 
 ### Added
 
@@ -876,20 +876,20 @@ SPEC-085, SPEC-205, SPEC-206, and SPEC-400 in a single release.
 - **Paywalls** — strict-typed restore lifecycle (`onPaywallRestoreStarted`/
   `Completed`/`Failed`) and 12-method `OnboardingPaywallBridge` forwarding so
   paywall actions invoked from an onboarding step pass through correctly.
-- **Rich media (SPEC-085)** — Lottie + Rive (always bundled), SVG, GIF, and
+- **Rich media** — Lottie + Rive (always bundled), SVG, GIF, and
   inline video via Media3 ExoPlayer; Lucide / Material / SF-Symbols-equivalent
   icon library; blur / glassmorphism modifiers; haptics; confetti and particle
   overlays across messages, surveys, and push notifications.
-- **Theming (SPEC-205)** — light / dark theme tokens with deterministic
+- **Theming** — light / dark theme tokens with deterministic
   resolution and system-appearance follow.
-- **Auth + restore (SPEC-206)** — strict-typed auth context and restore flow
+- **Auth + restore** — strict-typed auth context and restore flow
   parity with iOS.
 - **Push** — strict-typed action buttons, NSE-equivalent rich content
   (image / GIF / video) helper, and per-action delegate routing.
-- **Network + push hardening** — 25 SPEC-070-A H-series items: typed retry
+- **Network + push hardening** — 25 items: typed retry
   policy, jitter, hard-cap reconnect on `BillingConnectionManager`, push
   delegate integration, etc.
-- **Identity + events** — 22 SPEC-070-A G-series items: anonymous-id
+- **Identity + events** — 22 items: anonymous-id
   persistence via EncryptedSharedPreferences, structured event envelope,
   retry policy, in-memory caps.
 - **Build / packaging (Phase J)** — Maven Central / Sonatype OSSRH publish

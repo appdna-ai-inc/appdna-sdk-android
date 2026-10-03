@@ -8,7 +8,7 @@ import android.net.NetworkRequest
 import ai.appdna.sdk.Log
 
 /**
- * SPEC-067: Network condition monitoring for adaptive batch sizing.
+ * Network condition monitoring for adaptive batch sizing.
  * Uses ConnectivityManager.NetworkCallback for real-time updates.
  */
 internal class ConnectivityMonitor(context: Context) {

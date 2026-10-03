@@ -21,11 +21,11 @@ import kotlin.random.Random
 /**
  * Manages in-memory + disk event queue with automatic flushing.
  *
- * SPEC-067: Adaptive batch sizing, deflate compression, SQLite persistence.
- * SPEC-070-A A.16: Differentiated retry policy (4xx drop, 5xx/429 retry-with-backoff,
+ * Adaptive batch sizing, deflate compression, SQLite persistence.
+ * Differentiated retry policy (4xx drop, 5xx/429 retry-with-backoff,
  *   pause after 5 consecutive failures).
- * SPEC-070-A A.17: In-memory cap of 1000 events; oldest are evicted to disk.
- * SPEC-070-A A.18: Observe ProcessLifecycle ON_STOP → flush + schedule background uploader.
+ * In-memory cap of 1000 events; oldest are evicted to disk.
+ * Observe ProcessLifecycle ON_STOP → flush + schedule background uploader.
  *
  * Behavioural parity with iOS `Events/EventQueue.swift`.
  */
@@ -46,18 +46,18 @@ internal class EventQueue(
     /** Counts down when the final flush [shutdown] starts has finished, scheduled and closed the database. */
     internal val shutdownFlushDone = java.util.concurrent.CountDownLatch(1)
 
-    /** SPEC-070-A A.16: Track in-flight retry/backoff state. */
+    /** Track in-flight retry/backoff state. */
     private val flushMutex = Mutex()
 
-    // SPEC-428 CL-2/D5: client redelivery horizon — never re-send an event older than this (past the
-    // server dedup window it would double-count). Compiled default 7d, tracking SPEC-426's horizon.
+    // Client redelivery horizon — never re-send an event older than this (past the
+    // server dedup window it would double-count). Compiled default 7d, tracking the horizon.
     private val redeliveryHorizonMs = 7L * 24 * 60 * 60 * 1000
     @Volatile private var consecutiveFailures = 0
     @Volatile private var paused = false
     /** This queue's token for [UploadPauseGate] (see [UploadPauseGate.claim]). */
     private val pauseOwner: Long
 
-    /** SPEC-070-A A.18: Lifecycle observer registered on ProcessLifecycleOwner.get(). */
+    /** Lifecycle observer registered on ProcessLifecycleOwner.get(). */
     private var lifecycleObserver: DefaultLifecycleObserver? = null
 
     /** The host's / the bootstrap's cap on the adaptive batch size ([RuntimeSettings]); null: no cap. */
@@ -109,7 +109,7 @@ internal class EventQueue(
             try {
                 queue.add(JSONObject(json))
             } catch (e: Exception) {
-                // SPEC-070-A G.11: surface JSON parse errors instead of dropping
+                // Surface JSON parse errors instead of dropping
                 // them silently. A bad row in SQLite usually means the writer
                 // changed the envelope shape — we want to know about it.
                 Log.warning { "Skipping persisted event with malformed JSON: ${e.message}" }
@@ -119,14 +119,14 @@ internal class EventQueue(
             Log.info("Loaded ${stored.size} persisted events from SQLite")
         }
 
-        // SPEC-070-A A.17: Trim in-memory cap if SQLite returned more than maxInMemoryEvents.
+        // Trim in-memory cap if SQLite returned more than maxInMemoryEvents.
         // Disk still has them all; in-memory is just a sliding window of the most recent.
         trimInMemoryCap()
 
         // Start auto-flush timer
         startAutoFlush()
 
-        // SPEC-070-A A.18: Wire ProcessLifecycleOwner so app backgrounding flushes
+        // Wire ProcessLifecycleOwner so app backgrounding flushes
         // the queue + schedules the WorkManager uploader for whatever remains.
         registerLifecycleObserver()
     }
@@ -145,7 +145,7 @@ internal class EventQueue(
      * Add an event to the queue.
      */
     fun enqueue(event: JSONObject, onPersisted: (() -> Unit)? = null) {
-        // SPEC-070-A A.17: Cap in-memory queue. Disk persistence happens regardless,
+        // Cap in-memory queue. Disk persistence happens regardless,
         // so evicted events are not lost — just dropped from RAM.
         if (queue.size >= MAX_IN_MEMORY_EVENTS) {
             // Evict the oldest entries down to (cap - 1) so the new event fits.
@@ -156,9 +156,9 @@ internal class EventQueue(
             Log.debug("In-memory event cap hit ($MAX_IN_MEMORY_EVENTS) — evicted $excess oldest events from RAM (still on disk)")
         }
         queue.add(event)
-        // SPEC-067: Persist to SQLite (truth-of-record; survives process death)
+        // Persist to SQLite (truth-of-record; survives process death)
         eventDatabase.insertEvent(event)
-        // SPEC-428 STEP-4: insertEvent is synchronous, so the event is durable here — safe to run the
+        // insertEvent is synchronous, so the event is durable here — safe to run the
         // dropped-meta counter decrement (only decrement after the meta is on disk, never a zero-reset).
         onPersisted?.invoke()
 
@@ -189,7 +189,7 @@ internal class EventQueue(
 
     /**
      * Force flush all queued events — the host's `AppDNA.flush()`.
-     * SPEC-070-A A.16: Manual flush also resets the "paused after N failures" gate.
+     * Manual flush also resets the "paused after N failures" gate.
      */
     fun flush() = flush(FlushTrigger.EXPLICIT)
 
@@ -207,7 +207,7 @@ internal class EventQueue(
     }
 
     /**
-     * SPEC-424 STEP-1a (CL-7): purge ALL pending events (in-memory + on-disk) WITHOUT uploading —
+     * Purge ALL pending events (in-memory + on-disk) WITHOUT uploading
      * called when analytics consent is revoked so queued-but-unsent events are never transmitted.
      * A server-side consent gate is defeated if the SDK later flushes events captured while consent
      * was true, so revoke must drop them at the source.
@@ -218,13 +218,13 @@ internal class EventQueue(
         Log.info("Event queue purged — analytics consent revoked")
     }
 
-    /** SPEC-070-A A.18: Public hook for foreground events to retry the queue. */
+    /** Public hook for foreground events to retry the queue. */
     internal fun onAppForeground() {
         // Reset the pause gate on foreground (matches iOS "until next session" semantics).
         flush(FlushTrigger.FOREGROUND)
     }
 
-    /** SPEC-070-A A.18: Background hook — flush in-flight then hand off to WorkManager. */
+    /** Background hook — flush in-flight then hand off to WorkManager. */
     internal fun onAppBackground() {
         scope.launch {
             runFlush(FlushTrigger.BACKGROUND)
@@ -239,15 +239,15 @@ internal class EventQueue(
     }
 
     /**
-     * SPEC-428 CL-2/D5: drop events past the redelivery horizon before flush — re-sending them past
-     * the server dedup window would double-count. The drop is counted (CL-1).
+     * Drop events past the redelivery horizon before flush — re-sending them past
+     * the server dedup window would double-count. The drop is counted.
      */
     private fun pruneStaleEvents() {
         val nowMs = System.currentTimeMillis()
         // Remove stale from the in-memory working set only (NO count here); eventDatabase.pruneStale is the
         // SINGLE, meta-aware count source (these events' persisted copies live on disk), so the loss metric
         // can't be double-incremented by the in-process flush AND the background upload both pruning.
-        // SPEC-070-B PN row 19 (W14): the same clock-jump clamp the database uses — otherwise the
+        // The same clock-jump clamp the database uses — otherwise the
         // in-memory set and the disk set disagree about what is stale.
         val stale = queue.filter {
             ai.appdna.sdk.storage.EventDatabase.isStale(
@@ -273,7 +273,7 @@ internal class EventQueue(
             return
         }
 
-        // SPEC-428 CL-9/D4: single upload owner — skip if the background Worker holds the claim, so
+        // Single upload owner — skip if the background Worker holds the claim, so
         // the same rows are never POSTed by both paths concurrently. Released in the finally below.
         if (!EventUploadCoordinator.tryAcquire()) {
             Log.debug("Flush deferred — background uploader is active")
@@ -297,14 +297,14 @@ internal class EventQueue(
         val batchArray = JSONArray()
         for (event in batch) batchArray.put(event)
 
-        // SPEC-428 CL-4/D3: remove exactly the UPLOADED events by event_id (content-addressed), never
+        // Remove exactly the UPLOADED events by event_id (content-addressed), never
         // the DB's globally-oldest N — after a CL-1 in-mem eviction the in-mem batch diverges from the
         // oldest N, so deleting the oldest N drops never-uploaded rows (LOSS) + resends uploaded (DUP).
         val batchEventIds = batch.mapNotNull { runCatching { (it as JSONObject).getString("event_id") }.getOrNull() }.toSet()
 
         val body = JSONObject().apply { put("batch", batchArray) }.toString()
 
-        // SPEC-070-A A.16 retry policy:
+        // Retry policy:
         // initial + up to MAX_RETRIES retries; backoff [1s, 2s, 4s] with ±25% jitter.
         var attempt = 0
         while (attempt <= maxRetries) {
@@ -326,7 +326,7 @@ internal class EventQueue(
                     // 4xx (except 429): payload/auth is broken — don't retry, drop the batch
                     // so the queue doesn't loop forever.
                     Log.error("Dropping batch of ${batch.size} events after HTTP ${result.statusCode} (4xx — retry won't help)")
-                    // SPEC-428 D2/STEP-4: the WHOLE dropped batch is a loss (a 401 drops valid events; a
+                    // The WHOLE dropped batch is a loss (a 401 drops valid events; a
                     // 400 drops malformed ones) — count EVERY normal event (+1) AND re-add any
                     // _sdk_events_dropped meta's carried N, so NOTHING is silently lost. A fresh meta
                     // (new event_id) re-emits the total when uploads resume; bumpFailureCounter pauses,
@@ -371,7 +371,7 @@ internal class EventQueue(
             }
         }
         } finally {
-            EventUploadCoordinator.release() // SPEC-428 CL-9: release the cross-path upload claim
+            EventUploadCoordinator.release() // Release the cross-path upload claim
         }
     }
 
@@ -456,7 +456,7 @@ internal class EventQueue(
                 try {
                     val obs = object : DefaultLifecycleObserver {
                         override fun onStop(owner: LifecycleOwner) {
-                            // SPEC-070-A A.18: app entered background — flush + schedule WorkManager
+                            // App entered background — flush + schedule WorkManager
                             onAppBackground()
                         }
 
@@ -478,7 +478,7 @@ internal class EventQueue(
 
     fun shutdown() {
         flushJob?.cancel()
-        // SPEC-070-A finalization (Lens C P0) — cancel the scope itself so
+        // Cancel the scope itself so
         // any other launched coroutines (retry backoff, app-foreground flush)
         // are torn down too. Without this, SDK shutdown leaks IO threads.
         try { scope.cancel() } catch (_: Throwable) {}
@@ -556,15 +556,15 @@ internal class EventQueue(
             return if (seconds > Long.MAX_VALUE / 1000) Long.MAX_VALUE else seconds * 1000
         }
 
-        /** SPEC-070-A A.16: Max retries per batch. */
+        /** Max retries per batch. */
         const val MAX_RETRIES = 3
-        /** SPEC-070-A A.16: Base backoff schedule before jitter. */
+        /** Base backoff schedule before jitter. */
         val RETRY_DELAYS_MS: LongArray = longArrayOf(1000L, 2000L, 4000L)
-        /** SPEC-070-A A.16: ±25 % jitter, matches the prompt requirement. */
+        /** ±25 % jitter, matches the prompt requirement. */
         const val JITTER_PCT = 0.25
 
         /**
-         * SPEC-070-B AC-35 (`backoff_bounded_and_jittered`) — apply ±[JITTER_PCT] to a backoff delay.
+         * (`backoff_bounded_and_jittered`) — apply ±[JITTER_PCT] to a backoff delay.
          *
          * A named seam, not four lines inlined in the retry loop, because the fixture has to be able
          * to SAMPLE it: "bounded" and "jittered" are claims about a distribution, and a distribution
@@ -580,17 +580,17 @@ internal class EventQueue(
             if (jitterRange <= 0L) return baseMs.coerceAtLeast(0L)
             return (baseMs + Random.nextLong(-jitterRange, jitterRange + 1)).coerceAtLeast(0L)
         }
-        /** SPEC-070-A A.16: Pause uploads after this many back-to-back batch failures. */
+        /** Pause uploads after this many back-to-back batch failures. */
         const val MAX_CONSECUTIVE_FAILURES = 5
         /** Window reloads one drain makes at most ([reloadWindowFromDisk]). */
         internal const val MAX_RELOAD_PASSES = 20
-        /** SPEC-070-A A.17: Cap in-memory copy at 1000 events (matches iOS EventQueue.swift `maxInMemoryEvents`). */
+        /** Cap in-memory copy at 1000 events (matches iOS EventQueue.swift `maxInMemoryEvents`). */
         const val MAX_IN_MEMORY_EVENTS = 1000
     }
 }
 
 /**
- * SPEC-070-A A.18: Indirection for scheduling background uploads from EventQueue
+ * Indirection for scheduling background uploads from EventQueue
  * without forcing a hard dependency on `background.EventUploadWorker`. Wired by
  * AppDNA.configure().
  */
@@ -599,7 +599,7 @@ internal interface BackgroundUploadScheduler {
 }
 
 /**
- * SPEC-428 CL-9/D4 — process-wide single upload owner. The in-process flush (EventQueue) and the
+ * Process-wide single upload owner. The in-process flush (EventQueue) and the
  * background WorkManager uploader (EventUploadWorker) must be mutually exclusive, else both POST the
  * same rows concurrently (DUP). flushMutex is instance-scoped and does NOT guard the Worker; this
  * process-wide claim does. Non-blocking: whoever wins uploads, the other skips this cycle.

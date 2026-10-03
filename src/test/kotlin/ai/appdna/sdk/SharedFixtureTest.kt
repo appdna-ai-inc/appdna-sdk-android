@@ -1,7 +1,7 @@
 package ai.appdna.sdk
 
 /*
- * Cross-platform behavioral fixture runner for Android — SPEC-070-0 §3.2, SPEC-070-B.
+ * Cross-platform behavioral fixture runner for Android.
  *
  * WHAT CHANGED, AND WHY IT MATTERS
  * --------------------------------
@@ -244,11 +244,11 @@ class SharedFixtureTest(
             "post_push_notification" -> runPostPushNotification(action, spy)
             "present_surface_under_experiment" -> runPresentSurfaceUnderExperiment(action, spy)
             "get_variant" -> runGetVariant(action, spy)
-            // SPEC-496 §H — the raw host-data pass, through the REAL HostDataResolver.
+            // The raw host-data pass, through the REAL HostDataResolver.
             "resolve_block" -> runResolveBlock(spy)
-            // SPEC-496 — a presented onboarding step driven through the REAL step pipeline.
+            // A presented onboarding step driven through the REAL step pipeline.
             "host_data_scenario" -> runHostDataScenario(action, spy)
-            // SPEC-496 §5b C2 — the core decoder every bridge forwards `dataContext` through.
+            // The core decoder every bridge forwards `dataContext` through.
             "decode_interaction_result" -> runDecodeInteractionResult(spy)
             // The sign-in bridge floor (the core half; bridge_waits is the bridge tests').
             "bridge_timeout_floor" -> runBridgeTimeoutFloor(action, spy)
@@ -1057,7 +1057,7 @@ class SharedFixtureTest(
     }
 
     // ---------------------------------------------------------------------------------------------
-    // SPEC-420 measurement — REAL parseMeasurementConfig + measurementSnapshot
+    // Measurement — REAL parseMeasurementConfig + measurementSnapshot
     // ---------------------------------------------------------------------------------------------
 
     private fun runPickMeasurement(action: JSONObject, spy: Spy) {
@@ -1116,10 +1116,10 @@ class SharedFixtureTest(
     }
 
     // ---------------------------------------------------------------------------------------------
-    // SPEC-496 — resolve_block: the REAL raw host-data pass (HostDataResolver)
+    // resolve_block: the REAL raw host-data pass (HostDataResolver)
     // ---------------------------------------------------------------------------------------------
 
-    /** The TemplateEngine context a fixture describes — the §A5 legacy-root resolver reads it. */
+    /** The TemplateEngine context a fixture describes — the legacy-root resolver reads it. */
     private fun fixtureTemplateContext(): TemplateContext {
         val rc = (setup.optJSONObject("remote_config") ?: JSONObject()).asMap()
         return TemplateContext(
@@ -1142,7 +1142,7 @@ class SharedFixtureTest(
         }
 
     /**
-     * SPEC-496 §H — `resolve_block`: ONE raw block through the REAL `HostDataResolver.resolveRawBlock`,
+     * `resolve_block`: ONE raw block through the REAL `HostDataResolver.resolveRawBlock`,
      * compared STRUCTURALLY and TYPE-STRICTLY against `expect.state_after.resolved_block` — "1" is not
      * 1, a missing key is not null, and an extra key fails. The generic `state_after` check below is
      * type-loose and projects maps onto the expected keys, which would let exactly the defects this
@@ -1178,7 +1178,7 @@ class SharedFixtureTest(
     }
 
     /**
-     * SPEC-496 — `host_data_scenario`: one presented onboarding step, driven op by op through the
+     * `host_data_scenario`: one presented onboarding step, driven op by op through the
      * REAL step pipeline (see [HostDataScenarioDriver]). Each checkpoint's observations are projected
      * onto the keys the fixture names ("keys absent are not asserted"), with an absent map entry read
      * as null — so `input_values: {tour: null}` asserts the value was CLEARED, not merely unlisted.
@@ -1205,7 +1205,7 @@ class SharedFixtureTest(
     }
 
     /**
-     * SPEC-496 §5b C2 / C10 — `decode_interaction_result`: the raw reply's `dataContext` through the REAL
+     * `decode_interaction_result`: the raw reply's `dataContext` through the REAL
      * `ElementInteractionResult.decodeDataContext`, compared TYPE-STRICTLY (a stringified number or a
      * dropped null member fails). Driven twice — with the bridged `Map` shape (RN / Flutter hand the
      * core a `Map<*, *>`) and with the raw `org.json` tree (`JSONObject.NULL` members) — and both must
@@ -1274,7 +1274,7 @@ class SharedFixtureTest(
     // ---------------------------------------------------------------------------------------------
 
     /**
-     * SPEC-448 §B — drives the REAL `applyingOverride` with host-supplied options.
+     * Drives the REAL `applyingOverride` with host-supplied options.
      *
      * Its own driver rather than a branch of the config one: this is not a parse, it is a merge,
      * and the thing under test is what the merge leaves ALONE. A merge that rebuilt the block array
@@ -1400,7 +1400,7 @@ class SharedFixtureTest(
             byBlock[blockId] = ai.appdna.sdk.onboarding.OnboardingConfigParser.parseInputOptionList(maps)
         }
 
-        // SPEC-451 — through the SAME public decoder the wrapper bridges call, so a divergence
+        // Through the SAME public decoder the wrapper bridges call, so a divergence
         // between what Flutter/RN send and what the core accepts fails here rather than on a device.
         val mapRoutes = hostRoutes?.let {
             ai.appdna.sdk.onboarding.StepConfigOverride.decodeMapRoutes(jsonValueToKotlin(it))
@@ -1448,7 +1448,7 @@ class SharedFixtureTest(
     }
 
     /**
-     * SPEC-451 — drives the REAL `mapStaticUrl`, the same function the renderer calls.
+     * Drives the REAL `mapStaticUrl`, the same function the renderer calls.
      *
      * The point of this fixture is cross-LANGUAGE agreement, so the runner must not compose the URL
      * itself in any way: a runner-local copy would agree with the fixture forever while the renderer
@@ -1472,10 +1472,10 @@ class SharedFixtureTest(
             sessionData.optString("map_token").ifEmpty { null },
             sessionData.optInt("map_width", 390),
             sessionData.optInt("map_height", 240),
-            // SPEC-495 §A — the provider is read off the block, so one driver covers both.
+            // The provider is read off the block, so one driver covers both.
             sessionData.optString("map_google_key").ifEmpty { null },
         )
-        // SPEC-495 §C — sizing and placement, from the REAL functions the renderer and the step
+        // Sizing and placement, from the REAL functions the renderer and the step
         // layout call. Both are a switch over authored strings written three times in three
         // languages, which is the exact shape that drifts silently: every version keeps returning a
         // perfectly good number, just not the same one.
@@ -1518,7 +1518,7 @@ class SharedFixtureTest(
                 spy.state["parsed_rich_text_variant"] = kids.firstOrNull { it.type == "rich_text" }?.rich_text_variant
                 spy.state["parsed_rating_default"] = kids.firstOrNull { it.type == "rating" }?.default_rating
                 spy.state["parsed_picker_mode"] = kids.firstOrNull { it.type == "wheel_picker" }?.picker_mode
-                // SPEC-439 (#546) — the label keys the natives previously did not decode at all.
+                // The label keys the natives previously did not decode at all.
                 spy.state["parsed_label_position"] = block.field_style?.label_position
                 spy.state["parsed_label_align"] = block.field_style?.label_align
                 spy.state["parsed_label_font_family"] = block.field_style?.label_font_family
@@ -1534,7 +1534,7 @@ class SharedFixtureTest(
                 spy.state["parsed_frame_color"] = block.field_config?.get("frame_color") as? String
                 spy.state["parsed_frame_glow_color"] = block.field_config?.get("frame_glow_color") as? String
                 // #580 — the Sound Button's authored icon.
-                // SPEC-481 (#601) — the warning banner's subtitle, alignment, own chrome and
+                // The warning banner's subtitle, alignment, own chrome and
                 // per-role typography. All in `field_config`: ContentBlock is at 245 of the JVM's
                 // 255-param ceiling, so these could not be top-level fields at any price.
                 spy.state["parsed_banner_variant"] = block.field_config?.get("banner_variant") as? String
@@ -1556,7 +1556,7 @@ class SharedFixtureTest(
                 spy.state["parsed_divider_after_index"] = (block.field_config?.get("divider_after_index") as? Number)?.toDouble()
                 spy.state["parsed_sound_icon_gap"] = (block.field_config?.get("sound_icon_gap") as? Number)?.toDouble()
                 spy.state["parsed_frame_corner_radius"] = (block.field_config?.get("frame_corner_radius") as? Number)?.toDouble()
-                // SPEC-444 (#540, #542) — the option's nested sheet blocks.
+                // The option's nested sheet blocks.
                 val fopts = block.field_options.orEmpty()
                 spy.state["parsed_opt0_sheet_block_count"] = fopts.getOrNull(0)?.sheet_blocks?.size ?: 0
                 spy.state["parsed_opt0_sheet_first_type"] = fopts.getOrNull(0)?.sheet_blocks?.firstOrNull()?.type
@@ -1587,7 +1587,7 @@ class SharedFixtureTest(
                     spy.state["gate_needs_no_field_required"] = block.field_required != true
                 }
 
-                // SPEC-446 §3 — the gate, exercised in BOTH directions plus the deadlock case.
+                // The gate, exercised in BOTH directions plus the deadlock case.
                 if (block.type == "summary_screen") {
                     // #595 — derived through the SDK's OWN `summaryStatFieldId`, not by reading
                     // `field_id` directly. A stat that carries an `input` but no `field_id` used to
@@ -1623,12 +1623,12 @@ class SharedFixtureTest(
                     }
                 }
 
-                // SPEC-447 (#555) — the image-tile layout keys.
+                // The image-tile layout keys.
                 spy.state["parsed_tile_image_layout"] = block.field_config?.get("tile_image_layout") as? String
                 spy.state["parsed_tile_strip_ratio"] = (block.field_config?.get("tile_strip_ratio") as? Number)?.toDouble()
                 spy.state["parsed_tile_surface_color"] = block.field_config?.get("tile_surface_color") as? String
 
-                // SPEC-448 (#556) — the Option Set source keys. field_options must STILL parse when
+                // The Option Set source keys. field_options must STILL parse when
                 // a set is bound: it doubles as the embedded page, and a parser treating a bound set
                 // as "ignore the inline options" would leave older builds with an empty Select.
                 spy.state["parsed_option_set_id"] = block.field_config?.get("option_set_id") as? String
@@ -1637,7 +1637,7 @@ class SharedFixtureTest(
                 spy.state["parsed_options_search"] = block.field_config?.get("options_search") as? Boolean
                 spy.state["parsed_embedded_option_count"] = block.field_options?.size ?: 0
 
-                // SPEC-446 — resolution, not just parsing (mirrors the iOS driver exactly).
+                // Resolution, not just parsing (mirrors the iOS driver exactly).
                 // `sessionData` is the runner's own accessor for setup.session_data; the responses
                 // and step inputs come from there because the fixture schema has no `responses` key.
                 val respJson = sessionData.optJSONObject("responses") ?: org.json.JSONObject()
@@ -1646,7 +1646,7 @@ class SharedFixtureTest(
                     respJson.keys().asSequence().associateWith { respJson.get(it) }
                 val fixtureStepInputs: Map<String, Any> =
                     stepJson.keys().asSequence().associateWith { stepJson.get(it) }
-                // SPEC-452 — the host's `{{hook_data.…}}` payload. This runner hardcoded
+                // The host's `{{hook_data.…}}` payload. This runner hardcoded
                 // `hookData = null`, so no fixture could exercise the `hook_data` root at all.
                 // `jsonValueToKotlin` (not a raw `get`) because the payload is nested by definition —
                 // objects and arrays of objects — and a JSONObject left unconverted resolves to
@@ -1654,7 +1654,7 @@ class SharedFixtureTest(
                 val hookJson = sessionData.optJSONObject("hook_data") ?: org.json.JSONObject()
                 val fixtureHookData: Map<String, Any> =
                     hookJson.keys().asSequence().associateWith { jsonValueToKotlin(hookJson.get(it)) }
-                // SPEC-448 — seed the selected-option store so `{{selected.…}}` has something to
+                // Seed the selected-option store so `{{selected.…}}` has something to
                 // resolve. It is a process-lifetime object, so it is reset first: a value left over
                 // from an earlier fixture would make this one pass for the wrong reason.
                 SelectedOptionStore.resetForTesting()
@@ -1670,7 +1670,7 @@ class SharedFixtureTest(
                 ) {
                     // Drive the REAL whitelist, not resolveTemplateString directly. Calling the
                     // resolver by hand proves only that it can expand a token; it says nothing about
-                    // whether the block pass applies it to a given key — round-4 bug injection deleted
+                    // whether the block pass applies it to a given key — bug injection deleted
                     // the `label` line from the whitelist and this file stayed green.
                     val r = resolveBlockBindings(
                         block,
@@ -1693,7 +1693,7 @@ class SharedFixtureTest(
                         spy.state["resolved_stat${i}_value"] = (st["value"] as? String) ?: ""
                         spy.state["resolved_stat${i}_label"] = (st["label"] as? String) ?: ""
                     }
-                    // SPEC-452 — the resolved CHILD of a container. Children bypassed resolution
+                    // The resolved CHILD of a container. Children bypassed resolution
                     // entirely, and a fixture reading only the container's own keys cannot see that:
                     // it stays green whether or not the recursion exists.
                     val resolvedKids = (r.children ?: emptyList()) + (r.stack_children ?: emptyList())
@@ -1718,7 +1718,7 @@ class SharedFixtureTest(
                     }
                 }
 
-                // SPEC-441 (#541) — the option's `category` drives section navigation. Android
+                // The option's `category` drives section navigation. Android
                 // maps every option key by hand, so this is exactly the field that can go missing
                 // while the chip renderer still compiles and draws an empty row.
                 spy.state["parsed_opt0_category"] = fopts.getOrNull(0)?.category
@@ -1747,7 +1747,7 @@ class SharedFixtureTest(
                 // a "GENUINE GAP" and hardcoded null — asserting nothing, which is the whole failure mode
                 // this rewrite exists to remove.
                 spy.state["parsed_cta_corner_radius"] = parsed.cta?.corner_radius
-                // SPEC-438 (#544, #548) — product-level price presentation. Read off the DECODED
+                // Product-level price presentation. Read off the DECODED
                 // objects, not the raw map, so a field the model silently drops shows up here.
                 val plansSection = parsed.sections.firstOrNull { it.type == "plans" }
                 spy.state["parsed_price_layout"] = plansSection?.data?.price_layout
@@ -1767,7 +1767,7 @@ class SharedFixtureTest(
                 // unauthored paywall rendering exactly as it did before.
                 spy.state["parsed_plan1_price_total_display"] = p1?.price_total_display
                 spy.state["parsed_plan1_badge_enabled"] = p1?.description_badge?.enabled
-                // SPEC-485 (#649) — the legal section. The text arrives with its markdown INTACT
+                // The legal section. The text arrives with its markdown INTACT
                 // (parsing is the SDK's job), and the link colour arrives as `accent_color`, the key
                 // both natives read and the one the console's `link_color` is mapped onto at the
                 // wire boundary — nothing used to map them, so the authored colour never reached a
