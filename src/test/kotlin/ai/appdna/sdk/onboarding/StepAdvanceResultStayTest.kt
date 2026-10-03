@@ -8,7 +8,7 @@ import org.junit.Test
 import org.json.JSONObject
 
 /**
- * SPEC-070-A J.8 + C.8 — StepAdvanceResultStayTest.
+ * StepAdvanceResultStayTest.
  *
  * Mirrors `Tests/AppDNASDKTests/StepAdvanceResultStayTests.swift`. Five
  * cases per spec line:

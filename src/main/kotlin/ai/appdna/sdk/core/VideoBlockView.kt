@@ -28,7 +28,7 @@ import androidx.media3.ui.PlayerView
 /**
  * Server-driven inline video block.
  *
- * SPEC-070-A E.4 — replaces the "▶ Playing video" stub with real
+ * Replaces the "▶ Playing video" stub with real
  * `androidx.media3` ExoPlayer playback wired through [PlayerView].
  *
  * Lifecycle:
@@ -104,7 +104,7 @@ fun VideoBlockView(block: VideoBlock) {
                     .background(Color.White.copy(alpha = 0.9f)),
                 contentAlignment = Alignment.Center,
             ) {
-                // SPEC-401-A R63 (Lens C P2) — Material PlayArrow icon
+                // Material PlayArrow icon
                 // matching iOS `Image(systemName: "play.fill")` at
                 // VideoBlockView.swift:55-58. Was Unicode glyph "▶" which
                 // some OEM Android fonts substitute as colored emoji
@@ -118,7 +118,7 @@ fun VideoBlockView(block: VideoBlock) {
             }
         }
     } else {
-        // SPEC-070-A E.4 — ExoPlayer is built once per Composable instance
+        // ExoPlayer is built once per Composable instance
         // and released in DisposableEffect to prevent codec leaks across
         // navigations. Keying on `video_url` rebuilds the player when the
         // server pushes a new URL into the same composition slot.

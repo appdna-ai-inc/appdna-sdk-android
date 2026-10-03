@@ -39,7 +39,7 @@ fun Modifier.applyBlurBackdrop(config: BlurConfig?, cornerRadius: Float = 0f): M
 }
 
 /**
- * SPEC-070-A J.15 — extracted helper that ASSUMES API 31+ so Android Lint
+ * Extracted helper that ASSUMES API 31+ so Android Lint
  * flags any accidental call from a code path that isn't behind a
  * `Build.VERSION.SDK_INT >= S` guard. The platform `RenderEffect` class
  * itself was introduced in S; calling [android.graphics.RenderEffect.createBlurEffect]

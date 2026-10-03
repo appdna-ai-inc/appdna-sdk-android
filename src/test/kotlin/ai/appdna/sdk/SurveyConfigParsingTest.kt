@@ -9,7 +9,7 @@ import org.junit.Test
 
 /**
  * Tests that SurveyConfig correctly parses from Firestore Map data.
- * Covers all question types, trigger rules, appearance, SPEC-085 rich media,
+ * Covers all question types, trigger rules, appearance, rich media,
  * follow-up actions, show-if conditions, and edge cases.
  * Prevents field name mismatches between console JSON and SDK parsing.
  */
@@ -678,7 +678,7 @@ class SurveyConfigParsingTest {
     }
 
     // =======================================================================
-    // 6. SPEC-085 Rich media fields in appearance
+    // 6. Rich media fields in appearance
     // =======================================================================
 
     @Test

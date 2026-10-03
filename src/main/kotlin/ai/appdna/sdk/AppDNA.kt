@@ -40,7 +40,7 @@ object AppDNA {
     const val sdkVersion = "1.0.54"
 
     /**
-     * SPEC-419 brand-threading — the app's brand accent hex (from `/settings/brand`,
+     * Brand-threading — the app's brand accent hex (from `/settings/brand`,
      * served via Firestore `config/brand`). When set, SDK render defaults use it
      * instead of the hardcoded #6366F1 brand indigo for accent/link/badge/selected
      * colors. Per-element authored colors still take precedence. nil until brand loads.
@@ -51,7 +51,7 @@ object AppDNA {
         internal set
 
     /**
-     * SPEC-419 brand-threading — resolved Compose Color for the brand accent,
+     * Brand-threading — resolved Compose Color for the brand accent,
      * falling back to the #6366F1 brand indigo when no brand is configured/loaded.
      * Replaces hardcoded `Color(0xFF6366F1)` at SDK render-default sites.
      */
@@ -66,7 +66,7 @@ object AppDNA {
     }
 
     /**
-     * SPEC-070-A H.20: most recent throwable raised during configure/bootstrap
+     * Most recent throwable raised during configure/bootstrap
      * (e.g. missing `google-services-appdna.json`, malformed bundle config).
      *
      * Hosts can read this to detect a degraded init state — for example, to
@@ -80,7 +80,7 @@ object AppDNA {
         internal set
 
     /**
-     * SPEC-070-A H.21: small-icon resource id used for AppDNA push notifications.
+     * Small-icon resource id used for AppDNA push notifications.
      * Hosts SHOULD set this via [Configuration.AppDNAOptions.notificationIcon] —
      * surfaced here as a top-level read for [AppDNAMessagingService] /
      * [RichPushHandler]. `0` means "use manifest meta-data, then app icon".
@@ -91,7 +91,7 @@ object AppDNA {
         private set
 
     /**
-     * SPEC-070-A H.20: degraded-init callback for the active [AppDNAInitDelegate].
+     * Degraded-init callback for the active [AppDNAInitDelegate].
      * Fires from [reportInitDegraded] when bootstrap detects a recoverable but
      * worth-noting failure (Firebase config missing, etc.).
      */
@@ -99,7 +99,7 @@ object AppDNA {
     private var initDelegate: AppDNAInitDelegate? = null
 
     /**
-     * SPEC-404 — host-registered lifecycle delegate. Fires
+     * Host-registered lifecycle delegate. Fires
      * [ai.appdna.sdk.generated.AppDNALifecycleDelegate.onSdkRuntimeLocked] /
      * `onSdkRuntimeUnlocked` on bootstrap-driven lock-state transitions.
      * Hosts use this to surface a custom "service unavailable" banner and
@@ -108,14 +108,14 @@ object AppDNA {
     @Volatile
     private var lifecycleDelegate: ai.appdna.sdk.generated.AppDNALifecycleDelegate? = null
 
-    /** Register/clear the SPEC-404 lifecycle delegate. */
+    /** Register/clear the lifecycle delegate. */
     @JvmStatic
     fun setLifecycleDelegate(delegate: ai.appdna.sdk.generated.AppDNALifecycleDelegate?) {
         lifecycleDelegate = delegate
     }
 
     /**
-     * SPEC-404 — current backend-driven SDK lock state. `null` when active;
+     * Current backend-driven SDK lock state. `null` when active;
      * a non-null `Pair(reason, lockedAtIso)` means the SDK is in locked
      * mode and UI render paths (paywall_trigger, messages, surveys) should
      * pause. Set by the bootstrap success path; cleared by the next
@@ -145,7 +145,7 @@ object AppDNA {
         }
     }
 
-    // MARK: - Subsystem init isolation (SPEC-070-B W13 / AC-31(b))
+    // MARK: - Subsystem init isolation
 
     /**
      * Names of subsystems to fail on purpose. Test-only, and the exact seam iOS uses
@@ -180,7 +180,7 @@ object AppDNA {
     }
 
     /**
-     * SPEC-070-A H.20: record a non-fatal init error and notify the delegate.
+     * Record a non-fatal init error and notify the delegate.
      * Stored in [lastInitError] so hosts can read it any time after configure().
      */
     internal fun reportInitDegraded(error: Throwable) {
@@ -202,7 +202,7 @@ object AppDNA {
     /** Billing module. */
     @JvmStatic val billing = BillingModule()
 
-    // SPEC-070-A finalization B6#P0-25 — top-level delegate properties.
+    // Top-level delegate properties.
     // Mirrors iOS `AppDNA.pushDelegate`, `AppDNA.billingDelegate`,
     // `AppDNA.screenDelegate` so hosts copying iOS samples
     // (`AppDNA.screenDelegate = self`) compile on Android. Each property
@@ -210,7 +210,7 @@ object AppDNA {
     // the most recently set value.
 
     private var _pushDelegate: AppDNAPushDelegate? = null
-    /** SPEC-070-A finalization B6#P0-25 — top-level proxy for `push.setDelegate(...)`. */
+    /** Top-level proxy for `push.setDelegate(...)`. */
     @JvmStatic
     var pushDelegate: AppDNAPushDelegate?
         get() = _pushDelegate
@@ -226,7 +226,7 @@ object AppDNA {
         set(value) { billing.setDelegate(value, deliversPurchases = true) }
 
     private var _screenDelegate: ai.appdna.sdk.screens.AppDNAScreenDelegate? = null
-    /** SPEC-070-A finalization B6#P0-25 — top-level proxy for `ScreenManager.shared.setDelegate(...)`. */
+    /** Top-level proxy for `ScreenManager.shared.setDelegate(...)`. */
     @JvmStatic
     var screenDelegate: ai.appdna.sdk.screens.AppDNAScreenDelegate?
         get() = _screenDelegate
@@ -234,7 +234,7 @@ object AppDNA {
 
     private var _asyncOnScreenAction: (suspend (String, Map<String, Any?>) -> Boolean)? = null
     /**
-     * SPEC-070-C D10 — top-level proxy for `ScreenManager.shared.asyncOnScreenAction`.
+     * Top-level proxy for `ScreenManager.shared.asyncOnScreenAction`.
      * Set by a cross-platform wrapper (the Flutter plugin) so the async
      * `onScreenAction` wrapper-veto is consulted alongside the sync delegate
      * veto. Null for native hosts → synchronous action dispatch unchanged.
@@ -244,7 +244,7 @@ object AppDNA {
         get() = _asyncOnScreenAction
         set(value) { _asyncOnScreenAction = value; ai.appdna.sdk.screens.ScreenManager.shared.asyncOnScreenAction = value }
 
-    // SPEC-070-A finalization B6 P1 — top-level config-update broadcast.
+    // Top-level config-update broadcast.
     // Mirrors iOS `AppDNA.configUpdated = Notification.Name(...)`. RN/Flutter
     // wrappers + RemoteConfigModule observers collect on this Flow to react
     // to remote config refreshes. Replay=0 + extraBufferCapacity=1 so a
@@ -280,7 +280,7 @@ object AppDNA {
     /** Experiments module. */
     @JvmStatic val experiments = ai.appdna.sdk.ExperimentsModule()
 
-    // MARK: - Custom View Registry (SPEC-089d AC-026)
+    // MARK: - Custom View Registry
 
     /**
      * Registry of developer-provided Composable factories keyed by `view_key`.
@@ -299,7 +299,7 @@ object AppDNA {
         registeredCustomViews[key] = factory
     }
 
-    // MARK: - Map View Registry (SPEC-451)
+    // MARK: - Map View Registry
 
     /**
      * Host-provided interactive map Composables, keyed by the map block's `map_view_key`
@@ -320,7 +320,7 @@ object AppDNA {
      * image, which needs no native dependency and no key in the binary.
      *
      * @param key matches the block's `map_view_key`; use `"default"` for every map block.
-     * @param factory builds the view from the block's resolved config (see SPEC-451 §4).
+     * @param factory builds the view from the block's resolved config.
      */
     @JvmStatic
     fun registerMapView(key: String = "default", factory: @Composable (Map<String, Any>) -> Unit) {
@@ -336,7 +336,7 @@ object AppDNA {
      *
      * 🔴 It is always the CUSTOMER's token, never ours. Mapbox's terms forbid us proxying or
      * caching the imagery, so the device fetches it directly and the request bills to whoever owns
-     * the token (SPEC-451 §5). A host token set here wins over the bootstrap value forever — an
+     * the token. A host token set here wins over the bootstrap value forever — an
      * explicit choice beats a remote default.
      */
     @JvmStatic
@@ -357,7 +357,7 @@ object AppDNA {
      * map rather than the fallback text. Bootstrap has not answered yet at that point.
      */
     /**
-     * SPEC-495 §B — the customer's Google Maps key, delivered exactly like the Mapbox token.
+     * The customer's Google Maps key, delivered exactly like the Mapbox token.
      *
      * 🔴 Always the CUSTOMER's key, never ours: Google bills per static request and per interactive
      * session, so the device must fetch directly and the request must bill to whoever owns the key.
@@ -387,7 +387,7 @@ object AppDNA {
     }
 
     /**
-     * SPEC-495 — the app's map engine (`mapbox` | `google`), delivered with the keys it selects
+     * The app's map engine (`mapbox` | `google`), delivered with the keys it selects
      * between.
      *
      * 🔴 App-level, and that is a correction. The provider began as a per-block field, which let an
@@ -430,13 +430,13 @@ object AppDNA {
     @JvmStatic var currentBundleVersion: Int = 0
         internal set
 
-    /** SPEC-070-C D4 — the configured SDK-wrapper framework tag (native|flutter|
+    /** The configured SDK-wrapper framework tag (native|flutter|
      * react_native); tagged on every event's device context. Defaults to "native". */
     @JvmStatic
     val framework: String get() = options.framework
 
     /**
-     * SPEC-070-B §7 rule 4 — the WRAPPER's own version (e.g. the npm package's `1.0.7`), injected by
+     * The WRAPPER's own version (e.g. the npm package's `1.0.7`), injected by
      * the bridge and tagged on every event's device context as `framework_version`.
      *
      * `device.sdk_version` is always this NATIVE core's version, so before this field existed an RN
@@ -473,7 +473,7 @@ object AppDNA {
     internal var options: AppDNAOptions = AppDNAOptions()
 
     /**
-     * SPEC-070-B PN row 6 — retained so the Adapty bridge (and its delegate) outlive
+     * Retained so the Adapty bridge (and its delegate) outlive
      * [initBillingModuleIfNeeded]. Null unless `billingProvider` is [BillingProvider.Adapty].
      */
     @Volatile
@@ -482,7 +482,7 @@ object AppDNA {
     private var apiClient: ApiClient? = null
     private var identityManager: IdentityManager? = null
     // @Volatile so track()'s double-checked-locking fast path (below) sees the configure() publish; the
-    // reserve-pre-init-seq-block + publish happen together under preInitLock (SPEC-428 STEP-9).
+    // reserve-pre-init-seq-block + publish happen together under preInitLock.
     @Volatile private var eventTracker: EventTracker? = null
     private val preInitLock = Any()
     private var eventQueue: EventQueue? = null
@@ -518,7 +518,7 @@ object AppDNA {
     private var onboardingFlowManager: OnboardingFlowManager? = null
     private var surveyManager: SurveyManager? = null
     private var webEntitlementManager: WebEntitlementManager? = null
-    // SPEC-070-A A.8/A.9: SessionManager + MessageManager wired in configure().
+    // SessionManager + MessageManager wired in configure().
     // Snapshot of the active message catalog kept alongside the manager so the
     // configProvider lambda has a stable read path when triggers evaluate.
     @Volatile
@@ -529,10 +529,10 @@ object AppDNA {
     internal var sessionManager: ai.appdna.sdk.core.SessionManager? = null
     @Volatile
     private var activeMessages: Map<String, ai.appdna.sdk.messages.MessageConfig> = emptyMap()
-    // SPEC-203: journey-triggered pending-messages listener.
+    // Journey-triggered pending-messages listener.
     private var pendingMessageListener: ai.appdna.sdk.messages.PendingMessageListener? = null
     private var deferredDeepLinkManager: DeferredDeepLinkManager? = null
-    // SPEC-067: Scale Layer 1 components
+    // Scale Layer 1 components
     private var eventDatabase: ai.appdna.sdk.storage.EventDatabase? = null
     private var connectivityMonitor: ai.appdna.sdk.network.ConnectivityMonitor? = null
     private var appContext: Context? = null
@@ -544,7 +544,7 @@ object AppDNA {
      * need to launch host Activities from outside an Activity context.
      * Returns null when the SDK has not yet been configured.
      *
-     * SPEC-070-A finalization Lens B P0 — required by ScreenHostActivity
+     * Required by ScreenHostActivity
      * launch path so `AppDNA.showScreen(id)` can present a real Activity
      * even when the caller didn't supply one (matches iOS where
      * `AppDNA.showScreen` reads the application's key window itself).
@@ -552,13 +552,13 @@ object AppDNA {
     @JvmStatic
     fun getApplicationContext(): Context? = appContext
 
-    // SPEC-070-A final audit pass H F1 — captured to enable
+    // Captured to enable
     // `unregisterActivityLifecycleCallbacks` from shutdown().
     private var navigationInterceptorCallbacks:
         ai.appdna.sdk.screens.NavigationInterceptorActivityCallbacks? = null
 
     private var isConfigured = false
-    // SPEC-070-A final audit pass H F3 — `isConfiguring` flips true
+    // `isConfiguring` flips true
     // synchronously inside the `configure()` guard (before the bootstrap
     // coroutine launches) so concurrent / early second `configure(...)`
     // calls don't double-construct EventTracker/EventQueue, double-register
@@ -567,7 +567,7 @@ object AppDNA {
     // bootstrap semantic for the `onReady` callback gate.
     @Volatile
     private var isConfiguring = false
-    // SPEC-070-A final audit pass H F2 — `scope` must be reassignable so
+    // `scope` must be reassignable so
     // `configure()` after `shutdown()` lands on a live CoroutineScope.
     // Previously `val scope` + `scope.cancel()` in shutdown() left the
     // SDK silently unready on re-configure (performBootstrap would skip).
@@ -603,7 +603,7 @@ object AppDNA {
         bootstrapsDropped.incrementAndGet()
     }
 
-    // SPEC-070-A G.18: pre-init event buffer. Calls to track() that arrive before
+    // Pre-init event buffer. Calls to track() that arrive before
     // configure() finishes wiring the EventTracker land here. Drained on first
     // setEventQueue call (after configure completes constructing the EventQueue).
     // Cap = 200; on overflow we log + drop the OLDEST so the most recent action
@@ -616,16 +616,16 @@ object AppDNA {
     // enough: tap A, tap B, process death, the Activity restored with intent A re-fired A (impl audit
     // ). The single key above is still read, for a tap handled by an older SDK version.
     internal const val KEY_HANDLED_PUSH_TAPS = "appdna.handled_push_tap_ids"
-    // SPEC-428 CL-10/CL-1: pre-init overflow drops can't touch the persisted DroppedEventsCounter yet
+    // Pre-init overflow drops can't touch the persisted DroppedEventsCounter yet
     // (no app Context before configure()), so accrue them in memory and fold into the durable counter
     // once configure() initializes it.
     private val preInitDroppedCount = java.util.concurrent.atomic.AtomicInteger(0)
     private data class PreInitEvent(val name: String, val properties: Map<String, Any>?)
     private val preInitBuffer = java.util.concurrent.LinkedBlockingQueue<PreInitEvent>(PRE_INIT_BUFFER_CAP)
 
-    // SPEC-070-A G.17: most recent screen name observed by NavigationInterceptor
+    // Most recent screen name observed by NavigationInterceptor
     // / ScreenManager / Compose hosts. Surfaced into every event envelope as
-    // `context.screen` for SPEC-086 zero-code attribution. Updated through
+    // `context.screen` for zero-code attribution. Updated through
     // [notifyScreenAppeared] (already public) so no extra API required.
     @Volatile private var lastScreenName: String? = null
 
@@ -642,7 +642,7 @@ object AppDNA {
         options: AppDNAOptions = AppDNAOptions()
     ) {
         synchronized(this) {
-            // SPEC-070-A final audit pass H F3 — guard against BOTH
+            // Guard against BOTH
             // post-bootstrap (`isConfigured`) and in-flight (`isConfiguring`)
             // re-entrancy. Without the in-flight guard, a second configure()
             // call before bootstrap completes would double-construct managers
@@ -659,7 +659,7 @@ object AppDNA {
             this.environment = environment
             this.options = options
             Log.level = options.logLevel
-            // SPEC-070-A H.21: pin host-supplied icon for AppDNAMessagingService
+            // Pin host-supplied icon for AppDNAMessagingService
             // / RichPushHandler. `0` keeps fallback resolution active.
             this.notificationIcon = options.notificationIcon
 
@@ -670,7 +670,7 @@ object AppDNA {
                 Log.error("API key format invalid. Keys must start with 'adn_live_' (production) or 'adn_test_' (sandbox). Got: ${apiKey.take(10)}...")
             }
 
-            // SPEC-070-A A.31a — Firebase asset I/O (loadSecondaryFirebaseOptions
+            // Firebase asset I/O (loadSecondaryFirebaseOptions
             // reads google-services-appdna.json and parses JSON) is moved off
             // the configure-thread (Main on Application.onCreate()) into the
             // bootstrap coroutine on Dispatchers.IO. Until bootstrap finishes
@@ -678,10 +678,10 @@ object AppDNA {
             // (`firestoreDB?.collection(...)`), so the lazy init is safe.
 
             this.appContext = context.applicationContext
-            // SPEC-428 CL-3/D6: init the monotonic seq counter BEFORE draining the pre-init buffer,
+            // Init the monotonic seq counter BEFORE draining the pre-init buffer,
             // so drained + post-configure events all draw from the persisted (restart-surviving) counter.
             ai.appdna.sdk.events.ClientSeqCounter.init(context)
-            // SPEC-428 CL-1/CL-10: init the durable dropped-events counter. The pre-init overflow fold is
+            // Init the durable dropped-events counter. The pre-init overflow fold is
             // deferred to the atomic publish block below (under preInitLock) so overflow drops that occur
             // DURING configure() — before eventTracker is published — are captured, not lost.
             ai.appdna.sdk.events.DroppedEventsCounter.init(context)
@@ -696,7 +696,7 @@ object AppDNA {
             // 1. Initialize storage
             val storage = LocalStorage(appContext)
 
-            // SPEC-088: Initialize cross-module session data store
+            // Initialize cross-module session data store
             ai.appdna.sdk.core.SessionDataStore.initialize(appContext)
 
             // Custom-font loader: lets any element render a hosted .ttf/.otf font URL.
@@ -721,20 +721,20 @@ object AppDNA {
             this.apiClient = client
 
             // 4. Initialize event system
-            // SPEC-070-A G.10: tag every emitted event with the active SDK
+            // Tag every emitted event with the active SDK
             // environment ("production" / "sandbox") so ingest can route
             // test-key traffic to the sandbox dataset.
             val envTag = environment.name.lowercase()
             val tracker = EventTracker(identityMgr, appVersion, envTag)
-            // SPEC-070-B PN row 14 (AC-36): resolve consent from the PERSISTED decision before
+            // Resolve consent from the PERSISTED decision before
             // anything can be tracked — including the pre-init buffer drain and `sdk_initialized`.
             // A denied user used to be silently re-opted-in on every cold start.
             tracker.setInitialConsent(
                 ai.appdna.sdk.storage.ConsentStore.effectiveConsent(appContext, options.requireConsent)
             )
-            // NB: eventTracker is published LATER, atomically with the pre-init seq reservation (STEP-9).
+            // NB: eventTracker is published LATER, atomically with the pre-init seq reservation.
 
-            // SPEC-067: Initialize EventDatabase (SQLite) and ConnectivityMonitor
+            // Initialize EventDatabase (SQLite) and ConnectivityMonitor
             val eventDb = ai.appdna.sdk.storage.EventDatabase(appContext)
             eventDb.migrateFromSharedPreferences(storage) // One-time migration
             this.eventDatabase = eventDb
@@ -742,7 +742,7 @@ object AppDNA {
             val connMonitor = ai.appdna.sdk.network.ConnectivityMonitor(appContext)
             this.connectivityMonitor = connMonitor
 
-            // SPEC-070-A A.18: pass the application context + a background scheduler
+            // Pass the application context + a background scheduler
             // so EventQueue can register a ProcessLifecycleOwner observer and hand
             // off remaining events to WorkManager when the app is backgrounded.
             // The base this configure resolved, not the property at call time: the queue's final flush
@@ -775,7 +775,7 @@ object AppDNA {
             this.eventQueue = eq
             tracker.setEventQueue(eq)
 
-            // SPEC-428 STEP-9/§4.E + SPEC-070-A G.18: drain the pre-init buffer, RESERVE a contiguous
+            // Drain the pre-init buffer, RESERVE a contiguous
             // client_seq block for those events, AND publish eventTracker — all ATOMICALLY under
             // preInitLock. This closes the window: a concurrent track() (which takes the same lock on its
             // slow path) either buffered BEFORE (→ included in `drained`) or, once eventTracker is visible,
@@ -787,7 +787,7 @@ object AppDNA {
             synchronized(preInitLock) {
                 preInitBuffer.drainTo(drained)
                 reserved = LongArray(drained.size) { ai.appdna.sdk.events.ClientSeqCounter.next() }
-                // SPEC-428 CL-10 (#2): fold ALL pre-init overflow drops now, still under the lock — every
+                // Fold ALL pre-init overflow drops now, still under the lock — every
                 // overflow increment happened in track()'s buffer path under this same lock, so this
                 // captures the ones accrued DURING configure() (the early fold missed them).
                 ai.appdna.sdk.events.DroppedEventsCounter.increment(preInitDroppedCount.getAndSet(0))
@@ -800,25 +800,25 @@ object AppDNA {
                 }
             }
 
-            // SPEC-070-A G.17: Wire the screen-name source so every event
+            // Wire the screen-name source so every event
             // envelope can pick up `context.screen` for zero-code attribution.
             // The latest screen is tracked via [updateCurrentScreen] which
             // NavigationInterceptor + ScreenManager call as the user navigates
             // (wired in a follow-up item; field stays null safely until then).
             tracker.setScreenProvider { lastScreenName }
 
-            // SPEC-070-A H.7: wire push-id provider so subsequent events fold
+            // Wire push-id provider so subsequent events fold
             // the most-recent push_id into `context.push_id` for attribution
             // (rolling 30-minute window managed by PushSessionContext).
             tracker.setPushIdProvider {
                 ai.appdna.sdk.integrations.PushSessionContext.currentPushId(appContext)
             }
 
-            // 5. Initialize push token manager (v0.4 SPEC-030: backend registration)
+            // 5. Initialize push token manager (v0.4: backend registration)
             this.pushTokenManager = PushTokenManager(context, storage, tracker, client)
             push.manager = this.pushTokenManager
 
-            // SPEC-070-A H.18: proactively fetch the FCM token on configure()
+            // Proactively fetch the FCM token on configure()
             // instead of waiting for a token-rotation event (which can take
             // hours/days). Mirrors iOS PushTokenManager.configure() behavior.
             try {
@@ -827,7 +827,7 @@ object AppDNA {
                 Log.warning("PushTokenManager.registerToken() failed during configure: ${e.message}")
             }
 
-            // SPEC-070-A finalization Lens D P0 — drain any FCM token buffered
+            // Drain any FCM token buffered
             // by `onNewPushToken()` calls that fired before `configure()`.
             val pending = pendingPushTokenBeforeConfigure
             if (pending != null) {
@@ -846,7 +846,7 @@ object AppDNA {
                 storage = storage,
                 configTTL = initialRuntime.configTTL
             )
-            // SPEC-070-A G.4: wire EventTracker so RemoteConfigManager.fetchConfigs()
+            // Wire EventTracker so RemoteConfigManager.fetchConfigs()
             // can emit a `config_fetched` event after each successful refresh.
             remoteCfg.eventTracker = tracker
             this.remoteConfigManager = remoteCfg
@@ -868,11 +868,11 @@ object AppDNA {
             )
             this.experimentManager = expManager
 
-            // SPEC-070-A A.14: every event envelope now carries
+            // Every event envelope now carries
             // `context.experiment_exposures` so BigQuery ETL can attribute
             // conversions to the variant the user was bucketed into.
             tracker.setExperimentExposureProvider {
-                // SPEC-070-A I.15 — getExposures() now returns named ExposureEntry
+                // getExposures() now returns named ExposureEntry
                 // values; map to the EventTracker's ExperimentExposure wire shape.
                 expManager.getExposures().map { entry ->
                     ai.appdna.sdk.events.ExperimentExposure(entry.experimentId, entry.variant)
@@ -880,12 +880,12 @@ object AppDNA {
             }
 
             // Paywall & onboarding managers.
-            // SPEC-036-F §1.2 — surface managers receive the ExperimentManager so
+            // Surface managers receive the ExperimentManager so
             // they can consult it for a running experiment targeting the surface+
             // entity being presented (treatment → render variant payload; control/
             // none → render the active entity through the normal path).
             //
-            // SPEC-070-B W13 — each of the five is built in ISOLATION, under the same names iOS
+            // Each of the five is built in ISOLATION, under the same names iOS
             // uses. A constructor that throws leaves its own manager null and is reported through
             // `onInitDegraded`; it does NOT abort configure(), which would cost the host every
             // remaining subsystem, `isConfigured`, `sdk_initialized`, and every `onReady` callback.
@@ -912,7 +912,7 @@ object AppDNA {
             this.webEntitlementManager = initSubsystem("web_entitlements") {
                 WebEntitlementManager(tracker, appContext)
             }
-            // SPEC-203: per-user journey message listener.
+            // Per-user journey message listener.
             this.pendingMessageListener = initSubsystem("in_app_messages") {
                 ai.appdna.sdk.messages.PendingMessageListener(tracker, appContext)
             }
@@ -925,7 +925,7 @@ object AppDNA {
                 surveyManager?.updateConfigs(parsed)
             }
 
-            // SPEC-070-A A.8: SessionManager — observes ProcessLifecycle to emit
+            // SessionManager — observes ProcessLifecycle to emit
             // session_start / session_end / app_open / app_close with 30-min idle rotation.
             this.sessionManager = initSubsystem("sessions") {
                 ai.appdna.sdk.core.SessionDataStore.instance?.let { sds ->
@@ -933,14 +933,14 @@ object AppDNA {
                 }
             }
 
-            // SPEC-070-A A.9: MessageManager — trigger evaluator + frequency tracker
+            // MessageManager — trigger evaluator + frequency tracker
             // + presentation queue + delegate veto. Renderer separate (InAppMessageRenderer)
             // per architectural split.
             this.messageManager = initSubsystem("in_app_messages") {
                 ai.appdna.sdk.core.SessionDataStore.instance?.let { _ ->
                     ai.appdna.sdk.messages.MessageManager(
                         context = appContext,
-                    // SPEC-070-A finalization parity audit B1#6 — read live
+                    // Read live
                     // from RemoteConfigManager so Firestore-published
                     // in-app messages reach the manager. Previous
                     // configProvider returned the dead `activeMessages`
@@ -948,7 +948,7 @@ object AppDNA {
                     // remoteConfigManager.getActiveMessages() each call
                     // (also picks up updates after Firestore re-fetch).
                         configProvider = { remoteConfigManager?.getActiveMessages() ?: activeMessages },
-                        // SPEC-036-F §1.2 — experiment-aware presentation.
+                        // Experiment-aware presentation.
                         experimentManager = expManager,
                     )
                 }
@@ -958,9 +958,9 @@ object AppDNA {
             // module). Applied before publishing, a delegate set in that window reached neither.
             this.messageManager?.let { inAppMessages.applyTo(it) }
 
-            // SPEC-070-A A.10: NavigationInterceptor — observes Activity resume to
+            // NavigationInterceptor — observes Activity resume to
             // fire registered hooks. Compose-only screens use AppDNA.notifyScreenAppeared(...).
-            // SPEC-070-A final audit pass H F1 — capture the callback
+            // Capture the callback
             // instance so shutdown() can `unregisterActivityLifecycleCallbacks`
             // and a subsequent configure() doesn't double-register (which
             // would fire screen events twice).
@@ -970,7 +970,7 @@ object AppDNA {
             navigationInterceptorCallbacks = navCallbacks
             (appContext as? android.app.Application)?.registerActivityLifecycleCallbacks(navCallbacks)
 
-            // SPEC-070-A finalization parity audit B6#P0-1 — initialise the
+            // Initialise the
             // SectionRegistry. Mirrors iOS `SectionRegistry.shared.registerBuiltInSections()`
             // call at AppDNA.configure(). Without this every SDUI screen renders
             // NOTHING because AppDNAScreenSlot dispatches through an empty
@@ -983,7 +983,7 @@ object AppDNA {
                 Log.warning("SectionRegistry init failed: ${e.message}")
             }
 
-            // SPEC-070-A H.3: schedule periodic 15-minute remote-config refresh
+            // Schedule periodic 15-minute remote-config refresh
             // via WorkManager. Idempotent — safe across configure() races.
             try {
                 ai.appdna.sdk.background.ConfigRefreshWorker.schedule(appContext)
@@ -1046,7 +1046,7 @@ object AppDNA {
         val billingMgr = billing.manager
         billingOnIdentitySwitch(userId, previousUserId)
 
-        // SPEC-070-A G.3: emit local `identify` event so the existing client
+        // Emit local `identify` event so the existing client
         // pipeline (BigQuery alias resolution + experiment exposure ledger)
         // sees the user-id transition immediately.
         track(
@@ -1059,11 +1059,11 @@ object AppDNA {
             ),
         )
 
-        // SPEC-070-A G.2: fire-and-forget POST to /api/v1/sdk/identify so the
+        // Fire-and-forget POST to /api/v1/sdk/identify so the
         // backend can stitch anon → user identities even if the user never
         // emits another event. Retries on 5xx/network are handled inside
         // ApiClient.post() (called by postFireAndForget).
-        // SPEC-070-A audit Round 2 finding 2: align body to iOS
+        // Align body to iOS
         // AppDNA.swift:206-210 (`anon_id`, `user_id`, optional `traits`
         // only). The previous code added `device_id` which iOS never
         // emits, breaking backend canonical-shape parity.
@@ -1082,7 +1082,7 @@ object AppDNA {
         val appId = bootstrapAppId
         if (orgId != null && appId != null) {
             webEntitlementManager?.startObserving(orgId, appId, userId)
-            // SPEC-203: start journey-triggered pending-messages listener.
+            // Start journey-triggered pending-messages listener.
             pendingMessageListener?.startObserving(orgId, appId, userId)
             // Re-point the Firestore entitlement listener at the new user (owning only).
             if (previousUserId != userId) {
@@ -1092,8 +1092,8 @@ object AppDNA {
             }
         }
 
-        // SPEC-401 Fix 1D — silently refresh the entitlement cache so the
-        // next paywall_trigger entitlement gate (Fix 1A) reflects the
+        // Silently refresh the entitlement cache so the
+        // next paywall_trigger entitlement gate reflects the
         // identified user's current Play Billing subscriptions, not the
         // prior anonymous user's empty entitlements. Fire-and-forget on
         // the SDK's lifecycle-bound `scope` (cancelled on shutdown);
@@ -1179,7 +1179,7 @@ object AppDNA {
         surveyManager?.resetSession()
         webEntitlementManager?.stopObserving()
         pendingMessageListener?.stopObserving()
-        // SPEC-070-A A.9: clear in-session message frequency counters + queue.
+        // Clear in-session message frequency counters + queue.
         messageManager?.resetSession()
         // The subscription snapshot is device-global; identity is not. Clear it on sign-out so the next
         // user's first reconcile does not diff their entitlements against this user's snapshot and
@@ -1213,7 +1213,7 @@ object AppDNA {
         // The anchor is a security boundary: clearing it on sign-out
         // would let the next `identify(B)` become the new first-
         // identifier and inherit any untagged purchase on the device
-        // (the exact reproducer R2 surfaced). The anchor's natural
+        // (the exact reproducer surfaced). The anchor's natural
         // lifecycle is the app installation; uninstall / clear-data
         // wipes SharedPreferences, which is the correct invalidation
         // event. Mirrors iOS AppDNA.swift reset() behaviour.
@@ -1228,7 +1228,7 @@ object AppDNA {
     @JvmStatic
     @JvmOverloads
     /**
-     * SPEC-401-A R80 (Lens B P2) — internal emit that skips survey/message
+     * Internal emit that skips survey/message
      * re-evaluation. Mirrors iOS `eventTracker.track(...)` direct path used
      * by MessageManager.swift:136/152/174 to avoid re-entrant trigger
      * recursion. Public `AppDNA.track()` still drives survey + message
@@ -1290,7 +1290,7 @@ object AppDNA {
         ) {
             rawProperties - ai.appdna.sdk.billing.BillingEventProps.EMITTED_BY - ai.appdna.sdk.billing.BillingEventProps.APPDNA_ORIGIN
         } else rawProperties
-        // SPEC-428 STEP-9: double-checked locking. Fast path (post-configure) reads the @Volatile
+        // Double-checked locking. Fast path (post-configure) reads the @Volatile
         // eventTracker with no lock. If null, take preInitLock (which configure() holds while it reserves
         // the pre-init seq block + publishes eventTracker) and RE-CHECK: still null → buffer (pre-configure);
         // set → fall through to mint a seq AFTER configure's reserved block (no inversion, no lost event).
@@ -1299,11 +1299,11 @@ object AppDNA {
             synchronized(preInitLock) {
                 tracker = eventTracker
                 if (tracker == null) {
-                    // SPEC-070-A G.18: pre-init buffer. Cap = 200; on overflow drop the OLDEST.
+                    // Pre-init buffer. Cap = 200; on overflow drop the OLDEST.
                     val entry = PreInitEvent(event, properties)
                     if (!preInitBuffer.offer(entry)) {
                         preInitBuffer.poll()
-                        preInitDroppedCount.incrementAndGet() // SPEC-428 CL-10/CL-1: count the overflow drop
+                        preInitDroppedCount.incrementAndGet() // Count the overflow drop
                         if (!preInitBuffer.offer(entry)) {
                             Log.warning { "Pre-init event buffer full; dropping '$event'" }
                         } else {
@@ -1315,7 +1315,7 @@ object AppDNA {
             }
         }
         tracker!!.track(event, properties)
-        // SPEC-401-A R85 (Lens B F1) — message-then-survey order matches iOS
+        // Message-then-survey order matches iOS
         // AppDNA.swift:265-267. The first surface to call show() wins via the
         // global isPresenting guard, so reverse-order Android was producing
         // a different surface than iOS for events that triggered both.
@@ -1324,14 +1324,14 @@ object AppDNA {
     }
 
     /**
-     * SPEC-070-A A.10: notify the SDK that a Compose-only screen has appeared
+     * Notify the SDK that a Compose-only screen has appeared
      * (Activity-based screens fire automatically via the lifecycle callback
      * registered in `configure()`). Hosts should call this from
      * `LaunchedEffect(Unit)` of any composable that represents a navigable
      * destination if they want it to participate in NavigationInterceptor hooks.
      */
     fun notifyScreenAppeared(screenName: String) {
-        // SPEC-070-A G.17: snapshot the latest screen so subsequent events
+        // Snapshot the latest screen so subsequent events
         // include `context.screen` even when the host hasn't wired any
         // NavigationInterceptor hooks (zero-code attribution path).
         lastScreenName = screenName
@@ -1356,7 +1356,7 @@ object AppDNA {
     }
 
     /**
-     * SPEC-067: Force an immediate config refresh, bypassing the cache TTL.
+     * Force an immediate config refresh, bypassing the cache TTL.
      */
     @JvmStatic
     fun forceRefreshConfig() {
@@ -1382,7 +1382,7 @@ object AppDNA {
      */
     @JvmStatic
     fun getExperimentVariant(experimentId: String): String? {
-        // SPEC-070-A I.14 — ExperimentManager.getVariant now returns String?
+        // ExperimentManager.getVariant now returns String?
         // matching iOS. No `.id` deref needed.
         return experimentManager?.getVariant(experimentId)
     }
@@ -1426,7 +1426,7 @@ object AppDNA {
         context: PaywallContext? = null,
         listener: AppDNAPaywallDelegate? = null
     ): Boolean {
-        // SPEC-404 — refuse to present any paywall while the SDK is in
+        // Refuse to present any paywall while the SDK is in
         // backend-locked mode. A purchase here would be wasted UX (the
         // receipt-validate route would 401 and no entitlement would land).
         if (runtimeLock != null) {
@@ -1456,7 +1456,7 @@ object AppDNA {
     }
 
     /**
-     * SPEC-070-A finalization B6#P0-24 — facade overload for placement-based
+     * Facade overload for placement-based
      * paywall presentation. Mirrors iOS `AppDNA.presentPaywall(placement:from:context:delegate:)`
      * which selects the best paywall by audience rules + priority. The
      * underlying selection algorithm lives in
@@ -1475,7 +1475,7 @@ object AppDNA {
         context: PaywallContext? = null,
         listener: AppDNAPaywallDelegate? = null,
     ): Boolean {
-        // SPEC-404 — same lock check as the id-based variant above.
+        // Same lock check as the id-based variant above.
         if (runtimeLock != null) {
             Log.warning("AppDNA.presentPaywallByPlacement(placement=$placement) skipped — SDK in runtime-locked mode")
             return false
@@ -1543,7 +1543,7 @@ object AppDNA {
         // over, because their delegate lives in JS/Dart behind setDelegate.
         @Suppress("NAME_SHADOWING")
         val listener = resolveOnboardingListener(listener)
-        // SPEC-401-A R26 — match iOS AppDNA.swift:386-394 thread-safety:
+        // Match iOS AppDNA.swift:386-394 thread-safety:
         // iOS uses `Thread.isMainThread` + `DispatchQueue.main.sync` to
         // marshal off-thread callers. Android was running the entire
         // present path (analytics track, delegate.onOnboardingStarted,
@@ -1600,7 +1600,7 @@ object AppDNA {
         }
     }
 
-    // MARK: - Public API: Server-Driven Screens (SPEC-089c)
+    // MARK: - Public API: Server-Driven Screens
 
     /** Show a server-driven screen by ID. */
     fun showScreen(screenId: String, callback: ((ai.appdna.sdk.screens.ScreenResult) -> Unit)? = null) {
@@ -1608,7 +1608,7 @@ object AppDNA {
     }
 
     /**
-     * SPEC-070-A I.11 — preview a server-driven screen from a raw JSON
+     * Preview a server-driven screen from a raw JSON
      * payload (no remote-config fetch). Mirrors iOS `AppDNA.previewScreen(json:)`.
      * Used by the console live-preview pipe + integration tests. Returns
      * `true` if the JSON parsed and a screen was presented, `false` otherwise.
@@ -1618,7 +1618,7 @@ object AppDNA {
     }
 
     /**
-     * SPEC-419 D6 — the applied (fetched + parsed) onboarding config version, for the
+     * The applied (fetched + parsed) onboarding config version, for the
      * structural parity harness's readiness poll. The host app surfaces this into a hidden
      * `testTag("adn.appliedConfigVersion")` label the harness polls until it equals the
      * just-published version. Debug only — R8 elides in release builds.
@@ -1629,7 +1629,7 @@ object AppDNA {
     }
 
     /**
-     * SPEC-070-A I.11 — fetch the structured [ai.appdna.sdk.onboarding.LocationData]
+     * Fetch the structured [ai.appdna.sdk.onboarding.LocationData]
      * captured by the named onboarding form field. Mirrors iOS `AppDNA.getLocationData(fieldId:)`.
      *
      * Built tolerantly from whatever the field stored: a selected suggestion
@@ -1648,7 +1648,7 @@ object AppDNA {
     }
 
     /**
-     * SPEC-070-A I.11 — schedule (or re-schedule) all SDK-owned background
+     * Schedule (or re-schedule) all SDK-owned background
      * tasks. Hosts can call this to opt into the periodic config refresh
      * job before [configure] returns, or after the host's WorkManager has
      * finished initialising.  Idempotent — WorkManager dedupes by
@@ -1663,7 +1663,7 @@ object AppDNA {
     }
 
     /**
-     * SPEC-070-B PN row 16 (W12) — record that a host veto timed out and fell back to its default.
+     * Record that a host veto timed out and fell back to its default.
      *
      * The counter is `internal` to this module, and the only code that can observe a veto timing out
      * lives in a wrapper — the SDK itself awaits a veto forever. So the counter shipped with a reader
@@ -1676,7 +1676,7 @@ object AppDNA {
     }
 
     /**
-     * SPEC-070-A I.11 — debug snapshot of the SDK's bootstrap state. Returns
+     * Debug snapshot of the SDK's bootstrap state. Returns
      * a multi-line human-readable string covering: configured flag, env
      * (production / sandbox), api base url, identity (anon_id + user_id),
      * org/app ids, sdk version, current bundle version, consent status.
@@ -1701,7 +1701,7 @@ object AppDNA {
         sb.appendLine("org_id: ${bootstrapOrgId ?: "<unset>"}")
         sb.appendLine("app_id: ${bootstrapAppId ?: "<unset>"}")
         sb.appendLine("consent.analytics: ${eventTracker?.isConsentGranted ?: true}")
-        // SPEC-070-B PN rows 14 + 16: the settings whose effect is invisible until something goes
+        // PN rows 14 + 16: the settings whose effect is invisible until something goes
         // wrong — a silently opted-out user, and a veto that timed out into its default.
         val consentDecision = appContext?.let { ai.appdna.sdk.storage.ConsentStore.decision(it) }
         sb.appendLine(
@@ -1718,7 +1718,7 @@ object AppDNA {
     /**
      * Show a server-driven multi-screen flow by ID. Mirrors iOS
      * `AppDNA.showFlow(_:completion:)` at AppDNA.swift:406. Forwards to
-     * `ScreenManager.shared.showFlow(...)`. R87 P2 — surfaced as
+     * `ScreenManager.shared.showFlow(...)`. Surfaced as
      * `@JvmStatic` + `@JvmOverloads` so Java callers can call
      * `AppDNA.showFlow("welcome")` without supplying a null callback.
      */
@@ -1787,7 +1787,7 @@ object AppDNA {
         surveyManager?.present(surveyId = id)
     }
 
-    // MARK: - Public API: Push Token + Push Tracking (v0.4 / SPEC-030)
+    // MARK: - Public API: Push Token + Push Tracking (v0.4)
 
     /**
      * Set the FCM push token. Call from FirebaseMessagingService.onNewToken().
@@ -1848,7 +1848,7 @@ object AppDNA {
     )
 
     /**
-     * SPEC-070-A H.5 + H.9 — single entry point hosts call from
+     * Single entry point hosts call from
      * `Activity.onCreate(savedInstanceState)` / `onNewIntent(intent)` to:
      *   1. Track `push_tapped` (carries push_id, delivery_id + action_id),
      *   2. Fire [AppDNAPushDelegate.onPushTapped] with a typed [PushPayload],
@@ -1935,7 +1935,7 @@ object AppDNA {
         return data
     }
 
-    // SPEC-070-A finalization (Lens D P0) — pre-configure FCM token buffer.
+    // Pre-configure FCM token buffer.
     // FirebaseMessagingService can fire onNewToken before the host calls
     // `AppDNA.configure(...)`. Mirrors iOS PushTokenManager.pendingTokenBeforeConfigure.
     @Volatile private var pendingPushTokenBeforeConfigure: String? = null
@@ -1943,7 +1943,7 @@ object AppDNA {
     /**
      * Called when FCM token refreshes. Re-registers with backend.
      *
-     * SPEC-070-A finalization Lens D P0: when called BEFORE [configure],
+     * When called BEFORE [configure],
      * buffer the token in [pendingPushTokenBeforeConfigure] and replay it
      * inside `configure()` once `pushTokenManager` is wired. Without this,
      * apps that registered FCM at boot dropped tokens silently.
@@ -1958,7 +1958,7 @@ object AppDNA {
         }
     }
 
-    // MARK: - Public API: Session Data (SPEC-088)
+    // MARK: - Public API: Session Data
 
     /**
      * Store a key-value pair in the cross-module session data store.
@@ -1991,7 +1991,7 @@ object AppDNA {
      * Set analytics consent. When false, events are silently dropped.
      */
     fun setConsent(analytics: Boolean) {
-        // SPEC-070-B PN row 14 (AC-36): persist FIRST. A crash before the write would lose a
+        // Persist FIRST. A crash before the write would lose a
         // revocation, and the next launch would re-enable analytics for a user who opted out.
         appContext?.let { ai.appdna.sdk.storage.ConsentStore.setDecision(it, analytics) }
         eventTracker?.setConsent(analytics)
@@ -2022,7 +2022,7 @@ object AppDNA {
     }
 
     /**
-     * SPEC-070-A finalization Phase C — strict-typed LogLevel overload.
+     * Phase C — strict-typed LogLevel overload.
      * Mirrors iOS `setLogLevel(_ level: LogLevel)` (typed enum, no
      * stringly-typed fallback). Java callers can use either overload
      * (`AppDNA.setLogLevel("debug")` or `AppDNA.setLogLevel(LogLevel.DEBUG)`).
@@ -2034,7 +2034,7 @@ object AppDNA {
     }
 
     /**
-     * SPEC-070-A finalization Phase C — app-level forced theme override.
+     * Phase C — app-level forced theme override.
      * Mirrors iOS `AppDNA.setForcedTheme(_ theme: ForcedTheme?)` (TBD).
      * When set, the SDK's renderers prefer this theme over the system
      * pref. Pass null to clear the override and resume system-pref behavior.
@@ -2104,7 +2104,7 @@ object AppDNA {
      * config fetch is started but not awaited — observe remote config changes for fresh values.
      */
     fun onReady(callback: () -> Unit) {
-        // SPEC-401-A R76 (Lens B P2) — always invoke `callback` on the main
+        // Always invoke `callback` on the main
         // thread, matching iOS AppDNA.swift:733-741 + :1098-1102 which
         // wraps with `DispatchQueue.main.async`. Was running inline on the
         // synchronized(this) thread (which could be Main if called from
@@ -2121,11 +2121,11 @@ object AppDNA {
         }
     }
 
-    // MARK: - Internal accessors (used by onboarding hooks, SPEC-088)
+    // MARK: - Internal accessors (used by onboarding hooks)
 
     /**
-     * SPEC-070-A A.12: Returns the configured environment's base URL so internal
-     * Composables (e.g. the AC-046 location autocomplete renderer) can issue
+     * Returns the configured environment's base URL so internal
+     * Composables (e.g. the location autocomplete renderer) can issue
      * sandbox-vs-production-aware backend requests without hard-coding hosts.
      *
      * Returns Production base URL when called before [configure] (defensive fallback).
@@ -2133,14 +2133,14 @@ object AppDNA {
     internal fun getApiBaseUrl(): String = resolvedBaseUrl
 
     /**
-     * SPEC-070-A: Internal accessor for the SDK API key, used by ad-hoc HTTP calls
+     * Internal accessor for the SDK API key, used by ad-hoc HTTP calls
      * inside renderers that don't go through [ApiClient] (e.g. the geocode autocomplete).
      * Null before [configure] runs.
      */
     internal fun getApiKey(): String? = apiKey
 
     /**
-     * SPEC-448 — the Option Set store's client. Mirrors iOS `AppDNA.optionSetClient`.
+     * The Option Set store's client. Mirrors iOS `AppDNA.optionSetClient`.
      * Null before [configure] runs, which the store treats as "no refresh possible" rather than an
      * error, so the fallback ladder still renders.
      */
@@ -2159,7 +2159,7 @@ object AppDNA {
         return remoteConfigManager?.getConfig(key) as? String
     }
 
-    /** Internal reference to identity for TemplateEngine (SPEC-088). */
+    /** Internal reference to identity for TemplateEngine. */
     internal fun getIdentityRef(): DeviceIdentity? {
         return identityManager?.currentIdentity
     }
@@ -2172,15 +2172,15 @@ object AppDNA {
         tracker: EventTracker,
         epoch: Int,
     ) {
-        // SPEC-070-A A.31a — Firebase asset I/O moved off the configure-thread.
+        // Firebase asset I/O moved off the configure-thread.
         // Reads google-services-appdna.json from assets + parses JSON; we run
         // it here on Dispatchers.IO before any Firestore consumer needs it.
-        // SPEC-070-A A.24 — also adds GCM sender ID so the secondary
+        // Also adds GCM sender ID so the secondary
         // FirebaseApp can do FCM (otherwise PushTokenManager.registerToken
         // returns nothing because the SDK FirebaseApp has no project number).
         initSecondaryFirebaseAppIfNeeded()
 
-        // SPEC-070-A A.26 — instantiate NativeBillingManager and bind to
+        // Instantiate NativeBillingManager and bind to
         // BillingModule.manager so AppDNA.billing.purchase() / restore() /
         // getProducts() / getEntitlements() all work. Was never set,
         // resulting in silent no-ops every time the host called billing.
@@ -2189,7 +2189,7 @@ object AppDNA {
         if (!isCurrentConfigure(epoch)) return dropStaleBootstrap(epoch)
         initBillingModuleIfNeeded(tracker, client)
 
-        // Round-10 #14 — retry the cold-start bootstrap on transient 5xx/network blips (iOS parity),
+        // Retry the cold-start bootstrap on transient 5xx/network blips (iOS parity),
         // instead of degrading to cached config on the first failure.
         val answer = client.getWithRetryResult("/api/v1/sdk/bootstrap")
         val result = (answer as? ApiClient.GetResult.Ok)?.json
@@ -2237,7 +2237,7 @@ object AppDNA {
             if (configureEpoch != epoch) return dropStaleBootstrap(epoch)
             isConfigured = true
             bootstrapsApplied.incrementAndGet()
-            // SPEC-070-A final audit pass H F3 — release the in-flight
+            // Release the in-flight
             // configure-guard so future shutdown-then-configure cycles can
             // re-arm it. Together with `scope` reassign in shutdown() this
             // makes the SDK fully re-initializable.
@@ -2247,7 +2247,7 @@ object AppDNA {
 
             val callbacks = ArrayList(readyCallbacks)
             readyCallbacks.clear()
-            // SPEC-401-A R76 (Lens B P2) — bootstrap drain runs on
+            // Bootstrap drain runs on
             // Dispatchers.IO. Force `cb()` onto Main matching iOS
             // AppDNA.swift:1098-1102 `DispatchQueue.main.async { cb() }`.
             // Hosts touching findViewById / Compose / ViewModel in onReady
@@ -2519,7 +2519,7 @@ object AppDNA {
             val projectInfo = config.optJSONObject("project_info") ?: return null
             val projectId = projectInfo.optString("project_id", "").ifEmpty { return null }
             val storageBucket = projectInfo.optString("storage_bucket", "$projectId.appspot.com")
-            // SPEC-070-A A.24 (part 2) — pull `project_number` so we can populate
+            // (part 2) — pull `project_number` so we can populate
             // `setGcmSenderId` on the secondary FirebaseApp. Without this, FCM
             // (`FirebaseMessaging.getInstance(secondaryApp).token`) returns an
             // error because the secondary app has no sender ID.
@@ -2557,7 +2557,7 @@ object AppDNA {
         }
     }
 
-    // SPEC-070-A A.31a — Firebase asset I/O moved off the configure-thread.
+    // Firebase asset I/O moved off the configure-thread.
     private fun initSecondaryFirebaseAppIfNeeded() {
         val context = appContext ?: return
         if (firestoreDB != null) return  // already initialized
@@ -2575,7 +2575,7 @@ object AppDNA {
                 } else {
                     val msg = "Firebase: google-services-appdna.json found but failed to create secondary app. Check the JSON content."
                     Log.error(msg)
-                    // SPEC-070-A H.20: surface degraded init state to host.
+                    // Surface degraded init state to host.
                     reportInitDegraded(IllegalStateException(msg))
                 }
             } else if (FirebaseApp.getApps(context).isEmpty()) {
@@ -2590,7 +2590,7 @@ object AppDNA {
         }
     }
 
-    // SPEC-070-A A.26 — instantiate NativeBillingManager and bind to BillingModule.
+    // Instantiate NativeBillingManager and bind to BillingModule.
     private fun initBillingModuleIfNeeded(
         tracker: ai.appdna.sdk.events.EventTracker,
         client: ai.appdna.sdk.network.ApiClient,
@@ -2660,7 +2660,7 @@ object AppDNA {
             Log.error("BillingModule init failed: ${e.message}")
             // Billing unavailable → no purchase, no restore: the providerNotAvailable path.
             billing.ownershipPolicy = ai.appdna.sdk.billing.BillingOwnership.none
-            // SPEC-070-B PN row 17 (W13/AC-31(b)): billing is not analytics. A failed billing init is a
+            // Billing is not analytics. A failed billing init is a
             // degraded SDK, not a dead one — events keep flowing.
             reportInitDegraded(e)
         }
@@ -2673,7 +2673,7 @@ object AppDNA {
     internal fun appContextForBridges(): Context? = appContext
 
     /**
-     * SPEC-070-B W13 — which subsystems `configure()` actually brought up. The isolation test reads
+     * Which subsystems `configure()` actually brought up. The isolation test reads
      * it to assert that a failing subsystem takes ONLY itself down: the ones after it in
      * `configure()` still exist, and so does the event pipeline.
      */
@@ -2690,7 +2690,7 @@ object AppDNA {
     /**
      * Shut down the SDK and release resources. Call from Application.onTerminate().
      *
-     * SPEC-070-A H.24 — release ALL native handles + cancel ALL coroutine
+     * Release ALL native handles + cancel ALL coroutine
      * scopes. Previous implementation cancelled `scope` but leaked
      * `nativeBillingManager`'s BillingClient connection, the event SQLite
      * handle, the survey/messages/push manager scopes, and the periodic
@@ -2714,7 +2714,7 @@ object AppDNA {
             val key = apiKey
             val db = eventDatabase
             if (!queueOwnsDatabase && ctx != null && key != null && db != null) {
-                // 🔴 SPEC-070-B W13 — this was UNGUARDED, while the identical call in `configure()`
+                // 🔴 This was UNGUARDED, while the identical call in `configure()`
                 // (the `bgScheduler` lambda) is wrapped. `WorkManager.getInstance()` THROWS
                 // `IllegalStateException` in any app that disables `WorkManagerInitializer` — a
                 // supported, documented configuration — so `AppDNA.shutdown()` threw into the host,
@@ -2732,7 +2732,7 @@ object AppDNA {
             webEntitlementManager?.stopObserving()
             pendingMessageListener?.stopObserving()
 
-            // SPEC-070-A H.24: cancel periodic config-refresh worker.
+            // Cancel periodic config-refresh worker.
             try {
                 if (ctx != null) ai.appdna.sdk.background.ConfigRefreshWorker.cancel(ctx)
             } catch (_: Throwable) { /* WorkManager may not be initialized */ }
@@ -2746,7 +2746,7 @@ object AppDNA {
             // paywall shutdown only cancels its own scope, and nothing below depends on it being alive.
             try { paywallManager?.shutdown() } catch (_: Throwable) {}
 
-            // SPEC-070-A H.24: release the native billing handles. The wrapper
+            // Release the native billing handles. The wrapper
             // [BillingModule] does NOT itself own a BillingClient — its scope
             // is independent of the underlying [NativeBillingManager], so we
             // cancel both.
@@ -2767,17 +2767,17 @@ object AppDNA {
                 Log.warning("BillingModule.shutdown threw: ${e.message}")
             }
 
-            // SPEC-070-A H.24: cancel survey/push token scopes so background
+            // Cancel survey/push token scopes so background
             // coroutines stop emitting events after shutdown.
             try { surveyManager?.shutdown() } catch (_: Throwable) {}
             try { pushTokenManager?.shutdown() } catch (_: Throwable) {}
 
-            // SPEC-070-A audit Round 2 finding 6: cancel paywall + deferred
+            // Cancel paywall + deferred
             // deep-link scopes so they don't outlive shutdown. (The paywall scope is cancelled above,
             // before billing is destroyed.)
             try { deferredDeepLinkManager?.shutdown() } catch (_: Throwable) {}
 
-            // SPEC-070-A final audit pass B F1 — release the
+            // Release the
             // ProcessLifecycleOwner observer SessionManager registers in
             // its constructor (SessionManager.kt:117). Without this the
             // observer survives shutdown because ProcessLifecycleOwner is
@@ -2786,17 +2786,17 @@ object AppDNA {
             // explicit `lifecycle.removeObserver(...)` call inside stop().
             try { sessionManager?.stop() } catch (_: Throwable) {}
 
-            // SPEC-070-A final audit pass C F2 — drain MessageManager's
+            // Drain MessageManager's
             // mainHandler so a `delay_seconds`-postponed Dialog
             // presentation can't fire on a stale Activity ref after the
             // SDK has been told to shut down.
             try { messageManager?.shutdown() } catch (_: Throwable) {}
 
-            // SPEC-070-B PN row 7: cancel the configTTL refresh timer, or it fires against a
+            // Cancel the configTTL refresh timer, or it fires against a
             // torn-down Firestore handle after shutdown.
             try { remoteConfigManager?.shutdown() } catch (_: Throwable) {}
 
-            // SPEC-070-A H.24: close the SQLite handle. EventDatabase extends
+            // Close the SQLite handle. EventDatabase extends
             // SQLiteOpenHelper, so close() releases the underlying db file
             // without losing pending rows (they live on disk until uploaded).
             // Not while the queue's final upload attempt may still use it: that attempt closes it when done.
@@ -2806,7 +2806,7 @@ object AppDNA {
 
             scope.cancel()
 
-            // SPEC-070-A final audit pass H F1 — null out manager + cache
+            // Null out manager + cache
             // refs so a subsequent `configure()` doesn't leak the prior
             // EventTracker/SessionManager/etc. iOS does the equivalent via
             // ARC (`shared.eventTracker = nil` etc. at AppDNA.swift:1126).
@@ -2835,7 +2835,7 @@ object AppDNA {
             apiKey = null
             adaptyBridge = null
 
-            // Round-10 #9 — the PUBLIC module facades (`AppDNA.onboarding`/`paywall`/`remoteConfig`/
+            // The PUBLIC module facades (`AppDNA.onboarding`/`paywall`/`remoteConfig`/
             // `features`/`surveys`/`experiments`/`push`) hold their OWN strong `.manager` ref, assigned
             // in configure(). Nulling the private `*Manager` fields above does NOT clear these, so after
             // shutdown `AppDNA.surveys.present(id)` / `remoteConfig.get()` / `features.isEnabled()` /
@@ -2850,7 +2850,7 @@ object AppDNA {
             experiments.manager = null
             push.manager = null
 
-            // SPEC-070-B PN row 10: these three are OBJECT-scoped statics, so nulling the managers
+            // These three are OBJECT-scoped statics, so nulling the managers
             // above leaves them holding the previous run's values. A re-configure()d SDK then renders
             // with a stale brand color, attributes its first events to the old screen, and can present
             // a message from a config that is no longer live.
@@ -2859,7 +2859,7 @@ object AppDNA {
             activeMessages = emptyMap()
             lastInitError = null
 
-            // SPEC-070-A final audit pass H F1 — release the registered
+            // Release the registered
             // NavigationInterceptor lifecycle callbacks so a re-`configure()`
             // doesn't double-fire screen events. Mirrors iOS dealloc.
             try {
@@ -2871,13 +2871,13 @@ object AppDNA {
             } catch (_: Throwable) {}
             navigationInterceptorCallbacks = null
 
-            // SPEC-070-A finalization R3 P0 (Lens D) — drop pending Activity
+            // Drop pending Activity
             // launch slots so SDK shutdown doesn't leak ScreenConfig /
             // PaywallConfig / SurveyConfig + closure captures forever.
             try { ai.appdna.sdk.screens.ScreenHostActivity.clearActiveLaunches() } catch (_: Throwable) {}
             try { ai.appdna.sdk.paywalls.PaywallActivity.clearActiveLaunches() } catch (_: Throwable) {}
             try { ai.appdna.sdk.feedback.SurveyActivity.clearActiveLaunches() } catch (_: Throwable) {}
-            // SPEC-401-A R73 (Lens B P1) — drop pending OnboardingActivity
+            // Drop pending OnboardingActivity
             // launch payload too. Was leaking OnboardingFlowConfig + delegate
             // + EventTracker + 5 lambda closures across shutdown→configure;
             // also a race where presentOnboarding()+shutdown() before
@@ -2885,14 +2885,14 @@ object AppDNA {
             // with stale (nulled-queue) EventTracker.
             try { ai.appdna.sdk.onboarding.OnboardingActivity.clearActiveLaunches() } catch (_: Throwable) {}
 
-            // SPEC-070-A finalization R3 P0 (Lens D) — drop the pre-configure
+            // Drop the pre-configure
             // FCM token buffer too so a re-configure() doesn't replay a stale
             // token that the host already discarded.
             pendingPushTokenBeforeConfigure = null
 
             appContext = null
 
-            // SPEC-070-A final audit pass H F2 — reassign `scope` so a
+            // Reassign `scope` so a
             // future `configure()` lands on a live CoroutineScope. Without
             // this, the second performBootstrap{} dispatches onto the
             // cancelled scope and never fires.

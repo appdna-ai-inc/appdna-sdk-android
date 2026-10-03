@@ -25,16 +25,16 @@ import org.json.JSONObject
  * Firebase Cloud Messaging service for handling push notifications.
  * Apps should extend this or register it in AndroidManifest.xml.
  *
- * SPEC-070-A H.5–H.22 — full push hardening:
- *   H.6: dismissal broadcast wired via setDeleteIntent → push_dismissed event
- *   H.8: AppDNAPushDelegate.onPushReceived fires before notify()
- *   H.10: payload schema parses canonical iOS-shaped action/actions plus legacy flat keys
- *   H.16: foreground state inferred from ActivityManager (works in :fcm process)
- *   H.19: server-supplied channel group honored for a named (non-default) channel
- *   H.21: notificationIcon resolved via Configuration → manifest meta-data → app icon
- *   H.21b: server-supplied channel importance / name / description apply to the custom-sound channel
+ * Full push hardening:
+ *   Dismissal broadcast wired via setDeleteIntent → push_dismissed event
+ *   AppDNAPushDelegate.onPushReceived fires before notify()
+ *   Payload schema parses canonical iOS-shaped action/actions plus legacy flat keys
+ *   foreground state inferred from ActivityManager (works in :fcm process)
+ *   Server-supplied channel group honored for a named (non-default) channel
+ *   notificationIcon resolved via Configuration → manifest meta-data → app icon
+ *   server-supplied channel importance / name / description apply to the custom-sound channel
  *          only; the default `appdna_push` channel always takes the SDK's own settings
- *   H.22: a notification+data payload reaches this service only in the foreground (FCM displays
+ *   a notification+data payload reaches this service only in the foreground (FCM displays
  *         it itself in the background), so the SDK displays it here like a data-only payload
  */
 open class AppDNAMessagingService : FirebaseMessagingService() {
@@ -156,7 +156,7 @@ internal object AppDNANotificationPoster {
         // (Android 8+ plays the channel's sound); pre-8 the sound is set on the notification below.
         val soundChannel = PushSoundChannels.ensureChannel(context, data)
         val channelId = soundChannel ?: data["channel_id"]?.takeIf { it.isNotBlank() } ?: AppDNAMessagingService.DEFAULT_CHANNEL_ID
-        // SPEC-088: Interpolate push title and body via TemplateEngine
+        // Interpolate push title and body via TemplateEngine
         val pushCtx = ai.appdna.sdk.core.TemplateEngine.buildContext()
         val title = ai.appdna.sdk.core.TemplateEngine.interpolate(
             data["title"] ?: notifTitle ?: "", pushCtx
@@ -170,7 +170,7 @@ internal object AppDNANotificationPoster {
         val builder = NotificationCompat.Builder(context, channelId)
             .setContentTitle(title)
             .setContentText(body)
-            // SPEC-070-A H.21: resolve icon via Configuration.notificationIcon →
+            // Resolve icon via Configuration.notificationIcon →
             // manifest <meta-data> → app icon. setSmallIcon throws when given a
             // 0/missing res id, so we always have a valid fallback.
             .setSmallIcon(NotificationIconResolver.resolve(context.applicationContext ?: context))
@@ -180,7 +180,7 @@ internal object AppDNANotificationPoster {
                 else NotificationCompat.PRIORITY_DEFAULT
             )
 
-        // SPEC-085: Rich image via RichPushHandler for reliable download with timeout
+        // Rich image via RichPushHandler for reliable download with timeout
         data["image_url"]?.let { url ->
             try {
                 val richBuilder = RichPushHandler.buildRichNotification(
@@ -241,7 +241,7 @@ internal object AppDNANotificationPoster {
             )
         }
 
-        // SPEC-070-A H.6: dismissal intent → push_dismissed event broadcast.
+        // Dismissal intent → push_dismissed event broadcast.
         // Set scheme + data via setData() so we don't shadow the outer
         // `data: Map<String,String>` inside the apply block.
         val dismissIntent = Intent(context, PushDismissReceiver::class.java).apply {
@@ -297,7 +297,7 @@ internal object AppDNANotificationPoster {
         if (channelId == AppDNAMessagingService.DEFAULT_CHANNEL_ID) DEFAULT_CHANNEL_NAME else "$DEFAULT_CHANNEL_NAME ($channelId)"
 
     /**
-     * SPEC-070-A J.15 — extracted helper that ASSUMES API 26+ so Android Lint
+     * Extracted helper that ASSUMES API 26+ so Android Lint
      * flags any accidental call that isn't behind a
      * `Build.VERSION.SDK_INT >= O` guard. [NotificationChannel] and the
      * `NotificationManager.getNotificationChannel` / `createNotificationChannel`
@@ -346,7 +346,7 @@ internal class PushDismissReceiver : BroadcastReceiver() {
 }
 
 /**
- * SPEC-070-A H.21: shared resolver so both [AppDNAMessagingService] and
+ * Shared resolver so both [AppDNAMessagingService] and
  * [RichPushHandler] use identical icon-resolution logic.
  */
 internal object NotificationIconResolver {
@@ -370,7 +370,7 @@ internal object NotificationIconResolver {
     }
 
     /**
-     * SPEC-070-A finalization B3#P1 — resolve a push action button icon ref
+     * Resolve a push action button icon ref
      * to an Android drawable resource id, given a host context. Accepts:
      *   1. Flat string `"ic_email"` → host R.drawable lookup.
      *   2. JSON dict `{library:"lucide"|"material"|"sf-symbols"|"emoji", name:"mail"}`
@@ -415,7 +415,7 @@ internal object NotificationIconResolver {
 }
 
 /**
- * SPEC-070-A H.7: session-scoped `push_id` propagation. We persist the
+ * Session-scoped `push_id` propagation. We persist the
  * latest delivered push_id in SharedPreferences so the next event session
  * (which may be a different process or a cold launch from tap) can fold
  * it into `context.push_id` for attribution. Mirrors iOS
@@ -426,7 +426,7 @@ internal object PushSessionContext {
     private const val KEY_LAST_PUSH_ID = "last_push_id"
     private const val KEY_LAST_PUSH_AT = "last_push_at"
     // Treat a push older than 30 minutes as no longer "current" — matches
-    // SessionManager rotation (SPEC-070-A A.8).
+    // SessionManager rotation.
     private const val WINDOW_MS = 30 * 60 * 1000L
 
     fun recordPushReceived(context: Context, pushId: String) {

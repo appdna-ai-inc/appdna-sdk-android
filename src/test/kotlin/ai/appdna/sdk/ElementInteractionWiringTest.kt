@@ -14,7 +14,7 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 /**
- * SPEC-419 STEP-2 — pure seams of the element-interaction wiring (Android mirror of iOS
+ * Pure seams of the element-interaction wiring (Android mirror of iOS
  * ElementInteractionWiringTests): the delegate fire-fold, the required-field advance gate, and the
  * per-block field_config override read-layer. No Compose host needed.
  */

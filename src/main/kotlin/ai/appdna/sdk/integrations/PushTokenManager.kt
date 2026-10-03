@@ -95,7 +95,7 @@ internal class PushTokenManager(
             ))
             Log.info("Push token registered (hash: ${hashedToken.take(12)}...)")
 
-            // SPEC-070-A B.1 — fire onPushTokenRegistered to the host's
+            // Fire onPushTokenRegistered to the host's
             // AppDNAPushDelegate. Mirrors iOS PushTokenManager.swift:51.
             // Posted to main thread so host code runs off the FCM listener.
             try {
@@ -183,7 +183,7 @@ internal class PushTokenManager(
     /**
      * Proactively fetch FCM token and register with backend.
      *
-     * SPEC-070-A A.24 (part 1) — bind to the SDK's secondary FirebaseApp
+     * (part 1) — bind to the SDK's secondary FirebaseApp
      * ("appdna") so AppDNA receives push tokens issued against the AppDNA
      * Firebase project — not the host app's default FirebaseApp (which
      * would otherwise produce tokens that AppDNA's backend can't deliver
@@ -215,7 +215,7 @@ internal class PushTokenManager(
      */
     private fun appdnaScopedMessaging(): com.google.firebase.messaging.FirebaseMessaging? {
         return try {
-            // SPEC-070-A A.24: scope FCM to the secondary "appdna" FirebaseApp.
+            // Scope FCM to the secondary "appdna" FirebaseApp.
             // FirebaseMessaging.getInstance(FirebaseApp) is package-private; we
             // resolve via the FirebaseApp's component container (the same path
             // the public no-arg getInstance uses for the default app).
@@ -240,7 +240,7 @@ internal class PushTokenManager(
                     put("device_id", deviceId ?: "")
                     put("app_version", appVersion)
                     put("sdk_version", AppDNA.sdkVersion)
-                    // SPEC-070-A finalization parity audit R5 — normalize to
+                    // Normalize to
                     // 3-part dotted form so cross-platform OS-version cohort
                     // dashboards bucket Android same as iOS. EventSchema
                     // already does this for events.os and template
@@ -263,7 +263,7 @@ internal class PushTokenManager(
     }
 
     /**
-     * SPEC-070-A H.24 — cancel the background scope so any pending
+     * Cancel the background scope so any pending
      * delivered/tapped POSTs do not outlive [AppDNA.shutdown]. Safe to call
      * multiple times.
      */

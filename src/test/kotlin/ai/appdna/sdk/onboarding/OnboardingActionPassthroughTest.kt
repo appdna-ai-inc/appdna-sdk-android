@@ -6,7 +6,7 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 /**
- * SPEC-070-A J.8 — OnboardingActionPassthroughTest.
+ * OnboardingActionPassthroughTest.
  *
  * Mirrors `Tests/AppDNASDKTests/OnboardingActionPassthroughTests.swift`.
  *

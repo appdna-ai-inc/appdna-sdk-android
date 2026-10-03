@@ -32,14 +32,14 @@ import java.text.SimpleDateFormat
 import java.util.*
 
 /**
- * Form step composable: renders native input controls for each FormField (SPEC-082).
+ * Form step composable: renders native input controls for each FormField.
  */
 @Composable
 fun FormStep(
     config: StepConfig,
     onNext: (Map<String, Any>?) -> Unit,
     /**
-     * SPEC-070-A finalization B4 P1 — previously-entered responses
+     * Previously-entered responses
      * (one map keyed by field_id) used to restore form state on back nav.
      * Mirrors iOS FormStepView.savedValues (FormStepView.swift:9,119-123).
      */
@@ -52,11 +52,11 @@ fun FormStep(
     // Initialize defaults + savedValues. Order: savedValues (back-nav
     // restoration) wins over fieldDefaults wins over per-field default_value.
     LaunchedEffect(fields) {
-        // SPEC-070-A finalization B4 P1 — restore from prior responses first.
+        // Restore from prior responses first.
         savedValues?.forEach { (fieldId, value) ->
             if (values[fieldId] == null) values[fieldId] = value
         }
-        // SPEC-083: Apply fieldDefaults from StepConfigOverride next
+        // Apply fieldDefaults from StepConfigOverride next
         config.field_defaults?.forEach { (fieldId, value) ->
             if (values[fieldId] == null) {
                 values[fieldId] = value
@@ -97,13 +97,13 @@ fun FormStep(
             modifier = Modifier
                 .weight(1f)
                 .verticalScroll(rememberScrollState())
-                // SPEC-401-A R46 (Lens A #4) — match iOS FormStepView.swift:61-62
+                // Match iOS FormStepView.swift:61-62
                 // `padding(.top, 16) + padding(.bottom, 24)`. Was vertical=16dp
                 // both edges (16dp bottom on Android vs 24pt on iOS).
                 .padding(start = 24.dp, end = 24.dp, top = 16.dp, bottom = 24.dp),
             horizontalAlignment = Alignment.Start
         ) {
-            // SPEC-070-A finalization B4 P1 — image_url header above the
+            // image_url header above the
             // title, capped at 120dp tall like iOS FormStepView.swift:22-32.
             // Uses Coil via NetworkImage so SVG / PNG / GIF all render.
             config.image_url?.takeIf { it.isNotBlank() }?.let { url ->
@@ -112,14 +112,14 @@ fun FormStep(
                     modifier = Modifier
                         .fillMaxWidth()
                         .heightIn(max = 120.dp)
-                        // SPEC-401-A R46 (Lens A #3) — match iOS
+                        // Match iOS
                         // .clipShape(RoundedRectangle(cornerRadius: 12))
                         // (FormStepView.swift:29). Was sharp corners.
                         .clip(RoundedCornerShape(12.dp)),
                     contentScale = androidx.compose.ui.layout.ContentScale.Fit,
                     contentDescription = null,
                 )
-                // SPEC-401-A R53 (Lens A R53 #2, P2) — image→title 12→20dp
+                // image→title 12→20dp
                 // matching iOS FormStepView.swift:18-43 VStack(spacing: 20).
                 Spacer(Modifier.height(20.dp))
             }
@@ -134,7 +134,7 @@ fun FormStep(
             }
 
             config.subtitle?.let {
-                // SPEC-401-A R45 (Lens A #2 + #3) — match iOS FormStepView.swift:34-43
+                // Match iOS FormStepView.swift:34-43
                 // VStack(spacing: 20) → title→subtitle gap 20pt (was 4dp)
                 // and .body font ≈ 17pt (was 15sp).
                 Spacer(Modifier.height(20.dp))
@@ -151,7 +151,7 @@ fun FormStep(
             visibleFields.forEach { field ->
                 if (field.type != FormFieldType.TOGGLE) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
-                        // SPEC-401-A R52 (Lens A R51 #18, P3) — 14→15sp
+                        // 14→15sp
                         // matching iOS .subheadline.weight(.medium) at
                         // FormStepView.swift:208.
                         Text(
@@ -167,7 +167,7 @@ fun FormStep(
                             )
                         }
                     }
-                    // SPEC-401-A R46 (Lens A #2) — iOS label→control gap 6pt
+                    // iOS label→control gap 6pt
                     // (FormStepView.swift:47 VStack(spacing: 6)). Was 4dp.
                     Spacer(Modifier.height(6.dp))
                 }
@@ -182,14 +182,14 @@ fun FormStep(
                     )
                 }
 
-                // SPEC-401-A R46 (Lens A #1) — iOS field→field gap 20pt
+                // iOS field→field gap 20pt
                 // (FormStepView.swift:20 VStack(spacing: 20)). Was 16dp.
                 Spacer(Modifier.height(20.dp))
             }
         }
 
         // CTA
-        // SPEC-401-A R17 — match iOS FormStepView.swift:77-115. iOS keeps the
+        // Match iOS FormStepView.swift:77-115. iOS keeps the
         // button always-tappable and on tap with `canSubmit == false` shows a
         // 2.5s bottom toast naming the first missing required field. Android
         // previously used `enabled = canSubmit` which rendered a greyed-out
@@ -197,7 +197,7 @@ fun FormStep(
         // Now the button stays tappable; on tap with missing required fields,
         // populate `errors[fieldId]` for each missing field so the inline red
         // text under each input is the equivalent feedback channel.
-        // SPEC-401-A R45 (Lens A #1) — honour element_style.background.color
+        // Honour element_style.background.color
         // + corner_radius. iOS FormStepView.swift:71-94 reads
         // `config.element_style?.background?.color ?? "#6366F1"` and
         // `corner_radius ?? 14`. Android was using Material default
@@ -220,7 +220,7 @@ fun FormStep(
                     }
                     field.validation?.pattern?.let { pattern ->
                         val v = values[field.id]?.toString() ?: ""
-                        // SPEC-070-A I.5 — `containsMatchIn` for partial-match
+                        // `containsMatchIn` for partial-match
                         // parity with iOS `NSRegularExpression.firstMatch`.
                         // Authors typically write patterns like `\d{6}` to test
                         // *contains* a 6-digit run, not anchored full-string.
@@ -230,9 +230,9 @@ fun FormStep(
                     }
                 }
                 if (errors.isEmpty()) {
-                    // Round-22 — TimeField writes a display-only `${id}_time` companion into `values`;
+                    // TimeField writes a display-only `${id}_time` companion into `values`;
                     // strip those before submit so they don't ship in selection_data/responses (iOS has
-                    // no such companion key). Round-23 — key off ALL `fields` (not `visibleFields`): a
+                    // no such companion key). Key off ALL `fields` (not `visibleFields`): a
                     // TIME/DATETIME field filled then HIDDEN by a depends_on change keeps its companion in
                     // `values`, and scoping to visible fields would leak it. Mirrors iOS building its
                     // date-field type map from all `fields`.
@@ -251,11 +251,11 @@ fun FormStep(
                 .fillMaxWidth()
                 .padding(horizontal = 24.dp)
                 .padding(bottom = 32.dp)
-                // SPEC-401-A R45 (Lens A #4) — iOS CTA frame.height(54)
+                // iOS CTA frame.height(54)
                 // (was 52.dp).
                 .height(54.dp),
             shape = RoundedCornerShape(ctaCornerRadius),
-            // SPEC-401-A R60 (Lens C P2 #2) — dim only the background, keep
+            // Dim only the background, keep
             // the label opaque white. Was `Modifier.graphicsLayer { alpha =
             // 0.4f }` on the whole Button which dropped both bg AND text to
             // 40% alpha — perceived contrast ~1.6:1 (fails WCAG AA). iOS
@@ -286,7 +286,7 @@ private fun FormFieldControl(
 ) {
     when (field.type) {
         FormFieldType.TEXT, FormFieldType.EMAIL, FormFieldType.PHONE -> {
-            // SPEC-070-A I.5b — keyboardType selection now respects the
+            // keyboardType selection now respects the
             // optional `field.config.keyboard_type` override ("url",
             // "number", "decimal", "phone", "email", "ascii", "default").
             // Falls back to the FormFieldType-derived default. iOS reads
@@ -303,10 +303,10 @@ private fun FormFieldControl(
                 },
                 modifier = Modifier.fillMaxWidth(),
                 placeholder = field.placeholder?.let { { Text(it.interpolated()) } },
-                // SPEC-070-A I.5b — `imeAction = Done` so the soft keyboard
+                // `imeAction = Done` so the soft keyboard
                 // shows a "Done" key that dismisses the IME. Mirrors iOS
                 // `submitLabel(.done)`.
-                // SPEC-401-A B3 P2 — autocaps + autocorrect now respect the
+                // Autocaps + autocorrect now respect the
                 // field config and the field type. Email/phone disable both
                 // (matching iOS implicit behavior); text fields default to
                 // sentences capitalisation + autocorrect on; `autocorrect`
@@ -336,7 +336,7 @@ private fun FormFieldControl(
                 },
                 modifier = Modifier
                     .fillMaxWidth()
-                    // SPEC-401-A — cap height at 150dp to match iOS
+                    // Cap height at 150dp to match iOS
                     // FormStepView.swift:274 so long input doesn't push the
                     // CTA off-screen on small phones. minLines still drives
                     // the initial visible row count.
@@ -364,7 +364,7 @@ private fun FormFieldControl(
                     },
                     modifier = Modifier.weight(1f),
                     placeholder = field.placeholder?.let { { Text(it.interpolated()) } },
-                    // SPEC-070-A I.5b — number keyboard + Done IME action.
+                    // Number keyboard + Done IME action.
                     keyboardOptions = KeyboardOptions(
                         keyboardType = KeyboardType.Number,
                         imeAction = ImeAction.Done,
@@ -376,7 +376,7 @@ private fun FormFieldControl(
                 )
                 field.config?.unit?.let { unit ->
                     Spacer(Modifier.width(8.dp))
-                    // SPEC-401-A R57 (Lens A R57 #7, P2) — 15sp matches iOS
+                    // 15sp matches iOS
                     // .font(.subheadline) at FormStepView.swift:326.
                     Text(text = unit, fontSize = 15.sp, color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.6f))
                 }
@@ -402,7 +402,7 @@ private fun FormFieldControl(
         }
 
         FormFieldType.SLIDER -> {
-            // SPEC-419 pass-33 — clamp so Compose Slider valueRange isn't empty (its internal coerceIn throws on min>=max).
+            // Clamp so Compose Slider valueRange isn't empty (its internal coerceIn throws on min>=max).
             val rawStep = field.config?.step?.toFloat() ?: 1f
             val step = if (rawStep > 0f) rawStep else 1f
             val min = minOf(field.config?.min_value?.toFloat() ?: 0f, field.config?.max_value?.toFloat() ?: 100f)
@@ -410,7 +410,7 @@ private fun FormFieldControl(
             val unit = field.config?.unit ?: ""
             val decimalPlaces = field.config?.decimal_places ?: 0
             val current = (values[field.id] as? Number)?.toFloat() ?: min
-            // SPEC-401-A R59 (Lens C P2 #1) — discrete-step haptic tick on
+            // Discrete-step haptic tick on
             // each step crossing matching iOS native `Slider(step:)` which
             // auto-emits UISelectionFeedbackGenerator. Compose Slider has
             // no equivalent; gate on bucket-index change so continuous
@@ -436,7 +436,7 @@ private fun FormFieldControl(
                     }
                 },
                 valueRange = min..max,
-                steps = if (step > 0 && max > min) (((max - min) / step).toInt() - 1).coerceAtLeast(0) else 0,  // SPEC-419 pass-34 — coerceAtLeast(0): Compose require(steps>=0) (mirror pass-22)
+                steps = if (step > 0 && max > min) (((max - min) / step).toInt() - 1).coerceAtLeast(0) else 0,  // coerceAtLeast(0): Compose require(steps>=0) (mirror pass-22)
                 modifier = Modifier.fillMaxWidth()
             )
             Row(
@@ -461,7 +461,7 @@ private fun FormFieldControl(
         FormFieldType.SIGNATURE -> SignatureField(field, values, errors)
 
         FormFieldType.TOGGLE -> {
-            // SPEC-401-A — `field.style.background_color` (or input_style.fill_color
+            // `field.style.background_color` (or input_style.fill_color
             // sub-key) maps to the Switch's `checkedTrackColor`. Mirrors iOS
             // `Toggle.tint`. Thumb-on stays the Material standard (white)
             // because that's the Material idiom — author-overriding it would
@@ -471,7 +471,7 @@ private fun FormFieldControl(
                 ?: (field.style?.input_style?.get("background_color") as? String)
             val checkedTrackColor = trackColorHex?.let { ai.appdna.sdk.core.StyleEngine.parseColor(it) }
                 ?: MaterialTheme.colorScheme.primary
-            // SPEC-401-A R63 (Lens C P2) — wrap label+Switch in `toggleable`
+            // Wrap label+Switch in `toggleable`
             // so TalkBack treats the row as a single switch element matching
             // iOS Toggle("label", isOn:) at FormStepView.swift:445-459.
             // Switch becomes presentational (onCheckedChange = null); the
@@ -493,7 +493,7 @@ private fun FormFieldControl(
                 Text(field.label.interpolated(), fontSize = 16.sp)
                 Switch(
                     checked = toggleChecked,
-                    // SPEC-401-A R63 (Lens C P2) — null handler so the Row's
+                    // Null handler so the Row's
                     // toggleable owns the click + a11y semantics.
                     onCheckedChange = null,
                     colors = SwitchDefaults.colors(
@@ -509,7 +509,7 @@ private fun FormFieldControl(
             val step = field.config?.step ?: 1.0
             val decimalPlaces = field.config?.decimal_places ?: 0
             val current = (values[field.id] as? Number)?.toDouble() ?: min
-            // SPEC-401-A R49 (Lens C #3, P2) — replace heavy LongPress haptic
+            // Replace heavy LongPress haptic
             // with HapticEngine LIGHT (HapticFeedbackConstants.CLOCK_TICK).
             // iOS uses UIImpactFeedbackGenerator(style: .light) for stepper
             // ± buttons (FormFieldRendererExtras.swift:113); LongPress
@@ -529,7 +529,7 @@ private fun FormFieldControl(
                         }
                     },
                     enabled = current - step >= min,
-                    // SPEC-401-A R58 (Lens C P2) — TalkBack reads "Decrease"
+                    // TalkBack reads "Decrease"
                     // matching iOS native UIStepper auto-announcement +
                     // sibling content-block path R38 fix at
                     // ContentBlockRenderer.kt:5371. Was generic "Button".
@@ -538,7 +538,7 @@ private fun FormFieldControl(
                     Text("-", fontSize = 20.sp, fontWeight = FontWeight.Bold)
                 }
                 Spacer(Modifier.width(16.dp))
-                // SPEC-401-A B3 P2 — animate value transition on
+                // Animate value transition on
                 // increment/decrement. iOS `Stepper` springs implicitly;
                 // Compose AnimatedContent with the default fade transition
                 // gives the same visual cue ("the number changed") without
@@ -548,7 +548,7 @@ private fun FormFieldControl(
                     targetState = current,
                     label = "stepper_value",
                 ) { displayed ->
-                    // SPEC-401-A R70 (Lens A P2) — split value + unit into TWO
+                    // Split value + unit into TWO
                     // Text nodes: number at 17sp SemiBold (iOS .font(.headline))
                     // and unit at 15sp .secondary tone (iOS .font(.subheadline)
                     // .foregroundColor(.secondary)) at FormFieldRendererExtras
@@ -577,12 +577,12 @@ private fun FormFieldControl(
                     onClick = {
                         if (current + step <= max) {
                             values[field.id] = current + step
-                            // SPEC-401-A R49 (Lens C #3, P2) — LIGHT haptic.
+                            // LIGHT haptic.
                             ai.appdna.sdk.core.HapticEngine.trigger(view, ai.appdna.sdk.core.HapticType.LIGHT)
                         }
                     },
                     enabled = current + step <= max,
-                    // SPEC-401-A R58 (Lens C P2) — TalkBack reads "Increase"
+                    // TalkBack reads "Increase"
                     // matching iOS UIStepper + ContentBlockRenderer R38 fix.
                     modifier = Modifier.semantics { contentDescription = "Increase" },
                 ) {
@@ -592,7 +592,7 @@ private fun FormFieldControl(
         }
 
         FormFieldType.LOCATION -> {
-            // SPEC-070-A I.18 — full autocomplete location input. Reuses the
+            // Full autocomplete location input. Reuses the
             // dedicated `LocationFieldComposable` so the legacy form-step
             // path matches block-based rendering fidelity. Honours
             // `location_type`, `location_bias_country`, `location_language`,
@@ -605,7 +605,7 @@ private fun FormFieldControl(
             )
         }
         FormFieldType.SEGMENTED -> {
-            // SPEC-401-A B2 P1 — replaced custom `OutlinedButton` loop with
+            // Replaced custom `OutlinedButton` loop with
             // Material3 `SingleChoiceSegmentedButtonRow` + `SegmentedButton`.
             // The Material3 component handles per-position shape, selection
             // animation, RTL, and accessibility automatically — what we
@@ -646,7 +646,7 @@ private fun DateField(
     val context = LocalContext.current
     val dateStr = values[field.id]?.toString() ?: ""
 
-    // SPEC-401-A — display string honours config.date_format if author
+    // Display string honours config.date_format if author
     // supplied one (e.g. "MMM d, yyyy"). Otherwise locale-aware short
     // form (`SimpleDateFormat.getDateInstance(SHORT, Locale.getDefault())`)
     // so dates feel native in any region. ISO submission stays Locale.US.
@@ -671,7 +671,7 @@ private fun DateField(
             val dialog = DatePickerDialog(
                 context,
                 { _, year, month, day ->
-                    // SPEC-070-A I.6 — ISO8601 (`yyyy-MM-dd`) submission
+                    // ISO8601 (`yyyy-MM-dd`) submission
                     // matches iOS `DateFormatter.iso8601` round-trip exactly.
                     // Locale.US prevents Arabic-numeral substitution
                     // (Locale.getDefault() in fa-IR / ar would format
@@ -740,7 +740,7 @@ private fun TimeField(
 
     OutlinedButton(
         onClick = {
-            // SPEC-401-A R81 (Lens A P1) — seed picker with previously-saved
+            // Seed picker with previously-saved
             // time matching iOS FormStepView.swift:365-377 binding which
             // returns `values[field.id] as? Date ?? Date()`. Was always
             // seeding with current wall-clock — re-opening after picking
@@ -755,13 +755,13 @@ private fun TimeField(
             TimePickerDialog(
                 context,
                 { _, hour, minute ->
-                    // SPEC-070-A I.6/I.10 — `Locale.US` keeps digits ASCII-numeric
+                    // `Locale.US` keeps digits ASCII-numeric
                     // so the time round-trips with iOS server geocoding regardless
                     // of device locale (Arabic / Persian / Bengali otherwise emit
                     // their native numerals here).
                     val formatted = String.format(Locale.US, "%02d:%02d", hour, minute)
                     values[timeKey] = formatted
-                    // Round-22 — deterministic LOCAL-component serialization matching iOS FormStepView
+                    // Deterministic LOCAL-component serialization matching iOS FormStepView
                     // (which now formats date/time by field type with no UTC conversion):
                     //   datetime → "yyyy-MM-dd'T'HH:mm:ss"  (append :00 seconds to the date+time)
                     //   time     → "HH:mm"                  (bare, no anchor date)
@@ -780,7 +780,7 @@ private fun TimeField(
                 },
                 cal.get(Calendar.HOUR_OF_DAY),
                 cal.get(Calendar.MINUTE),
-                // SPEC-401-A R61 (Lens C P2) — honour user's locale 12/24
+                // Honour user's locale 12/24
                 // preference matching iOS DatePicker(.hourAndMinute) which
                 // auto-respects system setting (FormStepView.swift:370-376).
                 // Was hardcoded `true` — en-US/AU/CA/PH (12-hour-default
@@ -805,7 +805,7 @@ private fun TimeField(
 }
 
 /**
- * SPEC-401-A — derive Material3 `OutlinedTextFieldColors` from the
+ * Derive Material3 `OutlinedTextFieldColors` from the
  * per-field `style` envelope. Authors set `border_color`,
  * `focus_border_color`, `background_color` directly, or stuff a
  * sub-color into the free-form `error_style.color` map for the error
@@ -851,7 +851,7 @@ private fun textFieldColorsFor(field: FormField): TextFieldColors {
 }
 
 /**
- * SPEC-401-A — derive a [Shape] from the per-field `style.corner_radius`
+ * Derive a [Shape] from the per-field `style.corner_radius`
  * with a sensible default (Material3 OutlinedTextField default = 4.dp,
  * iOS `.roundedBorder` ≈ 5pt; we use 8.dp for visual harmony with
  * other Material3 surfaces).
@@ -863,7 +863,7 @@ private fun textFieldShapeFor(field: FormField): androidx.compose.ui.graphics.Sh
 }
 
 /**
- * SPEC-401-A B3 P2 — autocorrect default per field type. Email/phone/url/
+ * Autocorrect default per field type. Email/phone/url/
  * password switch autocorrect off (matches iOS implicit behaviour and
  * prevents the IME from "correcting" structured text). Other text types
  * default to autocorrect on. The `autocorrect` config field overrides.
@@ -878,7 +878,7 @@ private fun resolveAutocorrect(field: FormField): Boolean {
 }
 
 /**
- * SPEC-401-A B3 P2 — KeyboardCapitalization default per field type +
+ * KeyboardCapitalization default per field type +
  * config-overridable. iOS implicit defaults are: email/phone/url/password →
  * none; text → sentences. The `autocapitalize` config field accepts the
  * same vocabulary as the schema enum (`none`/`words`/`sentences`/`characters`).
@@ -901,7 +901,7 @@ private fun resolveCapitalization(field: FormField): KeyboardCapitalization {
 }
 
 /**
- * SPEC-070-A I.5b — derive a [KeyboardType] for a [FormField]. Honours the
+ * Derive a [KeyboardType] for a [FormField]. Honours the
  * optional `keyboard_type` config override ("url", "number", "decimal",
  * "phone", "email", "ascii", "default") and falls back to the field type.
  */
@@ -1071,9 +1071,9 @@ private fun SelectField(
             options.forEach { option ->
                 DropdownMenuItem(
                     text = { Text(option.label.interpolated()) },
-                    // SPEC-401-A B2 P1 — render `option.icon` as a leading
+                    // Render `option.icon` as a leading
                     // image when set. Schema field has been there since
-                    // SPEC-082 but Android dropdown was text-only. Treats
+                    // But Android dropdown was text-only. Treats
                     // values starting with "http" as a URL (Coil) and
                     // everything else as text — emoji works too.
                     leadingIcon = option.icon?.let { iconStr ->

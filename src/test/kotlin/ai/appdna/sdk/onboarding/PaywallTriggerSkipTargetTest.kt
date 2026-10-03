@@ -5,7 +5,7 @@ import org.junit.Assert.assertNull
 import org.junit.Test
 
 /**
- * SPEC-403 — paywall_trigger skip-target resolver chain tests (Android).
+ * paywall_trigger skip-target resolver chain tests (Android).
  *
  * Mirrors the iOS [PaywallTriggerSkipTargetTests] file. The actual resolver
  * lives inside `presentPaywallTriggerNode` (OnboardingActivity.kt:~814)
@@ -21,7 +21,7 @@ import org.junit.Test
 class PaywallTriggerSkipTargetTest {
 
     /**
-     * Pure mirror of the resolver chain after SPEC-403. Android uses
+     * Pure mirror of the resolver chain. Android uses
      * `takeIf { it.isNotBlank() }` to coerce empty/blank strings to null
      * — see OnboardingActivity.kt:633 for the `onSuccessTarget` precedent.
      */

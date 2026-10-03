@@ -5,7 +5,7 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 /**
- * SPEC-070-A J.8 — EventQueueTest.
+ * EventQueueTest.
  *
  * Mirrors `Tests/AppDNASDKTests/EventQueueTests.swift`. The bulk of the
  * Android EventQueue policy contract is already covered by

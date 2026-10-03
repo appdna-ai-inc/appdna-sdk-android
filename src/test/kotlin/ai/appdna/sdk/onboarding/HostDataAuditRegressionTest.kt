@@ -27,7 +27,7 @@ import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
 
 /**
- * SPEC-496 P1 — Android implementation-audit regressions (M1, m1–m8, and the cross-platform
+ * Android implementation-audit regressions (M1, m1–m8, and the cross-platform
  * findings from the iOS audit). Compose cases render the SHIPPING renderer and tap it; the rest
  * drive the same non-Compose seams the step view uses.
  */
@@ -292,7 +292,7 @@ class HostDataAuditRegressionTest {
             ),
         )
         val fc = r.blocks.single().field_config!!
-        // §A6 — an unresolved URL is dropped from the patch, so the authored value stays.
+        // An unresolved URL is dropped from the patch, so the authored value stays.
         assertEquals("https://cdn.example.com/authored.png", fc["background_image_url"])
         assertEquals("https://cdn.example.com/Ann.png", fc["icon_url"])
         assertEquals("Hi Ann", fc["empty_text"])
@@ -384,7 +384,7 @@ class HostDataAuditRegressionTest {
             val raw = mapOf(
                 "id" to "sel", "type" to "input_select", "field_id" to "sel",
                 "field_options" to listOf(mapOf("id" to "tpl", "value" to "v", "label" to "L",
-                    // Distinct stored answers — the §B0 duplicate rule would otherwise collapse them.
+                    // Distinct stored answers — the duplicate rule would otherwise collapse them.
                     "data_templates" to mapOf("label" to "{{item.name}}", "value" to "{{item.name}}"))),
                 "field_config" to mapOf("repeat" to mapOf("source" to "hook_data.items", "template_option_id" to "tpl", "max" to max)),
             )
@@ -412,7 +412,7 @@ class HostDataAuditRegressionTest {
         assertEquals("{{hook_data.b}}", viaInteraction.blocks.single().field_options!!.single().label)
     }
 
-    // ── Round 2 — m1: the dropdown label falls back to the recorded pick ────────────────────────
+    // ── m1: the dropdown label falls back to the recorded pick ────────────────────────
 
     @Test
     fun `r2 m1 dropdown label - rendered option, then the recorded pick, then the placeholder`() {
@@ -441,13 +441,13 @@ class HostDataAuditRegressionTest {
             )
         }
         compose.onNodeWithText("Xavier").assertExists()
-        // §B0 prune: the value leaves inputValues and the record is cleared → the placeholder.
+        // Prune: the value leaves inputValues and the record is cleared → the placeholder.
         compose.runOnIdle { inputValues.remove("city"); SelectedOptionStore.clear("city") }
         compose.onNodeWithText("Pick a city").assertExists()
         compose.onNodeWithText("Xavier").assertDoesNotExist()
     }
 
-    // ── Round 2 — m2: onStepViewed is not lost for a presentation that never started pending ────
+    // ── m2: onStepViewed is not lost for a presentation that never started pending ────
 
     @Test
     fun `r2 m2 a recreation cancel of a never-pending presentation re-fires, and onStepViewed fires once`() = runTest {
@@ -521,7 +521,7 @@ class HostDataAuditRegressionTest {
         assertTrue(pa.needsRefire)
     }
 
-    // ── Round 2 — iOS cross-checks ──────────────────────────────────────────────────────────────
+    // ── iOS cross-checks ──────────────────────────────────────────────────────────────
 
     @Test
     fun `r2 a step token on a NESTED sheet block resolves from that block's own sheet_step_paths`() {
@@ -611,7 +611,7 @@ class HostDataAuditRegressionTest {
         assertEquals(4.5, inputValues["sel"])
     }
 
-    // ── Round 5 — markers honoured only on raw-resolved blocks (§A1) ───────────────────────────
+    // ── markers honoured only on raw-resolved blocks ───────────────────────────
 
     private val authoredMarkers = mapOf(
         "resolve_state" to "empty_in_scope",

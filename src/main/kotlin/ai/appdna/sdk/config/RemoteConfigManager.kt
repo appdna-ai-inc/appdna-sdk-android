@@ -28,13 +28,13 @@ internal class RemoteConfigManager(
     private val storage: LocalStorage,
     configTTL: Long,
     /**
-     * SPEC-070-B PN row 7 — injectable so a Robolectric test can advance the TTL timer. Robolectric
+     * Injectable so a Robolectric test can advance the TTL timer. Robolectric
      * cannot advance `kotlinx.coroutines.delay` on a production dispatcher, which would make the
      * staleness gate untestable on Android.
      */
     private val ttlDispatcher: CoroutineDispatcher = Dispatchers.IO
 ) {
-    // SPEC-070-B PN row 7 (§6 row 7): the staleness gate lives HERE, not in ConfigRefreshWorker —
+    // The staleness gate lives HERE, not in ConfigRefreshWorker
     // WorkManager has a 15-minute floor, so a host asking for a 5-minute TTL silently got 15.
     // `configTTL` was previously accepted and never read: dead code on Android while iOS honored it.
     private val ttlScope = CoroutineScope(ttlDispatcher + SupervisorJob())
@@ -81,7 +81,7 @@ internal class RemoteConfigManager(
     }
 
     /**
-     * SPEC-070-A G.4: Optional event tracker so [fetchConfigs] can emit
+     * Optional event tracker so [fetchConfigs] can emit
      * `config_fetched` after each successful Firestore refresh. Wired by
      * AppDNA.configure() once both managers are constructed; until then we
      * simply skip the event (no NPE risk).
@@ -90,7 +90,7 @@ internal class RemoteConfigManager(
     var eventTracker: EventTracker? = null
 
     /**
-     * SPEC-070-A G.4: Tracks how many of the 6 Firestore documents in a
+     * Tracks how many of the 6 Firestore documents in a
      * fetchConfigs() batch have completed (success OR failure). When the count
      * reaches the expected total, we emit a single `config_fetched` event with
      * the count of docs that succeeded — mirrors the iOS one-shot semantic
@@ -104,9 +104,9 @@ internal class RemoteConfigManager(
     // variantDocs). Same for `messages` below (read by getActiveMessages).
     @Volatile private var flags: Map<String, Any> = emptyMap()
     // @Volatile: read by resolveSurfacePresentation from the host present-time thread, written on the
-    // Firestore listener thread — publish writes so the resolver never sees a stale/empty map (audit R1).
+    // Firestore listener thread — publish writes so the resolver never sees a stale/empty map.
     @Volatile private var experiments: Map<String, ExperimentConfig> = emptyMap()
-    // SPEC-036-H — prefetched per-item experiment variant configs, keyed by the variant's `variantDoc`
+    // Prefetched per-item experiment variant configs, keyed by the variant's `variantDoc`
     // path; populated after the experiments doc parses so resolveSurfacePresentation reads synchronously.
     @Volatile private var variantDocs: Map<String, Map<String, Any>> = emptyMap()
     private var surveys: Map<String, Map<String, Any>> = emptyMap()
@@ -114,7 +114,7 @@ internal class RemoteConfigManager(
     private var onboardingFlows: Map<String, OnboardingFlowConfig> = emptyMap()
     private var activeOnboardingFlowId: String? = null
     /**
-     * SPEC-070-A finalization parity audit B1#6 — Firestore-published
+     * Firestore-published
      * in-app messages map. Mirrors iOS RemoteConfigManager.swift:56
      * `private var messages: [String: MessageConfig]`. Populated by
      * the new messages-doc fetch in [fetchConfigs]; consumed by
@@ -154,7 +154,7 @@ internal class RemoteConfigManager(
     fun getExperimentConfig(id: String): ExperimentConfig? = experiments[id]
 
     /**
-     * SPEC-036-H — the prefetched `config` of a per-item experiment variant doc, by its `variantDoc`
+     * The prefetched `config` of a per-item experiment variant doc, by its `variantDoc`
      * pointer path. `null` if not yet fetched / fetch failed → caller renders the active item (never
      * cross-cohort, never broken). Test-injectable via [injectVariantDocForTesting].
      */
@@ -167,7 +167,7 @@ internal class RemoteConfigManager(
     fun getPaywallConfig(id: String): PaywallConfig? = paywalls[id]
 
     /**
-     * SPEC-070-A I.13 — return every paywall config currently held in remote
+     * Return every paywall config currently held in remote
      * config, keyed by id. Used by [PaywallManager.presentByPlacement] to
      * filter by `placement` + audience rules. Mirrors iOS
      * `RemoteConfigManager.getAllPaywalls()`.
@@ -186,7 +186,7 @@ internal class RemoteConfigManager(
     }
 
     /**
-     * SPEC-419 D6 — the applied (fetched + parsed) onboarding flow version, for the
+     * The applied (fetched + parsed) onboarding flow version, for the
      * structural parity harness's readiness poll. Debug only — R8 elides the body in
      * release builds (BuildConfig.DEBUG = false), so it returns null in production.
      */
@@ -197,7 +197,7 @@ internal class RemoteConfigManager(
     }
 
     /**
-     * SPEC-070-A F.13: read-only view of every parsed onboarding flow keyed by id.
+     * Read-only view of every parsed onboarding flow keyed by id.
      * Used by [ai.appdna.sdk.onboarding.OnboardingFlowManager.present] to evaluate
      * `audience_rules` across all flows when no explicit flowId is supplied —
      * mirrors iOS `OnboardingFlowManager.swift:121-137`.
@@ -205,7 +205,7 @@ internal class RemoteConfigManager(
     fun getAllOnboardingFlows(): Map<String, OnboardingFlowConfig> = onboardingFlows
 
     /**
-     * SPEC-067: Force an immediate config refresh, bypassing the cache TTL.
+     * Force an immediate config refresh, bypassing the cache TTL.
      * Use this when you need configs to update immediately (e.g., after a user action).
      */
     fun forceRefresh() {
@@ -225,9 +225,9 @@ internal class RemoteConfigManager(
         }
         val basePath = "$path/config"
 
-        // SPEC-070-A G.4: 7 documents — flags, experiments, paywall_index,
+        // 7 documents — flags, experiments, paywall_index,
         // onboarding_index, survey_index, screen_index, messages.
-        // SPEC-070-A finalization parity audit B1#6 — added messages doc
+        // Added messages doc
         // fetch (iOS RemoteConfigManager.swift:305 fetches `messages` mega-doc;
         // Android previously dropped this doc, leaving activeMessages
         // perpetually empty so Firestore-broadcast in-app messages never
@@ -237,7 +237,7 @@ internal class RemoteConfigManager(
         fetchSuccessCounter.set(0)
         fetchExpectedTotal.set(expected)
 
-        // Flags — SPEC-036-H: index → per-item docs (config/flag_index/flags/{key}), fallback → mega-doc.
+        // Flags: index → per-item docs (config/flag_index/flags/{key}), fallback → mega-doc.
         fetchViaIndex(
             db = db, basePath = basePath,
             indexPath = "flag_index", indexKey = "flags",
@@ -262,7 +262,7 @@ internal class RemoteConfigManager(
             onComplete = { ok -> markFetchComplete(ok) }
         )
 
-        // Fetch experiments. SPEC-036-H: after parsing, prefetch any per-item variant docs referenced
+        // Fetch experiments. After parsing, prefetch any per-item variant docs referenced
         // via `variant_doc` so synchronous presentation resolution can read the treatment config. The
         // prefetch is fire-and-forget (NOT tied to the fixed-count fetch barrier); a not-yet-fetched
         // variant doc degrades to RenderActive, matching the failure-degradation contract.
@@ -311,7 +311,7 @@ internal class RemoteConfigManager(
             onComplete = { ok -> markFetchComplete(ok) }
         )
 
-        // SPEC-089c: Fetch screen_index for server-driven UI
+        // Fetch screen_index for server-driven UI
         db.document("$basePath/screen_index").get().addOnSuccessListener { snapshot ->
             snapshot.data?.let { data ->
                 parseScreenIndex(data)
@@ -322,7 +322,7 @@ internal class RemoteConfigManager(
             markFetchComplete(success = false)
         }
 
-        // SPEC-419 brand-threading: app brand palette → AppDNA.brandAccentColor() default.
+        // Brand-threading: app brand palette → AppDNA.brandAccentColor() default.
         // Fire-and-forget (non-critical default that just overrides #6366F1); not counted in
         // the fetch barrier — a config-updated re-render picks up the accent if it lands late.
         db.document("$basePath/brand").get().addOnSuccessListener { snapshot ->
@@ -331,13 +331,13 @@ internal class RemoteConfigManager(
             Log.debug("No brand config: ${e.message}")
         }
 
-        // SPEC-070-A finalization parity audit B1#6 — fetch in-app messages
+        // Fetch in-app messages
         // mega-doc. Mirrors iOS RemoteConfigManager.swift:305 which fetches
         // `$basePath/messages` and parses into a `[String: MessageConfig]`
         // map exposed via `getActiveMessages()`. Without this fetch the
         // Android `activeMessages` map stayed empty and Firestore-published
         // in-app messages never displayed (only push-delivered ones did).
-        // In-app messages — SPEC-036-H: index → per-item docs (config/message_index/messages/{id}),
+        // In-app messages: index → per-item docs (config/message_index/messages/{id}),
         // fallback → mega-doc.
         fetchViaIndex(
             db = db, basePath = basePath,
@@ -366,7 +366,7 @@ internal class RemoteConfigManager(
     }
 
     /**
-     * SPEC-070-A finalization parity audit B1#6 — public accessor for
+     * Public accessor for
      * Firestore-published in-app messages. Mirrors iOS
      * RemoteConfigManager.swift:177 `getActiveMessages()`. Wired into
      * MessageManager.configProvider via AppDNA.configure() so Firestore
@@ -375,7 +375,7 @@ internal class RemoteConfigManager(
     fun getActiveMessages(): Map<String, ai.appdna.sdk.messages.MessageConfig> = messages
 
     /**
-     * SPEC-070-A G.4: Increment the per-fetch completion counter and emit
+     * Increment the per-fetch completion counter and emit
      * `config_fetched` exactly once when every doc in the batch has either
      * succeeded or failed. The event payload mirrors iOS shape:
      *   - success_count: int (docs with non-null Firestore snapshot)
@@ -387,7 +387,7 @@ internal class RemoteConfigManager(
         val expected = fetchExpectedTotal.get()
         if (expected > 0 && done >= expected) {
             try {
-                // Round-21 F1(non-render) — emit `config_fetched` WITHOUT properties, matching iOS
+                // (non-render) — emit `config_fetched` WITHOUT properties, matching iOS
                 // (RemoteConfigManager.swift emits `properties: nil`). Android previously attached
                 // {success_count,total_count}; iOS attached none, so the same event had a divergent
                 // property shape across platforms (iOS rows had empty properties). The counters are still
@@ -401,7 +401,7 @@ internal class RemoteConfigManager(
             // Reset so a subsequent forceRefresh() call doesn't double-fire.
             fetchExpectedTotal.set(0)
 
-            // SPEC-070-B PN row 7: mark the batch fetched and arm the TTL refresh, mirroring iOS
+            // Mark the batch fetched and arm the TTL refresh, mirroring iOS
             // (`RemoteConfigManager.swift:463`). Replacing the job means a forceRefresh() re-arms
             // rather than stacking timers.
             lastFetchAtMs = System.currentTimeMillis()
@@ -411,6 +411,45 @@ internal class RemoteConfigManager(
                 if (isStale()) fetchConfigs()
             }
         }
+    }
+
+    /** One served variant, or null when the entry is malformed (see [parseExperiments]). */
+    @Suppress("UNCHECKED_CAST")
+    private fun parseVariant(v: Any?): ExperimentVariant? {
+        if (v !is Map<*, *>) return null
+        val id = v["id"] as? String
+        if (id.isNullOrEmpty()) return null
+        fun <T> field(key: String, ok: (Any) -> T?): Pair<Boolean, T?> {
+            val raw = v[key] ?: return true to null       // absent or null: fine
+            val value = ok(raw) ?: return false to null    // present with the wrong type: malformed
+            return true to value
+        }
+        val (weightOk, weight) = field("weight") { (it as? Number)?.toDouble() }
+        val (payloadOk, payload) = field("payload") { it as? Map<String, Any> }
+        val (refOk, configRef) = field("config_ref") { it as? String }
+        val (controlOk, isControl) = field("is_control") { it as? Boolean }
+        val (docOk, variantDoc) = field("variant_doc") { it as? String }
+        if (!(weightOk && payloadOk && refOk && controlOk && docOk)) return null
+        // `payload` is the canonical key; older SDKs wrote `config` (kept as a fallback, never a reason to drop).
+        val config = payload ?: (v["config"] as? Map<String, Any>) ?: emptyMap()
+        return ExperimentVariant(
+            id = id,
+            weight = weight ?: 0.0,
+            config = config,
+            configRef = configRef,
+            isControl = isControl,
+            variantDoc = variantDoc,
+        )
+    }
+
+    /** A whole number in the Long range, or a finite fraction inside it (truncated); anything else → null. */
+    private fun startedAtMs(v: Any?): Long? = when (v) {
+        is Long -> v
+        is Int -> v.toLong()
+        is Short -> v.toLong()
+        is Byte -> v.toLong()
+        is Number -> v.toDouble().takeIf { it.isFinite() && kotlin.math.abs(it) < 9.2e18 }?.toLong()
+        else -> null
     }
 
     @Suppress("UNCHECKED_CAST")
@@ -423,34 +462,12 @@ internal class RemoteConfigManager(
                 @Suppress("UNCHECKED_CAST")
                 val map = value as Map<String, Any>
                 try {
-                    val variants = (map["variants"] as? List<*>)?.mapNotNull { v ->
-                        if (v is Map<*, *>) {
-                            @Suppress("UNCHECKED_CAST")
-                            val vm = v as Map<String, Any>
-                            // SPEC-070-A F.10: iOS canonical key is `payload`; legacy SDKs wrote
-                            // `config`. Accept both — prefer `payload` when present.
-                            @Suppress("UNCHECKED_CAST")
-                            val variantData =
-                                (vm["payload"] as? Map<String, Any>)
-                                    ?: (vm["config"] as? Map<String, Any>)
-                                    ?: emptyMap()
-                            ExperimentVariant(
-                                // Round-35 — retain variants with a missing id/weight (default
-                                // "unknown"/0.0) instead of dropping them, matching iOS's optional
-                                // decode. Dropping diverged the variant LIST, so the same user could
-                                // bucket into a DIFFERENT variant per platform (corrupting experiment
-                                // analytics). Well-formed console configs always carry id + weight.
-                                id = vm["id"] as? String ?: "unknown",
-                                weight = (vm["weight"] as? Number)?.toDouble() ?: 0.0,
-                                config = variantData,
-                                // SPEC-036-F §1.2 — served per-variant fields.
-                                configRef = vm["config_ref"] as? String,
-                                isControl = vm["is_control"] as? Boolean,
-                                // SPEC-036-H — per_item variant-doc pointer.
-                                variantDoc = vm["variant_doc"] as? String,
-                            )
-                        } else null
-                    } ?: emptyList()
+                    // A malformed entry — not an object, no non-empty string `id`, or a field of the wrong type
+                    // (`weight` not a number, `payload` not an object, `config_ref` / `variant_doc` not a string,
+                    // `is_control` not a bool) — is dropped on its own; the others are kept, in order. iOS
+                    // `ExperimentConfig`, same rule. A bad id used to read as "unknown" and a bad weight as 0 here, while
+                    // iOS dropped every variant, so the same user bucketed into different variants per platform.
+                    val variants = (map["variants"] as? List<*>)?.mapNotNull { v -> parseVariant(v) } ?: emptyList()
 
                     // Legacy top-level key nothing writes; kept so an old cached doc still parses. Not evaluated.
                     val segments = (map["segments"] as? List<*>)?.filterIsInstance<String>()
@@ -459,7 +476,7 @@ internal class RemoteConfigManager(
                         id = map["id"] as? String ?: key,
                         name = map["name"] as? String ?: "",
                         status = map["status"] as? String ?: "paused",
-                        // SPEC-036-F §1.2 — served surface type for experiment matching.
+                        // Served surface type for experiment matching.
                         type = map["type"] as? String,
                         salt = map["salt"] as? String ?: "",
                         platforms = (map["platforms"] as? List<*>)?.filterIsInstance<String>() ?: listOf("android"),
@@ -474,11 +491,9 @@ internal class RemoteConfigManager(
                             else -> Double.NaN
                         },
                         targeting = ExperimentTargeting.fromAny(map["targeting"]),
-                        // Not a number → absent, so "new users only" fails closed; a fraction is truncated.
-                        startedAtMs = (map["started_at_ms"] as? Number)?.let { n ->
-                            if (n is Double || n is Float) n.toDouble().takeIf { !it.isNaN() && !it.isInfinite() }?.toLong()
-                            else n.toLong()
-                        },
+                        // Not a number → absent, so "new users only" fails closed; a fraction is truncated; a number
+                        // outside the Long range → absent (it used to saturate to Long.MIN / MAX). iOS, same rule.
+                        startedAtMs = startedAtMs(map["started_at_ms"]),
                     )
                 } catch (e: Exception) {
                     Log.warning("Failed to parse experiment '$key': ${e.message}")
@@ -489,7 +504,7 @@ internal class RemoteConfigManager(
     }
 
     /**
-     * SPEC-036-H — fetch each `variantDoc`-referenced per-item variant doc by its EXACT path (never via
+     * Fetch each `variantDoc`-referenced per-item variant doc by its EXACT path (never via
      * an index — that is the cohort-isolation guarantee) and cache its `config`. Fire-and-forget: a doc
      * still in flight resolves to RenderActive (failure degradation). Only runs for `per_item`-mode docs;
      * `inline`-mode experiments carry no `variantDoc`.
@@ -515,7 +530,7 @@ internal class RemoteConfigManager(
         }
     }
 
-    /** SPEC-036-H test seam — inject a prefetched variant doc config by its pointer path. */
+    /** Test seam — inject a prefetched variant doc config by its pointer path. */
     internal fun injectVariantDocForTesting(path: String, config: Map<String, Any>) {
         variantDocs = variantDocs + (path to config)
     }
@@ -523,7 +538,7 @@ internal class RemoteConfigManager(
     /** Test seam: write [data] to the [section] cache exactly as a fetch does ([cacheMap]). */
     internal fun cacheSectionForTesting(section: String, data: Map<String, Any>) = cacheMap(section, data)
 
-    /** SPEC-036-H test seams — drive the real per-item flag/message parsers + prune. */
+    /** Test seams — drive the real per-item flag/message parsers + prune. */
     internal fun parseFlagDocForTesting(key: String, data: Map<String, Any>) = parseSingleFlag(key, data)
     internal fun parseMessageDocForTesting(id: String, data: Map<String, Any>) = parseSingleMessage(id, data)
     internal fun pruneFlagsForTesting(keys: Set<String>) { flags = flags.filterKeys { it in keys } }
@@ -558,7 +573,7 @@ internal class RemoteConfigManager(
     }
 
     /**
-     * SPEC-419 brand-threading — capture the app's brand accent so SDK render
+     * Brand-threading — capture the app's brand accent so SDK render
      * defaults use it instead of the hardcoded #6366F1. Doc shape:
      * `{ palette: { accent, primary, ... } }`.
      */
@@ -599,12 +614,12 @@ internal class RemoteConfigManager(
         parseItem: (String, Map<String, Any>) -> Unit,
         parseMegaDoc: (Map<String, Any>) -> Unit,
         extraIndexParse: ((Map<String, Any>) -> Unit)? = null,
-        // SPEC-036-H — when provided, the index is AUTHORITATIVE: in-memory entries whose key is not in
+        // When provided, the index is AUTHORITATIVE: in-memory entries whose key is not in
         // the current index are pruned (removed item stops serving), and an EMPTY index takes the index
         // branch (prune-to-empty) instead of the mega-doc. Flags + messages pass this to keep the
         // full-replace removal semantics they had via the mega-doc.
         pruneToKeys: ((Set<String>) -> Unit)? = null,
-        // SPEC-070-A G.4: invoked once when this index/mega-doc fetch path
+        // Invoked once when this index/mega-doc fetch path
         // resolves — used by the parent fetchConfigs() to count down toward
         // the single `config_fetched` event.
         onComplete: ((Boolean) -> Unit)? = null
@@ -668,7 +683,7 @@ internal class RemoteConfigManager(
     private val rawOnboardingData = mutableMapOf<String, Map<String, Any>>()
     private val rawMessageData = mutableMapOf<String, Map<String, Any>>()
 
-    // SPEC-036-H — per-item flag doc config/flag_index/flags/{key} = {key,value,type,description,updated_at}.
+    // Per-item flag doc config/flag_index/flags/{key} = {key,value,type,description,updated_at}.
     // Stored under flags[key] with the SAME shape the mega-doc produced; disk cache rebuilt as the bare
     // flags map (loadCachedConfigs reads it as {key:{...}}). Mirrors parseSingleSurvey.
     // Unwrap a served flag entry to its RAW value. The server serves `{value,type,description,updated_at}`;
@@ -689,7 +704,7 @@ internal class RemoteConfigManager(
         notifyChangeListeners()
     }
 
-    // SPEC-036-H — per-item message doc config/message_index/messages/{id}; disk cache rebuilt in the
+    // Per-item message doc config/message_index/messages/{id}; disk cache rebuilt in the
     // mega-doc {messages:{id:data}} shape (loadCachedConfigs → MessageConfigParser.parseMessages).
     private fun parseSingleMessage(id: String, data: Map<String, Any>) {
         try {
@@ -926,7 +941,7 @@ internal class RemoteConfigManager(
         for (listener in changeListeners) {
             listener(flags)
         }
-        // SPEC-070-A finalization B6 P1 — fan out top-level configUpdated
+        // Fan out top-level configUpdated
         // broadcast so RN/Flutter wrappers + ad-hoc collectors react to
         // refreshes without each registering through every module.
         try {
@@ -943,7 +958,7 @@ data class ExperimentConfig(
     val name: String,
     val status: String,
     /**
-     * SPEC-036-F §1.2 — the served `type` (surface kind this experiment targets,
+     * The served `type` (surface kind this experiment targets,
      * e.g. "paywall" / "onboarding_flow" / "in_app_message" / "survey"). Used by
      * the experiment-aware presentation resolver to match a running experiment
      * against the surface+entity being presented. Nullable for docs predating
@@ -966,13 +981,13 @@ data class ExperimentConfig(
 /**
  * A single experiment variant.
  *
- * SPEC-070-A F.10: Firestore-canonical key for variant data is `payload`
+ * Firestore-canonical key for variant data is `payload`
  * (matching iOS `ExperimentVariant.payload`); legacy SDKs wrote `config`.
  * The parser in [RemoteConfigManager.parseExperiments] accepts BOTH keys,
  * preferring `payload` when set. The Kotlin field stays named `config` so
  * all existing callers (e.g. [ExperimentManager.getValue]) keep working.
  *
- * SPEC-036-F §1.2 — `configRef` is the entity id this variant maps to: for the
+ * `configRef` is the entity id this variant maps to: for the
  * control it's the live active entity id (rendered via the surface index, no
  * payload); for the treatment it's the materialized draft entity whose
  * renderable config the server inlined into `config`/`payload`. `isControl`
@@ -985,7 +1000,7 @@ data class ExperimentVariant(
     val config: Map<String, Any> = emptyMap(),
     val configRef: String? = null,
     val isControl: Boolean? = null,
-    // SPEC-036-H — `per_item` serving: a POINTER (Firestore doc path) to this treatment's isolated,
+    // `per_item` serving: a POINTER (Firestore doc path) to this treatment's isolated,
     // index-less variant doc instead of an inline `config`/`payload`. The SDK prefetches the doc by this
     // exact path (never via an index) and renders its `config`. Absent in `inline` mode (036-F).
     val variantDoc: String? = null,

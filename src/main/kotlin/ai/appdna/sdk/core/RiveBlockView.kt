@@ -28,13 +28,13 @@ import kotlinx.coroutines.withContext
 /**
  * Server-driven Rive animation block.
  *
- * SPEC-070-A E.3 — replaces the stub placeholder with a real
+ * Replaces the stub placeholder with a real
  * [RiveAnimationView] hosted via [AndroidView]. Compose-only Rive
  * APIs are still nascent (`RiveAnimation` Composable shipped late
  * and depends on the same View under the hood), so we use the
  * battle-tested View directly and wrap it with [DisposableEffect]
  * to stop the animation + release native resources when the
- * composition leaves the tree (E.4).
+ * composition leaves the tree.
  *
  * iOS parity:
  * `packages/appdna-sdk-ios/Sources/AppDNASDK/Core/RiveBlockView.swift`
@@ -142,7 +142,7 @@ fun RiveBlockView(block: RiveBlock) {
         }
     }
 
-    // SPEC-070-A E.4 — release native resources on dispose. RiveAnimationView
+    // Release native resources on dispose. RiveAnimationView
     // holds GL textures + a render thread; not stopping it leaks one renderer
     // per navigation event.
     DisposableEffect(block.rive_url) {

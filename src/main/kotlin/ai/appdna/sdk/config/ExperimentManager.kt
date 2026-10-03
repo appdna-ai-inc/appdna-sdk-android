@@ -23,7 +23,7 @@ internal class ExperimentManager(
     private val exposedExperiments = mutableMapOf<String, String>()
 
     /**
-     * I.14 — Get the variant id for an experiment, or `null` if the user is not in it (not running,
+     * Get the variant id for an experiment, or `null` if the user is not in it (not running,
      * platform / targeting / traffic allocation excludes them). Auto-tracks the exposure on the first assignment.
      * Return type matches iOS `getVariant(experimentId:) -> String?`.
      *
@@ -43,7 +43,7 @@ internal class ExperimentManager(
         val userId = identity.userId ?: identity.anonId
         val config = resolveConfig(experimentId, userId) ?: return null
 
-        // SPEC-070-A A.22 — fall back to experimentId when salt is blank, so a
+        // Fall back to experimentId when salt is blank, so a
         // missing/empty salt produces identical bucketing to iOS
         // (Config/ExperimentManager.swift:33-38 uses `config.salt ?? experimentId`).
         val effectiveSalt = config.salt.ifBlank { experimentId }
@@ -73,7 +73,7 @@ internal class ExperimentManager(
         return variant.config[key]
     }
 
-    // MARK: - SPEC-036-F §1.2 — experiment-aware surface presentation
+    // MARK: - experiment-aware surface presentation
 
     /**
      * The outcome of resolving whether a running experiment governs how a given
@@ -97,7 +97,7 @@ internal class ExperimentManager(
     }
 
     /**
-     * SPEC-036-F §1.2 — decide whether a `running` experiment governs the
+     * Decide whether a `running` experiment governs the
      * presentation of [entityId] for the given surface [surfaceType]. Matches
      * an experiment whose served `type` == [surfaceType] AND whose control
      * variant's `configRef` == [entityId]. On a match the user is bucketed via
@@ -105,7 +105,7 @@ internal class ExperimentManager(
      *   - control bucket / no payload → [SurfaceResolution.RenderActive]
      *   - treatment bucket with payload → [SurfaceResolution.RenderTreatment]
      *
-     * Cohort isolation (§1.3): the treatment config lives ONLY in the
+     * Cohort isolation: the treatment config lives ONLY in the
      * experiment doc payload, so non-bucketed / control / old-SDK users can
      * never resolve to it. Mirrors iOS `resolveSurfacePresentation`.
      */
@@ -141,7 +141,7 @@ internal class ExperimentManager(
             // a payload → safe fallback to active. Only a treatment WITH a
             // payload renders the variant config.
             if (variant.isControl == true) return SurfaceResolution.RenderActive
-            // SPEC-036-H — per_item serving: the treatment config lives in an isolated variant doc
+            // per_item serving: the treatment config lives in an isolated variant doc
             // pointed to by `variantDoc` (prefetched into the cache). Prefer it; fall back to the inline
             // 036-F `config`. A not-yet-fetched / failed variant doc → RenderActive (failure
             // degradation — never broken, never cross-cohort).
@@ -238,7 +238,7 @@ internal class ExperimentManager(
     }
 
     /**
-     * SPEC-070-A I.15 — Get all recorded exposures.
+     * Get all recorded exposures.
      *
      * Each entry is a named [ExposureEntry] (experimentId, variant) — the
      * Kotlin equivalent of iOS's named-tuple shape
@@ -280,7 +280,7 @@ internal class ExperimentManager(
 }
 
 /**
- * SPEC-070-A I.15 — single (experiment, variant) tuple for [ExperimentManager.getExposures].
+ * Single (experiment, variant) tuple for [ExperimentManager.getExposures].
  * Named-property access mirrors iOS's `[(experimentId: String, variant: String)]` shape;
  * Kotlin can't express named tuples in the type system so a dedicated data class is the
  * canonical equivalent.

@@ -67,7 +67,7 @@ class AuthoredLayoutRenderSnapshotTest {
     }
 
     /**
-     * SPEC-495 — one map, captured through the PLACEMENT the step layout would give it.
+     * One map, captured through the PLACEMENT the step layout would give it.
      *
      * 🔴 The first version of the anchored golden went through `capture()`, which renders a block
      * list inside a padded column — so it drew the map INLINE, with 12dp corners and a 16dp gutter,
@@ -152,7 +152,7 @@ class AuthoredLayoutRenderSnapshotTest {
         )
     }
 
-    // ── SPEC-495 — the sizing modes, as pictures ──────────────────────────────────────────────
+    // ── the sizing modes, as pictures ──────────────────────────────────────────────
     //
     // 🔴 GOLDENS, BECAUSE EVERY MAP BUG IN THIS BATCH WAS A LAYOUT BUG. #671 was a negative inset
     // that a unit test would have called fine; the "frozen" report was a step that fits its viewport

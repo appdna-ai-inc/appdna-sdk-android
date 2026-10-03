@@ -20,7 +20,7 @@ import kotlin.random.Random
 internal class BillingConnectionManager(
     private val context: Context,
     private val purchasesUpdatedListener: PurchasesUpdatedListener,
-    // SPEC-070-A J.23 — injectable factory so unit tests can swap in a fake
+    // Injectable factory so unit tests can swap in a fake
     // BillingClient. Default is the production builder which wires
     // PendingPurchasesParams identically to the previous inline implementation.
     private val factory: BillingClientFactory = DefaultBillingClientFactory,
@@ -29,7 +29,7 @@ internal class BillingConnectionManager(
     private val scope = CoroutineScope(Dispatchers.Main + SupervisorJob())
 
     private var retryAttempt = 0
-    // SPEC-070-A H.14: hard cap on backoff slots — 1s, 2s, 4s, 8s, 16s, then
+    // Hard cap on backoff slots — 1s, 2s, 4s, 8s, 16s, then
     // we surface `onBillingUnavailable` to the host delegate and stop. The
     // existing `maxAutoRetries` budget remains as a defense-in-depth limit
     // for the scheduleRetry loop itself (see scheduleRetry below).
@@ -49,7 +49,7 @@ internal class BillingConnectionManager(
     @Volatile
     private var unavailableSurfaced = false
 
-    // SPEC-070-A finalization B-1+B-2 — re-entry guard for startConnection.
+    // Re-entry guard for startConnection.
     // Without this, four independent paths can each call
     // `client.startConnection(listener)` while a previous attempt's listener
     // hasn't fired yet:
@@ -88,7 +88,7 @@ internal class BillingConnectionManager(
             return
         }
 
-        // SPEC-070-A A.25 + J.23 — delegate to `factory` so unit tests can sub
+        // Delegate to `factory` so unit tests can sub
         // in a fake BillingClient. Production factory wires the same
         // PendingPurchasesParams (subs always pending; opt in to one-time-
         // product pending purchases).
@@ -104,7 +104,7 @@ internal class BillingConnectionManager(
     private fun startConnection() {
         val client = billingClient ?: return
 
-        // SPEC-070-A finalization B-1 — atomic re-entry guard. If a
+        // Atomic re-entry guard. If a
         // startConnection() is already in flight, return early. The previous
         // attempt's listener will eventually fire and either dispatch
         // pending callbacks or schedule a retry — either way, the work
@@ -153,7 +153,7 @@ internal class BillingConnectionManager(
     }
 
     /**
-     * SPEC-070-A H.14: jittered exponential reconnect with a hard 5-attempt
+     * Jittered exponential reconnect with a hard 5-attempt
      * cap. Slots are 1s/2s/4s/8s/16s + ±20% jitter. After all 5 slots fail
      * we stop scheduling and fire `AppDNABillingDelegate.onBillingUnavailable()`
      * so the host UI can degrade (hide paywalls, show cash-out path, etc.).
@@ -178,7 +178,7 @@ internal class BillingConnectionManager(
             // maxAutoRetries gate above). Use the max slot.
             backoffSlots.last()
         }
-        // SPEC-070-A H.14: ±20% jitter prevents thundering-herd reconnects on
+        // ±20% jitter prevents thundering-herd reconnects on
         // mass-disconnect events (e.g. Play Services restarts).
         val jitterRange = (slot * 0.20).toLong()
         val jitter = if (jitterRange > 0) Random.nextLong(-jitterRange, jitterRange + 1) else 0L
@@ -188,7 +188,7 @@ internal class BillingConnectionManager(
 
         scope.launch {
             delay(delay)
-            // SPEC-070-A finalization B-2 — clear retryScheduled BEFORE
+            // Clear retryScheduled BEFORE
             // calling startConnection so that the AtomicBoolean isConnecting
             // is the single source of truth for re-entry. Previously, the
             // window between `retryScheduled = false` and the listener firing
@@ -203,7 +203,7 @@ internal class BillingConnectionManager(
     }
 
     /**
-     * SPEC-070-A H.14: notify host once that billing is unavailable. We post
+     * Notify host once that billing is unavailable. We post
      * to main-thread so host code never runs on the BillingClient callback
      * thread, and we de-dup so reconnects after the gave-up state don't
      * fire the delegate repeatedly.

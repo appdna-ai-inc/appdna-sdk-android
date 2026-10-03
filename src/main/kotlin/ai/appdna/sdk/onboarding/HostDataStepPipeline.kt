@@ -18,8 +18,8 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.selects.select
 
 /*
- * SPEC-496 — the ONE step pipeline every reader of a presented onboarding step's blocks goes
- * through (§A1 "Readers", §A4 "One layered block list for every reader"):
+ * The ONE step pipeline every reader of a presented onboarding step's blocks goes
+ * through ("Readers", "One layered block list for every reader"):
  *
  *   raw pass (HostDataResolver) → typed decode with per-key revert → StepConfigOverride merge →
  *   ElementInteractionResult layering (options + resolved field_config patches, markers/sources
@@ -40,7 +40,7 @@ internal data class HostDataInputs(
     val session: Map<String, Any?>? = null,
     val pending: Boolean = false,
     val locale: String? = null,
-    /** `configOverrides[step.id]` — merged AFTER resolve, never before (§A4). */
+    /** `configOverrides[step.id]` — merged AFTER resolve, never before. */
     val stepOverride: StepConfigOverride? = null,
     /** ElementInteractionResult `fieldConfigPatches`, per block id. */
     val fieldConfigOverrides: Map<String, Map<String, Any>> = emptyMap(),
@@ -56,7 +56,7 @@ internal data class HostDataInputs(
 internal fun liveHostDataInputs(
     stepOverride: StepConfigOverride?,
     /**
-     * SPEC-496 §5b C3 — the EFFECTIVE `hook_data` (base + interaction layer), computed by the caller from
+     * The EFFECTIVE `hook_data` (base + interaction layer), computed by the caller from
      * the flow-level owner at call time. Defaults to the base alone (no interaction layer).
      */
     hookData: Map<String, Any?>? = stepOverride?.dataContext,
@@ -94,7 +94,7 @@ internal data class HostDataLiveParams(
 )
 
 /**
- * SPEC-496 §A4 + §B0 — the step an interaction-requested advance is gated on: re-resolved with the
+ * The step an interaction-requested advance is gated on: re-resolved with the
  * state that interaction just wrote, THEN (only for the step on screen, like the LaunchedEffect)
  * with the selections it made vanish pruned from `inputValues` + `SelectedOptionStore`, re-resolved
  * once more when anything was pruned. Pending / Option-Set / out-of-scope blocks are never pruned
@@ -113,22 +113,22 @@ internal fun resolveForInteractionAdvance(
     return pipeline.resolve(inputs())
 }
 
-/** A typed decode rejecting a resolved block, naming the offending key path when it can (§A1). */
+/** A typed decode rejecting a resolved block, naming the offending key path when it can. */
 internal class HostDataDecodeFailure(val keyPath: String?) : Exception("decode failed at ${keyPath ?: "<unknown>"}")
 
 /** The layered result of one resolve. */
 internal class ResolvedHostDataStep(
     /** The step's effective blocks — every reader reads these. */
     val blocks: List<ContentBlock>,
-    /** The step's localizations with `block.<id>.*` values resolved / displaced (§A1 "Translations"). */
+    /** The step's localizations with `block.<id>.*` values resolved / displaced ("Translations"). */
     val localizations: Map<String, Map<String, String>>?,
     /** Resolved raw sheet blocks keyed `"<block id>|<option id>"` — the sheet renderer re-reads them. */
     val sheetRaw: Map<String, List<Map<String, Any?>>>,
     /** Debug lines from the raw pass. */
     val log: List<String>,
     /**
-     * §A1 — ids of the blocks the raw pass produced (a resolved top-level block that decoded, and its
-     * `children` / `stack_children`). The §B0 markers are honoured ONLY on these: a skipped block, or
+     * Ids of the blocks the raw pass produced (a resolved top-level block that decoded, and its
+     * `children` / `stack_children`). The markers are honoured ONLY on these: a skipped block, or
      * one that fell back to its authored JSON, keeps whatever `resolve_state` / `empty_state` its
      * author typed and must not change the gate or the view. Mirrors iOS `rawResolvedIds`.
      */
@@ -137,7 +137,7 @@ internal class ResolvedHostDataStep(
 
 internal class HostDataStepPipeline(
     val step: OnboardingStep,
-    /** §A5 — TemplateEngine's context for non-block roots; read once per resolve. */
+    /** TemplateEngine's context for non-block roots; read once per resolve. */
     private val legacyContext: () -> TemplateContext? = { runCatching { TemplateEngine.buildContext() }.getOrNull() },
     private val decode: (Map<String, Any?>) -> ContentBlock = { OnboardingConfigParser.decodeRawBlock(it) },
 ) {
@@ -164,7 +164,7 @@ internal class HostDataStepPipeline(
     /** Set by [decodeWithRevert] when it gave up and decoded the authored (stamped) block. */
     private var decodeFellBack = false
 
-    /** Every path one raw block reads (§A1 "Cost"): block-root paths and legacy TemplateEngine paths. */
+    /** Every path one raw block reads ("Cost"): block-root paths and legacy TemplateEngine paths. */
     private class BlockDeps(val paths: List<String>, val legacyPaths: List<String>)
     private val deps = HashMap<Int, BlockDeps>()
 
@@ -213,7 +213,7 @@ internal class HostDataStepPipeline(
 
     fun resolve(inputs: HostDataInputs): ResolvedHostDataStep {
         val raw = step.rawContentBlocks ?: error("HostDataStepPipeline.resolve on a step without raw blocks")
-        // §A5 — built lazily: only a block that references a TemplateEngine root (or a memo miss that
+        // Built lazily: only a block that references a TemplateEngine root (or a memo miss that
         // resolves one) pays for `TemplateEngine.buildContext()`.
         val tctx: TemplateContext? by lazy { legacyContextBuilds++; legacyContext() }
         val legacy: (String) -> String? = { path: String -> tctx?.let { TemplateEngine.resolveToken(path, it) } }
@@ -224,7 +224,7 @@ internal class HostDataStepPipeline(
                 "selected" to inputs.selected, "user" to inputs.user, "session" to inputs.session,
             ),
         )
-        // §A1 "Cost" — memoised per block on the values of every path it references under every root
+        // "Cost" — memoised per block on the values of every path it references under every root
         // (legacy TemplateEngine roots included), the pending flag and the locale.
         fun memoKeyOf(i: Int, b: Map<*, *>): List<Any?> {
             val d = depsOf(i, b)
@@ -289,7 +289,7 @@ internal class HostDataStepPipeline(
             }
         }
 
-        // §A4 — StepConfigOverride typed merge AFTER resolve (never twice, never before).
+        // StepConfigOverride typed merge AFTER resolve (never twice, never before).
         var blocks: List<ContentBlock> = decoded
         inputs.stepOverride?.let { o ->
             blocks = step.config.copy(content_blocks = decoded.toImmutableList()).applyingOverride(o).content_blocks.orEmpty()
@@ -297,7 +297,7 @@ internal class HostDataStepPipeline(
                 blocks = blocks.map { blk -> if (named.containsKey(blk.id)) resolveHostOptionText(blk, inputs) else blk }
             }
         }
-        // §A4 — ElementInteractionResult layering: patches resolved, markers / sources dropped.
+        // ElementInteractionResult layering: patches resolved, markers / sources dropped.
         if (inputs.fieldConfigOverrides.isNotEmpty() || inputs.fieldOptionsOverrides.isNotEmpty()) {
             val patchCtx = HostDataContext(
                 stepId = step.id, hookData = inputs.hookData, responses = inputs.responses, step = inputs.stepInputs,
@@ -309,14 +309,14 @@ internal class HostDataStepPipeline(
 
         val sheets = LinkedHashMap<String, List<Map<String, Any?>>>()
         resolvedRaw.forEach { collectSheets(it, sheets) }
-        // §A4 host options win: a block whose options the host replaced (either channel) has no option
+        // Host options win: a block whose options the host replaced (either channel) has no option
         // from the raw pass, so its raw sheets must not be found by a host option reusing an authored id.
         val hostOptionBlocks = inputs.fieldOptionsOverrides.keys + inputs.stepOverride?.fieldOptions?.keys.orEmpty()
         if (hostOptionBlocks.isNotEmpty()) sheets.keys.removeAll { k -> k.substringBefore('|') in hostOptionBlocks }
         return ResolvedHostDataStep(blocks, locs, sheets, log, rawIds)
     }
 
-    // ── Decode with per-key revert (§A1 "No whole-block failure") ───────────────────────────────
+    // ── Decode with per-key revert ("No whole-block failure") ───────────────────────────────
 
     private fun decodeWithRevert(r: HostDataResolveResult): ContentBlock {
         if (r.skipped) return decode(r.block)
@@ -340,9 +340,9 @@ internal class HostDataStepPipeline(
             tried += path
             revertPath(current, path, r)
             reverting += blockId to path
-            ai.appdna.sdk.Log.debug { "SPEC-496: typed decode rejected $blockId.$path — reverted to its authored value" }
+            ai.appdna.sdk.Log.debug { "Host data: typed decode rejected $blockId.$path — reverted to its authored value" }
         }
-        // Still failing: the raw authored block, which is today's behaviour — NOT raw-resolved (§A1).
+        // Still failing: the raw authored block, which is today's behaviour — NOT raw-resolved.
         decodeFellBack = true
         return decode(r.stamped)
     }
@@ -404,14 +404,14 @@ internal class HostDataStepPipeline(
         }
     }
 
-    // ── Layering (§A4) ──────────────────────────────────────────────────────────────────────────
+    // ── Layering ──────────────────────────────────────────────────────────────────────────
 
     private fun layerInteraction(block: ContentBlock, inputs: HostDataInputs, ctx: HostDataContext): ContentBlock {
         var next = block
         inputs.fieldConfigOverrides[block.id]?.takeIf { it.isNotEmpty() }?.let { patch ->
             // Host data cannot set markers or sources; patch strings are resolved like block strings.
-            // Resolved with the SAME structural walker as the block's own field_config (§A4): key classes,
-            // the §A6 URL rule (an unresolved / non-https `*_url` is dropped from the patch, so the
+            // Resolved with the SAME structural walker as the block's own field_config: key classes,
+            // the URL rule (an unresolved / non-https `*_url` is dropped from the patch, so the
             // authored value stays), `data_templates`, single pass.
             @Suppress("UNCHECKED_CAST")
             val clean = HostDataResolver.resolveFieldConfigPatch(
@@ -428,7 +428,7 @@ internal class HostDataStepPipeline(
     }
 
     /**
-     * Host `fieldOptions` are host data already (§A4): no expansion, no structural pass — only
+     * Host `fieldOptions` are host data already: no expansion, no structural pass — only
      * `label`, `subtitle`, `leading_text` are resolved, with today's semantics (a miss keeps the literal).
      */
     @Suppress("UNCHECKED_CAST")
@@ -446,9 +446,9 @@ internal class HostDataStepPipeline(
     companion object {
         private const val MAX_REVERTS = 64
         private val MISSING = Any()
-        /** Patch keys dropped in the interaction layering (§A4). */
+        /** Patch keys dropped in the interaction layering. */
         val LAYER_DROPPED_KEYS = setOf("resolve_state", "empty_state", "sheet_step_paths", "repeat", "option_set_id")
-        /** Applying host options (either channel) removes these from the block's field_config (§A4). */
+        /** Applying host options (either channel) removes these from the block's field_config. */
         val HOST_OPTIONS_DROPPED_KEYS = setOf("option_set_id", "repeat", "empty_state", "resolve_state")
 
         private fun valueAt(root: Any?, path: String): Any? {
@@ -503,7 +503,7 @@ internal class HostDataStepPipeline(
 // presentation. JVM tests cannot see it (see ComposeMethodSizeGuardTest). Keeping each copy in its
 // own tiny, non-inline function keeps every caller's register frame small. Do not inline these.
 
-/** Host options replace the authored list and drop the keys they outrank (§A4). */
+/** Host options replace the authored list and drop the keys they outrank. */
 internal fun ContentBlock.withHostOptions(options: kotlinx.collections.immutable.ImmutableList<InputOption>): ContentBlock =
     copy(
         field_options = options,
@@ -519,15 +519,15 @@ internal fun InputOption.withResolvedText(r: (String) -> String): InputOption =
     copy(label = r(label), subtitle = subtitle?.let(r), leading_text = leading_text?.let(r))
 
 // ─────────────────────────────────────────────────────────────────────────────────────────────────
-// Readers of the §B0 markers
+// Readers of the markers
 // ─────────────────────────────────────────────────────────────────────────────────────────────────
 
-/** The option's stored answer (`resolvedValue = value ?? id`, §B0). */
+/** The option's stored answer (`resolvedValue = value ?? id`). */
 internal fun InputOption.storedAnswer(): String = value.ifEmpty { id ?: value }
 
 /**
  * `field_config.empty_state` as the raw pass wrote it: `("text", text)`, `("hidden", null)` or null.
- * Honoured ONLY on a block the raw pass produced (§A1, [rawResolvedIds]) — an authored copy on a
+ * Honoured ONLY on a block the raw pass produced ([rawResolvedIds]) — an authored copy on a
  * skipped / fallen-back block, a Screen or SDUI is ignored. iOS `emptyState(_, rawResolved:)`.
  */
 internal fun ContentBlock.hostDataEmptyState(rawResolvedIds: Set<String>): Pair<String, String?>? {
@@ -540,12 +540,12 @@ internal fun ContentBlock.hostDataEmptyState(rawResolvedIds: Set<String>): Pair<
     }
 }
 
-/** True when the raw pass decided this block renders nothing at all (`hide_when_empty`, §B0). */
+/** True when the raw pass decided this block renders nothing at all (`hide_when_empty`). */
 internal fun ContentBlock.isHiddenByHostData(rawResolvedIds: Set<String>): Boolean =
     hostDataEmptyState(rawResolvedIds)?.first == "hidden"
 
 /**
- * §B0 — a container's children, minus those the raw pass hid (`hide_when_empty`). Every nested
+ * A container's children, minus those the raw pass hid (`hide_when_empty`). Every nested
  * renderer (row, stack, multi-buttons, carousel, zoned background) filters through this, exactly as
  * the top-level block list does; outside a raw-resolved step it is the identity.
  */
@@ -557,7 +557,7 @@ internal fun List<ContentBlock>.visibleUnderHostData(): List<ContentBlock> {
 }
 
 /**
- * The ids the raw pass produced in THIS composition (§A1) — empty outside a raw-resolved onboarding
+ * The ids the raw pass produced in THIS composition — empty outside a raw-resolved onboarding
  * step (Screens, SDUI, a host-supplied option sheet), so no marker is honoured there.
  */
 @Composable
@@ -566,7 +566,7 @@ internal fun hostDataRawResolvedIds(): Set<String> =
     if (LocalHostDataRawResolved.current) LocalHostDataRawResolvedIds.current else emptySet()
 
 /**
- * §B0 — after pending, a §B0-scoped input whose rendered options no longer contain a selected
+ * After pending, a host-data-scoped input whose rendered options no longer contain a selected
  * value drops it from `inputValues[field_id]` and from `SelectedOptionStore`; otherwise the selection
  * is kept. Never while pending (the marker is `pending` then), never for Option Sets (no marker).
  * Returns true when anything changed.
@@ -630,7 +630,7 @@ internal fun recordOptionPick(block: ContentBlock, options: List<InputOption>, v
  * The single-select dropdown's button text: the rendered option's label, else the label RECORDED
  * when the user picked [selectedValue] (an Option Set search result that is not in the cached pages,
  * or one the active query excludes), else [placeholder]. An empty [selectedValue] — nothing picked,
- * or a value §B0 pruned — is always the placeholder.
+ * or a value pruned — is always the placeholder.
  */
 internal fun dropdownSelectedLabel(
     options: List<InputOption>,
@@ -646,7 +646,7 @@ internal fun dropdownSelectedLabel(
 }
 
 /**
- * §B0 — the in-memory search over an authored or repeat list. Re-run whenever the resolved
+ * The in-memory search over an authored or repeat list. Re-run whenever the resolved
  * `field_options` change, not only on a keystroke. A blank query is no filter (null).
  */
 internal fun filterOptionsLocally(options: List<InputOption>, query: String): List<InputOption>? {
@@ -659,14 +659,14 @@ internal fun filterOptionsLocally(options: List<InputOption>, query: String): Li
 }
 
 /**
- * §A1 — translation lookup for a block the raw pass resolved: NO interpolation (the pass already
+ * Translation lookup for a block the raw pass resolved: NO interpolation (the pass already
  * resolved the values, and re-scanning would re-interpret host data containing `{{`).
  */
 internal fun lookupOnlyLoc(key: String, fallback: String, localizations: Map<String, Map<String, String>>?, defaultLocale: String?): String =
     LocalizationEngine.resolve(key, localizations, defaultLocale, fallback)
 
 /**
- * The "raw-resolved" flag (§A1) — true inside an onboarding step whose blocks the raw pass resolved.
+ * The "raw-resolved" flag — true inside an onboarding step whose blocks the raw pass resolved.
  * Propagates to every nested renderer (option sheets, carousel pages) so nothing re-scans a resolved
  * string. Screens / SDUI never set it.
  */
@@ -676,7 +676,7 @@ internal val LocalHostDataRawResolved = compositionLocalOf { false }
 internal val LocalHostDataRawResolvedIds = compositionLocalOf<Set<String>> { emptySet() }
 
 /**
- * SPEC-496 §A4 — the presented step's FULL layered block list (lifted maps included), for the
+ * The presented step's FULL layered block list (lifted maps included), for the
  * consent-CTA gate inside [ThreeZoneBlockLayout], which itself only receives the column's blocks.
  * Null outside an onboarding step.
  */
@@ -686,7 +686,7 @@ internal val LocalStepGateBlocks = compositionLocalOf<List<ContentBlock>?> { nul
 internal val LocalHostDataSheets = compositionLocalOf<Map<String, List<Map<String, Any?>>>> { emptyMap() }
 
 /**
- * §B0 "Sheet ids" — the sheet renderer resolves ONLY the paths the raw pass recorded in
+ * "Sheet ids" — the sheet renderer resolves ONLY the paths the raw pass recorded in
  * `field_config.sheet_step_paths` (`step`-root tokens and `step`-rooted bindings), against the
  * sheet's own inputs, then decodes. Never descends: every nested block carries its own paths.
  */
@@ -740,7 +740,7 @@ private fun applySheetStepPaths(block: MutableMap<String, Any?>, sheetInputs: Ma
 }
 
 // ─────────────────────────────────────────────────────────────────────────────────────────────────
-// Host data pending (§B0) — the per-presentation state machine
+// Host data pending — the per-presentation state machine
 // ─────────────────────────────────────────────────────────────────────────────────────────────────
 
 /**
@@ -750,7 +750,7 @@ private fun applySheetStepPaths(block: MutableMap<String, Any?>, sheetInputs: Ma
 internal class HostDataPresentation(val stepId: String, val stepIndex: Int, val serial: Long) {
     var pending by mutableStateOf(false)
         private set
-    /** The pending flag the FIRST resolve of this presentation saw (§B0 "Starts synchronously"). */
+    /** The pending flag the FIRST resolve of this presentation saw ("Starts synchronously"). */
     var firstResolvePending: Boolean? = null
     /** True once pending has ended — a later skipped call reads as not pending. */
     var ended = false
@@ -804,7 +804,7 @@ internal class HostDataPresentations {
     private var serial = 0L
 
     /**
-     * §B0 "Starts synchronously" — called during composition, BEFORE the first resolve: pending =
+     * "Starts synchronously" — called during composition, BEFORE the first resolve: pending =
      * true when a delegate is set, the step's raw blocks reference `hook_data`, and no
      * `configOverrides[step.id]` is cached yet. Reused while the same step stays on screen (Activity
      * recreation keeps the ViewModel), replaced on every new arrival (back-then-forward included:
@@ -824,7 +824,7 @@ internal class HostDataPresentations {
         private set
 
     /**
-     * §B0 — the pending flag of the step rendered at [stepIndex]: the current presentation's, or —
+     * The pending flag of the step rendered at [stepIndex]: the current presentation's, or
      * for the outgoing step still animating out — the flag ITS presentation had (a cancelled call
      * leaves it pending). Never forced to false: that would re-resolve the outgoing step with no hook
      * data and prune a restored selection.
@@ -832,7 +832,7 @@ internal class HostDataPresentations {
     fun pendingFor(stepIndex: Int, stepId: String): Boolean = presentationAt(stepIndex, stepId)?.pending == true
 
     /**
-     * SPEC-496 §5b C5.5 — the presentation a composition of the step at [stepIndex] belongs to (the same
+     * The presentation a composition of the step at [stepIndex] belongs to (the same
      * lookup as [pendingFor]), looked up on every recomposition. Null when neither [current] nor
      * [previous] matches (three navigations inside one exit tween): that composition's coordinator then
      * refuses every call.
@@ -843,14 +843,14 @@ internal class HostDataPresentations {
     fun reset() { current = null; previous = null }
 }
 
-/** §B0 "Applies" — the step's raw blocks (or its `block.<id>.*` localizations) reference `hook_data`. */
+/** "Applies" — the step's raw blocks (or its `block.<id>.*` localizations) reference `hook_data`. */
 internal fun stepHostDataApplies(step: OnboardingStep): Boolean {
     val raw = step.rawContentBlocks ?: return false
     return HostDataResolver.stepReferencesHookData(raw.blocks, step.config.localizations)
 }
 
 /**
- * §B0 — one `onBeforeStepRender` call for [presentation], with the deadline driven by a timer
+ * One `onBeforeStepRender` call for [presentation], with the deadline driven by a timer
  * INDEPENDENT of the host call: `withTimeoutOrNull` cannot end pending when the host ignores
  * cancellation, so a separate `delay(deadlineMs)` path flips it. The host call runs in [hostScope]
  * (not awaited on cancellation), carries a generation token, and only the latest generation may end
@@ -873,7 +873,7 @@ internal suspend fun runBeforeStepRenderHook(
      */
     stillPresented: () -> Boolean = { true },
     /**
-     * SPEC-496 §5b C3 — draws the flow-level `callSeq` at call START. The reply's base is stamped with
+     * Draws the flow-level `callSeq` at call START. The reply's base is stamped with
      * the value this call drew, so ordering against interaction replies is by start, not arrival.
      */
     drawSeq: () -> Long = { 0L },
@@ -943,8 +943,8 @@ internal const val HOST_DATA_DEADLINE_MS = 3_000L
 
 /**
  * The Activity's `LaunchedEffect(currentIndex)` gate, extracted so the shared fixture drives the SAME
- * decision: fire on a genuine index change (the `lastViewedStepIndex` guard, SPEC-401-A R58 — never on
- * a plain Activity recreation), OR — §B0 — once more when the presentation's previous call was
+ * decision: fire on a genuine index change (the `lastViewedStepIndex` guard, — never on
+ * a plain Activity recreation), OR — once more when the presentation's previous call was
  * cancelled before replying (`needsRefire`). A null [lastViewedStepIndex] (no ViewModel) never guards.
  * Yields first on a same-index relaunch so the dying composition's cancelled call has recorded that
  * it was cut off. Returns whether it fired.

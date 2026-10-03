@@ -1,6 +1,6 @@
 package ai.appdna.sdk.feedback
 
-// SPEC-070-A J.22 — re-wrap interpolated options as ImmutableList for Compose stability.
+// Re-wrap interpolated options as ImmutableList for Compose stability.
 import kotlinx.collections.immutable.toImmutableList
 import kotlinx.coroutines.launch
 import androidx.compose.ui.text.style.TextAlign
@@ -36,7 +36,7 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import ai.appdna.sdk.feedback.views.*
-// SPEC-070-A J.11 — accessibility string resources for survey chrome.
+// Accessibility string resources for survey chrome.
 import ai.appdna.sdk.R
 import ai.appdna.sdk.core.FontResolver
 import ai.appdna.sdk.core.StyleEngine
@@ -56,7 +56,7 @@ class SurveyActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
-        // SPEC-070-A I.16 — edge-to-edge so Compose receives IME inset changes
+        // Edge-to-edge so Compose receives IME inset changes
         // via `imePadding()` + `safeDrawingPadding()` modifiers in SurveyScreen.
         androidx.core.view.WindowCompat.setDecorFitsSystemWindows(window, false)
 
@@ -66,7 +66,7 @@ class SurveyActivity : ComponentActivity() {
         }
 
         val config = pendingSurveyConfig ?: run {
-            // SPEC-070-A finalization (Lens D P0) — process-death recovery.
+            // Process-death recovery.
             // After OS killed the process, the static `pendingSurveyConfig`
             // is gone but the OS recreates this Activity from savedInstanceState.
             // Notify analytics + delegate before silent finish() so the host
@@ -110,7 +110,7 @@ class SurveyActivity : ComponentActivity() {
             cleanup()
         }
 
-        // SPEC-070-A I.9 — system back: when on a question past the first, decrement
+        // System back: when on a question past the first, decrement
         // instead of dismissing. iOS SurveyRenderer pops the question stack on
         // swipe-back; Android maps that to the system back button. The Compose
         // recomposition reads `currentQuestionIndex` from the companion field
@@ -123,7 +123,7 @@ class SurveyActivity : ComponentActivity() {
                     isEnabled = false
                     @Suppress("DEPRECATION")
                     onBackPressedDispatcher.onBackPressed()
-                    // SPEC-401-A R67 (Lens B P2) — read live answered count
+                    // Read live answered count
                     // from provider so dismiss event reports real progress
                     // (parity with iOS SurveyRenderer.swift:253-255 which
                     // reads `answers.count` at the dismiss callsite).
@@ -135,11 +135,11 @@ class SurveyActivity : ComponentActivity() {
         })
 
         setContent {
-            // SPEC-205 / SPEC-070-A D.5: read system color scheme at the
+            // Read system color scheme at the
             // Compose root and propagate to renderers so dark-mode overrides
             // on the survey theme apply when the user has dark mode enabled.
             val isDark = isSystemInDarkTheme()
-            // SPEC-070-A D.6: build a MaterialTheme color scheme seeded with
+            // Build a MaterialTheme color scheme seeded with
             // the resolved (light/dark-merged) survey theme colors when the
             // console author supplied them, so child Material widgets
             // (TextField, ProgressIndicator, etc.) pick up the brand colors
@@ -178,7 +178,7 @@ class SurveyActivity : ComponentActivity() {
         internal var questionAnsweredCallback: ((String, String, Any) -> Unit)? = null
 
         /**
-         * SPEC-070-A I.9 — set by SurveyScreen so the Activity's back-press
+         * Set by SurveyScreen so the Activity's back-press
          * callback can decrement question index instead of dismissing the
          * Activity. Returns true when the question pointer was decremented;
          * false means we're on the first (or only) question and the host
@@ -187,7 +187,7 @@ class SurveyActivity : ComponentActivity() {
         @Volatile internal var surveyBackHandler: (() -> Boolean)? = null
 
         /**
-         * SPEC-401-A R67 (Lens B P2) — provider for live answered count so
+         * Provider for live answered count so
          * Activity-level system-back dismiss can pass the real count to
          * `SurveyResult.Dismissed(answeredCount)` instead of hardcoding 0.
          * iOS SurveyRenderer.swift:253-255 reads `answers.count` at the
@@ -198,7 +198,7 @@ class SurveyActivity : ComponentActivity() {
         @Volatile internal var surveyAnsweredCountProvider: (() -> Int)? = null
 
         /**
-         * SPEC-070-A finalization R3 P0 (Lens D) — drop pending captures
+         * Drop pending captures
          * on SDK shutdown so SurveyConfig + callback closures don't leak.
          * Called from `AppDNA.shutdown()`.
          */
@@ -230,7 +230,7 @@ fun SurveyScreen(
     onComplete: (List<SurveyAnswer>) -> Unit,
     onDismiss: (Int) -> Unit,
     onQuestionAnswered: ((String, String, Any) -> Unit)? = null,
-    // SPEC-205 / SPEC-070-A D.4: optional override; defaults to the system
+    // Optional override; defaults to the system
     // setting when not supplied. Activity callers pass an explicit value so
     // the resolved theme matches the MaterialTheme color scheme they seeded.
     isDark: Boolean = isSystemInDarkTheme(),
@@ -238,7 +238,7 @@ fun SurveyScreen(
     var currentIndex by remember { mutableIntStateOf(0) }
     val answers = remember { mutableStateMapOf<String, SurveyAnswer>() }
 
-    // SPEC-070-A finalization (Lens B P1) — survey intro Lottie 2s gating.
+    // Survey intro Lottie 2s gating.
     // iOS SurveyRenderer.swift:157-161 holds an `showIntro` state that flips
     // to false 2s after the first render, replacing the intro animation with
     // the first question. Without this gate, Android stacked the intro Lottie
@@ -253,7 +253,7 @@ fun SurveyScreen(
         }
     }
 
-    // SPEC-070-A I.9 — register a back-handler so the Activity's
+    // Register a back-handler so the Activity's
     // OnBackPressedDispatcher can decrement question index instead of
     // dismissing. Cleared on dispose so the handler doesn't survive
     // SurveyScreen recompositions across surveys.
@@ -266,7 +266,7 @@ fun SurveyScreen(
                 false
             }
         }
-        // SPEC-401-A R67 (Lens B P2) — expose live answered count so the
+        // Expose live answered count so the
         // Activity-level system-back dismiss callsite can pass the real
         // count to SurveyResult.Dismissed instead of hardcoding 0.
         SurveyActivity.surveyAnsweredCountProvider = { answers.size }
@@ -277,7 +277,7 @@ fun SurveyScreen(
     }
     var showCompletion by remember { mutableStateOf(false) }
     val currentView = LocalView.current
-    // SPEC-070-A finalization P0 audit-10 — coroutine scope for the
+    // 10 — coroutine scope for the
     // thank-you delay (mirrors iOS DispatchQueue.main.asyncAfter 2.5s
     // before completion). Bound to composition so cancellation on
     // Activity destroy is automatic.
@@ -297,12 +297,12 @@ fun SurveyScreen(
         }
     }
 
-    // SPEC-205 / SPEC-070-A D.4: resolve the theme for the current scheme.
+    // Resolve the theme for the current scheme.
     // In dark mode, fields set on `theme.dark` override the matching field
     // on `theme.light`; unset dark fields fall back to light (sparse merge).
     // Mirrors iOS `SurveyRenderer.theme` accessor.
     val theme = config.appearance.resolveTheme(isDark)
-    // SPEC-205: scheme-aware fallback colors so an unstyled survey still
+    // Scheme-aware fallback colors so an unstyled survey still
     // looks correct in dark mode (matches iOS defaults #1a1a1a / #FFFFFF).
     val bgColor = theme?.backgroundColor?.let { parseColor(it) }
         ?: if (isDark) Color(0xFF1A1A1A) else Color.White
@@ -310,12 +310,12 @@ fun SurveyScreen(
         ?: if (isDark) Color.White else Color(0xFF1A1A1A)
     val accentColor = theme?.accentColor?.let { parseColor(it) } ?: Color(0xFF6366F1)
     val buttonColor = theme?.buttonColor?.let { parseColor(it) } ?: Color(0xFF6366F1)
-    // R89 — resolved button_text_color, used as the contrasting label on the accent-filled
+    // Resolved button_text_color, used as the contrasting label on the accent-filled
     // selected state of yes/no + NPS (avoids white-on-white when accent is white).
     val buttonTextColor = theme?.buttonTextColor?.let { parseColor(it) } ?: Color.White
     val fontFamily = theme?.fontFamily?.let { FontResolver.resolve(it) }
     val containerRadius = (config.appearance.cornerRadius ?: 0).dp
-    // SPEC-070-A finalization S-4 — gradient + button_gradient. Mirrors
+    // Gradient + button_gradient. Mirrors
     // iOS SurveyRenderer.swift:84-100 StyleEngine.linearGradient. Two
     // brushes consumed by host background and Submit/Next button.
     val backgroundBrush: androidx.compose.ui.graphics.Brush? = remember(theme?.gradient) {
@@ -332,7 +332,7 @@ fun SurveyScreen(
             )
         }
     }
-    // SPEC-401-A R79 (Lens C P1) — theme.button_gradient applied to the
+    // theme.button_gradient applied to the
     // Next + Submit primary CTAs matching iOS SurveyRenderer.swift:94-100,
     // 233, 243 `buttonBackground(enabled:)`. Was parsed (SurveyConfig.kt:
     // 663) but never read. Surveys silently dropped author button_gradient
@@ -351,17 +351,17 @@ fun SurveyScreen(
             )
         }
     }
-    // SPEC-070-A finalization S-5 — `theme.text_align` for question text.
+    // `theme.text_align` for question text.
     val themeTextAlign: TextAlign = when (theme?.textAlign?.lowercase()) {
         "left", "leading", "start" -> TextAlign.Start
         "right", "trailing", "end" -> TextAlign.End
         "center" -> TextAlign.Center
         else -> TextAlign.Center
     }
-    // SPEC-070-A finalization S-6 — theme.questionFontSize.
+    // theme.questionFontSize.
     val themeQuestionFontSize: androidx.compose.ui.unit.TextUnit =
         theme?.questionFontSize?.sp ?: 18.sp
-    // SPEC-070-A finalization S-7 — theme.fontWeight string → FontWeight.
+    // theme.fontWeight string → FontWeight.
     val themeFontWeight: FontWeight = when (theme?.fontWeight?.lowercase()) {
         "regular", "normal" -> FontWeight.Normal
         "medium" -> FontWeight.Medium
@@ -397,13 +397,13 @@ fun SurveyScreen(
     Column(
         modifier = Modifier
             .fillMaxSize()
-            // SPEC-070-A I.16 — IME insets so keyboard pushes content up; safe
+            // IME insets so keyboard pushes content up; safe
             // drawing keeps content out of system bars while the survey
             // itself paints the background edge-to-edge.
             .imePadding()
             .safeDrawingPadding()
             .clip(RoundedCornerShape(topStart = containerRadius, topEnd = containerRadius))
-            // SPEC-070-A finalization S-4 — prefer gradient brush when
+            // Prefer gradient brush when
             // theme.gradient is configured; falls back to bgColor.
             .let { mod ->
                 val brush = backgroundBrush
@@ -413,7 +413,7 @@ fun SurveyScreen(
             .padding(24.dp),
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
-        // SPEC-085 + SPEC-070-A finalization Lens B P1 — intro Lottie shows
+        // Intro Lottie shows
         // ALONE (replaces question UI) for 2s, mirrors iOS showIntro gate.
         // NOTE: R86 Lens C F2 intro-hide fade-out deferred — early-bail
         // via `return@Column` after rendering intro is incompatible with
@@ -422,7 +422,7 @@ fun SurveyScreen(
         if (showIntro && config.appearance.introLottieUrl != null) {
             Spacer(Modifier.weight(1f))
             LottieBlockView(
-                // SPEC-401-A R74 (Lens A P2) — intro Lottie height 120dp
+                // Intro Lottie height 120dp
                 // matches iOS SurveyRenderer.swift:154 `height: 120`. Was
                 // 200 — Android rendered 67% taller than iOS for the same
                 // intro_lottie_url. Visible regression side-by-side.
@@ -438,11 +438,11 @@ fun SurveyScreen(
         }
 
         // Progress
-        // Round-25 — hide the whole question UI (progress + question + nav + "Not now") once the
+        // Hide the whole question UI (progress + question + nav + "Not now") once the
         // thank-you celebration starts, matching iOS SurveyRenderer's `if showThankYou {..} else {..}`.
         // Android left the final question + Submit + "Not now" visible+interactive during the 2.5s window.
         if (config.appearance.showProgress && visibleQuestions.isNotEmpty() && !showCompletion) {
-            // SPEC-401-A R70 (Lens C P2) — animate progress fill via
+            // Animate progress fill via
             // `animateFloatAsState` (300ms tween) matching iOS SwiftUI
             // ProgressView's implicit ~0.35s easeInOut animation on value
             // change at SurveyRenderer.swift:186. Was passing raw Float
@@ -472,7 +472,7 @@ fun SurveyScreen(
             val onAnswer: (SurveyAnswer) -> Unit = { ans ->
                 answers[question.id] = ans
                 onQuestionAnswered?.invoke(question.id, question.type, ans.answer)
-                // SPEC-085: Haptic on option select
+                // Haptic on option select
                 HapticEngine.triggerIfEnabled(
                     currentView,
                     config.appearance.haptic?.triggers?.on_option_select,
@@ -480,8 +480,8 @@ fun SurveyScreen(
                 )
             }
 
-            // SPEC-084: Gap #20 — resolve question text style from appearance token
-            // SPEC-070-A finalization S-5/S-6/S-7 — apply theme-level text
+            // Gap #20 — resolve question text style from appearance token
+            // Apply theme-level text
             // align + question font size + font weight on top of the
             // appearance-token-resolved style. Mirrors iOS SurveyRenderer.swift
             // theme.text_align / questionFontSize / fontWeight.
@@ -494,7 +494,7 @@ fun SurveyScreen(
                 fontWeight = themeFontWeight,
             )
 
-            // SPEC-070-A finalization S-19 — render question.imageUrl
+            // Render question.imageUrl
             // (iOS SurveyRenderer.swift:193-197 MediaImageView maxHeight 140).
             if (!question.imageUrl.isNullOrBlank()) {
                 NetworkImage(
@@ -506,7 +506,7 @@ fun SurveyScreen(
                 )
             }
 
-            // SPEC-088: Interpolate question text, option text, NPS labels
+            // Interpolate question text, option text, NPS labels
             val tCtx = ai.appdna.sdk.core.TemplateEngine.buildContext()
             val te = ai.appdna.sdk.core.TemplateEngine
             val q = question.copy(
@@ -515,14 +515,14 @@ fun SurveyScreen(
                     lowLabel = question.npsConfig.lowLabel?.let { te.interpolate(it, tCtx) },
                     highLabel = question.npsConfig.highLabel?.let { te.interpolate(it, tCtx) }
                 ),
-                // SPEC-070-A J.1: interpolate Likert anchor labels too so
+                // Interpolate Likert anchor labels too so
                 // template tokens like "{{user.name}}" work consistently
                 // with the NPS path.
                 likertConfig = question.likertConfig?.copy(
                     lowLabel = question.likertConfig.lowLabel?.let { te.interpolate(it, tCtx) },
                     highLabel = question.likertConfig.highLabel?.let { te.interpolate(it, tCtx) },
                 ),
-                // SPEC-070-A J.22 — re-wrap as ImmutableList after interpolation
+                // Re-wrap as ImmutableList after interpolation
                 // map (SurveyQuestion.options is ImmutableList<QuestionOption>?).
                 options = question.options?.map { opt ->
                     opt.copy(text = te.interpolate(opt.text, tCtx))
@@ -530,19 +530,19 @@ fun SurveyScreen(
             )
 
             when (q.type) {
-                // R89 — thread the resolved theme colors so the selected score honors accent_color.
+                // Thread the resolved theme colors so the selected score honors accent_color.
                 "nps" -> NpsQuestionView(q, answer, onAnswer, questionTextStyle, accentColor, buttonTextColor, textColor)
                 "csat" -> CsatQuestionView(q, answer, onAnswer, questionTextStyle)
-                // R89 — thread the resolved accent so filled rating icons honor accent_color.
+                // Thread the resolved accent so filled rating icons honor accent_color.
                 "rating" -> RatingQuestionView(q, answer, onAnswer, questionTextStyle, accentColor)
-                // SPEC-084: Gap #21 — pass optionStyle to choice views
+                // Gap #21 — pass optionStyle to choice views
                 "single_choice" -> SingleChoiceView(q, answer, onAnswer, questionTextStyle, config.appearance.optionStyle)
                 "multi_choice" -> MultiChoiceView(q, answer, onAnswer, questionTextStyle, config.appearance.optionStyle)
                 "free_text" -> FreeTextView(q, answer, onAnswer, questionTextStyle)
-                // R89 — thread the resolved theme colors so the selected button honors accent_color.
+                // Thread the resolved theme colors so the selected button honors accent_color.
                 "yes_no" -> YesNoView(q, answer, onAnswer, questionTextStyle, accentColor, buttonTextColor, textColor)
                 "emoji_scale" -> EmojiScaleView(q, answer, onAnswer, questionTextStyle)
-                // SPEC-070-A J.1: Likert scale (numeric scale with optional
+                // Likert scale (numeric scale with optional
                 // anchor labels). Accept both `likert` (canonical) and
                 // `scale` (legacy alias) so older console payloads still
                 // render on newer SDKs.
@@ -562,7 +562,7 @@ fun SurveyScreen(
                 val backCd = stringResource(R.string.appdna_a11y_survey_back)
                 TextButton(
                     onClick = { currentIndex-- },
-                    // SPEC-070-A J.11 — explicit a11y label so TalkBack
+                    // Explicit a11y label so TalkBack
                     // announces "Previous question" instead of just "Back".
                     modifier = Modifier.semantics { contentDescription = backCd },
                 ) {
@@ -574,7 +574,7 @@ fun SurveyScreen(
 
             if (currentIndex < visibleQuestions.size - 1) {
                 val nextCd = stringResource(R.string.appdna_a11y_survey_next)
-                // SPEC-401-A R79 (Lens C P1) — apply buttonBrush via Box
+                // Apply buttonBrush via Box
                 // wrapper when theme.button_gradient is set; fall back to
                 // solid containerColor otherwise. Mirrors iOS
                 // SurveyRenderer.swift:94-100.
@@ -583,7 +583,7 @@ fun SurveyScreen(
                         modifier = Modifier
                             .clip(RoundedCornerShape(20.dp))
                             .background(buttonBrush)
-                            // Round-26 — fire on_step_advance haptic like iOS SurveyRenderer + Android
+                            // Fire on_step_advance haptic like iOS SurveyRenderer + Android
                             // onboarding; the survey Next button fired no haptic on either variant.
                             .clickable {
                                 HapticEngine.triggerIfEnabled(currentView, config.appearance.haptic?.triggers?.on_step_advance, config.appearance.haptic)
@@ -606,10 +606,10 @@ fun SurveyScreen(
                 }
             } else {
                 val submitCd = stringResource(R.string.appdna_a11y_survey_submit)
-                // SPEC-401-A R79 (Lens C P1) — buttonBrush gradient on
+                // buttonBrush gradient on
                 // Submit when configured.
                 val submitOnClick: () -> Unit = {
-                        // SPEC-085: Haptic on submit
+                        // Haptic on submit
                         HapticEngine.triggerIfEnabled(
                             currentView,
                             config.appearance.haptic?.triggers?.on_form_submit,
@@ -624,7 +624,7 @@ fun SurveyScreen(
                             )
                         }
                         val allAnswers = visibleQuestions.mapNotNull { answers[it.id] }
-                        // SPEC-070-A finalization P0 audit-10 — defer
+                        // 10 — defer
                         // onComplete by 2.5s when a thank-you Lottie or
                         // particle/confetti effect is configured. Mirrors
                         // iOS SurveyRenderer.swift:372-386 which waits
@@ -674,7 +674,7 @@ fun SurveyScreen(
                 onClick = { onDismiss(answers.size) },
                 modifier = Modifier
                     .padding(top = 8.dp)
-                    // SPEC-070-A J.11 — "Not now" is the visible label;
+                    // "Not now" is the visible label;
                     // the a11y label disambiguates as "Dismiss survey".
                     .semantics { contentDescription = dismissCd },
             ) {
@@ -682,8 +682,8 @@ fun SurveyScreen(
             }
         }
 
-        // SPEC-085: Thank-you Lottie on completion + SPEC-088: Interpolated thank-you text
-        // SPEC-401-A R85 (Lens C F2 P2) — fade-in matches iOS withAnimation at
+        // Thank-you Lottie on completion: Interpolated thank-you text
+        // Fade-in matches iOS withAnimation at
         // SurveyRenderer.swift:373 (showThankYou). Was popping in instantly.
         // rememberReduceMotion gating happens via the AnimationModifiers
         // helpers; here we use a small tween directly since AnimatedVisibility
@@ -697,7 +697,7 @@ fun SurveyScreen(
             if (config.appearance.thankyouLottieUrl != null) {
                 Spacer(Modifier.height(8.dp))
                 LottieBlockView(
-                    // SPEC-401-A R74 (Lens A P2) — thank-you Lottie height
+                    // Thank-you Lottie height
                     // 140dp matches iOS SurveyRenderer.swift:171 `height: 140`.
                     // Was 100 — Android rendered 30% shorter than iOS for
                     // the same thankyou_lottie_url.
@@ -724,9 +724,9 @@ fun SurveyScreen(
                 modifier = Modifier.padding(top = 12.dp),
             )
         } // Column
-        } // AnimatedVisibility (R85 Lens C F2)
+        } // AnimatedVisibility
 
-        // SPEC-085: Confetti on completion
+        // Confetti on completion
         if (showCompletion && config.appearance.thankyouParticleEffect != null) {
             ConfettiOverlay(
                 effect = config.appearance.thankyouParticleEffect,
@@ -759,7 +759,7 @@ fun BottomSheetSurveyWrapper(
     onQuestionAnswered: ((String, String, Any) -> Unit)? = null,
     isDark: Boolean = isSystemInDarkTheme(),
 ) {
-    // SPEC-205 / SPEC-070-A D.4: resolve dark-merged theme for the wrapper
+    // Resolve dark-merged theme for the wrapper
     // chrome (sheet container background) so it matches the inner survey.
     val theme = config.appearance.resolveTheme(isDark)
     Box(
@@ -770,7 +770,7 @@ fun BottomSheetSurveyWrapper(
                 interactionSource = remember { MutableInteractionSource() },
                 indication = null
             ) {
-                // SPEC-401-A R67 (Lens B P2) — read live answered count from
+                // Read live answered count from
                 // SurveyScreen's provider (set in DisposableEffect) so the
                 // backdrop-tap dismiss reports real progress, not 0. Mirrors
                 // iOS SurveyRenderer.swift:253-255 reading `answers.count`.
@@ -821,7 +821,7 @@ fun ModalSurveyWrapper(
     onQuestionAnswered: ((String, String, Any) -> Unit)? = null,
     isDark: Boolean = isSystemInDarkTheme(),
 ) {
-    // SPEC-205 / SPEC-070-A D.4: resolve dark-merged theme for the modal chrome.
+    // Resolve dark-merged theme for the modal chrome.
     val theme = config.appearance.resolveTheme(isDark)
     Box(
         modifier = Modifier
@@ -831,7 +831,7 @@ fun ModalSurveyWrapper(
                 interactionSource = remember { MutableInteractionSource() },
                 indication = null
             ) {
-                // SPEC-401-A R67 (Lens B P2) — read live answered count from
+                // Read live answered count from
                 // SurveyScreen's provider (set in DisposableEffect) so the
                 // backdrop-tap dismiss reports real progress, not 0. Mirrors
                 // iOS SurveyRenderer.swift:253-255 reading `answers.count`.

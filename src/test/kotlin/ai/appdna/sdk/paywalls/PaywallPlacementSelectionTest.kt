@@ -4,7 +4,7 @@ import org.junit.Assert.assertEquals
 import org.junit.Test
 
 /**
- * SPEC-070-B — `audience_rules` in its LIST shape used to fail the `Map` cast in
+ * `audience_rules` in its LIST shape used to fail the `Map` cast in
  * `presentByPlacement`, so the paywall was treated as untargeted (matched everybody) at priority 0.
  */
 class PaywallPlacementSelectionTest {

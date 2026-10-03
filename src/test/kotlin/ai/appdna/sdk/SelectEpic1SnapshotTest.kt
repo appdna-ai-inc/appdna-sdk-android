@@ -27,9 +27,9 @@ import org.robolectric.annotation.Config
 import org.robolectric.annotation.GraphicsMode
 
 /**
- * SPEC-419 EPIC-1 (Select overhaul) — visual snapshot (surface #4: onboarding select).
+ * (Select overhaul) — visual snapshot (surface #4: onboarding select).
  *
- * Renders a stacked input_select exercising the EPIC-1 per-option features:
+ * Renders a stacked input_select exercising the per-option features:
  *   - leading_text + trailing_text on one row ("5 min/day … Easy")
  *   - a positionable badge ("RECOMMENDED")
  *   - per-option subtitle
@@ -542,7 +542,7 @@ class SelectEpic1SnapshotTest {
                         .padding(24.dp),
                     verticalArrangement = Arrangement.spacedBy(20.dp),
                 ) {
-                    // EPIC-2 — custom back glyph (chevron), default arrow, and the back⇄X close glyph.
+                    // Custom back glyph (chevron), default arrow, and the back⇄X close glyph.
                     NavGlyph("‹", Color(0xFF6366F1), 28.sp) // custom chevron
                     NavGlyph("←", Color(0xFFE5E7EB), 20.sp) // default back arrow
                     NavGlyph("✕", Color(0xFFEF4444), 20.sp) // close (back⇄X switch)
@@ -901,7 +901,7 @@ class SelectEpic1SnapshotTest {
 
     @Test
     fun selectGridMultiColumn() {
-        // EPIC-1 — multi-column grid select (display_style "grid", grid_columns 2).
+        // Multi-column grid select (display_style "grid", grid_columns 2).
         val step = mapOf<String, Any>(
             "type" to "custom", "name" to "t", "analytics_name" to "t", "skip_allowed" to false,
             "config" to mapOf<String, Any>(
@@ -942,7 +942,7 @@ class SelectEpic1SnapshotTest {
 
     @Test
     fun richTextInlineStyles() {
-        // EPIC-9 — rich_text inline markdown: bold, italic, link + authored base_style color.
+        // rich_text inline markdown: bold, italic, link + authored base_style color.
         val step = mapOf<String, Any>(
             "type" to "custom", "name" to "t", "analytics_name" to "t", "skip_allowed" to false,
             "config" to mapOf<String, Any>(
@@ -979,7 +979,7 @@ class SelectEpic1SnapshotTest {
 
     @Test
     fun socialLoginProviders() {
-        // EPIC-7 — social login provider buttons (Apple / Google / Email) with brand defaults.
+        // Social login provider buttons (Apple / Google / Email) with brand defaults.
         val step = mapOf<String, Any>(
             "type" to "custom", "name" to "t", "analytics_name" to "t", "skip_allowed" to false,
             "config" to mapOf<String, Any>(
@@ -1060,7 +1060,7 @@ class SelectEpic1SnapshotTest {
 
     @Test
     fun carouselPaged() {
-        // EPIC-8 — swipeable carousel: 3 pages + dot indicator (page 0 active). Snapshot = first page.
+        // Swipeable carousel: 3 pages + dot indicator (page 0 active). Snapshot = first page.
         val pageStyle = mapOf<String, Any>("font_size" to 24, "font_weight" to 700, "color" to "#FFFFFF")
         val step = mapOf<String, Any>(
             "type" to "custom", "name" to "t", "analytics_name" to "t", "skip_allowed" to false,
@@ -1100,7 +1100,7 @@ class SelectEpic1SnapshotTest {
 
     @Test
     fun pricingCardPlans() {
-        // EPIC-10 — pricing plan cards: Monthly + Yearly (highlighted "BEST VALUE", accent border + badge).
+        // Pricing plan cards: Monthly + Yearly (highlighted "BEST VALUE", accent border + badge).
         val step = mapOf<String, Any>(
             "type" to "custom", "name" to "t", "analytics_name" to "t", "skip_allowed" to false,
             "config" to mapOf<String, Any>(
@@ -1141,7 +1141,7 @@ class SelectEpic1SnapshotTest {
 
     @Test
     fun variablesConditional() {
-        // EPIC-5 — variables + conditional logic: heading uses a {{responses.user_name}} template (carried
+        // Variables + conditional logic: heading uses a {{responses.user_name}} template (carried
         // over from a prior step); two blocks gated by an age condition — "verified" shows (25 > 18), "too
         // young" hides. Proves binding/template carry-over + visibility_condition + dot-path resolution.
         val step = mapOf<String, Any>(
@@ -1189,7 +1189,7 @@ class SelectEpic1SnapshotTest {
 
     @Test
     fun buttonHeightResize() {
-        // EPIC-6 — authored button_height resizes the CTA itself (default ~52 vs tall 72), not the layout.
+        // Authored button_height resizes the CTA itself (default ~52 vs tall 72), not the layout.
         val step = mapOf<String, Any>(
             "type" to "custom", "name" to "t", "analytics_name" to "t", "skip_allowed" to false,
             "config" to mapOf<String, Any>(
@@ -1222,7 +1222,7 @@ class SelectEpic1SnapshotTest {
 
     @Test
     fun otpInput() {
-        // EPIC-11 — OTP / code-input: 6 boxes, "1234" entered (4 filled + active 5th + empty 6th).
+        // OTP / code-input: 6 boxes, "1234" entered (4 filled + active 5th + empty 6th).
         val step = mapOf<String, Any>(
             "type" to "custom", "name" to "t", "analytics_name" to "t", "skip_allowed" to false,
             "config" to mapOf<String, Any>(
@@ -1257,7 +1257,7 @@ class SelectEpic1SnapshotTest {
 
     @Test
     fun warningBanner() {
-        // EPIC-11 — warning/info banner variants: warning (amber) / error (red) / success (green).
+        // warning/info banner variants: warning (amber) / error (red) / success (green).
         val step = mapOf<String, Any>(
             "type" to "custom", "name" to "t", "analytics_name" to "t", "skip_allowed" to false,
             "config" to mapOf<String, Any>(
@@ -1291,7 +1291,7 @@ class SelectEpic1SnapshotTest {
 
     @Test
     fun passwordStrength() {
-        // EPIC-11 — password-strength meter: weak (1/4 red) / good (3/4 yellow) / strong (4/4 green).
+        // Password-strength meter: weak (1/4 red) / good (3/4 yellow) / strong (4/4 green).
         val step = mapOf<String, Any>(
             "type" to "custom", "name" to "t", "analytics_name" to "t", "skip_allowed" to false,
             "config" to mapOf<String, Any>(
@@ -1325,7 +1325,7 @@ class SelectEpic1SnapshotTest {
 
     @Test
     fun speechBubble() {
-        // EPIC-11 — speech bubble (mascot dialogue): white bubble + downward left tail.
+        // Speech bubble (mascot dialogue): white bubble + downward left tail.
         val step = mapOf<String, Any>(
             "type" to "custom", "name" to "t", "analytics_name" to "t", "skip_allowed" to false,
             "config" to mapOf<String, Any>(
@@ -1362,7 +1362,7 @@ class SelectEpic1SnapshotTest {
 
     @Test
     fun feedbackPanel() {
-        // EPIC-11 — quiz feedback panel: correct (green ✓) + wrong (red ✗), each headline + detail.
+        // Quiz feedback panel: correct (green ✓) + wrong (red ✗), each headline + detail.
         val step = mapOf<String, Any>(
             "type" to "custom", "name" to "t", "analytics_name" to "t", "skip_allowed" to false,
             "config" to mapOf<String, Any>(
@@ -1395,7 +1395,7 @@ class SelectEpic1SnapshotTest {
 
     @Test
     fun summaryScreen() {
-        // EPIC-11 — session summary: headline + 2x2 stat grid (Time / Accuracy / XP / Streak).
+        // Session summary: headline + 2x2 stat grid (Time / Accuracy / XP / Streak).
         val step = mapOf<String, Any>(
             "type" to "custom", "name" to "t", "analytics_name" to "t", "skip_allowed" to false,
             "config" to mapOf<String, Any>(
@@ -1437,7 +1437,7 @@ class SelectEpic1SnapshotTest {
 
     @Test
     fun pressHoldConfirm() {
-        // EPIC-11 — press-and-hold-to-confirm: pill 65% filled (left→right accent fill behind centered text).
+        // Press-and-hold-to-confirm: pill 65% filled (left→right accent fill behind centered text).
         val step = mapOf<String, Any>(
             "type" to "custom", "name" to "t", "analytics_name" to "t", "skip_allowed" to false,
             "config" to mapOf<String, Any>(
@@ -1472,7 +1472,7 @@ class SelectEpic1SnapshotTest {
 
     @Test
     fun healthConnect() {
-        // EPIC-11 — Health connect card. Provider is PLATFORM-FIXED: Android renders Google Fit (Apple Health
+        // Health connect card. Provider is PLATFORM-FIXED: Android renders Google Fit (Apple Health
         // is iOS-only), so this golden intentionally differs from the iOS one. Two states: connect + connected.
         val step = mapOf<String, Any>(
             "type" to "custom", "name" to "t", "analytics_name" to "t", "skip_allowed" to false,
@@ -1506,7 +1506,7 @@ class SelectEpic1SnapshotTest {
 
     @Test
     fun settingsFooter() {
-        // EPIC-11 — interactive footer: dark-mode capsule toggle (off/on) + language switcher pill.
+        // Interactive footer: dark-mode capsule toggle (off/on) + language switcher pill.
         val step = mapOf<String, Any>(
             "type" to "custom", "name" to "t", "analytics_name" to "t", "skip_allowed" to false,
             "config" to mapOf<String, Any>(
@@ -1539,7 +1539,7 @@ class SelectEpic1SnapshotTest {
 
     @Test
     fun memoryMatch() {
-        // EPIC-11 — memory/pair-match: 3-col grid, all 3 states (up 🍎 / down ? / matched 🍌).
+        // memory/pair-match: 3-col grid, all 3 states (up 🍎 / down ? / matched 🍌).
         val step = mapOf<String, Any>(
             "type" to "custom", "name" to "t", "analytics_name" to "t", "skip_allowed" to false,
             "config" to mapOf<String, Any>(
@@ -1584,7 +1584,7 @@ class SelectEpic1SnapshotTest {
 
     @Test
     fun calendarMonth() {
-        // EPIC-11 — month calendar: June 2026, days 12-14 selected (accent), today=15 (ring).
+        // Month calendar: June 2026, days 12-14 selected (accent), today=15 (ring).
         val step = mapOf<String, Any>(
             "type" to "custom", "name" to "t", "analytics_name" to "t", "skip_allowed" to false,
             "config" to mapOf<String, Any>(
@@ -1622,7 +1622,7 @@ class SelectEpic1SnapshotTest {
 
     @Test
     fun styleAlignment() {
-        // EPIC-9 parity — heading + text centered via STYLE.alignment only (no horizontal_align). Was: Android
+        // Parity — heading + text centered via STYLE.alignment only (no horizontal_align). Was: Android
         // center / iOS left; now both center.
         val step = mapOf<String, Any>(
             "type" to "custom", "name" to "t", "analytics_name" to "t", "skip_allowed" to false,

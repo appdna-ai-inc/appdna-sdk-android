@@ -62,7 +62,7 @@ import ai.appdna.sdk.core.interpolated
 import kotlin.math.roundToInt
 
 /**
- * SPEC-401-A — Renderers for the form-field types added in the schema but
+ * Renderers for the form-field types added in the schema but
  * previously unimplemented in the Android SDK: PASSWORD, URL, RATING,
  * RANGE_SLIDER, IMAGE_PICKER, COLOR, MULTILINE_CHIPS, SIGNATURE.
  *
@@ -149,7 +149,7 @@ internal fun UrlField(
 }
 
 /**
- * SPEC-401-A — local copy of `textFieldShapeFor` / `textFieldColorsFor`
+ * Local copy of `textFieldShapeFor` / `textFieldColorsFor`
  * from `FormStepComposable.kt`. Inlined here so this file stays
  * self-contained and the two private helpers in FormStepComposable.kt
  * don't have to be promoted to module-internal. Both renderers honour
@@ -212,12 +212,12 @@ internal fun RatingField(
         ?: MaterialTheme.colorScheme.onSurface.copy(alpha = 0.3f)
 
     val current = (values[field.id] as? Number)?.toDouble() ?: 0.0
-    // SPEC-401-A R49 (Lens C #3, P2) — replace heavy LongPress haptic with
+    // Replace heavy LongPress haptic with
     // HapticEngine LIGHT (CLOCK_TICK), matching iOS .light impact at
     // FormFieldRendererExtras.swift:113.
     val view = androidx.compose.ui.platform.LocalView.current
 
-    // SPEC-401-A R49 (Lens C #5, P3) — combined a11y group: per-star
+    // Combined a11y group: per-star
     // contentDescription is rolled up into a single "Rating" semantic with
     // stateDescription mirroring iOS combined-element pattern at
     // FormFieldRendererExtras.swift:116. Per-star labels are dropped from
@@ -229,7 +229,7 @@ internal fun RatingField(
         modifier = Modifier.semantics(mergeDescendants = true) {
             contentDescription = "Rating"
             stateDescription = "$current of $maxStars stars"
-            // SPEC-401-A R70 (Lens C P3) — Polite live region so TalkBack
+            // Polite live region so TalkBack
             // announces stateDescription change immediately when the user
             // taps a star, without requiring re-focus. iOS SwiftUI
             // `.accessibilityValue("...stars")` auto-announces on state
@@ -298,7 +298,7 @@ internal fun RangeSliderField(
     values: MutableMap<String, Any?>,
     errors: MutableMap<String, String>,
 ) {
-    // SPEC-419 pass-33 — clamp so Compose RangeSlider valueRange isn't empty (its internal coerceIn throws on min>=max).
+    // Clamp so Compose RangeSlider valueRange isn't empty (its internal coerceIn throws on min>=max).
     val rawStep = field.config?.step?.toFloat() ?: 1f
     val step = if (rawStep > 0f) rawStep else 1f
     val min = minOf(field.config?.min_value?.toFloat() ?: 0f, field.config?.max_value?.toFloat() ?: 100f)
@@ -312,7 +312,7 @@ internal fun RangeSliderField(
     val rawHigh = (values["${field.id}_high"] as? Number)?.toFloat()
         ?: ((values[field.id] as? Map<*, *>)?.get("high") as? Number)?.toFloat()
         ?: max
-    // SPEC-419 pass-33 — coerce both thumbs into [min,max] and order them so the RangeSlider `value` is never an empty range.
+    // Coerce both thumbs into [min,max] and order them so the RangeSlider `value` is never an empty range.
     val loC = rawLow.coerceIn(min, max)
     val hiC = rawHigh.coerceIn(min, max)
     val range = minOf(loC, hiC)..maxOf(loC, hiC)
@@ -348,7 +348,7 @@ internal fun RangeSliderField(
                 errors.remove(field.id)
             },
             valueRange = min..max,
-            steps = if (step > 0 && max > min) (((max - min) / step).toInt() - 1).coerceAtLeast(0) else 0,  // SPEC-419 pass-34 — coerceAtLeast(0): Compose require(steps>=0) (mirror pass-22)
+            steps = if (step > 0 && max > min) (((max - min) / step).toInt() - 1).coerceAtLeast(0) else 0,  // coerceAtLeast(0): Compose require(steps>=0) (mirror pass-22)
             modifier = Modifier.fillMaxWidth(),
         )
         Row(
@@ -490,7 +490,7 @@ private fun ImageCropDialog(
                         .fillMaxWidth()
                         .aspectRatio(ratio)
                         .clip(RoundedCornerShape(8.dp))
-                        // SPEC-401-A R42 (Lens C #2) — theme-aware backdrop
+                        // Theme-aware backdrop
                         // (was hardcoded Color.Black). Harsh against
                         // transparent PNGs in dark mode; iOS lets the
                         // system surface show through.

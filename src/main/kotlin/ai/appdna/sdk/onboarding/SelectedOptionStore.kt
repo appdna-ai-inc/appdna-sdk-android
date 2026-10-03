@@ -1,7 +1,7 @@
 package ai.appdna.sdk.onboarding
 
 /**
- * SPEC-448 §"The selected item" — what the user actually picked, addressable as
+ * §"The selected item" — what the user actually picked, addressable as
  * `{{selected.<field_id>.subtitle}}` on a later screen. Mirrors iOS `SelectedOptionStore`.
  *
  * 🔴 Deliberately NOT stored in `responses`, and that is an acceptance criterion rather than a
@@ -43,7 +43,7 @@ internal object SelectedOptionStore {
     }
 
     /**
-     * SPEC-496 §B0 — keep only the recorded options whose value is still rendered (a multi-select
+     * Keep only the recorded options whose value is still rendered (a multi-select
      * whose list shrank after host data arrived). Empty → the field is cleared.
      */
     @Synchronized
@@ -55,7 +55,7 @@ internal object SelectedOptionStore {
     }
 
     /**
-     * SPEC-496 §A1 — bumps on every write, so a step whose blocks read the `selected` root
+     * Bumps on every write, so a step whose blocks read the `selected` root
      * re-resolves (Compose snapshot state: a read subscribes).
      */
     val revision = androidx.compose.runtime.mutableIntStateOf(0)

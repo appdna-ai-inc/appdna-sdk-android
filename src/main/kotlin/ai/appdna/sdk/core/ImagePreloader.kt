@@ -6,7 +6,7 @@ import coil.imageLoader
 import coil.request.ImageRequest
 
 /**
- * SPEC-070-A G.13/G.14: Image prefetch helper.
+ * Image prefetch helper.
  *
  * Warms Coil's memory + disk caches for a list of URLs so the first
  * onboarding/paywall paint never has to do a synchronous network fetch.

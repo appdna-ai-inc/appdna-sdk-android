@@ -1,4 +1,4 @@
-// SPEC-070-A J.18 — sample/example app.
+// sample/example app.
 //
 // Application subclass that configures the AppDNA SDK on launch with a
 // sandbox key. iOS parity: AppDelegate.application(_:didFinishLaunchingWithOptions:)

@@ -8,7 +8,7 @@ import android.net.NetworkRequest
 import ai.appdna.sdk.Log
 
 /**
- * SPEC-067: Network condition monitoring for adaptive batch sizing.
+ * Network condition monitoring for adaptive batch sizing.
  * Uses ConnectivityManager.NetworkCallback for real-time updates.
  */
 internal class ConnectivityMonitor(context: Context) {
@@ -51,12 +51,17 @@ internal class ConnectivityMonitor(context: Context) {
 
     private val networkCallback = object : ConnectivityManager.NetworkCallback() {
         // `onCapabilitiesChanged` always follows `onAvailable` (API 26+), so the regain is reported there.
+        // The callback reports EVERY network with internet — a cellular network that stays up in the background
+        // while Wi-Fi is the default, a VPN, a second SIM. Only the default network (the one uploads use) decides the
+        // type: a change to another network is recorded (a loss can settle on it later) but changes nothing now. It
+        // used to apply whichever network changed last, so a background cellular update made a Wi-Fi device
+        // "cellular" (smaller batches) until the next Wi-Fi callback.
         override fun onCapabilitiesChanged(network: Network, capabilities: NetworkCapabilities) {
             val wasNone = currentConnectionType == ConnectionType.NONE
             synchronized(reported) { reported[network] = capabilities }
-            apply(capabilities)
+            readActiveNetwork(changed = network to capabilities)
             Log.debug("Network changed: $currentConnectionType, metered=$isMetered")
-            regainedIfWasNone(wasNone)
+            regainedIfWasNone(wasNone && currentConnectionType != ConnectionType.NONE)
         }
 
         // One network lost is not necessarily all of them: Wi-Fi dropping while cellular is up leaves the
@@ -76,17 +81,19 @@ internal class ConnectivityMonitor(context: Context) {
     }
 
     /**
-     * Set the state from the active network ([lost]: a network just reported lost, which the system may
-     * still name as active for a moment — it counts as gone). When the system names no usable active network,
-     * the best network the callback reported that is still up (Wi-Fi / wired over cellular) decides; NONE only
-     * when there is none.
+     * Set the state from the active (default) network ([lost]: a network just reported lost, which the system may
+     * still name as active for a moment — it counts as gone; [changed]: a network whose capabilities the callback just
+     * reported — when it is the default, those capabilities are the newest). When the system names no usable active
+     * network, the best network the callback reported that is still up (Wi-Fi / wired over cellular) decides; NONE
+     * only when there is none.
      */
-    private fun readActiveNetwork(lost: Network? = null) {
+    private fun readActiveNetwork(lost: Network? = null, changed: Pair<Network, NetworkCapabilities>? = null) {
         val current: Network? = try { connectivityManager.activeNetwork } catch (_: Throwable) { null }
         val activeNetwork = current?.takeIf { it != lost }
-        val capabilities = activeNetwork?.let {
-            try { connectivityManager.getNetworkCapabilities(it) } catch (_: Throwable) { null }
-        } ?: activeNetwork?.let { synchronized(reported) { reported[it] } }
+        val capabilities = activeNetwork?.let { active -> changed?.takeIf { it.first == active }?.second }
+            ?: activeNetwork?.let {
+                try { connectivityManager.getNetworkCapabilities(it) } catch (_: Throwable) { null }
+            } ?: activeNetwork?.let { synchronized(reported) { reported[it] } }
             ?: bestReported(except = lost)
         if (capabilities != null) apply(capabilities) else currentConnectionType = ConnectionType.NONE
     }

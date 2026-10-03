@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
-  SPEC-401-A R67 (Lens C P1) — vertical slide-from-bottom enter anim.
+  Vertical slide-from-bottom enter anim.
   iOS UIModalTransitionStyle.coverVertical equivalent for Screen modal
   presentation when config.transition == "slide_up". Android stock libs
   only ship slide_in_left (horizontal); custom XML matches iOS bottom-up.

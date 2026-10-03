@@ -9,7 +9,7 @@ import android.os.Handler
 import android.os.Looper
 
 /**
- * SPEC-070-A finalization OB-5 — port of iOS [OnboardingPaywallBridge].
+ * OB-5 — port of iOS [OnboardingPaywallBridge].
  *
  * iOS source-of-truth: `OnboardingRenderer.swift:1707-1811`.
  *
@@ -85,7 +85,7 @@ internal class OnboardingPaywallBridge(
         onPaywallPurchaseFailed(paywallId, error, errorType, productId = null)
     }
 
-    // SPEC-070-B — the SDK calls the widest overload; forward `errorType` AND `productId` on to the
+    // The SDK calls the widest overload; forward `errorType` AND `productId` on to the
     // host listener so neither the discriminator nor the failed product is dropped by the
     // onboarding→paywall bridge. Every narrower overload funnels through here, so the bridge's
     // dismissal bookkeeping (didFail/onFailed) runs exactly once per failure whichever arity the
@@ -140,13 +140,13 @@ internal class OnboardingPaywallBridge(
 
     override fun onPaywallRestoreCompleted(paywallId: String, productIds: List<String>) {
         forwardOnMain { it.onPaywallRestoreCompleted(paywallId, productIds) }
-        // SPEC-401 Fix 1B — treat a non-empty restore as equivalent to a
+        // Treat a non-empty restore as equivalent to a
         // successful purchase so the subsequent dismiss routes via
         // on_success instead of on_dismiss. Mirrors the existing
         // onPaywallPurchaseCompleted pattern at line 75: just flip the
         // flag here, let the dismiss path call onPurchased() once.
-        // SPEC-401 R1 audit: do NOT call onPurchased() directly here —
-        // PaywallActivity.dismissAfterRestore (Fix 1C) fires
+        // Do NOT call onPurchased() directly here
+        // PaywallActivity.dismissAfterRestore fires
         // snapshotOnDismiss which fires onPaywallDismissed on the
         // listener; the bridge's onPaywallDismissed at line 90 reads
         // didPurchase and routes once. Calling onPurchased() here too

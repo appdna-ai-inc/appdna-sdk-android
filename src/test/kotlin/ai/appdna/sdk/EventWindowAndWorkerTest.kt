@@ -24,15 +24,16 @@ import java.util.zip.Inflater
 import java.util.zip.InflaterInputStream
 
 /**
- * Two upload paths that stopped short of the backlog:
+ * Two upload paths that stopped short of the backlog, and the WorkManager uploader's answer to a rejection:
  *  - the in-process queue's window (the newest 1,000 events) was never reloaded once it drained, so the older
  *    events of a larger backlog waited for the WorkManager uploader or the next launch;
- *  - the WorkManager uploader ended its run on a permanently rejected batch (and treated a 408 as permanent).
+ *  - the WorkManager uploader treated a 408 as permanent; after a permanent rejection it now ends its run (it went on
+ *    with up to 50 more batches at once), and a 401 / 403 pauses uploads as the in-process queue does.
  * iOS `EventQueueWindowAndUploaderTests`, same rules.
  *
- * NEGATIVE CONTROLS (build Mac, patched sources — status file round 34): without the reload, 200 of the 1,200
- * events are never sent by the queue (`db.count()` 200); with the old worker branches, the run answers FAILED
- * after the 400 with 50 events left, and the 408 batch is dropped (0 left, counter 100).
+ * NEGATIVE CONTROLS (build Mac, patched sources): without the reload, 200 of the 1,200 events are never sent by the
+ * queue (`db.count()` 200); with the old worker branches the 408 batch is dropped (0 left, counter 100), the run goes
+ * on after the 400 (2 uploads, DONE, 0 left), and a 401 sets no pause.
  */
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [34])
@@ -89,20 +90,52 @@ class EventWindowAndWorkerTest {
         }
     }
 
-    /** A permanently rejected batch is dropped and counted, and the run goes on with the next one. */
-    @Test fun theWorkerDropsARejectedBatchAndGoesOn() {
+    /**
+     * A permanently rejected batch is dropped and counted, and the run ends there (as iOS `BackgroundUploader`'s does):
+     * a fresh run sends the rest. A 401 / 403 also pauses uploads, and nothing is retried.
+     */
+    @Test fun theWorkerEndsItsRunAfterARejectedBatch() {
         val ingests = AtomicInteger(0)
         TestHttpServer { path, _ ->
             if (path.contains("/ingest/events") && ingests.getAndIncrement() == 0) 400 to "{}" else 200 to "{}"
         }.use { server ->
             val db = EventDatabase(ctx, 10_000, "worker_reject_${System.nanoTime()}.db")
             try {
+                ai.appdna.sdk.events.UploadPauseGate.setForTest(ctx, false)
                 db.insertEvents((0 until 150).map { event(it).toString() })
-                assertEquals(EventUploadWorker.Outcome.DONE, EventUploadWorker.uploadPending(db, "adn_test_worker", server.baseUrl))
-                assertEquals("the events behind the rejected batch were not sent", 0, db.count())
-                assertEquals(2, ingests.get())
+                assertEquals(EventUploadWorker.Outcome.RETRY,
+                    EventUploadWorker.uploadPending(db, "adn_test_worker", server.baseUrl, context = ctx))
+                assertEquals("the run went on after the rejected batch", 1, ingests.get())
+                assertEquals(50, db.count())
                 assertEquals("the rejected batch is counted", 100, DroppedEventsCounter.peek())
+                assertEquals(false, ai.appdna.sdk.events.UploadPauseGate.isPaused(ctx))
+                // The next run sends the events behind it.
+                assertEquals(EventUploadWorker.Outcome.DONE,
+                    EventUploadWorker.uploadPending(db, "adn_test_worker", server.baseUrl, context = ctx))
+                assertEquals(0, db.count())
             } finally {
+                db.close()
+            }
+        }
+    }
+
+    /** A 401 drops the batch, pauses uploads (the gate the queue honours) and retries nothing. */
+    @Test fun aRejectedKeyPausesUploadsFromTheWorker() {
+        TestHttpServer { _, _ -> 401 to "{}" }.use { server ->
+            val db = EventDatabase(ctx, 10_000, "worker_401_${System.nanoTime()}.db")
+            try {
+                ai.appdna.sdk.events.UploadPauseGate.setForTest(ctx, false)
+                db.insertEvents((0 until 150).map { event(it).toString() })
+                assertEquals(EventUploadWorker.Outcome.DONE,
+                    EventUploadWorker.uploadPending(db, "adn_test_worker", server.baseUrl, context = ctx))
+                assertEquals(50, db.count())
+                assertEquals(true, ai.appdna.sdk.events.UploadPauseGate.isPaused(ctx))
+                // The paused gate holds for the next run.
+                assertEquals(EventUploadWorker.Outcome.DONE, EventUploadWorker.uploadPending(db, "adn_test_worker",
+                    server.baseUrl, paused = ai.appdna.sdk.events.UploadPauseGate.isPaused(ctx), context = ctx))
+                assertEquals("a paused run sent a batch", 50, db.count())
+            } finally {
+                ai.appdna.sdk.events.UploadPauseGate.setForTest(ctx, false)
                 db.close()
             }
         }

@@ -11,7 +11,7 @@ import org.junit.Test
  * working. "Not set by the host" is the default value (`requested*`), and resolves exactly like iOS's unset
  * option (shared fixture `runtime_settings_precedence`).
  *
- * NEGATIVE CONTROL: against the round-33 nullable properties this file does not compile (Long? / Int? where
+ * NEGATIVE CONTROL: against nullable properties this file does not compile (Long? / Int? where
  * Long / Int are required).
  */
 class AppDNAOptionsKotlinCompatTest {

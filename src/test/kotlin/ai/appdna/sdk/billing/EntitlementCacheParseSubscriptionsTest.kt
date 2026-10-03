@@ -6,7 +6,7 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 /**
- * SPEC-070-A A.23 — verifies that the static `subscriptions[]` parser
+ * Verifies that the static `subscriptions[]` parser
  * produces the same Entitlement shape as iOS
  * (`Billing/EntitlementCache.swift:63-81`).
  *

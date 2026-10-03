@@ -9,7 +9,7 @@ import org.robolectric.RobolectricTestRunner
 import org.robolectric.RuntimeEnvironment
 
 /**
- * SPEC-036-H — per-item flag + message serving (Android read side). Covers the exact logic where the
+ * Per-item flag + message serving (Android read side). Covers the exact logic where the
  * R1/R2 audit bugs lived: flag `.value` unwrap, null-flag → unset, prune-to-index-keyset (removal),
  * empty-set clear, and the R2 `parseMessages` cold-start wrapper-unwrap. Mirrors the iOS suite.
  */

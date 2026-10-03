@@ -29,7 +29,7 @@ import ai.appdna.sdk.screens.ScreenSection
 import ai.appdna.sdk.screens.SectionRegistry
 
 /**
- * SPEC-070-A I.1 — Paywall section renderer (Screens SDUI).
+ * Paywall section renderer (Screens SDUI).
  *
  * Ports the iOS `PaywallSectionWrapperImpl.swift` (961 LOC) dispatch table
  * for the 24 `paywall_*` section types so SDUI screens render the same
@@ -300,7 +300,7 @@ private fun PaywallCountdownSection(section: ScreenSection) {
             remaining -= 1
         }
     }
-    // Round-24 — the SDUI countdown section rendered NO label at all, while iOS + the main paywall
+    // The SDUI countdown section rendered NO label at all, while iOS + the main paywall
     // countdown render the "Offer ends in" label. Add it (label_text ?? label, 14sp/SemiBold/#7F1D1D
     // defaults, honoring label_font_size + label_color) so the two platforms + the two paywall paths agree.
     val labelText = (section.data["label_text"] as? String) ?: (section.data["label"] as? String)
@@ -346,7 +346,7 @@ private fun PaywallLegalSection(section: ScreenSection, context: SectionContext)
         modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 4.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
-        // SPEC-485 (#649) — inline `[label](url)` links, via the SAME parser PaywallActivity uses,
+        // Inline `[label](url)` links, via the SAME parser PaywallActivity uses,
         // and the AUTHORED alignment. This was a plain Text with TextAlign.Center hardcoded, so a
         // legal line reading "see our [Terms](https://…)" showed the literal brackets here while
         // rendering correctly on the other Android path, and the alignment setting did nothing.
@@ -582,7 +582,7 @@ private fun PaywallImageSection(section: ScreenSection) {
 }
 
 /**
- * SPEC-070-A finalization B5 P1 — render real video instead of empty Box.
+ * Render real video instead of empty Box.
  * Wires `paywall_video` section data through the same VideoBlockView used
  * by onboarding content_blocks. Mirrors iOS PaywallSectionWrapperImpl
  * which dispatches `video` directly to VideoBlockView.
@@ -620,7 +620,7 @@ private fun PaywallVideoSection(section: ScreenSection) {
 }
 
 /**
- * SPEC-070-A finalization B5 P1 — render real Lottie animation instead of
+ * Render real Lottie animation instead of
  * empty Box, matching iOS PaywallSectionWrapperImpl.
  */
 @Composable
@@ -653,7 +653,7 @@ private fun PaywallLottieSection(section: ScreenSection) {
 }
 
 /**
- * SPEC-070-A finalization B5 P1 — render real Rive animation instead of
+ * Render real Rive animation instead of
  * empty Box, matching iOS PaywallSectionWrapperImpl.
  */
 @Composable
@@ -725,7 +725,7 @@ private fun PaywallCarouselSection(section: ScreenSection, context: SectionConte
 }
 
 /**
- * SPEC-070-A I.1 — Survey section renderer (Screens SDUI). Mirrors iOS
+ * Survey section renderer (Screens SDUI). Mirrors iOS
  * `SurveySectionWrapperImpl.swift`. The 6 survey_* section types resolve
  * to either a [SurveyQuestionView] (NPS/CSAT/rating/single/multi/free
  * text/yes-no/emoji) or a thank-you card. Answer changes dispatch a
@@ -853,7 +853,7 @@ private fun SurveyThankYouSection(section: ScreenSection, context: SectionContex
 }
 
 /**
- * SPEC-070-A I.1 — In-app message section renderer (Screens SDUI). Mirrors
+ * In-app message section renderer (Screens SDUI). Mirrors
  * iOS `MessageSectionWrapperImpl.swift`. Supports `message_banner`,
  * `message_modal`, `message_content`. CTA tap → `next` (or deep_link/openWebview
  * when `cta_action` carries a typed action).
@@ -981,7 +981,7 @@ internal fun OnboardingSectionWrapper(section: ScreenSection, context: SectionCo
             }
         }
         "onboarding_step" -> {
-            // SPEC-070-A finalization B5#P1 / iOS ModuleSectionWrappers.swift:38-54 —
+            // / iOS ModuleSectionWrappers.swift:38-54
             // re-dispatch to ContentBlocksSectionRenderer with `blocks` keyed
             // off the section's `content_blocks` payload. Lets onboarding
             // content authors embed an entire content-block step inside an
@@ -1006,7 +1006,7 @@ internal fun OnboardingSectionWrapper(section: ScreenSection, context: SectionCo
     }
 }
 
-// SPEC-070-A finalization B6#P0-1 — non-extension wrapper called from
+// Non-extension wrapper called from
 // AppDNA.configure() so callers don't need to import the extension form
 // or use a `with(receiver) { ... }` block.
 internal fun registerAllModuleSections() = SectionRegistry.registerModuleSections()

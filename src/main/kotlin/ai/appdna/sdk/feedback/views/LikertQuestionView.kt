@@ -32,7 +32,7 @@ import ai.appdna.sdk.feedback.SurveyAnswer
 import ai.appdna.sdk.feedback.SurveyQuestion
 
 /**
- * SPEC-070-A J.1 — Likert scale question.
+ * Likert scale question.
  *
  * Renders a horizontal numeric scale (default 1..5; configurable via
  * `likertConfig.min` / `likertConfig.max`) with optional left/right anchor
@@ -52,7 +52,7 @@ fun LikertQuestionView(
     question: SurveyQuestion,
     answer: SurveyAnswer?,
     onAnswer: (SurveyAnswer) -> Unit,
-    // SPEC-084: Gap #20 — question text style token
+    // Gap #20 — question text style token
     questionTextStyle: TextStyle = TextStyle.Default,
 ) {
     val cfg = question.likertConfig
@@ -83,7 +83,7 @@ fun LikertQuestionView(
                         .size(width = 40.dp, height = 44.dp)
                         .clip(RoundedCornerShape(8.dp))
                         .background(
-                            // R88 — match iOS Likert/NPS hardcoded #6366F1
+                            // Match iOS Likert/NPS hardcoded #6366F1
                             // brand color for selected background. Material3
                             // primary defaults to purple (#6750A4), visibly
                             // off-brand vs iOS at default theme.

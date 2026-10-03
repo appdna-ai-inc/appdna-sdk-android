@@ -28,9 +28,9 @@ fun NpsQuestionView(
     question: SurveyQuestion,
     answer: SurveyAnswer?,
     onAnswer: (SurveyAnswer) -> Unit,
-    // SPEC-084: Gap #20 — question text style token
+    // Gap #20 — question text style token
     questionTextStyle: TextStyle = TextStyle.Default,
-    // R89 — honor the survey theme's resolved colors (was hardcoded brandAccentColor() fill +
+    // Honor the survey theme's resolved colors (was hardcoded brandAccentColor() fill +
     // Color.White label). Defaults preserve prior behavior for callers that do not pass them.
     accentColor: Color = ai.appdna.sdk.AppDNA.brandAccentColor(),
     buttonTextColor: Color = Color.White,
@@ -49,16 +49,16 @@ fun NpsQuestionView(
         Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
             for (score in 0..10) {
                 val isSelected = selectedScore == score
-                // SPEC-070-A J.11 — NPS score 0..10 announced as
+                // NPS score 0..10 announced as
                 // "NPS score N" by TalkBack.
                 val scoreCd = stringResource(R.string.appdna_a11y_nps_score, score)
                 Box(
                     modifier = Modifier
                         .size(width = 30.dp, height = 40.dp)
                         .clip(RoundedCornerShape(8.dp))
-                        // R89 — selected score fill honors the survey theme's resolved
+                        // Selected score fill honors the survey theme's resolved
                         // accent_color (threaded from SurveyActivity). Was hardcoded
-                        // brandAccentColor() (R88 "match iOS #6366F1"), which ignored
+                        // brandAccentColor() ("match iOS #6366F1"), which ignored
                         // SurveyTheme.accent_color.
                         .background(if (isSelected) accentColor else Color.Gray.copy(alpha = 0.1f))
                         .clickable { onAnswer(SurveyAnswer(question.id, score)) }

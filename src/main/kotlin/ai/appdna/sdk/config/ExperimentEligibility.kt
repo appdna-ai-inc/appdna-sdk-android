@@ -129,27 +129,22 @@ internal data class ExperimentEligibilityContext(
 
 /**
  * The device's country for the targeting "Countries" rule — one definition on both platforms (iOS `DeviceRegion`):
- * the first candidate that is an ISO-3166 alpha-2 code (exactly two ASCII letters, upper-cased; a UN M.49 area such as
- * `419` is not a country). Candidates, in order: the default locale's country, the other entries of the locale list,
- * then the SIM's country and the mobile network's country. None → null (a country rule then fails closed). A
- * region-less default locale (`en`) used to give "" here — no country at all — where iOS fell back.
+ * the device's REGION SETTING, read from its locales. The first candidate that is an ISO-3166 alpha-2 code (exactly
+ * two ASCII letters, upper-cased; a UN M.49 area such as `419` is not a country), from the default locale's country,
+ * then the country of each other entry of the locale list, in order. None → null (a country rule then fails closed).
+ *
+ * The SIM's and the mobile network's country are NOT read: iOS has no equivalent (`CTCarrier`'s country code is
+ * deprecated and answers a placeholder since iOS 16), so reading them here made the same device settings target
+ * differently per platform (Android found a country where iOS found none). The documented rule is the device region.
  */
 internal object DeviceRegion {
-    fun current(context: Context?): String? {
-        val candidates = sequence<String?> {
-            yield(Locale.getDefault().country)
-            val list = android.os.LocaleList.getDefault()
-            for (i in 0 until list.size()) yield(list.get(i)?.country)
-            val tm = try {
-                context?.getSystemService(Context.TELEPHONY_SERVICE) as? android.telephony.TelephonyManager
-            } catch (_: Throwable) { null }
-            if (tm != null) {
-                yield(try { tm.simCountryIso } catch (_: Throwable) { null })
-                yield(try { tm.networkCountryIso } catch (_: Throwable) { null })
-            }
-        }
-        return resolve(candidates)
-    }
+    @Suppress("UNUSED_PARAMETER")
+    fun current(context: Context?): String? =
+        current(Locale.getDefault(), android.os.LocaleList.getDefault().let { list -> (0 until list.size()).mapNotNull { list.get(it) } })
+
+    /** The region from these locales: [default] first, then [list] in order (the seam the shared fixtures drive). */
+    fun current(default: Locale?, list: List<Locale>): String? =
+        resolve(sequenceOf(default?.country) + list.asSequence().map { it.country })
 
     /** The first ISO-3166 alpha-2 code among [candidates], upper-cased; null when there is none. */
     fun resolve(candidates: Sequence<String?>): String? = candidates

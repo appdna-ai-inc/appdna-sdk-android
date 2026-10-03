@@ -1,7 +1,7 @@
 package ai.appdna.sdk.onboarding
 
 /**
- * SPEC-070-B — the decision seam for a `permission` CTA.
+ * The decision seam for a `permission` CTA.
  *
  * WHY THIS FILE EXISTS: the permission action had NO observable seam on Android. The whole
  * behavior lived in `runPermissionPipeline()`, a closure inside `@Composable OnboardingFlowHost`

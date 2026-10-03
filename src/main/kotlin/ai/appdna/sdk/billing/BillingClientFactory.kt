@@ -6,7 +6,7 @@ import com.android.billingclient.api.PendingPurchasesParams
 import com.android.billingclient.api.PurchasesUpdatedListener
 
 /**
- * SPEC-070-A J.23 — injectable seam for [BillingConnectionManager].
+ * Injectable seam for [BillingConnectionManager].
  *
  * The default implementation builds a real Google Play [BillingClient] (the
  * exact same shape that previously lived inline in
@@ -27,7 +27,7 @@ internal fun interface BillingClientFactory {
 
 /**
  * Production [BillingClientFactory] — opts in to one-time-product pending
- * purchases (matches SPEC-070-A A.25 typed `PendingPurchasesParams` builder
+ * purchases (matches typed `PendingPurchasesParams` builder
  * in billing-ktx 7+; subscription pending state is always enabled).
  */
 internal val DefaultBillingClientFactory: BillingClientFactory =

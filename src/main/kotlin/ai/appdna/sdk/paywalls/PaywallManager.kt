@@ -16,10 +16,10 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
 /**
- * SPEC-070-A I.13 selection algorithm, lifted out of [PaywallManager.presentByPlacement] so it can
+ * Selection algorithm, lifted out of [PaywallManager.presentByPlacement] so it can
  * be exercised without an Activity or a RemoteConfigManager.
  *
- * Fix (SPEC-070-B): `audience_rules` was cast to `Map` only. The console also writes the LIST
+ * Fix: `audience_rules` was cast to `Map` only. The console also writes the LIST
  * shape (`[{trait, operator, value}, ...]`) — for those paywalls the cast produced `null`, which
  * this code read as "no targeting" (matches EVERY user) and as priority 0 (so ordering between
  * candidates was arbitrary/insertion-ordered). [AudienceRuleSet.fromAny] accepts both shapes,
@@ -55,7 +55,7 @@ internal data class RestoreOutcome(
     val events: List<Pair<String, Map<String, Any>>>,
     /** Fire `AppDNAPaywallDelegate.onPaywallRestoreCompleted(paywallId, this)`. */
     val restoredProductIds: List<String>,
-    /** Auto-dismiss the live paywall (SPEC-401 Fix 1C). */
+    /** Auto-dismiss the live paywall. */
     val shouldDismiss: Boolean,
 )
 
@@ -89,7 +89,7 @@ internal fun restoreOutcome(
  * Manages paywall presentation, purchase flow, restore flow, and event tracking (Android).
  * Mirrors iOS [Paywalls/PaywallManager.swift].
  *
- * SPEC-070-A C.3 / C.5 / C.6 — owns:
+ * Owns:
  *   - Plan-tap → BillingModule.purchase → purchase events + delegate fires
  *     + post_purchase.on_success dispatch.
  *   - Plan-tap failure → purchase_failed event + delegate fire +
@@ -102,14 +102,14 @@ internal fun restoreOutcome(
 internal class PaywallManager(
     private val remoteConfigManager: RemoteConfigManager,
     private val eventTracker: EventTracker,
-    // SPEC-036-F §1.2 — consulted at present-time for a running paywall
+    // Consulted at present-time for a running paywall
     // experiment targeting the entity being shown.
     private val experimentManager: ai.appdna.sdk.config.ExperimentManager? = null,
 ) {
     private val scope = CoroutineScope(Dispatchers.Main + SupervisorJob())
 
     /**
-     * SPEC-070-A I.13 — Present the highest-priority paywall whose
+     * Present the highest-priority paywall whose
      * `placement` matches and whose audience rules evaluate true for the
      * current user.  Mirrors iOS
      * `Paywalls/PaywallManager.swift:28-58 presentByPlacement(...)`.
@@ -172,7 +172,7 @@ internal class PaywallManager(
         val activeConfig = remoteConfigManager.getPaywallConfig(id)
         if (activeConfig == null) {
             Log.error("Paywall config not found for id: $id")
-            // SPEC-070-B — no product was ever selected here (the paywall never rendered), so
+            // No product was ever selected here (the paywall never rendered), so
             // `productId` is genuinely null rather than unknown.
             val configError = IllegalStateException("Paywall config not found")
             listener?.onPaywallPurchaseFailed(
@@ -184,11 +184,11 @@ internal class PaywallManager(
             return
         }
 
-        // SPEC-036-F §1.2 — experiment-aware presentation. If a `running`
+        // Experiment-aware presentation. If a `running`
         // paywall experiment targets this entity and the user buckets into the
         // treatment, render the treatment `payload` config instead of the
         // active one. Control / non-bucketed / old-doc → active (cohort
-        // isolation §1.3).
+        // isolation).
         var config = activeConfig
         val resolution = experimentManager?.resolveSurfacePresentation("paywall", id)
         if (resolution is ai.appdna.sdk.config.ExperimentManager.SurfaceResolution.RenderTreatment) {
@@ -199,7 +199,7 @@ internal class PaywallManager(
             }
         }
 
-        // Track view event. SPEC-070-B PN row 4 (D-s): `customData` is merged in here — this is its
+        // Track view event. `customData` is merged in here — this is its
         // only consumer, and a parameter with no consumer is a parameter that does nothing.
         val viewProps = mutableMapOf<String, Any>(
             "paywall_id" to id,
@@ -214,7 +214,7 @@ internal class PaywallManager(
         }
         eventTracker.track("paywall_view", viewProps)
 
-        // SPEC-401-A R78 (Lens A P1) — prefetch all paywall image URLs
+        // Prefetch all paywall image URLs
         // before launching Activity, mirroring iOS PaywallManager.swift
         // :96-148 + collectImageURLs at :154-198. Was missing — every
         // paywall presentation showed AsyncImage placeholder flash on
@@ -249,9 +249,9 @@ internal class PaywallManager(
                 listener?.onPaywallDismissed(paywallId = id)
             },
             onPlanSelected = { plan, metadata ->
-                // SPEC-070-A B.5 — onPaywallAction(CTA_TAPPED) for the CTA tap.
+                // onPaywallAction(CTA_TAPPED) for the CTA tap.
                 listener?.onPaywallAction(paywallId = id, action = PaywallAction.CTA_TAPPED)
-                // SPEC-070-A C.6 — invoke BillingModule + dispatch post-purchase.
+                // Invoke BillingModule + dispatch post-purchase.
                 handlePurchase(
                     activity = activity,
                     paywallId = id,
@@ -261,20 +261,20 @@ internal class PaywallManager(
                     listener = listener,
                 )
             },
-            // AC-037: Wire delegate promo code callback
+            // Wire delegate promo code callback
             onPromoCodeSubmit = if (listener != null) {
                 { code, completion ->
                     listener.onPromoCodeSubmit(paywallId = id, code = code, completion = completion)
                 }
             } else null,
-            // SPEC-070-A C.3 — wire restore lifecycle
+            // Wire restore lifecycle
             onRestore = {
                 handleRestore(paywallId = id, listener = listener)
             },
         )
     }
 
-    // MARK: - Purchase flow (SPEC-070-A C.6)
+    // MARK: - Purchase flow
 
     /**
      * Mirrors iOS `PaywallManager.handlePurchase`. Calls
@@ -452,7 +452,7 @@ internal class PaywallManager(
         }
     }
 
-    // MARK: - Post-purchase actions (SPEC-070-A C.5)
+    // MARK: - Post-purchase actions
 
     /**
      * Mirrors iOS `PaywallManager.handlePostPurchaseSuccess` (4 actions:
@@ -474,10 +474,10 @@ internal class PaywallManager(
         }
         val delayMs = (config.delay_ms ?: 2000).toLong()
         scope.launch {
-            // Round-12 Finding 1 — after a successful purchase, iOS DISMISSES the paywall in EVERY
+            // After a successful purchase, iOS DISMISSES the paywall in EVERY
             // success action (PaywallManager.swift:355-391 `viewController.dismiss`). Android fired the
             // delegates but NEVER finished the Activity, so the paywall stayed on screen.
-            // Round-13 fix — dismiss with `suppressDismissCallback = true` so the Activity's onDestroy
+            // Fix — dismiss with `suppressDismissCallback = true` so the Activity's onDestroy
             // backstop does NOT re-run the onDismiss lambda (which would emit `paywall_close` AND
             // onPaywallDismissed). iOS fires neither a paywall_close nor a second onPaywallDismissed on
             // the post-purchase path — it just dismisses and fires onPaywallDismissed ONCE (in the
@@ -493,7 +493,7 @@ internal class PaywallManager(
                     // slot watched by the live PaywallActivity composition
                     // (mirrors iOS NotificationCenter `.paywallPurchaseSuccess`).
                     PaywallActivity.postPurchaseOverlay = PostPurchaseOverlayState(
-                        // Round-29 — default to "Welcome to Premium!" like iOS (PaywallManager.swift). A
+                        // Default to "Welcome to Premium!" like iOS (PaywallManager.swift). A
                         // show_message action with a blank message (the console field is optional and its
                         // placeholder IS this string) rendered a blank overlay on Android; iOS shows the
                         // default success copy.
@@ -544,11 +544,11 @@ internal class PaywallManager(
         if (config == null) return
         when (config.action) {
             "dismiss" -> {
-                // SPEC-401-A R83 (Lens B P1) — actually finish the
+                // Actually finish the
                 // PaywallActivity matching iOS PaywallManager.swift:402-403
                 // `viewController.dismiss(animated: true)`. Was only firing
                 // delegate but leaving Activity on-screen.
-                // Round-14 — match iOS's failure-dismiss exactly: NO delegate, no paywall_close. Suppress
+                // Match iOS's failure-dismiss exactly: NO delegate, no paywall_close. Suppress
                 // the onDestroy backstop (which would emit paywall_close + onPaywallDismissed) so this
                 // path doesn't double-fire onPaywallDismissed + a spurious paywall_close — the same fix
                 // applied to the SUCCESS branches in f2b524ff, previously left unfixed here.
@@ -559,7 +559,7 @@ internal class PaywallManager(
                     message = config.message ?: "Payment failed. Please try again.",
                     confetti = false,
                     lottieUrl = null,
-                    // SPEC-070-A finalization parity audit R6 — propagate
+                    // Propagate
                     // retry_text and action so the failure overlay can render
                     // a labelled retry CTA. Mirrors iOS PaywallManager.swift:
                     // 309-313 + PaywallRenderer.swift:351-353. Without this,
@@ -574,7 +574,7 @@ internal class PaywallManager(
         }
     }
 
-    // MARK: - Restore flow (SPEC-070-A C.3)
+    // MARK: - Restore flow
 
     /**
      * Mirrors iOS `PaywallManager.handleRestore`. Fires
@@ -637,7 +637,7 @@ internal class PaywallManager(
                     productIds = outcome.restoredProductIds,
                 )
                 Log.info("Restore completed for paywall $paywallId with ${productIds.size} products")
-                // SPEC-401 R3 audit Lens A/B — clear the public
+                // /B — clear the public
                 // `skipNextAutoDismissOnRestore` flag on EVERY restore
                 // terminal event (success-with-products, empty-success,
                 // and the failure path below) so the one-shot flag can't
@@ -647,7 +647,7 @@ internal class PaywallManager(
                 // decision is only valid once it has run — re-derive it with the real flag.
                 val hostRequestedSkip = AppDNA.paywall.skipNextAutoDismissOnRestore
                 AppDNA.paywall.skipNextAutoDismissOnRestore = false
-                // SPEC-401 Fix 1C — auto-dismiss the live PaywallActivity
+                // Auto-dismiss the live PaywallActivity
                 // when restore actually found entitlements. The delegate
                 // forward above runs FIRST so a host that wants to handle
                 // dismiss itself can flip `skipNextAutoDismissOnRestore`
@@ -675,7 +675,7 @@ internal class PaywallManager(
                     )),
                 )
                 listener?.onPaywallRestoreFailed(paywallId = paywallId, error = e)
-                // SPEC-401 R3 audit — symmetric clear on failure too so
+                // Symmetric clear on failure too so
                 // a host who set the flag for a restore that errored
                 // doesn't carry the flag into the next paywall's restore.
                 AppDNA.paywall.skipNextAutoDismissOnRestore = false
@@ -685,7 +685,7 @@ internal class PaywallManager(
     }
 
     /**
-     * SPEC-070-A audit Round 2 finding 6 — cancel the private scope so
+     * Cancel the private scope so
      * pending paywall metadata fetches and post-purchase dispatches don't
      * outlive [AppDNA.shutdown]. Mirrors the equivalent tear-down already
      * present on EventQueue, BillingModule, etc.
@@ -695,7 +695,7 @@ internal class PaywallManager(
     }
 
     /**
-     * SPEC-401-A R78 (Lens A P1) — gather every image URL referenced by a
+     * Gather every image URL referenced by a
      * paywall config, mirroring iOS PaywallManager.swift:154-198
      * `collectImageURLs`. Includes background, layout.background, all
      * sections (header image_url, plans image_urls, reviews avatar_urls,

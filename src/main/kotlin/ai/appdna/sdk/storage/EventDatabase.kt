@@ -65,7 +65,7 @@ private class NoBackupContext(base: Context, dbName: String) : ContextWrapper(ba
 }
 
 /**
- * SPEC-067: SQLite-based event persistence replacing SharedPreferences.
+ * SQLite-based event persistence replacing SharedPreferences.
  * Provides atomic row-level operations that survive process kills.
  * Enforces both event count cap (10K) and disk quota (5 MB of LIVE event bytes — each stored event's UTF-8
  * JSON plus one byte, the newline iOS stores after each line — the same measure as iOS `EventStore`, not the
@@ -75,7 +75,7 @@ private class NoBackupContext(base: Context, dbName: String) : ContextWrapper(ba
  */
 internal class EventDatabase(
     context: Context,
-    // SPEC-428: injectable so the shared behavioral fixtures (events/ category) drive eviction at a
+    // Injectable so the shared behavioral fixtures (events/ category) drive eviction at a
     // small cap with an isolated db. Production callers use the defaults.
     private val maxEvents: Int = MAX_EVENTS,
     dbName: String = DATABASE_NAME,
@@ -84,7 +84,7 @@ internal class EventDatabase(
 ) : SQLiteOpenHelper(NoBackupContext(context, dbName), dbName, null, DATABASE_VERSION) {
 
     init {
-        // SPEC-428 CL-1/D2: wire the dropped-events counter to this app context.
+        // Wire the dropped-events counter to this app context.
         ai.appdna.sdk.events.DroppedEventsCounter.init(context)
     }
 
@@ -104,6 +104,14 @@ internal class EventDatabase(
         private const val COL_META_COUNT = "meta_count"
         /** The stored JSON's UTF-8 length. */
         private const val COL_PAYLOAD_BYTES = "payload_bytes"
+        /**
+         * The running totals of the event table — one row: its row count and its live event bytes (see [liveBytes]).
+         * Kept by triggers on every INSERT / DELETE / UPDATE of the event table, so they change in the same
+         * transaction as the rows, whichever helper (the queue's, the WorkManager uploader's) writes; rebuilt from the
+         * table on create, on upgrade / downgrade, and when an open finds them missing or not matching the table.
+         */
+        private const val TABLE_STATS = "event_stats"
+        private const val STATS_TRIGGERS = 3
         /** Rows parsed per step of the v3 back-fill. */
         private const val BACKFILL_CHUNK = 1_000
         /** SQLite's default bound-parameter limit is 999. */
@@ -111,11 +119,11 @@ internal class EventDatabase(
 
         const val MAX_EVENTS = 10_000
         const val MAX_DISK_BYTES = 5 * 1024 * 1024 // 5 MB
-        // SPEC-428 CL-2/D5: client redelivery horizon (7d, tracking SPEC-426's server dedup window).
+        // Client redelivery horizon (7d, tracking the server's dedup window).
         const val REDELIVERY_HORIZON_MS = 7L * 24 * 60 * 60 * 1000
 
         /**
-         * SPEC-070-B PN row 19 (W14) — an age past this is not a stale event, it is a broken clock.
+         * An age past this is not a stale event, it is a broken clock.
          * The horizon compares wall clocks, so a forward clock jump makes every queued event look
          * older than 7 days at once and prunes it **unsent**. Beyond this bound, and for any negative
          * age (the clock moved backwards), we keep the event: a retained event costs a retry, a pruned
@@ -131,9 +139,16 @@ internal class EventDatabase(
         }
     }
 
+    /**
+     * Idempotent — every statement is `IF NOT EXISTS`, and the totals are computed from the table. `SQLiteOpenHelper`
+     * reads the version BEFORE it takes the write lock: two helpers opening a NEW file (the queue's and the
+     * WorkManager uploader's) can both see version 0 and both run `onCreate`, the second after the first committed. A
+     * plain `CREATE TABLE` then threw "table pending_events already exists", and the second helper could not open
+     * the database.
+     */
     override fun onCreate(db: SQLiteDatabase) {
         db.execSQL("""
-            CREATE TABLE $TABLE_EVENTS (
+            CREATE TABLE IF NOT EXISTS $TABLE_EVENTS (
                 $COL_ID INTEGER PRIMARY KEY AUTOINCREMENT,
                 $COL_EVENT_JSON TEXT NOT NULL,
                 $COL_CREATED_AT INTEGER NOT NULL DEFAULT (strftime('%s', 'now') * 1000),
@@ -145,7 +160,77 @@ internal class EventDatabase(
         """.trimIndent())
         db.execSQL("CREATE INDEX IF NOT EXISTS idx_events_created_at ON $TABLE_EVENTS($COL_CREATED_AT)")
         createLookupIndexes(db)
+        ensureStats(db, rebuild = true)
     }
+
+    /**
+     * Every open checks the running totals: present (table, row, the three triggers) and matching the table's row
+     * count. Missing or off — an SDK without them wrote the file (a rollback), or the file was changed outside the
+     * SDK — they are rebuilt from the table. One indexed `COUNT(*)` per open, never per insert.
+     */
+    override fun onOpen(db: SQLiteDatabase) {
+        super.onOpen(db)
+        if (db.isReadOnly) return
+        try {
+            val triggers = db.rawQuery(
+                "SELECT COUNT(*) FROM sqlite_master WHERE type = 'trigger' AND tbl_name = '$TABLE_EVENTS' AND name LIKE 'trg_events_stats_%'",
+                null,
+            ).use { if (it.moveToFirst()) it.getInt(0) else 0 }
+            val stats = if (triggers == STATS_TRIGGERS) readStats(db) else null
+            val rows = db.rawQuery("SELECT COUNT(*) FROM $TABLE_EVENTS", null).use { if (it.moveToFirst()) it.getLong(0) else 0L }
+            if (stats == null || stats.first != rows) {
+                db.beginTransaction()
+                try {
+                    ensureStats(db, rebuild = true)
+                    db.setTransactionSuccessful()
+                } finally {
+                    db.endTransaction()
+                }
+                statsRebuilds.incrementAndGet()
+                if (stats != null) Log.warning("Event database totals did not match the table — rebuilt")
+            }
+        } catch (e: Exception) {
+            Log.warning("Event database totals check failed: ${e.message}")
+        }
+    }
+
+    /**
+     * Creates the totals table and its triggers when absent; [rebuild] recomputes the totals from the table (one
+     * statement, so a concurrent helper sees the old totals or the new, never a mix).
+     */
+    private fun ensureStats(db: SQLiteDatabase, rebuild: Boolean) {
+        db.execSQL("CREATE TABLE IF NOT EXISTS $TABLE_STATS (id INTEGER PRIMARY KEY CHECK (id = 1), row_count INTEGER NOT NULL, live_bytes INTEGER NOT NULL)")
+        val size = { row: String -> "COALESCE($row.$COL_PAYLOAD_BYTES, LENGTH(CAST($row.$COL_EVENT_JSON AS BLOB))) + 1" }
+        db.execSQL(
+            "CREATE TRIGGER IF NOT EXISTS trg_events_stats_insert AFTER INSERT ON $TABLE_EVENTS BEGIN " +
+                "UPDATE $TABLE_STATS SET row_count = row_count + 1, live_bytes = live_bytes + ${size("NEW")} WHERE id = 1; END"
+        )
+        db.execSQL(
+            "CREATE TRIGGER IF NOT EXISTS trg_events_stats_delete AFTER DELETE ON $TABLE_EVENTS BEGIN " +
+                "UPDATE $TABLE_STATS SET row_count = row_count - 1, live_bytes = live_bytes - (${size("OLD")}) WHERE id = 1; END"
+        )
+        db.execSQL(
+            "CREATE TRIGGER IF NOT EXISTS trg_events_stats_update AFTER UPDATE OF $COL_PAYLOAD_BYTES, $COL_EVENT_JSON ON $TABLE_EVENTS BEGIN " +
+                "UPDATE $TABLE_STATS SET live_bytes = live_bytes - (${size("OLD")}) + ${size("NEW")} WHERE id = 1; END"
+        )
+        if (rebuild) {
+            db.execSQL(
+                "INSERT OR REPLACE INTO $TABLE_STATS (id, row_count, live_bytes) SELECT 1, COUNT(*), " +
+                    "COALESCE(SUM(COALESCE($COL_PAYLOAD_BYTES, LENGTH(CAST($COL_EVENT_JSON AS BLOB))) + 1), 0) FROM $TABLE_EVENTS"
+            )
+        }
+    }
+
+    /** The running totals: (row count, live bytes); null when there are none. */
+    private fun readStats(db: SQLiteDatabase): Pair<Long, Long>? = try {
+        db.rawQuery("SELECT row_count, live_bytes FROM $TABLE_STATS WHERE id = 1", null).use {
+            if (it.moveToFirst()) it.getLong(0) to it.getLong(1) else null
+        }
+    } catch (_: Exception) { null }
+
+    /** Times an open rebuilt the totals (test reader). */
+    private val statsRebuilds = java.util.concurrent.atomic.AtomicInteger(0)
+    internal val statsRebuildsForTest: Int get() = statsRebuilds.get()
 
     /**
      * Every upgrade brings the table to this version's shape through [ensureSchema], which checks what is there
@@ -221,6 +306,7 @@ internal class EventDatabase(
         // The payload size is SQL: the UTF-8 length of the stored JSON.
         db.execSQL("UPDATE $TABLE_EVENTS SET $COL_PAYLOAD_BYTES = LENGTH(CAST($COL_EVENT_JSON AS BLOB)) WHERE $COL_PAYLOAD_BYTES IS NULL")
         createLookupIndexes(db)
+        ensureStats(db, rebuild = true)
     }
 
     /**
@@ -309,7 +395,7 @@ internal class EventDatabase(
                 lookup?.let { putAll(it) }
                 put(COL_EVENT_JSON, eventJson)
                 put(COL_PAYLOAD_BYTES, eventJson.toByteArray(Charsets.UTF_8).size)
-                put(COL_CREATED_AT, System.currentTimeMillis()) // SPEC-428 CL-6: milliseconds, not seconds
+                put(COL_CREATED_AT, System.currentTimeMillis()) // Milliseconds, not seconds
             }
             db.insert(TABLE_EVENTS, null, values)
             enforceQuotas(db)
@@ -332,7 +418,7 @@ internal class EventDatabase(
                         lookupValues(eventJson)?.let { putAll(it) }
                         put(COL_EVENT_JSON, eventJson)
                         put(COL_PAYLOAD_BYTES, eventJson.toByteArray(Charsets.UTF_8).size)
-                        put(COL_CREATED_AT, System.currentTimeMillis()) // SPEC-428 CL-6: milliseconds, not seconds
+                        put(COL_CREATED_AT, System.currentTimeMillis()) // Milliseconds, not seconds
                     }
                     db.insert(TABLE_EVENTS, null, values)
                 }
@@ -428,7 +514,7 @@ internal class EventDatabase(
     }
 
     /**
-     * SPEC-428 CL-4/D3 — CONTENT-ADDRESSED removal: delete exactly the rows whose event's `event_id`
+     * CONTENT-ADDRESSED removal: delete exactly the rows whose event's `event_id`
      * was in the UPLOADED batch, never a re-derived "globally-oldest N". After a CL-1 in-memory
      * eviction the in-mem batch diverges from the DB's oldest N, so deleting the oldest N would drop
      * never-uploaded rows (LOSS) and leave the uploaded rows behind (DUP on the next flush).
@@ -449,9 +535,9 @@ internal class EventDatabase(
     }
 
     /**
-     * SPEC-428 CL-2/D5: drop events past the redelivery horizon so NO consumer — the in-process flush OR
+     * Drop events past the redelivery horizon so NO consumer — the in-process flush OR
      * the WorkManager uploader that fires hours/days later — re-sends an event past the server dedup window
-     * (double-count). This lives at the STORE so both paths are covered. Counted (CL-1). Returns # dropped.
+     * (double-count). This lives at the STORE so both paths are covered. Counted. Returns # dropped.
      */
     fun pruneStale(horizonMs: Long = REDELIVERY_HORIZON_MS): Int {
         val now = System.currentTimeMillis()
@@ -495,7 +581,7 @@ internal class EventDatabase(
     }
 
     /**
-     * SPEC-424 STEP-1a (CL-7): purge ALL persisted events WITHOUT uploading — analytics consent was
+     * Purge ALL persisted events WITHOUT uploading — analytics consent was
      * revoked, so queued-but-unsent events must never be transmitted.
      */
     fun clearAll() {
@@ -540,11 +626,10 @@ internal class EventDatabase(
     // MARK: - Private
 
     /**
-     * Enforce event count cap and disk quota.
+     * The TRUE loss over the oldest [limit] rows (the eviction set): 1 per normal event, but the carried N for a
+     * `_sdk_events_dropped` meta event, so evicting the meta before delivery re-adds (and re-emits) the N drops it
+     * represented instead of under-counting them to 1.
      */
-    // SPEC-428 STEP-4: sum the TRUE loss over the oldest `limit` rows (the eviction set) — count 1 per
-    // normal event, but the carried N for a `_sdk_events_dropped` META event, so evicting the meta before
-    // delivery re-adds (and re-emits) the N drops it represented instead of under-counting them to 1.
     private fun evictionLoss(db: SQLiteDatabase, limit: Int): Int {
         db.rawQuery(
             "SELECT COALESCE(SUM(COALESCE($COL_META_COUNT, 1)), 0) FROM (SELECT $COL_META_COUNT FROM $TABLE_EVENTS " +
@@ -553,68 +638,92 @@ internal class EventDatabase(
         ).use { c -> return if (c.moveToFirst()) c.getInt(0) else 0 }
     }
 
-    /** The live events' bytes: each row's JSON plus one (iOS stores a newline after each line). */
-    private fun liveBytes(db: SQLiteDatabase): Long =
-        db.rawQuery(
+    /**
+     * The live events' bytes: each row's JSON plus one (iOS stores a newline after each line) — read from the running
+     * totals, O(1). It used to SUM the whole table on every insert (on the caller's thread, usually the main one). A
+     * full scan runs only when the totals are missing ([liveBytesScans] counts it).
+     */
+    private fun liveBytes(db: SQLiteDatabase): Long = readStats(db)?.second ?: scanLiveBytes(db)
+
+    /** Rows in the table, from the running totals (O(1)); a `COUNT(*)` only when they are missing. */
+    private fun rowCount(db: SQLiteDatabase): Long = readStats(db)?.first
+        ?: db.rawQuery("SELECT COUNT(*) FROM $TABLE_EVENTS", null).use { liveBytesScans.incrementAndGet(); if (it.moveToFirst()) it.getLong(0) else 0L }
+
+    private fun scanLiveBytes(db: SQLiteDatabase): Long {
+        liveBytesScans.incrementAndGet()
+        return db.rawQuery(
             "SELECT COALESCE(SUM(COALESCE($COL_PAYLOAD_BYTES, LENGTH(CAST($COL_EVENT_JSON AS BLOB))) + 1), 0) FROM $TABLE_EVENTS",
             null,
         ).use { c -> if (c.moveToFirst()) c.getLong(0) else 0L }
+    }
 
-    /** The bytes [liveBytes] counts for the oldest [limit] rows. */
-    private fun oldestBytes(db: SQLiteDatabase, limit: Int): Long =
-        db.rawQuery(
-            "SELECT COALESCE(SUM(COALESCE($COL_PAYLOAD_BYTES, LENGTH(CAST($COL_EVENT_JSON AS BLOB))) + 1), 0) FROM " +
-                "(SELECT $COL_PAYLOAD_BYTES, $COL_EVENT_JSON FROM $TABLE_EVENTS ORDER BY $COL_CREATED_AT ASC, $COL_ID ASC LIMIT $limit)",
-            null,
-        ).use { c -> if (c.moveToFirst()) c.getLong(0) else 0L }
+    /** Whole-table scans the quota needed (test reader: an insert needs none). */
+    private val liveBytesScans = java.util.concurrent.atomic.AtomicInteger(0)
+    internal val liveBytesScansForTest: Int get() = liveBytesScans.get()
 
-    /** Live event bytes now (test reader; see [liveBytes]). */
-    internal fun liveBytesForTest(): Long = try { liveBytes(readableDatabase) } catch (_: Exception) { 0L }
+    /** Live event bytes now, from the running totals (test reader; see [liveBytes]). */
+    internal fun liveBytesForTest(): Long = try { liveBytes(writableDatabase) } catch (_: Exception) { 0L }
 
+    /** Live event bytes now, summed over the table (test reader: the totals must equal it). */
+    internal fun scannedLiveBytesForTest(): Long = try { scanLiveBytes(writableDatabase).also { liveBytesScans.decrementAndGet() } } catch (_: Exception) { 0L }
+
+    /** Test seam (null in production): called after each eviction DELETE, inside the eviction's transaction. */
+    @Volatile internal var evictionFaultForTest: ((pass: Int) -> Unit)? = null
+
+    /**
+     * Enforce the event count cap and the disk quota. O(1) when both hold (the running totals); otherwise one
+     * transaction evicts the oldest rows — the excess over the count cap, then the oldest 10 % until the live bytes
+     * fit, as iOS does. The loss is counted ONCE, after the transaction commits: counted inside it, a rollback (a
+     * failed DELETE, the process interrupted) left the counter raised for events that were never dropped.
+     */
     private fun enforceQuotas(db: SQLiteDatabase) {
-        // 1. Count cap
-        val currentCount = count()
-        if (currentCount > maxEvents) {
-            val excess = currentCount - maxEvents
-            val loss = evictionLoss(db, excess) // recover meta-carried drops BEFORE the DELETE
-            db.execSQL("""
-                DELETE FROM $TABLE_EVENTS WHERE $COL_ID IN (
-                    SELECT $COL_ID FROM $TABLE_EVENTS ORDER BY $COL_CREATED_AT ASC, $COL_ID ASC LIMIT $excess
-                )
-            """.trimIndent())
-            ai.appdna.sdk.events.DroppedEventsCounter.increment(loss) // SPEC-428 CL-1/D2/STEP-4
-            Log.warning("Event database overflow: dropped $excess oldest events (count cap; loss metric +$loss)")
-        }
-
-        // 2. Disk quota: the live events' bytes (iOS `EventStore`'s measure), not the SQLite file — the file
-        // carries pages, three indexes and a free list, so measuring it evicted events well under 5 MB of them,
-        // and (10 % once per insert) could stay over the quota. Drop the oldest 10 % until the events fit, as
-        // iOS does. One transaction: the uploader's handle never sees a half-evicted table.
-        var bytes = liveBytes(db)
-        if (bytes <= maxDiskBytes) return
-        var dropped = 0
+        val (rows0, bytes0) = readStats(db) ?: (rowCount(db) to liveBytes(db))
+        if (rows0 <= maxEvents && bytes0 <= maxDiskBytes) return
+        var droppedForCount = 0
+        var droppedForBytes = 0
         var loss = 0
         db.beginTransaction()
         try {
-            var remaining = count()
-            while (bytes > maxDiskBytes && remaining > 0) {
-                val dropCount = maxOf(remaining / 10, 1)
-                val passLoss = evictionLoss(db, dropCount) // recover meta-carried drops BEFORE the DELETE
-                bytes -= oldestBytes(db, dropCount)
-                db.execSQL("""
-                    DELETE FROM $TABLE_EVENTS WHERE $COL_ID IN (
-                        SELECT $COL_ID FROM $TABLE_EVENTS ORDER BY $COL_CREATED_AT ASC, $COL_ID ASC LIMIT $dropCount
-                    )
-                """.trimIndent())
-                ai.appdna.sdk.events.DroppedEventsCounter.increment(passLoss)
-                loss += passLoss
-                dropped += dropCount
-                remaining -= dropCount
+            var pass = 0
+            var rows = rowCount(db)
+            if (rows > maxEvents) {
+                val excess = (rows - maxEvents).toInt()
+                loss += evictionLoss(db, excess) // recover meta-carried drops BEFORE the DELETE
+                deleteOldest(db, excess)
+                droppedForCount = excess
+                evictionFaultForTest?.invoke(pass++)
+                rows = rowCount(db)
+            }
+            // 2. Disk quota: the live events' bytes (iOS `EventStore`'s measure), not the SQLite file — the file
+            // carries pages, three indexes and a free list, so measuring it evicted events well under 5 MB of them.
+            var bytes = liveBytes(db)
+            while (bytes > maxDiskBytes && rows > 0) {
+                val dropCount = maxOf((rows / 10).toInt(), 1)
+                loss += evictionLoss(db, dropCount)
+                deleteOldest(db, dropCount)
+                droppedForBytes += dropCount
+                evictionFaultForTest?.invoke(pass++)
+                rows = rowCount(db)
+                bytes = liveBytes(db)
             }
             db.setTransactionSuccessful()
         } finally {
             db.endTransaction()
         }
-        Log.warning("Event database disk quota enforced: dropped $dropped events (${maxDiskBytes / 1024}KB of live events; loss +$loss)")
+        // Committed: count the loss once.
+        ai.appdna.sdk.events.DroppedEventsCounter.increment(loss)
+        if (droppedForCount > 0) {
+            Log.warning("Event database overflow: dropped $droppedForCount oldest events (count cap)")
+        }
+        if (droppedForBytes > 0) {
+            Log.warning("Event database disk quota enforced: dropped $droppedForBytes events (${maxDiskBytes / 1024}KB of live events)")
+        }
+        if (loss > 0) Log.warning("Event database eviction: loss metric +$loss")
+    }
+
+    private fun deleteOldest(db: SQLiteDatabase, n: Int) {
+        db.execSQL(
+            "DELETE FROM $TABLE_EVENTS WHERE $COL_ID IN (SELECT $COL_ID FROM $TABLE_EVENTS ORDER BY $COL_CREATED_AT ASC, $COL_ID ASC LIMIT $n)"
+        )
     }
 }

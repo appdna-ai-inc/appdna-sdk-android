@@ -20,7 +20,7 @@ import com.google.firebase.firestore.ListenerRegistration
 import com.google.firebase.firestore.QueryDocumentSnapshot
 
 /**
- * SPEC-203 — listens for journey-triggered in-app messages at
+ * Listens for journey-triggered in-app messages at
  * `orgs/{orgId}/apps/{appId}/users/{userId}/pending_messages` and
  * renders them via `InAppMessageView` (the same composable used for
  * remote-config-driven messages — modal/fullscreen/banner/tooltip with
@@ -243,7 +243,7 @@ internal class PendingMessageListener(
         when (action.type) {
             "deep_link", "open_url" -> {
                 val url = action.url ?: return
-                // SPEC-070-B PN row 18 (W11): config-driven URL — scheme-checked before the OS sees it.
+                // Config-driven URL — scheme-checked before the OS sees it.
                 val uri = ai.appdna.sdk.core.URLSafety.sanitized(url, activity) ?: return
                 try {
                     activity.startActivity(Intent(Intent.ACTION_VIEW, uri))

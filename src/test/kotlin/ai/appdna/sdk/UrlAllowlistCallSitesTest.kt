@@ -18,7 +18,7 @@ import org.robolectric.annotation.Config
 import java.io.File
 
 /**
- * SPEC-070-B W11 — the scheme allowlist, asserted at the CALL SITES.
+ * The scheme allowlist, asserted at the CALL SITES.
  *
  * 🔴 `URLSafety` existed and was unit-tested, and the surfaces that matter most called straight past
  * it. `PaywallActivity` — the MONEY surface — built `Intent(ACTION_VIEW, Uri.parse(configString))`

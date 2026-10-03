@@ -10,7 +10,7 @@ import org.junit.Assert.assertEquals
 import org.junit.Test
 
 /**
- * SPEC-420 — pure persistence + delegate-payload contract for wheel-picker
+ * Pure persistence + delegate-payload contract for wheel-picker
  * measurement mode (Android leg). Mirrors iOS `MeasurementPersistenceTests.swift`
  * + the existing `InteractionResultTest`. Asserts the executed guarantee (not the
  * render): the base scalar is unit-stable across a toggle; the sibling keys are

@@ -9,7 +9,7 @@ import ai.appdna.sdk.billing.Entitlement
 import android.app.Activity
 
 /**
- * SPEC-070-A finalization B-5 — Adapty billing bridge for Android.
+ * Adapty billing bridge for Android.
  *
  * Mirrors iOS [AdaptyBridge.swift](packages/appdna-sdk-ios/Sources/AppDNASDK/Integrations/AdaptyBridge.swift)
  * and exposes the same conceptual API:
@@ -114,7 +114,7 @@ internal class AdaptyBridge {
     }
 
     /**
-     * SPEC-070-A finalization B3#P2 — forward a host-driven Adapty
+     * Forward a host-driven Adapty
      * purchase START into AppDNA analytics. Mirrors iOS
      * AdaptyBridge.swift:37-40 which fires `purchase_started` before
      * invoking `Adapty.makePurchase`. Hosts must call this just before
@@ -122,7 +122,7 @@ internal class AdaptyBridge {
      * `purchase_started` aren't undercount on Android.
      */
     fun forwardPurchaseStarted(productId: String) {
-        // SPEC-070-A finalization R2 P1 (Lens C) — enrich with
+        // Enrich with
         // paywall_id/experiment_id/price/currency via shared helper.
         val props = AppDNA.billing.manager
             ?.purchaseEventProps(productId, "adapty")
@@ -131,7 +131,7 @@ internal class AdaptyBridge {
     }
 
     /**
-     * SPEC-070-A finalization R2 P1 (Lens C) — `purchase_canceled` symmetry
+     * `purchase_canceled` symmetry
      * with the native path. Hosts call this when Adapty.makePurchase surfaces
      * a user-cancel.
      */

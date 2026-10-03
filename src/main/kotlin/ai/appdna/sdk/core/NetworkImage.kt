@@ -35,13 +35,13 @@ import java.net.URL
 /**
  * Network image composable for the SDK.
  *
- * SPEC-070-A A.3 — backed by Coil ([io.coil-kt:coil-compose]). The previous
+ * Backed by Coil ([io.coil-kt:coil-compose]). The previous
  * implementation re-ran `BitmapFactory.decodeStream` on every recomposition
  * with no caching; Coil now handles HTTP, decoding, and memory + disk caching
  * via the [AppDNAImageLoader] singleton (25% memory budget, 50 MB disk cache
  * at `<cacheDir>/appdna_image_cache`).
  *
- * SPEC-070-A E.5 — adds GIF + SVG support:
+ * Adds GIF + SVG support:
  *   - GIF: registered as a Coil decoder in [AppDNAImageLoader] so the
  *     entire animation plays (not just the first frame).
  *   - SVG: detected by file extension on this side and rendered via
@@ -64,7 +64,7 @@ fun NetworkImage(
     contentScale: ContentScale = ContentScale.Crop,
     placeholderColor: Color = Color.Gray.copy(alpha = 0.2f),
     contentDescription: String? = null,
-    // SPEC-419 — image_position: how the (cropped) image aligns within its frame.
+    // image_position: how the (cropped) image aligns within its frame.
     alignment: Alignment = Alignment.Center,
 ) {
     if (url.isNullOrBlank()) {
@@ -191,7 +191,7 @@ private fun SvgNetworkImage(
                 )
             }
             failed -> {
-                // SPEC-401-A — render a broken-image glyph on failure
+                // Render a broken-image glyph on failure
                 // (matches iOS `Image(systemName: "photo")` placeholder
                 // at ~50sp grey). Was an empty placeholder background
                 // which gave no visual hint that loading errored.

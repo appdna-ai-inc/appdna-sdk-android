@@ -28,10 +28,10 @@ fun CsatQuestionView(
     question: SurveyQuestion,
     answer: SurveyAnswer?,
     onAnswer: (SurveyAnswer) -> Unit,
-    // SPEC-084: Gap #20 — question text style token
+    // Gap #20 — question text style token
     questionTextStyle: TextStyle = TextStyle.Default
 ) {
-    // SPEC-070-A finalization S-35 — prefer Firestore-canonical `scale`
+    // Prefer Firestore-canonical `scale`
     // over legacy `max_rating`. `resolvedMax` already does this resolution;
     // reading `maxRating` directly ignored `scale: 7` and rendered 5 stars
     // regardless of console config.
@@ -49,7 +49,7 @@ fun CsatQuestionView(
 
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             for (rating in 1..maxRating) {
-                // SPEC-070-A J.11 — "Rating N of M" matches iOS
+                // "Rating N of M" matches iOS
                 // CSATQuestionView.swift accessibilityLabel formatter.
                 val ratingCd = stringResource(R.string.appdna_a11y_rating_n_of_m, rating, maxRating)
                 if (style == "emoji") {
@@ -65,11 +65,11 @@ fun CsatQuestionView(
                 } else {
                     Icon(
                         imageVector = if (selectedRating >= rating) Icons.Filled.Star else Icons.Outlined.Star,
-                        // SPEC-070-A J.11 — replace bare "Rating $rating" with
+                        // Replace bare "Rating $rating" with
                         // localized "Rating N of M" so screen readers convey
                         // scale context.
                         contentDescription = ratingCd,
-                        // SPEC-070-A audit Round 2 finding 4: match iOS
+                        // Match iOS
                         // CSATQuestionView.swift:35-37 — amber-400 (#FBBF24)
                         // filled / gray-300 (#D1D5DB) empty / 28dp size.
                         tint = if (selectedRating >= rating) Color(0xFFFBBF24) else Color(0xFFD1D5DB),

@@ -2,7 +2,7 @@
 <!--
     AppDNA Android SDK — default a11y strings.
 
-    SPEC-070-A J.11: accessibility labels for renderer chrome (close /
+    Accessibility labels for renderer chrome (close /
     back / CTA / rating buttons). iOS uses NSLocalizedString equivalents
     in `Paywalls/PaywallRenderer.swift`, `Onboarding/OnboardingFlowHost.swift`,
     `Feedback/Renderers/CSATQuestionView.swift`, and the in-app message

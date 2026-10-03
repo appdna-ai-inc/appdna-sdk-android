@@ -26,7 +26,7 @@ interface AppDNAPaywallDelegate {
 
     fun onPaywallDismissed(paywallId: String) = Unit
 
-    /** Validate a user-entered promo code. Return true to accept, false to reject. Routed via sync_callbacks; defaults to reject on no-delegate/timeout (SPEC-070-C §3.7). */
+    /** Validate a user-entered promo code. Return true to accept, false to reject. Routed via sync_callbacks; defaults to reject on no-delegate/timeout. */
     suspend fun onPromoCodeSubmit(paywallId: String, code: String): Boolean = false
 
     /** Post-purchase: the SDK asks the host to open a deep-link URL. */
@@ -40,7 +40,7 @@ interface AppDNAPaywallDelegate {
 interface AppDNASurveyDelegate {
     fun onSurveyPresented(surveyId: String) = Unit
 
-    /** Survey completed. responses = list of SurveyResponse maps (native emits this; SPEC-070-C §3.9). */
+    /** Survey completed. responses = list of SurveyResponse maps (native emits this). */
     fun onSurveyCompleted(surveyId: String, responses: List<Map<String, Any?>>) = Unit
 
     /** DEPRECATED (1.0.5) — native never emitted this; use onSurveyCompleted. Non-breaking forwarding shim. */
@@ -52,14 +52,14 @@ interface AppDNASurveyDelegate {
 
 /** In-app message lifecycle + show veto. */
 interface AppDNAInAppMessageDelegate {
-    /** Message shown with its trigger event (native emits this; SPEC-070-C §3.10). */
+    /** Message shown with its trigger event (native emits this). */
     fun onMessageShown(messageId: String, trigger: String) = Unit
 
     /** DEPRECATED (1.0.5) — native never emitted this; use onMessageShown. Non-breaking forwarding shim. */
     @Deprecated("Use onMessageShown instead.", ReplaceWith("onMessageShown"))
     fun onMessagePresented(messageId: String) = Unit
 
-    /** Message action tapped. data = optional action payload map (native emits this; SPEC-070-C §3.10). */
+    /** Message action tapped. data = optional action payload map (native emits this). */
     fun onMessageAction(messageId: String, action: String, data: Map<String, Any?>?) = Unit
 
     fun onMessageDismissed(messageId: String) = Unit
@@ -83,12 +83,12 @@ interface AppDNABillingDelegate {
 
     fun onPurchaseFailed(productId: String, error: Throwable) = Unit
 
-    /** Entitlements changed. Each map is an Entitlement (productId/store/status/expiresAt/isTrial/offerType) — parse via Entitlement.fromMap (SPEC-070-C §3.8). */
+    /** Entitlements changed. Each map is an Entitlement (productId/store/status/expiresAt/isTrial/offerType) — parse via Entitlement.fromMap. */
     fun onEntitlementsChanged(entitlements: List<Map<String, Any?>>) = Unit
 
     fun onRestoreCompleted(restoredProductIds: List<String>) = Unit
 
-    /** Fires when billing is permanently unavailable (Play Services missing/broken). Android-only — never fires on iOS (SPEC-070-C §3.8/§3.14). Hide paywalls / disable purchase UI. */
+    /** Fires when billing is permanently unavailable (Play Services missing/broken). Android-only — never fires on iOS. Hide paywalls / disable purchase UI. */
     fun onBillingUnavailable() = Unit
 }
 
@@ -112,7 +112,7 @@ interface AppDNAScreenDelegate {
     fun onScreenAction(screenId: String, action: Map<String, Any?>): Boolean = true
 }
 
-/** SPEC-404 — backend-driven SDK lock-state observer. Fires once per state transition (idle <-> locked). Hosts use this to surface a custom "service unavailable" banner and trigger a one-shot event-queue retry on unlock. */
+/** Backend-driven SDK lock-state observer. Fires once per state transition (idle <-> locked). Hosts use this to surface a custom "service unavailable" banner and trigger a one-shot event-queue retry on unlock. */
 interface AppDNALifecycleDelegate {
     /** Fires once on idle to locked. reason in {billing_overdue, manual_admin, org_cancelled}. lockedAt is ISO-8601 (raw string for cross-platform parity; host parses if it needs a Date). */
     fun onSdkRuntimeLocked(reason: String, lockedAt: String) = Unit

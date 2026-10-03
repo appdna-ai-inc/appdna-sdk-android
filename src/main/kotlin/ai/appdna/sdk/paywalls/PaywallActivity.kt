@@ -75,7 +75,7 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.TextStyle
 import kotlinx.coroutines.launch
-// SPEC-070-A J.11 — accessibility string resources (Close / Restore /
+// Accessibility string resources (Close / Restore /
 // Purchase). Hosts can override these via their own `strings.xml`.
 import ai.appdna.sdk.R
 
@@ -85,7 +85,7 @@ import ai.appdna.sdk.R
  */
 class PaywallActivity : ComponentActivity() {
 
-    // SPEC-070-A finalization OB-5 audit-2 HIGH-3 — instance-level snapshot
+    // OB-5 audit-2 HIGH-3 — instance-level snapshot
     // of the dismiss callback so `onDestroy` can fire it as a backstop when
     // the OS / user kills the Activity outside the regular dismissal paths
     // (task swipe in recents, low-memory kill, finish() from elsewhere).
@@ -94,19 +94,19 @@ class PaywallActivity : ComponentActivity() {
     // flow stuck in mid-state on next resume.
     private var snapshotOnDismiss: ((DismissReason) -> Unit)? = null
     private var dispatchedDismiss: Boolean = false
-    // SPEC-070-A finalization P0 audit-3 P1 fix — instance-stored
+    // 3 P1 fix — instance-stored
     // launch token so cleanup/onBackPressed/onDestroy can pull THIS
     // Activity's slots from the per-launch registry, not whatever was
     // last written to the static companion-object slots.
     private var launchToken: String? = null
     private var instanceConfig: PaywallConfig? = null
     private var instancePaywallId: String? = null
-    // SPEC-419 — when this Activity became visible, to gate delayed-dismiss
+    // When this Activity became visible, to gate delayed-dismiss
     // (`dismiss.delay_seconds`) back-press the same way the on-screen X is gated.
     private var presentedAtMs: Long = 0L
 
     /**
-     * SPEC-401 Fix 1C — host-controlled opt-out for SDK auto-dismiss on
+     * Host-controlled opt-out for SDK auto-dismiss on
      * restore success. Hosts that want to keep the paywall visible after
      * restore (e.g. show a "Restored! Tap X when ready" overlay) flip
      * this flag inside their `onPaywallRestoreCompleted` delegate body
@@ -116,13 +116,13 @@ class PaywallActivity : ComponentActivity() {
     internal var skipSDKAutoDismiss: Boolean = false
 
     /**
-     * SPEC-401 Fix 1C — auto-dismiss on restore success. Called from
+     * Auto-dismiss on restore success. Called from
      * [PaywallManager.handleRestore] AFTER the delegate's
      * `onPaywallRestoreCompleted(productIds)` fires with non-empty products.
      * No-ops if the user already dismissed (`dispatchedDismiss`) or if the
      * host requested to keep the paywall up ([skipSDKAutoDismiss]).
      *
-     * SPEC-401 R3 audit Lens D P1 — also no-op when the Activity is
+     * Also no-op when the Activity is
      * mid-lifecycle (`isFinishing` or `isChangingConfigurations`). If the
      * user rotates the device during a restore call, the BillingClient
      * coroutine continuation lands here on the OLD Activity instance via
@@ -142,7 +142,7 @@ class PaywallActivity : ComponentActivity() {
         // the onboarding bridge / host can route via `on_success_target`
         // (Fix 1B already flipped didPurchase=true via the bridge so this
         // path lands on the same outcome as a real purchase).
-        // SPEC-401-A R20 — emit RESTORE_SUCCESS ("restore_success") instead
+        // Emit RESTORE_SUCCESS ("restore_success") instead
         // of PURCHASED so dashboards filtering MTPU vs restore can segment
         // correctly. Matches iOS PaywallManager.swift:411 dismiss_reason.
         snapshotOnDismiss?.invoke(DismissReason.RESTORE_SUCCESS)
@@ -152,7 +152,7 @@ class PaywallActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
-        // SPEC-419 — edge-to-edge so the full-bleed paywall background paints UNDER
+        // Edge-to-edge so the full-bleed paywall background paints UNDER
         // the system bars like iOS .ignoresSafeArea(). IDENTICAL to OnboardingActivity:
         // the demo app's Theme.Translucent.NoTitleBar sets FLAG_TRANSLUCENT_STATUS/
         // NAVIGATION, which forces an opaque/scrim bar background and makes
@@ -189,11 +189,11 @@ class PaywallActivity : ComponentActivity() {
             finish()
             return
         }
-        // SPEC-070-A finalization P0 audit-3 — read THIS Activity's
+        // 3 — read THIS Activity's
         // launch slot via the per-call UUID extra. Concurrent launches
         // each get their own slot; no clobber.
         //
-        // SPEC-070-A finalization P0 audit-4 — PEEK (not remove) so the
+        // 4 — PEEK (not remove) so the
         // slot survives Activity recreation (rotation, dark-mode toggle,
         // font-scale, locale, multi-window resize). Removal happens in
         // onDestroy only when `isFinishing && !isChangingConfigurations`
@@ -202,7 +202,7 @@ class PaywallActivity : ComponentActivity() {
         // no slot, finish(), and the user's purchase context vanishes.
         val token = intent.getStringExtra(EXTRA_LAUNCH_TOKEN)
         val slots = token?.let { activeLaunches[it] } ?: run {
-            // SPEC-070-A finalization (Lens D P0) — process-death recovery.
+            // Process-death recovery.
             // If we're being recreated by the OS (`savedInstanceState != null`)
             // but the static `activeLaunches` map is empty, the SDK process was
             // killed since the original launch and our in-memory callbacks are
@@ -210,11 +210,11 @@ class PaywallActivity : ComponentActivity() {
             // fires (with `reason=process_death`) instead of finishing silently.
             if (savedInstanceState != null) {
                 try {
-                    // SPEC-070-A finalization R8 (Lens C P1) — emit canonical
+                    // Emit canonical
                     // `paywall_close` event (matches iOS PaywallManager.swift:104
                     // + Android PaywallManager.kt:136) instead of the
                     // dashboard-divergent `paywall_dismissed` name.
-                    // SPEC-401-A R77 (Lens B P2) — use `dismiss_reason` key
+                    // Use `dismiss_reason` key
                     // matching iOS PaywallManager.swift:120-124 + happy-path
                     // PaywallManager.kt:139. Was `reason` — divergent from
                     // every other paywall_close row, BigQuery `dismiss_reason`
@@ -236,7 +236,7 @@ class PaywallActivity : ComponentActivity() {
         instanceConfig = config
         instancePaywallId = paywallId
         presentedAtMs = System.currentTimeMillis()
-        // SPEC-401 Fix 1C — register this Activity so PaywallManager can
+        // Register this Activity so PaywallManager can
         // call dismissAfterRestore() on it after a successful restore.
         activePaywallInstances[paywallId] = java.lang.ref.WeakReference(this)
 
@@ -244,10 +244,10 @@ class PaywallActivity : ComponentActivity() {
         val onDismiss = slots.onDismiss
         val onPlanSelected = slots.onPlanSelected
         val onPromoCodeSubmit = slots.onPromoCodeSubmit
-        // SPEC-070-A C.3 — restore lifecycle hook (delegate-fired by PaywallManager)
+        // Restore lifecycle hook (delegate-fired by PaywallManager)
         val onRestoreCb = slots.onRestore
 
-        // SPEC-070-A finalization OB-5 audit-2 HIGH-3 — capture onDismiss
+        // OB-5 audit-2 HIGH-3 — capture onDismiss
         // on the instance so onDestroy can fire it when the regular paths
         // (Compose onDismiss, onBackPressed) didn't run.
         snapshotOnDismiss = onDismiss
@@ -256,7 +256,7 @@ class PaywallActivity : ComponentActivity() {
         onAppear?.invoke()
 
         setContent {
-            // SPEC-070-A D.5 — read system dark-mode pref so the renderer can
+            // Read system dark-mode pref so the renderer can
             // pick `dark` overrides from paywall content blocks. Mirrors the
             // SurveyActivity pattern landed by Phase D for surveys.
             val isDark = isSystemInDarkTheme()
@@ -267,7 +267,7 @@ class PaywallActivity : ComponentActivity() {
                         onPlanSelected?.invoke(plan, metadata)
                     },
                     onRestore = {
-                        // SPEC-070-A C.3 — forward restore taps to the
+                        // Forward restore taps to the
                         // PaywallManager-supplied lifecycle callback.
                         onRestoreCb?.invoke()
                     },
@@ -284,7 +284,7 @@ class PaywallActivity : ComponentActivity() {
     }
 
     private fun cleanup() {
-        // SPEC-070-A finalization P0 audit-3 — slot was already removed
+        // 3 — slot was already removed
         // from activeLaunches in onCreate; no companion-object cleanup
         // required. instanceConfig is dropped by Activity destruction.
         instanceConfig = null
@@ -292,13 +292,13 @@ class PaywallActivity : ComponentActivity() {
     }
 
     override fun onBackPressed() {
-        // SPEC-070-A I.4 — force-choice paywalls: when `dismiss.allowed == false`,
+        // Force-choice paywalls: when `dismiss.allowed == false`,
         // intercept the system back so the user can't dismiss without selecting
         // a plan or restoring. Mirrors iOS `Paywalls/PaywallRenderer.swift` which
         // wraps the paywall in `.interactiveDismissDisabled(!allowed)`.
-        // SPEC-070-A finalization P0 audit-3 — read THIS Activity's
+        // 3 — read THIS Activity's
         // dismiss policy from instanceConfig, NOT a global slot.
-        // SPEC-419 — `delay_seconds` reveals dismiss after N seconds even when
+        // `delay_seconds` reveals dismiss after N seconds even when
         // allowed=false (winback). Back is blocked only while the paywall is NOT
         // yet dismissable: a true force-choice (allowed=false AND no delay) blocks
         // forever; a delayed-dismiss blocks until its delay elapses, then allows back.
@@ -318,7 +318,7 @@ class PaywallActivity : ComponentActivity() {
     }
 
     override fun onDestroy() {
-        // SPEC-070-A finalization OB-5 audit-2 HIGH-3 — backstop for
+        // OB-5 audit-2 HIGH-3 — backstop for
         // dismissal paths that don't go through `onBackPressed` or the
         // Compose `onDismiss` callback (OS kill, task-recents swipe,
         // external `finish()`). Without this an onboarding-presented
@@ -329,7 +329,7 @@ class PaywallActivity : ComponentActivity() {
             snapshotOnDismiss = null
             cb?.invoke(DismissReason.DISMISSED)
         }
-        // SPEC-070-A finalization P0 audit-4 — GC the launch slot ONLY
+        // 4 — GC the launch slot ONLY
         // on real dismissal (`isFinishing && !isChangingConfigurations`).
         // Config-change recreates (rotation, dark-mode, locale, font
         // scale) MUST keep the slot so the recreated Activity's
@@ -338,7 +338,7 @@ class PaywallActivity : ComponentActivity() {
         // PaywallConfig and `finish()` the recreated instance.
         if (isFinishing && !isChangingConfigurations) {
             launchToken?.let { activeLaunches.remove(it) }
-            // SPEC-401 Fix 1C — clear our weak ref entry so a stale
+            // Clear our weak ref entry so a stale
             // reference can't be returned to PaywallManager after the
             // Activity is gone.
             instancePaywallId?.let { id ->
@@ -353,7 +353,7 @@ class PaywallActivity : ComponentActivity() {
         private const val EXTRA_PAYWALL_ID = "paywall_id"
         private const val EXTRA_LAUNCH_TOKEN = "paywall_launch_token"
 
-        // SPEC-070-A finalization P0 audit-3 P1 fix — per-launch slot
+        // 3 P1 fix — per-launch slot
         // registry. Replaces the old single-set companion-object vars
         // (pendingConfig / pendingOnDismiss / etc.) which were CLOBBERED
         // when two `PaywallManager.present()` calls happened in quick
@@ -380,7 +380,7 @@ class PaywallActivity : ComponentActivity() {
         )
         private val activeLaunches = java.util.concurrent.ConcurrentHashMap<String, LaunchSlots>()
 
-        // SPEC-401 Fix 1C — per-paywallId registry of live PaywallActivity
+        // Per-paywallId registry of live PaywallActivity
         // instances. Used by [PaywallManager.handleRestore] to call
         // [PaywallActivity.dismissAfterRestore] when restore succeeds with
         // non-empty productIds. Stored as WeakReference so a leaked entry
@@ -395,7 +395,7 @@ class PaywallActivity : ComponentActivity() {
             java.util.concurrent.ConcurrentHashMap<String, java.lang.ref.WeakReference<PaywallActivity>>()
 
         /**
-         * SPEC-401 Fix 1C — look up the currently-live PaywallActivity for
+         * Look up the currently-live PaywallActivity for
          * the given paywallId so [PaywallManager.handleRestore] can call
          * [dismissAfterRestore] from a non-Activity coroutine context.
          * Returns null if no Activity is registered or the WeakReference
@@ -406,7 +406,7 @@ class PaywallActivity : ComponentActivity() {
             activePaywallInstances[paywallId]?.get()
 
         /**
-         * SPEC-401-A R83 (Lens B P1) — finish ALL live paywall activities
+         * Finish ALL live paywall activities
          * (one per paywallId in normal use). Called from
          * [PaywallManager.handlePostPurchaseFailure] when
          * `on_failure.action == "dismiss"` so the paywall actually closes
@@ -420,7 +420,7 @@ class PaywallActivity : ComponentActivity() {
                 ref.get()?.let { activity ->
                     handler.post {
                         if (!activity.isFinishing) {
-                            // Round-13 — when the CALLER already handles the dismiss notification (the
+                            // When the CALLER already handles the dismiss notification (the
                             // post-purchase success branches fire onPaywallDismissed / onPostPurchase*
                             // themselves, matching iOS which does NOT re-route on_dismiss or emit
                             // paywall_close after a purchase), mark the dismiss as dispatched so the
@@ -442,7 +442,7 @@ class PaywallActivity : ComponentActivity() {
             token?.let { activeLaunches[it] }
 
         /**
-         * SPEC-070-A finalization R3 P0 (Lens D) — clear all in-flight slot
+         * Clear all in-flight slot
          * captures. Called from `AppDNA.shutdown()`.
          */
         @JvmStatic
@@ -476,7 +476,7 @@ class PaywallActivity : ComponentActivity() {
                 putExtra(EXTRA_LAUNCH_TOKEN, token)
                 addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
             }
-            // SPEC-070-A finalization P0 audit-4 — startActivity can
+            // 4 — startActivity can
             // throw (ActivityNotFoundException, SecurityException, or
             // background-launch denial on Android 12+). Without
             // try/catch, the slot would be orphaned forever — leaking
@@ -494,7 +494,7 @@ class PaywallActivity : ComponentActivity() {
         }
 
         /**
-         * SPEC-070-A C.5 — broadcast post-purchase success overlay (confetti +
+         * Broadcast post-purchase success overlay (confetti +
          * lottie) into a live PaywallActivity composition. Mirrors iOS's
          * `NotificationCenter.default.post(.paywallPurchaseSuccess, ...)`.
          */
@@ -503,7 +503,7 @@ class PaywallActivity : ComponentActivity() {
         /**
          * Bumped by [PaywallManager] when a paywall purchase ends without success
          * (a failure, a user cancel, a pending approval, or the purchase coroutine cancelled — e.g.
-         * `shutdown()` with the paywall on screen) — and, since R9, after a success with no `on_success`
+         * `shutdown()` with the paywall on screen) — and, since an earlier fix, after a success with no `on_success`
          * config, where the paywall stays up for the host to close. A live paywall re-enables its CTA (`isPurchasing =
          * false`) when it sees the value change. Before this, only a drained `retry` / `show_error`
          * overlay reset it, so a failure with no `on_failure` config — or a cancelled purchase — left the
@@ -519,7 +519,7 @@ class PaywallActivity : ComponentActivity() {
 }
 
 /**
- * SPEC-070-A C.5 — payload for the post-purchase success overlay (confetti +
+ * Payload for the post-purchase success overlay (confetti +
  * lottie animation rendered atop the paywall after a successful purchase).
  */
 internal data class PostPurchaseOverlayState(
@@ -527,7 +527,7 @@ internal data class PostPurchaseOverlayState(
     val confetti: Boolean = false,
     val lottieUrl: String? = null,
     /**
-     * SPEC-070-A finalization parity audit R6 — failure overlay
+     * Failure overlay
      * retry CTA. Mirrors iOS PaywallManager.swift:309-313 which posts
      * `paywallPurchaseFailure` notification with `retry_text` /
      * `action`. PaywallRenderer.swift:351-353 renders a labelled retry
@@ -555,28 +555,28 @@ fun PaywallScreen(
     onPlanSelected: (PaywallPlan, Map<String, Any>) -> Unit,
     onRestore: () -> Unit,
     onDismiss: (DismissReason) -> Unit,
-    // AC-037: Callback for promo code validation. Returns true if code is valid, false otherwise.
+    // Callback for promo code validation. Returns true if code is valid, false otherwise.
     onPromoCodeSubmit: ((String, (Boolean) -> Unit) -> Unit)? = null,
-    // SPEC-070-A D.5 — system dark-mode pref. Renderers/blocks may apply
+    // System dark-mode pref. Renderers/blocks may apply
     // `dark` overrides from console-designed paywall content based on this.
     @Suppress("UNUSED_PARAMETER") isDark: Boolean = false,
 ) {
     var selectedPlanId by remember { mutableStateOf<String?>(null) }
     var showDismiss by remember { mutableStateOf(false) }
-    // #652 (round 2) — the Back button has its OWN delay, so it cannot ride on `showDismiss`.
+    // #652 — the Back button has its OWN delay, so it cannot ride on `showDismiss`.
     var showBack by remember { mutableStateOf(false) }
     var isPurchasing by remember { mutableStateOf(false) }
     var isDismissing by remember { mutableStateOf(false) }
     var dragOffset by remember { mutableStateOf(0f) }
     var showConfetti by remember { mutableStateOf(false) }
-    // AC-038: Hoisted toggle states for inclusion in purchase metadata
+    // Hoisted toggle states for inclusion in purchase metadata
     val toggleStates = remember { mutableStateMapOf<String, Boolean>() }
-    // SPEC-070-A C.7 — promo state hoisted out of PaywallPromoInputSection
+    // Promo state hoisted out of PaywallPromoInputSection
     // so CTA tap handlers can fold the validated code into the purchase
     // metadata. Mirrors iOS `PaywallRenderer.swift:2160-2167`.
     var promoCode by remember { mutableStateOf("") }
     var promoState by remember { mutableStateOf("idle") } // idle | loading | success | error
-    // SPEC-070-A C.5 — post-purchase success overlay state. Drained from the
+    // Post-purchase success overlay state. Drained from the
     // companion-object slot every recomposition so PaywallManager.handle
     // PostPurchaseSuccess can fire confetti + lottie atop the paywall while
     // the dismiss timer counts down.
@@ -642,7 +642,7 @@ fun PaywallScreen(
 
     // Select default plan on appear + initialize toggle defaults
     LaunchedEffect(Unit) {
-        // SPEC-070-A finalization PW-2 — read effective plans (sections OR
+        // Read effective plans (sections OR
         // top-level config.plans fallback). Computed inline because
         // effectivePlans() lives in the @Composable body below; mirror its
         // logic here at the LaunchedEffect site.
@@ -654,7 +654,7 @@ fun PaywallScreen(
         selectedPlanId = plans.firstOrNull { it.is_default == true }?.id
             ?: plans.firstOrNull()?.id
 
-        // AC-038: Initialize toggle defaults from config
+        // Initialize toggle defaults from config
         config.sections.filter { it.type == "toggle" }.forEach { section ->
             val key = section.data?.label ?: "toggle_${section.type}"
             if (section.data?.default_value != null) {
@@ -693,7 +693,7 @@ fun PaywallScreen(
         showDismiss = true
     }
 
-    // #652 (round 2) — the Back button reveals on its own schedule. Deliberately NOT gated on
+    // #652 — the Back button reveals on its own schedule. Deliberately NOT gated on
     // `dismiss.allowed`: that flag is about the close affordance on a force-choice paywall, and an
     // author who switched Back on has said what they want.
     LaunchedEffect(config.dismiss?.back?.enabled, config.dismiss?.back?.delay_seconds) {
@@ -709,7 +709,7 @@ fun PaywallScreen(
         showBack = true
     }
 
-    // Localization helper + SPEC-088: Template variable interpolation
+    // Localization helper: Template variable interpolation
     val templateContext = ai.appdna.sdk.core.TemplateEngine.buildContext()
     fun loc(key: String, fallback: String): String {
         val localized = LocalizationEngine.resolve(key, config.localizations, config.default_locale, fallback)
@@ -746,10 +746,10 @@ fun PaywallScreen(
         // Background
         PaywallBackground(config.background)
 
-        // SPEC-089d: Extract sticky_footer section
+        // Extract sticky_footer section
         val stickyFooterSection = config.sections.firstOrNull { it.type == "sticky_footer" }
 
-        // SPEC-070-A finalization PW-2 — `effectivePlans` helper. Mirrors iOS
+        // `effectivePlans` helper. Mirrors iOS
         // `PaywallRenderer.swift:511-512` resolution:
         //   sectionPlans = config.sections.first(where: { type == "plans" })?.data?.plans
         //   effectivePlans = sectionPlans.isEmpty ? (config.plans ?? []) : sectionPlans
@@ -764,26 +764,26 @@ fun PaywallScreen(
                 ?: emptyList<PaywallPlan>()
             return if (sectionPlans.isEmpty()) (config.plans ?: emptyList()) else sectionPlans
         }
-        // SPEC-070-A finalization PW-3 — CTA text resolution chain is now
+        // CTA text resolution chain is now
         // inlined at the CTA section render site (PaywallActivity.kt:~1497)
         // because that site lives inside PaywallSectionView, a separate
         // @Composable scope from PaywallScreen. The helper that previously
-        // lived here was dead code — audit round 2 D1 cleanup.
+        // lived here was dead code.
 
         // Content in a Column with scrollable area + sticky footer
         Column(modifier = Modifier.fillMaxSize()) {
-            // SPEC-070-A J.20 — convert eager `Column.verticalScroll` to
+            // Convert eager `Column.verticalScroll` to
             // `LazyColumn` with stable keys so the recompose-window only
             // touches sections that scrolled into view + plan/feature
             // sub-lists don't fully reconstruct when a single section
             // re-emits. iOS uses `ScrollView { LazyVStack }` for the same
             // reason (PaywallRenderer.swift:38-67).
             val staggerDelay = config.animation?.section_stagger_delay_ms ?: 0
-            // SPEC-070-A audit Round 2 finding 3: filter `sticky_footer`
+            // Filter `sticky_footer`
             // (rendered separately below) so it doesn't render twice.
             // Mirrors iOS PaywallRenderer.swift:38-67,119 partition.
             //
-            // SPEC-070-A finalization R2 P1 (Lens B) — `legal` sections that
+            // `legal` sections that
             // appear AFTER the cta in the sections array are pinned beneath
             // the CTA inside the safeAreaInset.bottom, NOT scrolled away with
             // body content. Mirrors iOS PaywallRenderer.swift:54-67 + 213-222
@@ -800,21 +800,21 @@ fun PaywallScreen(
             // nullable so id-based filtering would mis-partition unidentified
             // legal sections.
             val pinnedLegalSet: Set<PaywallSection> = pinnedLegalSections.toSet()
-            // SPEC-419 Gap 7 — exclude the CTA section from the scroll body so it
+            // Exclude the CTA section from the scroll body so it
             // can be PINNED to the bottom zone (iOS safeAreaInset(.bottom),
             // PaywallRenderer.swift:141-230) instead of floating mid-screen.
             val ctaSection = if (ctaIndex >= 0) config.sections[ctaIndex] else null
             val scrollableSections = config.sections.filter {
                 it.type != "sticky_footer" && it.type != "cta" && it !in pinnedLegalSet
             }
-            // SPEC-070-A finalization PW-11 — collapse_on_scroll wiring.
+            // collapse_on_scroll wiring.
             // Mirrors iOS PaywallScrollOffsetPrefKey-driven collapse: as user
             // scrolls, sections marked collapse_on_scroll==true fade their
             // alpha + slightly translate up. We hoist a LazyListState here
             // and derive a SINGLE global scroll offset that all marked
             // sections share — see globalCollapseRatio below.
             val lazyListState = androidx.compose.foundation.lazy.rememberLazyListState()
-            // SPEC-070-A finalization P0 audit-1 HIGH-1 — collapse_on_scroll
+            // 1 HIGH-1 — collapse_on_scroll
             // is GLOBAL on iOS, not per-section. iOS PaywallRenderer.swift:
             // 120-128 derives `collapseProgress = min(max(scrollOffset/50, 0), 1)`
             // from a single page-level PaywallScrollOffsetPrefKey, then ALL
@@ -868,7 +868,7 @@ fun PaywallScreen(
                             isPurchasing = isPurchasing,
                             onPlanSelect = { planId ->
                                 selectedPlanId = planId
-                                // SPEC-085: Haptic on plan select
+                                // Haptic on plan select
                                 HapticEngine.triggerIfEnabled(
                                     currentView,
                                     config.haptic?.triggers?.on_plan_select,
@@ -881,17 +881,17 @@ fun PaywallScreen(
                                 val plan = plans.firstOrNull { p -> p.id == selectedPlanId }
                                 if (plan != null) {
                                     isPurchasing = true
-                                    // SPEC-085: Haptic on CTA tap
+                                    // Haptic on CTA tap
                                     HapticEngine.triggerIfEnabled(
                                         currentView,
                                         config.haptic?.triggers?.on_button_tap,
                                         config.haptic,
                                     )
-                                    // SPEC-085: Confetti on purchase
+                                    // Confetti on purchase
                                     if (config.particle_effect != null) {
                                         showConfetti = true
                                     }
-                                    // SPEC-070-A C.7 — fold validated promo
+                                    // Fold validated promo
                                     // code into purchase metadata. Mirrors
                                     // iOS PaywallRenderer.swift:2160-2167.
                                     val md = toggleStates.toMutableMap<String, Any>()
@@ -902,7 +902,7 @@ fun PaywallScreen(
                                 }
                             },
                             onRestore = onRestore,
-                            // SPEC-492 (#651 item 4) — lets an authored button leave the paywall.
+                            // Lets an authored button leave the paywall.
                             onDismiss = { triggerDismiss() },
                             loc = ::loc,
                             toggleStates = toggleStates,
@@ -923,7 +923,7 @@ fun PaywallScreen(
             // whole group, composing with each block's own navigationBarsPadding and
             // without touching the weighted scroll body above.
             Column(modifier = Modifier.fillMaxWidth().padding(bottom = (config.layout.footer_padding ?: 8f).dp)) {
-            // SPEC-419 Gap 7 — CTA pinned to the bottom zone: below the scroll
+            // CTA pinned to the bottom zone: below the scroll
             // body (weight(1f)), above the pinned legal + sticky footer. Same
             // horizontal inset as the scrolled content. Mirrors iOS
             // safeAreaInset(.bottom) ordering (PaywallRenderer.swift:141-230).
@@ -951,7 +951,7 @@ fun PaywallScreen(
                             }
                         },
                         onRestore = onRestore,
-                        // SPEC-492 (#651 item 4) — lets an authored button leave the paywall.
+                        // Lets an authored button leave the paywall.
                         onDismiss = { triggerDismiss() },
                         loc = ::loc,
                         toggleStates = toggleStates,
@@ -964,7 +964,7 @@ fun PaywallScreen(
                 }
             }
 
-            // SPEC-070-A finalization R2 P1 (Lens B) — pinned legal sections
+            // Pinned legal sections
             // render between the scroll body and the sticky footer (or above
             // the system inset when no sticky footer). Mirrors iOS
             // PaywallRenderer.swift:213-222 safeAreaInset.bottom layer where
@@ -974,7 +974,7 @@ fun PaywallScreen(
                     modifier = Modifier
                         .fillMaxWidth()
                         .padding(horizontal = (config.layout.padding ?: 20f).dp)
-                        // SPEC-419 — the pinned legal (Terms & Conditions) is the BOTTOM-most
+                        // The pinned legal (Terms & Conditions) is the BOTTOM-most
                         // element; without the nav-bar inset it rendered under the gesture bar
                         // and was clipped/invisible (iOS shows it under Restore). Clear the bar.
                         .navigationBarsPadding(),
@@ -988,7 +988,7 @@ fun PaywallScreen(
                             onPlanSelect = {},
                             onCTATap = {},
                             onRestore = onRestore,
-                            // SPEC-492 (#651 item 4) — lets an authored button leave the paywall.
+                            // Lets an authored button leave the paywall.
                             onDismiss = { triggerDismiss() },
                             loc = ::loc,
                             toggleStates = toggleStates,
@@ -1002,7 +1002,7 @@ fun PaywallScreen(
                 }
             }
 
-            // SPEC-089d: Sticky footer pinned to bottom
+            // Sticky footer pinned to bottom
             if (stickyFooterSection != null) {
                 PaywallStickyFooter(
                     section = stickyFooterSection,
@@ -1023,7 +1023,7 @@ fun PaywallScreen(
                             if (config.particle_effect != null) {
                                 showConfetti = true
                             }
-                            // SPEC-070-A C.7 — fold validated promo code
+                            // Fold validated promo code
                             // into purchase metadata (sticky footer path).
                             val md = toggleStates.toMutableMap<String, Any>()
                             if (promoState == "success" && promoCode.isNotBlank()) {
@@ -1039,7 +1039,7 @@ fun PaywallScreen(
             } // end pinned bottom group (footer_padding wrapper)
         }
 
-        // SPEC-085: Confetti overlay
+        // Confetti overlay
         if (showConfetti && config.particle_effect != null) {
             ConfettiOverlay(
                 effect = config.particle_effect,
@@ -1047,13 +1047,13 @@ fun PaywallScreen(
             )
         }
 
-        // SPEC-070-A C.5 — post-purchase success overlay (confetti + lottie).
+        // Post-purchase success overlay (confetti + lottie).
         // Mirrors iOS `PaywallRenderer.swift:346` `.paywallPurchaseSuccess`
         // notification observer. Confetti uses an ad-hoc ParticleEffect when
         // the paywall has no `particle_effect` config of its own. Lottie URL
         // renders via the shared LottieBlockView.
         postPurchaseOverlay?.let { overlay ->
-            // SPEC-401-A R71 (Lens A P2) — only render confetti if the
+            // Only render confetti if the
             // paywall config has `particle_effect` set, matching iOS
             // PaywallRenderer.swift:235-237 `if let effect = config
             // .particle_effect`. Was fabricating an ad-hoc ParticleEffect
@@ -1098,7 +1098,7 @@ fun PaywallScreen(
                 }
             } else if (!overlay.message.isNullOrEmpty()) {
                 // Message-only overlay (no lottie configured) — surface
-                // a centered card atop the paywall. SPEC-070-A finalization
+                // a centered card atop the paywall.
                 // parity audit R6 — when overlay.action == "retry", render
                 // a retry CTA labelled with overlay.retryText (mirrors iOS
                 // PaywallRenderer.swift:351-353). When action is null
@@ -1161,7 +1161,7 @@ fun PaywallScreen(
             }
         }
 
-        // #652 (round 2) — the Back button, rendered INDEPENDENTLY of the close control.
+        // #652 — the Back button, rendered INDEPENDENTLY of the close control.
         //
         // The first pass made "back" a dismiss STYLE, so a paywall could have a chevron or an X but
         // never both, and they shared one position/colour/size. They are two buttons. iOS parity:
@@ -1213,7 +1213,7 @@ fun PaywallScreen(
 
         // Dismiss control
         if (showDismiss) {
-            // SPEC-070-A finalization R3 P0 (Lens A PW-5) — prefer `dismiss.style`
+            // Prefer `dismiss.style`
             // over `dismiss.type`. iOS PaywallRenderer.swift:567-573 reads `_style`
             // first and falls back to `_type` for backward compat with older
             // configs that still use `type`. Both fields parse to PaywallDismiss.
@@ -1226,7 +1226,7 @@ fun PaywallScreen(
                         modifier = Modifier
                             .align(Alignment.BottomCenter)
                             .padding(bottom = 24.dp)
-                            // SPEC-070-A J.11 — text-link dismiss has no icon
+                            // Text-link dismiss has no icon
                             // semantic so we attach an explicit a11y label.
                             .semantics { contentDescription = dismissCd },
                     ) {
@@ -1249,7 +1249,7 @@ fun PaywallScreen(
                             .background(Color.White.copy(alpha = 0.5f))
                     )
                 }
-                // SPEC-491 (#652) — a chevron that LEAVES the paywall, which returns the user to
+                // A chevron that LEAVES the paywall, which returns the user to
                 // whatever was presented before it. Same operation as close on a single-view
                 // paywall; only the glyph differs. Shares the
                 // x_button branch so an authored size/colour/position cannot apply to one and be
@@ -1264,7 +1264,7 @@ fun PaywallScreen(
                         onClick = { triggerDismiss() },
                         modifier = Modifier
                             .align(if (onLeft) Alignment.TopStart else Alignment.TopEnd)
-                            // SPEC-419 — sit BELOW the status bar (edge-to-edge Activity),
+                            // Sit BELOW the status bar (edge-to-edge Activity),
                             // matching iOS which places the X inside the safe area. Without
                             // this the X overlapped the clock/battery and was hard to tap.
                             .statusBarsPadding()
@@ -1272,7 +1272,7 @@ fun PaywallScreen(
                             .size((glyphSize * 2).dp)
                             .clip(CircleShape)
                             .background(Color.Black.copy(alpha = 0.3f))
-                            // SPEC-070-A J.11 \u2014 close X has no semantic icon
+                            // \u2014 close X has no semantic icon
                             // (it's a Text composable with the unicode glyph),
                             // so attach an a11y label that TalkBack reads.
                             .semantics { contentDescription = closeCd },
@@ -1293,7 +1293,7 @@ fun PaywallScreen(
 
 @Composable
 private fun PaywallBackground(background: PaywallBackground?) {
-    // SPEC-070-A finalization PW-7 / PW-8 — full PaywallBackground matrix
+    // Full PaywallBackground matrix
     // mirroring iOS' PaywallRenderer LegacyBackground/BackgroundStyle paths
     // (PaywallRenderer.swift:386-449). Adds: gradient.stops+angle parsing,
     // video background composable, image_fit honoring, overlay color, and
@@ -1312,7 +1312,7 @@ private fun PaywallBackground(background: PaywallBackground?) {
                         pos to parseHexColor(c)
                     }.toTypedArray()
                     if (colorStopList.size >= 2) {
-                        // SPEC-419 — iOS uses UnitPoint (0..1 FRACTIONS). Compose
+                        // iOS uses UnitPoint (0..1 FRACTIONS). Compose
                         // Brush.linearGradient start/end are in PIXELS, so passing
                         // 0..1 collapsed the whole gradient into the first pixel and
                         // clamped to a near-solid color. Use a size-aware ShaderBrush
@@ -1396,7 +1396,7 @@ private fun PaywallBackground(background: PaywallBackground?) {
         }
         "color" -> {
             // PW-6 fix already in parser: `value` now folds in `bg.color`.
-            // SPEC-070-A finalization audit follow-up — iOS treats the literal
+            // iOS treats the literal
             // strings "transparent" / "clear" as Color.clear
             // (PaywallRenderer.swift:427-431). Android parseHexColor("transparent")
             // falls through to Color.Black, so console-authored
@@ -1421,7 +1421,7 @@ private fun PaywallBackground(background: PaywallBackground?) {
 }
 
 /**
- * SPEC-070-A finalization PW-8 — video background composable backed by
+ * Video background composable backed by
  * Media3/ExoPlayer. Mirrors iOS' `VideoBackgroundView` (AVPlayer-backed):
  * auto-plays muted, loops, hides controls.
  *
@@ -1483,7 +1483,7 @@ private fun VideoBackgroundView(
 }
 
 /**
- * SPEC-492 (#651 item 2) — extra buttons under the CTA, in authored order.
+ * Extra buttons under the CTA, in authored order.
  *
  * What lifts the "two buttons, one of them restore" cap: a second restore, a "Maybe later", or a
  * terms link are all just entries here. Mirrors iOS `extraButtonsView`.
@@ -1559,14 +1559,14 @@ internal fun PaywallSectionView(
     onPlanSelect: (String) -> Unit,
     onCTATap: () -> Unit,
     onRestore: () -> Unit,
-    // SPEC-492 (#651 item 4) — an authored button can be told to DISMISS, which leaves the
+    // An authored button can be told to DISMISS, which leaves the
     // paywall and so returns the user to the previous screen. Defaulted, so the other
     // call sites of this composable are unaffected.
     onDismiss: () -> Unit = {},
     loc: (String, String) -> String,
     toggleStates: MutableMap<String, Boolean> = mutableMapOf(),
     onPromoCodeSubmit: ((String, (Boolean) -> Unit) -> Unit)? = null,
-    // SPEC-070-A C.7 — hoisted promo state for purchase metadata.
+    // Hoisted promo state for purchase metadata.
     promoCode: String = "",
     promoState: String = "idle",
     onPromoCodeChange: (String) -> Unit = {},
@@ -1584,7 +1584,7 @@ internal fun PaywallSectionView(
                     .padding(top = 40.dp)
                     .run { with(StyleEngine) { applyContainerStyle(section.style?.container) } }
             ) {
-                // SPEC-401-A R77 (Lens A P1) — render header section image
+                // Render header section image
                 // matching iOS HeaderSection.swift:19-28
                 // `BundledAsyncImage(url: data.imageUrl, ...).scaledToFit()
                 // .frame(maxHeight: 200)`. Was missing — paywall headers
@@ -1609,7 +1609,7 @@ internal fun PaywallSectionView(
                     Spacer(Modifier.height(8.dp))
                 }
                 section.data?.title?.let {
-                    // SPEC-401-A R77 (Lens A P1) — prefer data-level
+                    // Prefer data-level
                     // `title_style` over section-level
                     // `style.elements["title"].text_style` matching iOS
                     // HeaderSection.swift:10-15 precedence.
@@ -1622,7 +1622,7 @@ internal fun PaywallSectionView(
                     Text(
                         text = loc("section-header.title", it),
                         style = titleStyle,
-                        // SPEC-070-A J.11 — paywall hero/header title is the
+                        // Paywall hero/header title is the
                         // accessibility heading for the screen, mirroring iOS
                         // `accessibilityAddTraits(.isHeader)`.
                         modifier = Modifier.semantics { heading() },
@@ -1648,7 +1648,7 @@ internal fun PaywallSectionView(
                 TextStyle(color = Color.White, fontSize = 16.sp),
                 section.style?.elements?.get("item")?.text_style
             )
-            // SPEC-419 \u2014 iOS FeatureList is a content-sized VStack(.leading)
+            // \u2014 iOS FeatureList is a content-sized VStack(.leading)
             // CENTERED in its parent (no maxWidth). Mirror that: outer column
             // centers the block; inner wrapContentWidth keeps rows left-aligned
             // among themselves. Checkmark uses the brand accent like iOS
@@ -1749,7 +1749,7 @@ internal fun PaywallSectionView(
         "plans" -> {
             // Gap 10-11: Read plan_display_style from section data, fallback to layout.type
             val displayStyle = section.data?.plan_display_style ?: config.layout.type
-            // SPEC-070-A finalization PW-2 — fall back to top-level
+            // Fall back to top-level
             // `config.plans` when section has no plans (matches iOS
             // PaywallRenderer.swift:511-512 effectivePlans logic).
             val sectionPlansRaw = section.data?.plans ?: emptyList()
@@ -1859,7 +1859,7 @@ internal fun PaywallSectionView(
             // `PlanCard.swift:259` (`cardStyle.badgePosition ?? "top_right"`).
             // Was `"inline"` which forced the badge inside the card body, on
             // top of the plan name and price.
-            // Round-21 F2 — the console writes HYPHENATED positions ("top-right" etc.) but the `when`
+            // The console writes HYPHENATED positions ("top-right" etc.) but the `when`
             // blocks below match UNDERSCORED constants, so an authored value hit the `else` (top-right)
             // while iOS's default hit top-LEFT — opposite corners. Normalize hyphen→underscore so
             // "top-left"/"top-center"/"top-right" route correctly and match iOS.
@@ -1904,7 +1904,7 @@ internal fun PaywallSectionView(
                 }
             }
 
-            // SPEC-070-A finalization PW-9 — pull all 5 plan-card show-flags
+            // Pull all 5 plan-card show-flags
             // + selection styling colors from section.data. Mirrors iOS'
             // PlanCard rendering flags (PaywallConfig.swift:254-258).
             val showPlanIcons = section.data?.show_plan_icons ?: false
@@ -1971,7 +1971,7 @@ internal fun PaywallSectionView(
                                 else -> Modifier
                             }
                         )
-                        // SPEC-401-A R85 (Lens C F1) — radio-button role + selected
+                        // Radio-button role + selected
                         // semantics so TalkBack reads "Selected, <plan name>" matching
                         // iOS SwiftUI Button + isSelected in PaywallRenderer.swift:2131.
                         // Was bare Card → "Card" with no selection state.
@@ -2039,7 +2039,7 @@ internal fun PaywallSectionView(
                             // PW-9: subtitle above price if `subtitle_position == "above_price"`.
                             if (showPlanSubtitles && subtitlePosition == "above_price" && !plan.description.isNullOrBlank()) {
                                 Spacer(Modifier.height(2.dp))
-                                // SPEC-438 (#544) — a coloured pill when the product authored
+                                // A coloured pill when the product authored
                                 // one, plain text otherwise. `wrapContentWidth` is what makes it
                                 // hug its text and read as a badge rather than a full-width banner.
                                 val descBadge = plan.description_badge?.takeIf { it.enabled == true }
@@ -2083,7 +2083,7 @@ internal fun PaywallSectionView(
                             // PW-12 — `plan.displayPrice` mirrors `price_display ?? price`.
                             // Round-MZ — render struck original_price_display beside the price
                             // (mirrors iOS PlanCard.swift Row-2). strikethrough_color is section-level.
-                            // SPEC-438 (#548) — authored strikethrough size/gap, and the
+                            // Authored strikethrough size/gap, and the
                             // price_layout preset. Defaults reproduce the previous rendering
                             // exactly, so unauthored paywalls are unchanged.
                             val strikeColor = section.data?.strikethrough_color?.let { parseHexColor(it) }
@@ -2178,7 +2178,7 @@ internal fun PaywallSectionView(
                             // PW-9: subtitle below price (default position).
                             if (showPlanSubtitles && subtitlePosition != "above_price" && !plan.description.isNullOrBlank()) {
                                 Spacer(Modifier.height(4.dp))
-                                // SPEC-438 (#544) — a coloured pill when the product authored
+                                // A coloured pill when the product authored
                                 // one, plain text otherwise. `wrapContentWidth` is what makes it
                                 // hug its text and read as a badge rather than a full-width banner.
                                 val descBadge = plan.description_badge?.takeIf { it.enabled == true }
@@ -2251,7 +2251,7 @@ internal fun PaywallSectionView(
                             // PW-9: per-plan feature checkmark list.
                             if (showPlanFeatures && !plan.features.isNullOrEmpty()) {
                                 Spacer(Modifier.height(8.dp))
-                                // R88 — checkmark color matches iOS PlanCard.swift:162
+                                // Checkmark color matches iOS PlanCard.swift:162
                                 // `Color(hex: "#6366F1")` (indigo). When the plan is
                                 // selected and the host configured a custom
                                 // selectedTextColor, iOS uses that color for the
@@ -2514,7 +2514,7 @@ internal fun PaywallSectionView(
                                     .clickable { onPlanSelect(plan.id) },
                                 shape = cardShape,
                                 colors = CardDefaults.cardColors(
-                                    // SPEC-419 — selected card BACKGROUND must use the authored
+                                    // Selected card BACKGROUND must use the authored
                                     // selected_bg_color (e.g. #2c374c) so it's visually DISTINCT
                                     // from the unselected card. Do NOT default it to the brand accent:
                                     // a light brand (e.g. white) collapses onto the white-10% unselected
@@ -2543,7 +2543,7 @@ internal fun PaywallSectionView(
                                             Spacer(Modifier.height(4.dp))
                                             Text(text = it, style = periodStyle)
                                         }
-                                        // SPEC-401-A R83 (Lens A P1) — render expanded body
+                                        // Render expanded body
                                         // matching iOS PaywallRenderer.swift:2080-2105:
                                         // description, savings_text (green bold), and full
                                         // features list with leading checkmark icons. DTO
@@ -2616,7 +2616,7 @@ internal fun PaywallSectionView(
                             }
                         }
                     }
-                    // SPEC-070-A finalization parity audit G1 — 5 plan
+                    // 5 plan
                     // display styles previously fell through to the
                     // vertical-stack default. Each iOS branch at
                     // PaywallRenderer.swift mapped to its own visual
@@ -2691,7 +2691,7 @@ internal fun PaywallSectionView(
                             val isSelected = selectedPlanId == plan.id
                             Button(
                                 onClick = {
-                                    // SPEC-070-A finalization B5 P2 — iOS
+                                    // iOS
                                     // PaywallRenderer.swift:1993 fires the
                                     // CTA immediately on plan tap for the
                                     // product_as_cta layout. Match it: select
@@ -2811,8 +2811,8 @@ internal fun PaywallSectionView(
                                     shape = cardShape,
                                     elevation = CardDefaults.cardElevation(defaultElevation = if (cardShadowEnabled) 4.dp else 0.dp),
                                     colors = CardDefaults.cardColors(
-                                        // SPEC-419 — authored selected_bg_color (e.g. #2c374c) wins;
-                                        // SPEC-419 — unselected card must be OPAQUE + uniform. A
+                                        // Authored selected_bg_color (e.g. #2c374c) wins;
+                                        // Unselected card must be OPAQUE + uniform. A
                                         // translucent white-10% let the navy PAGE GRADIENT bleed
                                         // through, giving a "strange gradient inside the card". Derive
                                         // an opaque subtle tone from the authored selected color (darker)
@@ -2824,7 +2824,7 @@ internal fun PaywallSectionView(
                                     )
                                 ) {
                                     Column(modifier = Modifier.fillMaxWidth()) {
-                                    // Round-31 — plan image, full-width at the card top (iOS
+                                    // Plan image, full-width at the card top (iOS
                                     // PlanCard.swift:75). Dropped on the DEFAULT layout like
                                     // trial/savings/features were; Android's own fun PlanCard (:1618)
                                     // already renders it for the other layouts.
@@ -2841,16 +2841,16 @@ internal fun PaywallSectionView(
                                     ) {
                                         // iOS leading VStack — full width, no truncation.
                                         Column(modifier = Modifier.weight(1f)) {
-                                            // Round-30 — subtitle/description text color falls back to a
+                                            // subtitle/description text color falls back to a
                                             // muted grey (iOS PlanCard.swift secondary); accent for trial.
                                             val subtitleColor = planTextColor.takeIf { it != Color.Unspecified } ?: Color.Gray
                                             val trialColor = planTextColor.takeIf { it != Color.Unspecified } ?: ai.appdna.sdk.AppDNA.brandAccentColor()
                                             Text(text = loc("plan.$planIdx.name", plan.displayName), style = planNameStyle, color = planTextColor)
                                             Spacer(Modifier.height(2.dp))
-                                            // Round-30 — subtitle ABOVE price (iOS PlanCard.swift:105).
+                                            // Subtitle ABOVE price (iOS PlanCard.swift:105).
                                             if (showPlanSubtitles && subtitlePosition == "above_price" && !plan.description.isNullOrBlank()) {
                                                 run {
-                                                    // SPEC-438 (#544) — pill when the product authored one.
+                                                    // Pill when the product authored one.
                                                     val b = plan.description_badge?.takeIf { it.enabled == true }
                                                     if (b != null) {
                                                         Text(
@@ -2877,7 +2877,7 @@ internal fun PaywallSectionView(
                                             // The standalone plan.period line was dropped to match iOS
                                             // PlanCard (never renders plan.period) and fun PlanCard —
                                             // period is folded into price_display, not authored via console.
-                                            // SPEC-438 (#548) — authored strikethrough size/gap + the
+                                            // Authored strikethrough size/gap + the
                                             // price_layout preset. Defaults reproduce the previous
                                             // rendering exactly, so unauthored paywalls are unchanged.
                                             val vsStrikeColor = section.data?.strikethrough_color?.let { parseHexColor(it) }
@@ -2924,7 +2924,7 @@ internal fun PaywallSectionView(
                                                     Text(text = loc("plan.$planIdx.price", plan.displayPrice), style = priceStyle, color = planTextColor)
                                                 }
                                             }
-                                            // Round-30 — PARITY FIX: the default vertical_stack path
+                                            // PARITY FIX: the default vertical_stack path
                                             // silently dropped trial/subtitle/savings/features that iOS
                                             // PlanCard.swift renders (free-trial + discount merchandising
                                             // was invisible on Android's DEFAULT paywall layout — revenue).
@@ -2936,7 +2936,7 @@ internal fun PaywallSectionView(
                                             if (showPlanSubtitles && subtitlePosition != "above_price" && !plan.description.isNullOrBlank()) {
                                                 Spacer(Modifier.height(4.dp))
                                                 run {
-                                                    // SPEC-438 (#544) — pill when the product authored one.
+                                                    // Pill when the product authored one.
                                                     val b = plan.description_badge?.takeIf { it.enabled == true }
                                                     if (b != null) {
                                                         Text(
@@ -2989,7 +2989,7 @@ internal fun PaywallSectionView(
                                                 }
                                             }
                                         }
-                                        // Round-31 — plan icon, trailing before the radio (iOS
+                                        // Plan icon, trailing before the radio (iOS
                                         // PlanCard.swift:178). Dropped on the DEFAULT layout; Android's
                                         // fun PlanCard (:1606) renders it for the other layouts.
                                         if (showPlanIcons && !plan.icon.isNullOrBlank()) {
@@ -3034,7 +3034,7 @@ internal fun PaywallSectionView(
                         }
                     }
                 }
-                // SPEC-070-A finalization B5#P1 — restore button moved to the
+                // Restore button moved to the
                 // CTA section under `cta.show_restore` (PW-10). Previously this
                 // hardcoded button rendered unconditionally below `plans`, so
                 // restore appeared TWICE when CTA show_restore was true and
@@ -3043,7 +3043,7 @@ internal fun PaywallSectionView(
             }
         }
         "cta" -> {
-            // SPEC-070-A finalization PW-10 — full CTA section with optional
+            // Full CTA section with optional
             // restore button placed above OR below the main CTA, plus CTA
             // gradient + cta_height + cta_font_size honored from authored
             // values. Mirrors iOS PaywallRenderer CTA branch with the
@@ -3055,17 +3055,17 @@ internal fun PaywallSectionView(
             // most authors use) was silently dropped, so a paywall configured
             // with `cta: { bg_color: "#FFFFFF", text_color: "#000000" }` rendered
             // as the indigo default → "text-only with no background" QA report.
-            // SPEC-419 — guard each step with isNotBlank(). An empty-string
+            // Guard each step with isNotBlank(). An empty-string
             // bg_color hit StyleEngine.parseColor("") → Color.Transparent, which
             // is non-null and SHORT-CIRCUITED the chain (CTA went transparent =
             // dark bg showing through = "plain black"). iOS `??` over a nil falls
             // through to the brand accent; mirror that by treating "" as absent.
-            // SPEC-419 — iOS PaywallConfig.swift:511 reads `styleObj?.bg_color` FIRST:
+            // iOS PaywallConfig.swift:511 reads `styleObj?.bg_color` FIRST:
             // the console writes `cta: { style: { bg_color, text_color, corner_radius } }`,
             // a NESTED object. Android's PaywallCTA.style is a raw `Any?` that was never
             // read, so an authored `cta.style.bg_color = #ffffff` (white button) was dropped
             // and the CTA fell through to the brand accent / transparent = "plain black".
-            // SPEC-419 — resolve to null (NOT Transparent) for blank/invalid/
+            // Resolve to null (NOT Transparent) for blank/invalid/
             // "transparent"/shorthand values so the ?: chain CONTINUES to the
             // next authored color instead of short-circuiting and painting the
             // navy PAGE bg through a transparent button. StyleEngine.parseColor
@@ -3077,7 +3077,7 @@ internal fun PaywallSectionView(
             }
             val ctaStyleMap = config.cta?.style as? Map<*, *>
             val sectionCtaStyleMap = section.data?.cta?.style as? Map<*, *>
-            // SPEC-419 — capture whether an EXPLICIT solid CTA bg_color was authored
+            // Capture whether an EXPLICIT solid CTA bg_color was authored
             // (vs the brand-accent fallback). An explicit solid color WINS over a
             // cta_gradient: the gradient path collapses to the page-navy via the
             // degenerate pixel-offset brush below, so honoring the author's #ffffff
@@ -3118,7 +3118,7 @@ internal fun PaywallSectionView(
                 }.toTypedArray()
                 if (stops.size < 2) return@let null
                 val rads = (g.angle ?: 90.0) * Math.PI / 180.0
-                // SPEC-419 — Compose Offset is in PIXELS, not 0..1 fractions. Passing
+                // Compose Offset is in PIXELS, not 0..1 fractions. Passing
                 // fractions collapsed the gradient into the first pixel (clamped to the
                 // navy end-stop). Map fractions to real pixels via a size-aware
                 // ShaderBrush so it renders like iOS (UnitPoint).
@@ -3145,9 +3145,9 @@ internal fun PaywallSectionView(
             val restoreColor = section.data?.restore_text_color?.let { parseHexColor(it) }
                 ?: Color.White.copy(alpha = 0.6f)
             val restoreFontSize = (section.data?.restore_font_size ?: 13f).sp
-            // SPEC-490 (#651 item 1) — the CTA↔Restore gap. Unset keeps the previous hardcoded 8.dp.
+            // The CTA↔Restore gap. Unset keeps the previous hardcoded 8.dp.
             val restoreGap = (section.data?.restore_gap ?: 8f).dp
-            // SPEC-492 (#651 item 4) — mirrors iOS `performButtonAction`. Without this Android would
+            // Mirrors iOS `performButtonAction`. Without this Android would
             // parse cta_action/restore_action and ignore them, which is exactly the iOS/Android
             // divergence this wave keeps finding. check:authorability caught it as a dead control.
             val ctaCtx = androidx.compose.ui.platform.LocalContext.current
@@ -3192,7 +3192,7 @@ internal fun PaywallSectionView(
                                 Modifier
                             },
                         )
-                        // SPEC-492 (#651 item 4) — the restore link's authored action; unset restores.
+                        // The restore link's authored action; unset restores.
                         .clickable { performButtonAction(section.data?.restore_action, null, "restore") }
                         .padding(vertical = 8.dp)
                         .semantics {
@@ -3207,7 +3207,7 @@ internal fun PaywallSectionView(
                     Spacer(Modifier.height(restoreGap))
                 }
                 // CTA Button — paints gradient if present, else solid color.
-                // SPEC-401-A R70 (Lens C P1) — gate enabled state by both
+                // Gate enabled state by both
                 // `!isPurchasing` AND `selectedPlanId != null` matching iOS
                 // `.disabled(isPurchasing || selectedPlanId == nil)` at
                 // PaywallRenderer.swift:205. Plus 50% alpha when disabled
@@ -3229,10 +3229,10 @@ internal fun PaywallSectionView(
                         .height(ctaHeight)
                         .ctaAnimation(config.animation?.cta_animation)
                         .run { with(StyleEngine) { applyContainerStyle(section.style?.container) } }
-                        // R89 — CTA corner_radius default 12 matches iOS
+                        // CTA corner_radius default 12 matches iOS
                         // PaywallCTA.resolvedCornerRadius at PaywallConfig.swift:515
                         // `styleObj?.corner_radius ?? corner_radius ?? 12.0`. Was 14.
-                        // SPEC-419 — apply the fill DIRECTLY with the shape (was .clip()+.then()
+                        // Apply the fill DIRECTLY with the shape (was .clip()+.then()
                         // which rendered transparent on-device despite buttonBgColor=white per logcat).
                         // explicit solid bg_color (#ffffff) WINS over a cta_gradient.
                         .background(
@@ -3258,12 +3258,12 @@ internal fun PaywallSectionView(
                             enabled = ctaEnabled,
                             interactionSource = ctaInteraction,
                             indication = null, // QA-R9 — no purple ripple
-                        // SPEC-492 (#651 item 4) — the CTA's authored action; unset purchases.
+                        // The CTA's authored action; unset purchases.
                         ) { performButtonAction(section.data?.cta_action, null, "purchase") },
                     contentAlignment = Alignment.Center,
                 ) {
                     if (isPurchasing) {
-                        // Round-30 — mirror iOS CTAButton.swift:58-69 which shows a spinner
+                        // Mirror iOS CTAButton.swift:58-69 which shows a spinner
                         // AND "Processing..." text; Android previously showed a bare spinner,
                         // so an in-flight purchase read "Processing..." on iOS but was text-less
                         // on Android. QA-R9 — spinner color follows the authored CTA text color
@@ -3285,7 +3285,7 @@ internal fun PaywallSectionView(
                         }
                     } else {
                         Text(
-                            // SPEC-070-A finalization PW-3 / Round-30 — iOS resolution chain.
+                            // iOS resolution chain.
                             // The CTA-SECTION path (this one, the common case) routes through
                             // iOS CTAButton.swift:63/66 whose default is "Subscribe" — NOT
                             // "Continue" (that's only iOS's no-cta-section top-level fallback,
@@ -3318,7 +3318,7 @@ internal fun PaywallSectionView(
                         )
                     }
                 }
-                // SPEC-492 (#651 item 2) — extra buttons sit between the CTA and the restore link,
+                // Extra buttons sit between the CTA and the restore link,
                 // matching iOS.
                 section.data?.extra_buttons?.takeIf { it.isNotEmpty() }?.let { extras ->
                     Spacer(Modifier.height(restoreGap))
@@ -3345,7 +3345,7 @@ internal fun PaywallSectionView(
             }
         }
         "social_proof" -> {
-            // SPEC-084: Social proof sub-types
+            // Social proof sub-types
             val subType = section.data?.sub_type ?: "app_rating"
             Column(
                 horizontalAlignment = Alignment.CenterHorizontally,
@@ -3380,7 +3380,7 @@ internal fun PaywallSectionView(
                             section.style?.elements?.get("value")?.text_style
                         )
                         section.data?.rating?.let { rating ->
-                            // SPEC-401-A R84 (Lens A F3) \u2014 render 5 fixed stars
+                            // \u2014 render 5 fixed stars
                             // with filled/half/outline based on rating instead
                             // of `repeat(rating.toInt())` which dropped the
                             // half-star (4.5\u2605 rendered as 4 solid stars).
@@ -3403,7 +3403,7 @@ internal fun PaywallSectionView(
                                 }
                             }
                             section.data.review_count?.let { count ->
-                                // SPEC-401-A R84 (Lens A F3) \u2014 compact count
+                                // \u2014 compact count
                                 // formatter (e.g. 1245 \u2192 "1.2K") matching iOS
                                 // formatCount; was the literal string
                                 // "$rating from $count reviews".
@@ -3427,7 +3427,7 @@ internal fun PaywallSectionView(
             }
         }
         "guarantee" -> {
-            // SPEC-401-A R84 (Lens A F1) — full 4-element VStack matching
+            // Full 4-element VStack matching
             // iOS PaywallRenderer.swift:594-661 (icon + capsule badge + title +
             // description). Was bare 12sp text dropping icon/title/description/
             // accent color/badge styling.
@@ -3496,7 +3496,7 @@ internal fun PaywallSectionView(
                 }
             }
         }
-        // SPEC-084: Missing sections
+        // Missing sections
         "image" -> {
             ai.appdna.sdk.core.NetworkImage(
                 url = section.data?.image_url,
@@ -3511,7 +3511,7 @@ internal fun PaywallSectionView(
         "spacer" -> {
             Spacer(modifier = Modifier.height((section.data?.spacer_height ?: 24f).dp).run { with(StyleEngine) { applyContainerStyle(section.style?.container) } })
         }
-        // SPEC-085: Lottie section
+        // Lottie section
         "lottie" -> {
             section.data?.lottie_url?.let { url ->
                 LottieBlockView(
@@ -3519,7 +3519,7 @@ internal fun PaywallSectionView(
                         lottie_url = url,
                         loop = section.data.lottie_loop ?: true,
                         speed = section.data.lottie_speed ?: 1.0f,
-                        // SPEC-070-A finalization B5 P3 — prefer the
+                        // Prefer the
                         // type-specific lottie_height over the generic
                         // height (mirrors iOS PaywallConfig.swift:133).
                         height = section.data.lottie_height ?: section.data.height ?: 200f,
@@ -3527,7 +3527,7 @@ internal fun PaywallSectionView(
                 )
             }
         }
-        // SPEC-085: Rive section
+        // Rive section
         "rive" -> {
             section.data?.rive_url?.let { url ->
                 RiveBlockView(
@@ -3539,7 +3539,7 @@ internal fun PaywallSectionView(
                 )
             }
         }
-        // SPEC-085 + SPEC-070-A audit attempt 9 F1: also handle
+        // Also handle
         // `video_background` so console-published full-bleed background-video
         // sections render. iOS PaywallRenderer.swift:549 dispatches both
         // strings to the same renderer.
@@ -3549,7 +3549,7 @@ internal fun PaywallSectionView(
                     block = CoreVideoBlock(
                         video_url = url,
                         video_thumbnail_url = section.data.video_thumbnail_url ?: section.data.image_url,
-                        // SPEC-070-A finalization B5 P3 — prefer the
+                        // Prefer the
                         // type-specific video_height over the generic
                         // height (mirrors iOS PaywallConfig.swift:136).
                         video_height = section.data.video_height ?: section.data.height ?: 200f,
@@ -3561,7 +3561,7 @@ internal fun PaywallSectionView(
             }
         }
         "testimonial" -> {
-            // SPEC-401-A R84 (Lens A F2) \u2014 honor `data.layout` (quote / card /
+            // \u2014 honor `data.layout` (quote / card /
             // minimal / default) matching iOS PaywallRenderer.swift:715-799.
             // Was hardcoded "quote" layout regardless of console value.
             val testimonialLayout = section.data?.layout ?: "quote"
@@ -3652,7 +3652,7 @@ internal fun PaywallSectionView(
                 }
             }
         }
-        // SPEC-089d: 12 new paywall section types
+        // 12 new paywall section types
         "countdown" -> {
             PaywallCountdownSection(section = section, loc = loc)
         }
@@ -3685,7 +3685,7 @@ internal fun PaywallSectionView(
                 section = section,
                 loc = loc,
                 onPromoCodeSubmit = onPromoCodeSubmit,
-                // SPEC-070-A C.7 — hoisted state plumbing
+                // Hoisted state plumbing
                 promoCode = promoCode,
                 promoState = promoState,
                 onPromoCodeChange = onPromoCodeChange,
@@ -3701,7 +3701,7 @@ internal fun PaywallSectionView(
     }
 }
 
-// MARK: - SPEC-089d: Countdown section (AC-028)
+// MARK: - Countdown section
 
 @Composable
 private fun PaywallCountdownSection(
@@ -3709,7 +3709,7 @@ private fun PaywallCountdownSection(
     loc: (String, String) -> String,
 ) {
     val duration = section.data?.duration_seconds ?: section.data?.countdown_seconds ?: 3600
-    // SPEC-401-A R76 (Lens C P1) — render label + layout (boxed/banner/
+    // Render label + layout (boxed/banner/
     // inline) + background_color matching iOS PaywallRenderer.swift
     // :875-901 `countdownSectionView`. DTOs already carry `label`,
     // `label_text`, `background_color` (PaywallConfig.kt:168/182/237) and
@@ -3756,7 +3756,7 @@ private fun PaywallCountdownSection(
     }
 }
 
-// MARK: - SPEC-089d: Legal section (AC-029)
+// MARK: - Legal section
 
 @Composable
 private fun PaywallLegalSection(
@@ -3779,7 +3779,7 @@ private fun PaywallLegalSection(
     ) {
         section.data?.text?.let { text ->
             // Parse markdown links [text](url)
-            // SPEC-485 (#649) — pass the authored link colour through (accent_color, which the
+            // Pass the authored link colour through (accent_color, which the
             // console's Link Color now maps onto at the sync boundary).
             val legalLinkColor = section.data?.accent_color?.let { parseHexColor(it) }
             val annotated = buildAnnotatedStringWithLinks(text, legalLinkColor)
@@ -3789,7 +3789,7 @@ private fun PaywallLegalSection(
                 onClick = { offset ->
                     annotated.getStringAnnotations(tag = "URL", start = offset, end = offset)
                         .firstOrNull()?.let { annotation ->
-                            // SPEC-070-B W11 — a markdown link in a legal block is still a
+                            // A markdown link in a legal block is still a
                             // CONFIG-DRIVEN url. It goes through the allowlist like every other.
                             ai.appdna.sdk.core.URLSafety.open(context, annotation.item)
                         }
@@ -3811,7 +3811,7 @@ private fun PaywallLegalSection(
                         text = link.label,
                         color = accentColor,
                         fontSize = fontSize.sp,
-                        // SPEC-401-A R85 (Lens A F4 P0) — route restore-action
+                        // Route restore-action
                         // links to onRestore callback matching iOS
                         // PaywallRenderer.swift:931-938. Was unconditionally
                         // launching ACTION_VIEW with link.url which for restore
@@ -3821,7 +3821,7 @@ private fun PaywallLegalSection(
                             if (link.action == "restore") {
                                 onRestore()
                             } else if (link.url.isNotBlank()) {
-                                // SPEC-070-B W11 — allowlisted. A paywall config that names
+                                // allowlisted. A paywall config that names
                                 // `javascript:` or `intent:` here is refused, not opened.
                                 ai.appdna.sdk.core.URLSafety.open(context, link.url)
                             }
@@ -3835,7 +3835,7 @@ private fun PaywallLegalSection(
 }
 
 /**
- * SPEC-485 (#649) — inline `[label](url)` links in paywall legal text.
+ * Inline `[label](url)` links in paywall legal text.
  *
  * Was `private`, i.e. file-private, so the OTHER legal renderer
  * (`screens/sections/ModuleSectionWrappers.PaywallLegalSection`, used when a paywall section is
@@ -3860,7 +3860,7 @@ internal fun buildAnnotatedStringWithLinks(
         builder.pushStringAnnotation(tag = "URL", annotation = url)
         builder.pushStyle(
             androidx.compose.ui.text.SpanStyle(
-                // SPEC-485 (#649) — the AUTHORED link colour when there is one. This was
+                // The AUTHORED link colour when there is one. This was
                 // unconditionally the brand accent, so the console's "Link Color" was ignored even
                 // once its value finally reached the device. iOS honours it via `.tint(linkColor)`.
                 color = linkColor ?: ai.appdna.sdk.AppDNA.brandAccentColor(),
@@ -3878,11 +3878,11 @@ internal fun buildAnnotatedStringWithLinks(
     return builder.toAnnotatedString()
 }
 
-// MARK: - SPEC-089d: Divider section (AC-030)
+// MARK: - Divider section
 
 @Composable
 private fun PaywallDividerSection(section: PaywallSection) {
-    // SPEC-401-A R75 (Lens A P2) — divider default `#E5E7EB` matches iOS
+    // Divider default `#E5E7EB` matches iOS
     // PaywallRenderer.swift:1003 `data?.color ?? "#E5E7EB"` (light gray
     // hairline). Was `Color.White.copy(alpha = 0.2f)` — invisible on
     // light-themed paywalls. iOS uses an absolute hex default that works
@@ -3909,7 +3909,7 @@ private fun PaywallDividerSection(section: PaywallSection) {
                 DividerLine(color = dividerColor, thickness = thickness, style = lineStyle, modifier = Modifier.weight(1f))
                 Text(
                     text = labelText,
-                    // SPEC-401-A R75 (Lens A P2) — divider label default
+                    // Divider label default
                     // `#9CA3AF` matches iOS PaywallRenderer.swift:1017
                     // `data?.labelColor ?? "#9CA3AF"`. Was 50%-white —
                     // invisible on light paywalls.
@@ -3962,7 +3962,7 @@ private fun DividerLine(color: Color, thickness: Float, style: String, modifier:
     }
 }
 
-// MARK: - SPEC-089d: Card section (AC-032)
+// MARK: - Card section
 
 @Composable
 private fun PaywallCardSection(
@@ -4010,7 +4010,7 @@ private fun PaywallCardSection(
     }
 }
 
-// MARK: - SPEC-089d: Carousel section (AC-033)
+// MARK: - Carousel section
 
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
@@ -4090,7 +4090,7 @@ private fun PaywallCarouselSection(
     }
 }
 
-// MARK: - SPEC-089d: Timeline section (AC-034)
+// MARK: - Timeline section
 
 @Composable
 private fun PaywallTimelineSection(
@@ -4122,14 +4122,14 @@ private fun PaywallTimelineSection(
     val titleFontSize = (section.data.font_size ?: 14f).sp
     val itemSpacing = if (isCompact) 12.dp else 20.dp
 
-    // SPEC-419 — iOS centers the timeline block (PaywallRenderer.swift:1267-1340).
+    // iOS centers the timeline block (PaywallRenderer.swift:1267-1340).
     // Wrap in a full-width Box and let the Row be content-sized + centered, instead
     // of a fillMaxWidth Row whose titles were left-pinned via weight(1f).
     Box(
         modifier = Modifier.fillMaxWidth().run { with(StyleEngine) { applyContainerStyle(section.style?.container) } },
         contentAlignment = Alignment.Center,
     ) {
-        // SPEC-419 — per-item Row at IntrinsicSize.Min so the left rail (dot +
+        // Per-item Row at IntrinsicSize.Min so the left rail (dot +
         // connector) is exactly as tall as THIS item's title+subtitle, keeping
         // each dot aligned to its own title instead of two independent chains
         // drifting (left height 8dp+itemSpacing != right title+spacer height).
@@ -4188,7 +4188,7 @@ private fun PaywallTimelineSection(
     }
 }
 
-// MARK: - SPEC-089d: Icon grid section (AC-035)
+// MARK: - Icon grid section
 
 @Composable
 private fun PaywallIconGridSection(
@@ -4259,7 +4259,7 @@ private fun PaywallIconGridSection(
     }
 }
 
-// MARK: - SPEC-089d: Comparison table section (AC-036)
+// MARK: - Comparison table section
 
 @Composable
 private fun PaywallComparisonTableSection(
@@ -4269,18 +4269,18 @@ private fun PaywallComparisonTableSection(
     val cols = section.data?.table_columns ?: return
     val rows = section.data.rows ?: return
     val checkColor = section.data.check_color?.let { parseHexColor(it) } ?: Color(0xFF22C55E)
-    // SPEC-401-A R79 (Lens A P1) — defaults match iOS PaywallRenderer.swift:
+    // Defaults match iOS PaywallRenderer.swift:
     // 1397-1399. Cross was bright red `#EF4444`; iOS uses muted gray `#D1D5DB`.
     // Border was 20%-white (invisible on light paywall); iOS uses `#E5E7EB`.
     val crossColor = section.data.cross_color?.let { parseHexColor(it) } ?: parseHexColor("#D1D5DB")
     val highlightClr = section.data.highlight_color?.let { parseHexColor(it) } ?: ai.appdna.sdk.AppDNA.brandAccentColor()
     val borderClr = section.data.border_color?.let { parseHexColor(it) } ?: parseHexColor("#E5E7EB")
-    // SPEC-401-A R79 (Lens A P1) — theme-adaptive label colors matching iOS
+    // Theme-adaptive label colors matching iOS
     // `.foregroundColor(.primary)` / `.secondary`. Was hardcoded white,
     // invisible on light-themed paywalls.
     val tablePrimaryText = MaterialTheme.colorScheme.onSurface
     val tableSecondaryText = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
-    // SPEC-401-A R79 (Lens A P2) — header background `#F9FAFB` matching iOS
+    // Header background `#F9FAFB` matching iOS
     // PaywallRenderer.swift:1421. Was 5%-white (invisible on white paywall).
     val tableHeaderBg = parseHexColor("#F9FAFB")
     val radius = section.data.corner_radius ?: 12f
@@ -4341,7 +4341,7 @@ private fun PaywallComparisonTableSection(
                             .padding(vertical = 8.dp),
                         contentAlignment = Alignment.Center,
                     ) {
-                        // SPEC-070-A finalization B5 P2 \u2014 accept the same
+                        // \u2014 accept the same
                         // value aliases iOS does (PaywallRenderer.swift:1437-1445):
                         //   check / true / yes / y / \u2713
                         //   cross / false / no / n / - / \u2717
@@ -4365,7 +4365,7 @@ private fun PaywallComparisonTableSection(
     }
 }
 
-// MARK: - SPEC-089d: Promo input section (AC-037)
+// MARK: - Promo input section
 
 // `internal` (not private) so PromoCodeFallbackTest can drive the no-delegate
 // branch directly. That branch used to accept any non-blank code.
@@ -4374,7 +4374,7 @@ internal fun PaywallPromoInputSection(
     section: PaywallSection,
     loc: (String, String) -> String,
     onPromoCodeSubmit: ((String, (Boolean) -> Unit) -> Unit)? = null,
-    // SPEC-070-A C.7 — state hoisted to parent so CTA tap handlers can read
+    // State hoisted to parent so CTA tap handlers can read
     // the validated code. When omitted (e.g. legacy callers), falls back to
     // local state.
     promoCode: String? = null,
@@ -4402,7 +4402,7 @@ internal fun PaywallPromoInputSection(
             verticalAlignment = Alignment.CenterVertically,
             modifier = Modifier.fillMaxWidth(),
         ) {
-            // SPEC-401-A R86 (Lens A F6) — filled TextField with #F9FAFB bg +
+            // Filled TextField with #F9FAFB bg +
             // theme-adaptive text matches iOS PaywallRenderer.swift:1481-1488.
             // Was OutlinedTextField with white-on-dark-only palette → invisible
             // placeholder on light-mode paywalls.
@@ -4425,7 +4425,7 @@ internal fun PaywallPromoInputSection(
             Button(
                 onClick = {
                     updateState("loading")
-                    // AC-037: Submit promo code via delegate callback
+                    // Submit promo code via delegate callback
                     if (onPromoCodeSubmit != null) {
                         onPromoCodeSubmit(effectivePromoCode) { isValid ->
                             updateState(if (isValid) "success" else "error")
@@ -4477,7 +4477,7 @@ internal fun PaywallPromoInputSection(
     }
 }
 
-// MARK: - SPEC-089d: Toggle section (AC-038)
+// MARK: - Toggle section
 
 @Composable
 private fun PaywallToggleSection(
@@ -4514,7 +4514,7 @@ private fun PaywallToggleSection(
                 Text(
                     text = loc("toggle.description", it),
                     fontSize = 12.sp,
-                    // SPEC-401-A R86 (Lens A F7) — default #9CA3AF matches iOS
+                    // Default #9CA3AF matches iOS
                     // PaywallRenderer.swift:1545. Was Color.White 0.6 alpha →
                     // invisible on #FFFFFF paywall background.
                     color = section.data.description_color?.let { c -> parseHexColor(c) } ?: parseHexColor("#9CA3AF"),
@@ -4530,7 +4530,7 @@ private fun PaywallToggleSection(
     }
 }
 
-// MARK: - SPEC-089d: Reviews carousel section (AC-039)
+// MARK: - Reviews carousel section
 
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
@@ -4597,7 +4597,7 @@ private fun PaywallReviewsCarouselSection(
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
                 ) {
-                    // SPEC-070-A finalization B5 P2 — avatar resolution
+                    // Avatar resolution
                     // mirrors iOS PaywallHelperViews.swift:316-343,401-414:
                     //   1. avatar_url → render NetworkImage
                     //   2. avatar_emoji → render unicode glyph (raw or
@@ -4682,7 +4682,7 @@ private fun PaywallReviewsCarouselSection(
     }
 }
 
-// SPEC-084: Countdown timer for social proof
+// Countdown timer for social proof
 @Composable
 private fun CountdownTimer(seconds: Int, valueTextStyle: ai.appdna.sdk.core.TextStyleConfig? = null) {
     var remaining by remember { mutableIntStateOf(seconds) }
@@ -4718,7 +4718,7 @@ private fun CountdownTimer(seconds: Int, valueTextStyle: ai.appdna.sdk.core.Text
                     .padding(horizontal = 12.dp, vertical = 6.dp),
             ) {
                 Text(
-                    // SPEC-070-A I.10 — `Locale.US` keeps the countdown digits
+                    // `Locale.US` keeps the countdown digits
                     // ASCII (`05` not `۰۵`) so the paywall countdown reads the
                     // same in every locale. Mirrors iOS NumberFormatter.
                     text = String.format(java.util.Locale.US, "%02d", value),
@@ -4730,7 +4730,7 @@ private fun CountdownTimer(seconds: Int, valueTextStyle: ai.appdna.sdk.core.Text
     }
 }
 
-// MARK: - SPEC-089d: Sticky footer section (AC-031)
+// MARK: - Sticky footer section
 
 @Composable
 private fun PaywallStickyFooter(
@@ -4742,7 +4742,7 @@ private fun PaywallStickyFooter(
     // Round-MZ — selected plan's per-plan cta_text (overrides section cta_text when non-empty).
     selectedPlanCtaText: String? = null,
 ) {
-    // SPEC-401-A R86 (Lens A F1) — default background #FFFFFF matches iOS
+    // Default background #FFFFFF matches iOS
     // PaywallRenderer.swift:1054. Was Color.Black 0.95 alpha → light-mode
     // paywalls rendered dark footer.
     val bgColor = section.data?.background_color?.let { parseHexColor(it) } ?: Color.White
@@ -4761,7 +4761,7 @@ private fun PaywallStickyFooter(
             Button(
                 onClick = onCTATap,
                 enabled = !isPurchasing,
-                // SPEC-401-A R86 (Lens A F2) — honor cta_height + cta_font_size
+                // Honor cta_height + cta_font_size
                 // matching iOS PaywallRenderer.swift:1067,1072. Was hardcoded.
                 modifier = Modifier.fillMaxWidth().height((section.data?.cta_height ?: 52f).dp),
                 shape = RoundedCornerShape((section.data?.cta_corner_radius ?: 14f).dp),
@@ -4789,14 +4789,14 @@ private fun PaywallStickyFooter(
                 when (section.data.secondary_action) {
                     "restore" -> onRestore()
                     "link" -> {
-                        // SPEC-070-B W11 — allowlisted, like every other config-driven URL.
+                        // Allowlisted, like every other config-driven URL.
                         ai.appdna.sdk.core.URLSafety.open(context, section.data.secondary_url)
                     }
                 }
             }) {
                 Text(
                     text = loc("sticky_footer.secondary", secondaryText),
-                    // SPEC-401-A R86 (Lens A F4) — theme-adaptive secondary
+                    // Theme-adaptive secondary
                     // matches iOS `.foregroundColor(.secondary)` at
                     // PaywallRenderer.swift:1095. Was White 0.6 alpha → broken
                     // on light footers.
@@ -4811,9 +4811,9 @@ private fun PaywallStickyFooter(
             Spacer(Modifier.height(4.dp))
             Text(
                 text = loc("sticky_footer.legal", legalText),
-                // SPEC-401-A R86 (Lens A F5) — theme-adaptive legal matches iOS
+                // Theme-adaptive legal matches iOS
                 // `.foregroundColor(.secondary)` at PaywallRenderer.swift:1103.
-                // SPEC-487 (#648) — now authorable. Unset keeps this exact colour and 10sp, so a
+                // Now authorable. Unset keeps this exact colour and 10sp, so a
                 // published paywall is unchanged; what changes is that an author CAN size it. The
                 // hardcoded 10sp is why #648 read as a Legal-section bug: the Legal SECTION honoured
                 // its authored 13, this line did not honour the 16 set beside it, so the legal
@@ -4843,7 +4843,7 @@ private fun parseHexColor(hex: String): Color {
 }
 
 /**
- * SPEC-070-A finalization B5 P2 — review avatar emoji resolver.
+ * Review avatar emoji resolver.
  * Mirrors iOS PaywallHelperViews.swift `emojiFromName` map. Console
  * authors can store either:
  *   - a raw emoji ("👩"), passed through unchanged
@@ -4888,7 +4888,7 @@ private object ReviewAvatarEmojiMap {
     }
 }
 
-// SPEC-401-A R84 (Lens A F3) — compact count formatter mirroring iOS
+// Compact count formatter mirroring iOS
 // PaywallRenderer.swift `formatCount` (e.g. 1245 → "1.2K", 12450 → "12K",
 // 1245000 → "1.2M"). Lower than 1000 → bare number.
 private fun formatCompactCount(count: Int): String {

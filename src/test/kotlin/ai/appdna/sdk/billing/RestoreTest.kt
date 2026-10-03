@@ -6,7 +6,7 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 /**
- * SPEC-070-A J.8 — RestoreTest.
+ * RestoreTest.
  *
  * Mirrors `Tests/AppDNASDKTests/RestoreTests.swift`. Asserts:
  *
@@ -75,7 +75,7 @@ class RestoreTest {
 
     @Test
     fun `BillingClientFactory default impl is non-null`() {
-        // SPEC-070-A J.23 — `DefaultBillingClientFactory` is the production
+        // `DefaultBillingClientFactory` is the production
         // factory wired into [BillingConnectionManager]. Tests can substitute
         // a fake by passing an alternate factory; the existence of this
         // singleton is the load-bearing entry point.

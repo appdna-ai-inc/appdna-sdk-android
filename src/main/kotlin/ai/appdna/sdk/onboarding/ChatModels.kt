@@ -1,7 +1,7 @@
 package ai.appdna.sdk.onboarding
 
 /**
- * SPEC-090: Interactive Chat Config Models
+ * Interactive Chat Config Models
  */
 
 data class ChatConfig(

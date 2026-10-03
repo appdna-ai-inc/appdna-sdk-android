@@ -23,7 +23,7 @@ internal class SurveyManager(
     private val context: Context,
     private val eventTracker: EventTracker,
     internal var apiClient: ApiClient? = null,
-    // SPEC-036-F §1.2 — consulted per-survey (inside the present path) for a
+    // Consulted per-survey (inside the present path) for a
     // running survey experiment targeting the survey being shown.
     private val experimentManager: ai.appdna.sdk.config.ExperimentManager? = null,
 ) {
@@ -43,7 +43,7 @@ internal class SurveyManager(
     fun onEvent(eventName: String, properties: Map<String, Any>?) {
         if (isPresenting.get()) return
 
-        // Round-31 — iterate in ASCENDING surveyId order for a DETERMINISTIC winner when multiple
+        // Iterate in ASCENDING surveyId order for a DETERMINISTIC winner when multiple
         // surveys match one event (mirrors iOS SurveyManager + MessageManager's id-asc tie-break).
         // The unordered map + `break` previously picked a nondeterministic survey that diverged
         // from iOS. SurveyConfig has no priority field, so surveyId is the tie-break.
@@ -90,7 +90,7 @@ internal class SurveyManager(
     }
 
     /**
-     * SPEC-070-A H.24 — cancel all pending presentation/network coroutines so
+     * Cancel all pending presentation/network coroutines so
      * survey work doesn't outlive [AppDNA.shutdown]. Safe to call multiple
      * times; the scope is supervisor-jobbed.
      */
@@ -114,7 +114,7 @@ internal class SurveyManager(
     }
 
     private fun presentSurvey(surveyId: String, activeConfig: SurveyConfig, triggerEvent: String) {
-        // SPEC-404 — pause new survey presentation while the SDK is
+        // Pause new survey presentation while the SDK is
         // backend-locked (per-key suspended day 20+ OR org cancelled). No
         // analytics event, no delegate fire. Check BEFORE isPresenting flip.
         if (ai.appdna.sdk.AppDNA.runtimeLock != null) {
@@ -125,11 +125,11 @@ internal class SurveyManager(
         if (!isPresenting.compareAndSet(false, true)) return
         currentSurveyId = surveyId
 
-        // SPEC-036-F §1.2 — experiment-aware presentation, attached inside the
+        // Experiment-aware presentation, attached inside the
         // present path (surveys are event-auto-triggered). A running survey
         // experiment targeting this survey + a treatment bucket renders the
         // treatment payload; control / none / old-doc → active.
-        // Round-13 F2 — resolveSurfacePresentation records an experiment_exposure as a side effect, so it
+        // resolveSurfacePresentation records an experiment_exposure as a side effect, so it
         // must run AFTER every synchronous suppression gate (runtimeLock above + isPresenting here): a
         // survey never shown must never count as exposed. Was above the isPresenting gate, so a
         // concurrent already-presenting call over-recorded exposures.
@@ -149,7 +149,7 @@ internal class SurveyManager(
             "trigger_event" to triggerEvent
         ))
 
-        // SPEC-070-A B.4 — fire onSurveyPresented to the host's
+        // Fire onSurveyPresented to the host's
         // AppDNASurveyDelegate. Mirrors iOS Feedback/SurveyManager.swift:100.
         fireOnSurveyPresented(surveyId)
 
@@ -166,7 +166,7 @@ internal class SurveyManager(
                     trackCompleted(surveyId, config, result.answers)
                     submitResponse(surveyId, config, result.answers)
                     executeFollowUp(config, result.answers)
-                    // SPEC-070-A B.4 — fire onSurveyCompleted with the typed responses.
+                    // Fire onSurveyCompleted with the typed responses.
                     fireOnSurveyCompleted(surveyId, result.answers)
                 }
                 is SurveyResult.Dismissed -> {
@@ -175,14 +175,14 @@ internal class SurveyManager(
                         "survey_id" to surveyId,
                         "questions_answered" to result.answeredCount
                     ))
-                    // SPEC-070-A B.4 — fire onSurveyDismissed.
+                    // Fire onSurveyDismissed.
                     fireOnSurveyDismissed(surveyId)
                 }
             }
         }
     }
 
-    // SPEC-070-A B.4 — main-thread fan-out helpers. Read the host's delegate
+    // Main-thread fan-out helpers. Read the host's delegate
     // fresh on every call so a delegate registered after configure still
     // receives callbacks. Mirrors iOS SurveyManager.swift dispatch pattern.
 
@@ -235,11 +235,11 @@ internal class SurveyManager(
     }
 
     private fun submitResponse(surveyId: String, config: SurveyConfig, answers: List<SurveyAnswer>) {
-        // SPEC-070-A G.20 — backend `/api/v1/feedback/responses` canonical
+        // Backend `/api/v1/feedback/responses` canonical
         // schema requires `user_id` + ISO8601 `completed_at`; the device
         // field is `device_type` (not `device`). Coordinated with iOS to
         // emit the same shape.
-        // SPEC-070-A final audit pass I F1 — go through the public
+        // Go through the public
         // `AppDNA.getCurrentUserId()` accessor instead of reading the
         // plaintext SharedPreferences directly. Once LocalStorage migrates
         // identity into the encrypted store (`ai.appdna.sdk.secure`), the
@@ -253,7 +253,7 @@ internal class SurveyManager(
             sdf.timeZone = java.util.TimeZone.getTimeZone("UTC")
             sdf.format(java.util.Date())
         }
-        // SPEC-070-A audit Round 2 finding 1: align body shape to iOS
+        // Align body shape to iOS
         // SurveyManager.swift:154-167. iOS does NOT emit top-level
         // `survey_type` (that lives on the `survey_completed` event) nor
         // `sdk_version`/`platform` inside `context`; instead `platform` is
@@ -267,7 +267,7 @@ internal class SurveyManager(
             put("completed_at", completedAt)
             put("context", JSONObject().apply {
                 put("app_version", getAppVersion())
-                // SPEC-070-A G.20 — `device_type` (not `device`) per backend schema.
+                // `device_type` (not `device`) per backend schema.
                 put("device_type", Build.MODEL)
                 // Read the REAL per-install session counter (SessionManager.sessionsThisInstall), not the
                 // dead `ai.appdna.sdk`/`session_count` pref that nothing writes — which reported 0 on every
@@ -319,7 +319,7 @@ internal class SurveyManager(
 
         val surveyId = currentSurveyId ?: config.name
 
-        // SPEC-084: Gap #22 — Wire follow-up actions with event tracking so the host app
+        // Gap #22 — Wire follow-up actions with event tracking so the host app
         // can respond to each follow-up regardless of native SDK availability.
         when (action.action) {
             "prompt_review" -> {
@@ -379,10 +379,10 @@ internal class SurveyManager(
                     eventTracker.track("survey_feedback_submitted", mapOf(
                         "feedback" to feedback
                     ))
-                    // SPEC-070-A G.9 — emit canonical `feedback_form_submitted`
+                    // Emit canonical `feedback_form_submitted`
                     // event so backend Growth Memory + reports surface it
                     // independently of the survey-followup tracking shape.
-                    // Audit Round 2-restart F1: payload shape mirrors iOS
+                    // Payload shape mirrors iOS
                     // SurveyManager.swift:223-225 exactly (`feedback` only) so
                     // backend dedup/parity logic sees identical events
                     // cross-platform.

@@ -10,10 +10,10 @@ import org.junit.Test;
  * A Java host written against the released `AppDNAOptions` (1.0.53: `flushInterval: Long = 30L`,
  * `batchSize: Int = 20`, `configTTL: Long = 3600L`) still compiles and links: the getters, `componentN()`,
  * `copy(...)` and the constructors keep their JVM signatures — primitive `long` / `int`, not boxed nullable
- * `Long` / `Integer`. The unreleased round-33 change made the three nullable, which changed every one of these
+ * `Long` / `Integer`. The unreleased change made the three nullable, which changed every one of these
  * descriptors; a host binary compiled against 1.0.53 would have failed with NoSuchMethodError.
  *
- * NEGATIVE CONTROL (build Mac): with the round-33 nullable properties, every descriptor assertion fails
+ * NEGATIVE CONTROL (build Mac): with nullable properties, every descriptor assertion fails
  * (`java.lang.Long` / `java.lang.Integer` instead of `long` / `int`).
  */
 public class AppDNAOptionsJavaCompatTest {

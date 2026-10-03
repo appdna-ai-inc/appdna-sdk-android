@@ -2,12 +2,12 @@ import java.io.File
 plugins {
     alias(libs.plugins.android.library)
     alias(libs.plugins.kotlin.android)
-    // SPEC-070-A J.5 — kotlinx-serialization plugin. Dep is added below; existing
+    // Kotlinx-serialization plugin. Dep is added below; existing
     // org.json-based DTOs are unchanged so future migration can happen incrementally.
     alias(libs.plugins.kotlin.serialization)
     id("maven-publish")
     id("signing")
-    // SPEC-070-0 §3.4 — visual snapshot harness (Android leg).
+    // Visual snapshot harness (Android leg).
     // Roborazzi runs Compose snapshot tests on the JVM via Robolectric — no device required.
     // PNG goldens live in src/test/snapshots/ and are committed; reviewed during PR.
     alias(libs.plugins.roborazzi)
@@ -15,7 +15,7 @@ plugins {
 
 android {
     namespace = "ai.appdna.sdk"
-    // SPEC-070-A finalization Phase 1 — compileSdk/targetSdk 34 → 35 to align with
+    // compileSdk/targetSdk 34 → 35 to align with
     // Google Play 2025 policy: new app submissions must target API 35 (Android 15)
     // since Aug 2025; existing apps must reach 35 by Aug 2026.
     compileSdk = 35
@@ -26,16 +26,16 @@ android {
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
-        // SPEC-070-A Phase A.5 — ship ProGuard/R8 keep rules to consumers
+        // Ship ProGuard/R8 keep rules to consumers
         // so any host enabling minify doesn't silently strip SDK config DTOs.
         consumerProguardFiles("consumer-rules.pro")
     }
 
-    // SPEC-070-A J.14 — explicit debug + release build types.
+    // Explicit debug + release build types.
     // - release: log noise gated by BuildConfig.DEBUG inside Configuration.kt's
     //   `Log` object so verbose logs get suppressed in production builds even
     //   when callers leave LogLevel at DEBUG.
-    // - debug: leaves all logs on; LeakCanary auto-installs (J.16).
+    // - debug: leaves all logs on; LeakCanary auto-installs.
     buildTypes {
         release {
             isMinifyEnabled = false
@@ -57,7 +57,7 @@ android {
 
     buildFeatures {
         compose = true
-        // Expose BuildConfig.DEBUG to runtime (J.14 log gating).
+        // Expose BuildConfig.DEBUG to runtime (log gating).
         buildConfig = true
     }
 
@@ -80,13 +80,13 @@ android {
         kotlinCompilerExtensionVersion = libs.versions.composeCompiler.get()
     }
 
-    // SPEC-419 — make merged Android resources (incl. Material3 library strings) available to the
+    // Make merged Android resources (incl. Material3 library strings) available to the
     // Roborazzi/Robolectric JVM unit tests, so Compose components that call getString (e.g.
     // OutlinedTextField) render instead of throwing Resources$NotFoundException.
     testOptions {
         unitTests {
             isIncludeAndroidResources = true
-            // SPEC-419 — modest 1g test-JVM heap. The Canvas snapshot tests (gauges/gears/rings/mockups)
+            // Modest 1g test-JVM heap. The Canvas snapshot tests (gauges/gears/rings/mockups)
             // accumulate bitmaps and OOM the ~512m default, but 2g starved the Mac and OOM-killed the
             // bridge server. 1g is the balance — the default-heap run completed without killing the
             // server, so 1g (modestly above default) is server-safe while clearing the test OOM.
@@ -118,7 +118,7 @@ android {
                 // at all, and ordinary runs keep the cheap one.
                 it.setForkEvery(((project.findProperty("testForkEvery") as String?)?.toLong() ?: 250L))
 
-                // SPEC-070-B AC-35 — the shared fixtures live OUTSIDE this module
+                // The shared fixtures live OUTSIDE this module
                 // (packages/sdk-shared-fixtures), so Gradle saw no input change when one was edited
                 // and marked the test task UP-TO-DATE. Editing a fixture's expected value therefore
                 // did NOT re-run the test: it reported the previous run's result and went green.
@@ -126,7 +126,7 @@ android {
                 // fixture forbids) still produced BUILD SUCCESSFUL. Declaring the tree as an input
                 // makes a fixture edit invalidate the cache, which is what makes these gates real.
                 //
-                // R4 — the single hardcoded path above was wrong on the Mac build bridge, where this
+                // The single hardcoded path above was wrong on the Mac build bridge, where this
                 // repo is checked out standalone and `pnpm sdk:sync:android` copies the tree to
                 // packages/sdk-shared-fixtures INSIDE it. `../sdk-shared-fixtures` did not exist,
                 // `if (isDirectory)` skipped the declaration without a word, and the up-to-date
@@ -155,7 +155,7 @@ android {
         }
     }
 
-    // SPEC-070-A J.3 — emit sources + javadoc jars for Maven Central / Sonatype.
+    // Emit sources + javadoc jars for Maven Central / Sonatype.
     publishing {
         singleVariant("release") {
             withSourcesJar()
@@ -214,7 +214,7 @@ afterEvaluate {
                 url = uri(layout.buildDirectory.dir("staging-deploy"))
             }
 
-            // SPEC-070-A J.3 — Sonatype OSSRH (Maven Central) staging repo.
+            // Sonatype OSSRH (Maven Central) staging repo.
             // Credentials come from env vars so they never live in version control:
             //   OSSRH_USERNAME / OSSRH_PASSWORD (Sonatype Jira account)
             //   GPG_SIGNING_KEY / GPG_SIGNING_PASSWORD (signing block below)
@@ -235,7 +235,7 @@ afterEvaluate {
     signing {
         val signingKey = System.getenv("GPG_SIGNING_KEY")
         val signingPassword = System.getenv("GPG_SIGNING_PASSWORD")
-        // SPEC-070-C: only sign when keys are present (the CI publish path). Locally —
+        // Only sign when keys are present (the CI publish path). Locally
         // e.g. `publishToMavenLocal` for on-branch plugin verification of the D10 seams —
         // there are no keys, so skip signing rather than fail on a missing `.asc`.
         if (signingKey != null && signingPassword != null) {
@@ -246,7 +246,7 @@ afterEvaluate {
 }
 
 dependencies {
-    // Jetpack Compose — bumped to 2024.02.02 (SPEC-070-A J.13). Compose Compiler
+    // Jetpack Compose — bumped to 2024.02.02. Compose Compiler
     // 1.5.8 + Kotlin 1.9.22 caps the supported BoM at 2024.02.02; the 2024.09.x
     // line requires Kotlin 1.9.25 + compiler 1.5.15 which is out of scope here.
     val composeBom = platform(libs.compose.bom)
@@ -266,33 +266,33 @@ dependencies {
 
     // OkHttp for event ingestion
     implementation(libs.okhttp)
-    // SPEC-495 — the bundled interactive map tier (Google). `compileOnly` is deliberately NOT used:
+    // The bundled interactive map tier (Google). `compileOnly` is deliberately NOT used:
     // the whole point of D1 is that a Flutter or React Native host gets a pannable map with no
     // dependency of its own to add. That cost is real and measured — see .ai/sdk-size-budgets.json.
     implementation(libs.maps.compose)
     implementation(libs.play.services.maps)
 
-    // Kotlin Coroutines — bumped to 1.8.1 (SPEC-070-A J.13).
+    // Kotlin Coroutines — bumped to 1.8.1.
     implementation(libs.kotlinx.coroutines.core)
     implementation(libs.kotlinx.coroutines.android)
-    // SPEC-070-A A.30 — `future { ... }` coroutine builder so suspend public APIs
+    // `future { ... }` coroutine builder so suspend public APIs
     // (PushModule.requestPermission, BillingModule.purchase/getProducts/getEntitlements)
     // can expose `CompletableFuture` overloads for Java consumers.
     implementation(libs.kotlinx.coroutines.jdk8)
 
-    // SPEC-070-A J.22 — kotlinx-collections-immutable. Backs the @Immutable
+    // Kotlinx-collections-immutable. Backs the @Immutable
     // annotations added by J.10 on hot-path Compose-consumed config DTOs
     // (OnboardingFlowConfig, StepConfig, PaywallConfig, SurveyConfig,
     // MessageConfig, ContentBlock, …). Without ImmutableList<T>/PersistentMap<K,V>,
     // Compose's stability inference can't prove List<T> won't mutate underneath,
     // so a parent re-emit always recomposes children. Migrating the iterables
-    // listed in SPEC-070-A J.22's INCLUDE list lets Compose skip recomposition
+    // listed in the INCLUDE list lets Compose skip recomposition
     // when contents are structurally equal.
     implementation(libs.kotlinx.collections.immutable)
 
     // JSON serialization (legacy — most DTOs still use this).
     implementation(libs.org.json)
-    // SPEC-070-A J.5 — kotlinx-serialization-json. Future DTOs can opt in by
+    // Kotlinx-serialization-json. Future DTOs can opt in by
     // annotating with `@Serializable`; existing DTOs are unchanged in this PR.
     implementation(libs.kotlinx.serialization.json)
 
@@ -305,27 +305,27 @@ dependencies {
     // Google Play Install Referrer (for deferred deep links)
     implementation(libs.installreferrer)
 
-    // SPEC-067: WorkManager for background event upload
+    // WorkManager for background event upload
     implementation(libs.work.runtime.ktx)
 
-    // SPEC-070-A A.18: ProcessLifecycleOwner observer for app-foreground/background
+    // ProcessLifecycleOwner observer for app-foreground/background
     // hooks (parity with iOS UIApplication.didEnterBackgroundNotification observer
     // in EventQueue.swift).
     implementation(libs.lifecycle.process)
     implementation(libs.lifecycle.common.java8)
 
-    // SPEC-070-A G.5: EncryptedSharedPreferences for sensitive on-device storage
+    // EncryptedSharedPreferences for sensitive on-device storage
     // (anon_id, user_id, user_traits, push token). iOS parity = Keychain.
     implementation(libs.security.crypto)
 
-    // SPEC-070-A A.3: Coil for NetworkImage memory + disk caching.
+    // Coil for NetworkImage memory + disk caching.
     // Replaces the BitmapFactory.decodeStream-on-every-recomposition path.
     // Default singleton ImageLoader is configured in core/AppDNAImageLoader.kt
     // with a 25%-of-available-memory cache + 50 MB disk cache at
     // <cacheDir>/appdna_image_cache.
     implementation(libs.coil.compose)
 
-    // SPEC-070-A E.1 — rich media catch-up to iOS SPEC-085 parity.
+    // Rich media catch-up to iOS parity.
     // Lottie (Airbnb) for vector animations in onboarding/messages/surveys/push.
     // Rive (state-machine animations) for richer interactive content.
     // ExoPlayer (media3) for inline video playback in messages + onboarding.
@@ -341,13 +341,13 @@ dependencies {
     implementation(libs.androidsvg.aar)
 
     // RevenueCat (optional — conditionally used).
-    // SPEC-070-A A.19 — bumped to 8.x to match the public Purchases API
+    // Bumped to 8.x to match the public Purchases API
     // (`Purchases.sharedInstance`, `Purchases.configure(PurchasesConfiguration)`,
     // suspend `awaitOfferings()`, `awaitPurchase()`, `awaitRestore()`,
     // `awaitCustomerInfo()`) we use in integrations/RevenueCatBridge.kt.
     compileOnly(libs.revenuecat.purchases)
 
-    // SPEC-070-A J.16 — LeakCanary auto-installs in debug builds and reports
+    // LeakCanary auto-installs in debug builds and reports
     // leaks via the Android system notification shade. Excluded from release.
     debugImplementation(libs.leakcanary.android)
 
@@ -355,7 +355,7 @@ dependencies {
     testImplementation(libs.junit)
     testImplementation(libs.kotlinx.coroutines.test)
 
-    // SPEC-070-0 §3.4 — visual snapshot harness (JVM-only; no device required)
+    // Visual snapshot harness (JVM-only; no device required)
     testImplementation(libs.robolectric)
     // Drives the real WorkManager (EventUploadWorker) in Robolectric: WorkManagerTestInitHelper + TestDriver.
     testImplementation(libs.work.testing)

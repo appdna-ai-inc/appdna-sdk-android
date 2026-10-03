@@ -30,13 +30,13 @@ import com.google.maps.android.compose.Polyline
 import com.google.maps.android.compose.rememberCameraPositionState
 
 /**
- * SPEC-495 §A tier 2 — a REAL, pannable, zoomable map, drawn by the bundled Google Maps SDK.
+ * Tier 2 — a REAL, pannable, zoomable map, drawn by the bundled Google Maps SDK.
  *
  * This is the tier #671 asked for. Before it, `map_interactive: true` on a Flutter host silently
  * produced a still image, because the only interactive path went through
  * `AppDNA.registerMapView` — an API the Flutter wrapper never exposed.
  *
- * 🔴 THE MANIFEST KEY IS A REAL CONSTRAINT, AND IT CORRECTS SPEC-495 §D4.
+ * 🔴 THE MANIFEST KEY IS A REAL CONSTRAINT, AND IT CORRECTS.
  *
  * The spec claimed the bundled engine would need "no extra wiring at all" from the host. That is
  * true of the STATIC tier, whose key is server-delivered — and it is NOT true here. The Google Maps
@@ -93,7 +93,7 @@ internal fun GoogleInteractiveMap(block: ContentBlock, rawResolved: Boolean = fa
             mapStyleOptions = styleOptions,
             // 🔴 NEVER true. `isMyLocationEnabled` makes the Maps SDK request a location fix, and on
             // a host that holds the permission it starts one silently. An onboarding map must not
-            // turn the user's first run into a location prompt they did not ask for (SPEC-495 §D3).
+            // turn the user's first run into a location prompt they did not ask for.
             isMyLocationEnabled = false,
         ),
         uiSettings = MapUiSettings(
@@ -199,7 +199,7 @@ internal suspend fun mapLoadWatchdog(
 }
 
 /**
- * SPEC-495 §D3 — whether this app can actually draw a Google map.
+ * Whether this app can actually draw a Google map.
  *
  * The Maps SDK takes its key from `com.google.android.geo.API_KEY` in the merged manifest, so this
  * is a build-time fact about the HOST, not something AppDNA can supply at runtime. Checked before

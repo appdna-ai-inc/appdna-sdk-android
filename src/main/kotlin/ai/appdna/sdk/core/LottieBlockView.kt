@@ -20,7 +20,7 @@ import com.airbnb.lottie.compose.rememberLottieComposition
 /**
  * Server-driven Lottie animation block.
  *
- * SPEC-070-A E.2 — replaces the stub placeholder with the real
+ * Replaces the stub placeholder with the real
  * `lottie-compose` `LottieAnimation` Composable so onboarding /
  * messages / surveys / paywalls can render the same Lottie URLs the
  * console publishes today on iOS.
@@ -37,7 +37,7 @@ import com.airbnb.lottie.compose.rememberLottieComposition
  * are scoped to this Composable instance via `remember*` helpers so
  * Compose recycles them deterministically when the view leaves the
  * composition (no manual `DisposableEffect` is required for Lottie —
- * see SPEC-070-A E.4 note re: Rive/ExoPlayer needing explicit
+ * note re: Rive/ExoPlayer needing explicit
  * disposal).
  */
 data class LottieBlock(

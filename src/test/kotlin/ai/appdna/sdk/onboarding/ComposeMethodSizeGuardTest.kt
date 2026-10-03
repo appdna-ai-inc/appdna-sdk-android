@@ -6,7 +6,7 @@ import org.junit.Test
 import java.io.DataInputStream
 
 /**
- * SPEC-496 — a guard against the ART VerifyError that shipped on this branch.
+ * A guard against the ART VerifyError that shipped on this branch.
  *
  * `FormInputSelectBlock` had grown into ONE ~1,200-line composable. Compose inlines every
  * Column/Row/Box body into the enclosing method, so it compiled to an enormous JVM method. The JVM
@@ -45,7 +45,7 @@ class ComposeMethodSizeGuardTest {
         if (tooBig.isNotEmpty()) {
             fail(
                 "Methods over $maxBytesAnyMethod bytes in ContentBlockRendererKt — split them into smaller " +
-                    "@Composable helpers (see FormInputSelectBlock / SPEC-496): $tooBig",
+                    "@Composable helpers (see FormInputSelectBlock): $tooBig",
             )
         }
 
@@ -62,35 +62,35 @@ class ComposeMethodSizeGuardTest {
             )
         }
 
-        // SPEC-496 §5b C5.1 — ButtonBlock carries the refresh loading state now; the spinner is a
+        // ButtonBlock carries the refresh loading state now; the spinner is a
         // separate composable (RefreshLoadingContent) so this method does not grow toward D8's limit.
         // Measured on the pre-P1b build (HEAD 63ad606eb, 2026-09-28): ButtonBlock = 3,038 bytes
         // (max_locals 76). Ceiling = max(16 KiB, 1.25 × 3,038) = 16,384 bytes.
         assertMethodCeiling(methods, "ButtonBlock", maxBytesButtonBlock)
     }
 
-    /** SPEC-496 §5b C5.1 — max(16 KiB, 1.25 × 3,038 measured pre-P1b). */
+    /** max(16 KiB, 1.25 × 3,038 measured pre-P1b). */
     private val maxBytesButtonBlock = maxOf(16 * 1024, (3_038 * 1.25).toInt())
 
-    /** SPEC-496 §5b C5.1 — max(16 KiB, 1.25 × 2,535 measured pre-P1b). */
+    /** max(16 KiB, 1.25 × 2,535 measured pre-P1b). */
     private val maxBytesBlockBasedStepView = maxOf(16 * 1024, (2_535 * 1.25).toInt())
 
     @Test
     fun `BlockBasedStepView stays below its ceiling, and report the largest methods in OnboardingActivityKt`() {
         val methods = readMethods("ai/appdna/sdk/onboarding/OnboardingActivityKt.class")
         report("OnboardingActivityKt", methods)
-        // SPEC-496 §5b C5.1 — promoted from report-only. The P1b interaction logic lives in
+        // Promoted from report-only. The P1b interaction logic lives in
         // InteractionCoordinator / applyInteractionReply (HostDataInteraction.kt), not inline here.
         // Measured on the pre-P1b build (HEAD 63ad606eb, 2026-09-28): BlockBasedStepView = 2,535 bytes
         // (max_locals 58). Ceiling = max(16 KiB, 1.25 × 2,535) = 16,384 bytes.
         assertMethodCeiling(methods, "BlockBasedStepView", maxBytesBlockBasedStepView)
-        // Audit round 4 — the flow host's own method. Measured pre-P1b (63ad606eb): 11,683 bytes
+        // Audit — the flow host's own method. Measured pre-P1b (63ad606eb): 11,683 bytes
         // (max_locals 254). Ceiling = max(16 KiB, 1.25 × 11,683) = 16,384 bytes.
         assertMethodCeiling(methods, "OnboardingFlowHost", maxOf(16 * 1024, (11_683 * 1.25).toInt()))
     }
 
     /**
-     * SPEC-496 §5b C5.1 (audit round 1) — the composable's BODY is not only its own method: Compose
+     * The composable's BODY is not only its own method: Compose
      * compiles the content lambdas (`CompositionLocalProvider { … }`, `Button { … }`) into inner classes
      * `<Facade>$<Fn>$…`, and local functions into `<Fn>$<name>` methods of the facade. D8 mis-dexes a
      * method by its size wherever it lives, so the largest method of that whole family is guarded too.
@@ -98,7 +98,7 @@ class ComposeMethodSizeGuardTest {
      * Measured on the pre-P1b build (HEAD 63ad606eb, 2026-09-28):
      *  - BlockBasedStepView family: 5,943 bytes (`OnboardingActivityKt$BlockBasedStepView$6$1$2.invoke`);
      *  - ButtonBlock family: 1,415 bytes (`ContentBlockRendererKt.ButtonBlock$ButtonContent`);
-     *  - OnboardingFlowHost family (audit round 4 — P1b wrapped the `AnimatedContent` content in a new
+     *  - OnboardingFlowHost family (P1b wrapped the `AnimatedContent` content in a new
      *    `CompositionLocalProvider` lambda): 1,288 bytes
      *    (`OnboardingActivityKt$OnboardingFlowHost$presentPaywallTriggerNode$routeOutcome$1.invoke`).
      * Ceiling for all three = max(16 KiB, 1.25 × measured) = 16,384 bytes.
@@ -159,7 +159,7 @@ class ComposeMethodSizeGuardTest {
     }
 
     /**
-     * Minimal class-file reader (JVMS §4): walks the constant pool to resolve names, skips fields,
+     * Minimal class-file reader (JVMS): walks the constant pool to resolve names, skips fields,
      * and reads `code_length` + `max_locals` from each method's Code attribute. Reads the bytes as a
      * resource, so the class is never loaded or initialised.
      */

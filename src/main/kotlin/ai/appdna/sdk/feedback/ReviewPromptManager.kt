@@ -78,7 +78,7 @@ object ReviewPromptManager {
     /**
      * Launch the Play in-app review flow. When [emitDirectShown] is false the caller already emitted the
      * `review_prompt_shown` event (the two-step path emits `{two_step}` when its dialog appears), so this
-     * must NOT emit a second `{direct}` one. Round-17 — the two-step positive handler previously called
+     * must NOT emit a second `{direct}` one. The two-step positive handler previously called
      * the public [triggerReview], which re-emitted `review_prompt_shown{direct}` → the two-step-accept
      * path logged TWO shown events (two_step + direct) vs iOS's one, and mis-labelled the second `direct`
      * inside a two-step interaction. Mirrors iOS's private `requestNativeReview()`.
