@@ -340,7 +340,7 @@ internal class HostDataStepPipeline(
             tried += path
             revertPath(current, path, r)
             reverting += blockId to path
-            ai.appdna.sdk.Log.debug { "SPEC-496: typed decode rejected $blockId.$path — reverted to its authored value" }
+            ai.appdna.sdk.Log.debug { "Host data: typed decode rejected $blockId.$path — reverted to its authored value" }
         }
         // Still failing: the raw authored block, which is today's behaviour — NOT raw-resolved.
         decodeFellBack = true

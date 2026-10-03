@@ -45,7 +45,7 @@ class ComposeMethodSizeGuardTest {
         if (tooBig.isNotEmpty()) {
             fail(
                 "Methods over $maxBytesAnyMethod bytes in ContentBlockRendererKt — split them into smaller " +
-                    "@Composable helpers (see FormInputSelectBlock / SPEC-496): $tooBig",
+                    "@Composable helpers (see FormInputSelectBlock): $tooBig",
             )
         }
 

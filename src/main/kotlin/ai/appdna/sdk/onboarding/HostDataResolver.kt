@@ -649,7 +649,7 @@ internal object HostDataResolver {
                         // raw pass, which runs only when the block's inputs — the source included — change).
                         val line = "repeat ${block["id"]}: source $source has ${arr.size} items, max is $max — items past $max are not rendered"
                         log += line
-                        ai.appdna.sdk.Log.debug { "SPEC-496: $line" }
+                        ai.appdna.sdk.Log.debug { "Host data: $line" }
                     }
                     arr.take(max).forEachIndexed { i, el ->
                         val copy = obj(cloneWithState(template))!!

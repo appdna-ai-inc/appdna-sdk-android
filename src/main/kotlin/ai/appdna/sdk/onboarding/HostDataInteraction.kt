@@ -287,15 +287,15 @@ internal class InteractionCoordinator(
     ): Job? {
         val refresh = action == ElementInteractionResult.REFRESH_ACTION
         if (!isCurrentPresentation()) {
-            log("SPEC-496: $action on $blockId refused — its presentation is no longer on screen")
+            log("Host data: $action on $blockId refused — its presentation is no longer on screen")
             return null
         }
         if (inFlight) {
-            log("SPEC-496: $action on $blockId refused — another interaction of this step is in flight")
+            log("Host data: $action on $blockId refused — another interaction of this step is in flight")
             return null
         }
         if (refresh && pending) {
-            log("SPEC-496: refresh_step on $blockId refused — the step's host data is still pending")
+            log("Host data: refresh_step on $blockId refused — the step's host data is still pending")
             return null
         }
         if (!hasHandler()) {
@@ -327,7 +327,7 @@ internal class InteractionCoordinator(
                 throw c
             } catch (t: Throwable) {
                 // A throwing host is a nil reply, for every action.
-                log("SPEC-496: onElementInteraction threw for $action on $blockId — treated as null: $t")
+                log("Host data: onElementInteraction threw for $action on $blockId — treated as null: $t")
                 null
             }
             reply.complete(r)
@@ -342,7 +342,7 @@ internal class InteractionCoordinator(
         var timedOut = false
         host.invokeOnCompletion { cause ->
             if (reply.complete(null) && cause != null && !timedOut && scope.isActive) {
-                log("SPEC-496: onElementInteraction for $action on $blockId ended by cancellation — treated as null")
+                log("Host data: onElementInteraction for $action on $blockId ended by cancellation — treated as null")
             }
         }
         var deadline: Job? = null
@@ -355,7 +355,7 @@ internal class InteractionCoordinator(
                     timer.onJoin { TIMEOUT }
                 }
                 if (out === TIMEOUT) {
-                    log("SPEC-496: refresh on $blockId timed out after $refreshTimeoutMs ms — a later reply is dropped")
+                    log("Host data: refresh on $blockId timed out after $refreshTimeoutMs ms — a later reply is dropped")
                     timedOut = true
                     host.cancel()
                     null
@@ -363,7 +363,7 @@ internal class InteractionCoordinator(
             } else reply.await()
             if (result != null) {
                 if (gen != generation || !isCurrentPresentation()) {
-                    log("SPEC-496: late reply to $action on $blockId dropped — its presentation ended or a newer call started")
+                    log("Host data: late reply to $action on $blockId dropped — its presentation ended or a newer call started")
                 } else {
                     onReply(result, seq)
                 }
@@ -608,5 +608,5 @@ internal fun refreshStateSemantics(loading: Boolean, tappable: Boolean): Modifie
 internal fun assertMainThreadInDebug(what: String) {
     if (!ai.appdna.sdk.BuildConfig.DEBUG) return
     val main = try { android.os.Looper.getMainLooper() } catch (_: Throwable) { null } ?: return
-    check(android.os.Looper.myLooper() === main) { "SPEC-496: $what must run on the main thread" }
+    check(android.os.Looper.myLooper() === main) { "Host data: $what must run on the main thread" }
 }
