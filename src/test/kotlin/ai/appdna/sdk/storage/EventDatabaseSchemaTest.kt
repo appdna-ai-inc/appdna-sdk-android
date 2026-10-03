@@ -381,4 +381,34 @@ class EventDatabaseSchemaTest {
             }
         }
     }
+
+    /**
+     * What the CHANGELOG warns about: an app that goes back to Android SDK 1.0.53 or earlier. 1.0.53's helper is
+     * version 2 with no `onDowngrade`, so opening this version's (v4) database throws "Can't downgrade database" —
+     * every insert fails, and no event is recorded until the app updates again to a version that can open it (which
+     * then finds the events the newer version queued).
+     */
+    @Test fun aVersionTwoHelperWithoutOnDowngradeCannotOpenThisDatabase() {
+        val name = "schema_rollback_1053_${System.nanoTime()}.db"
+        EventDatabase(ctx, 10_000, name).apply { insertEvents((0 until 3).map { event(it).toString() }); close() }
+        // 1.0.53's helper, as it shipped: version 2, the default onDowngrade.
+        val old = object : android.database.sqlite.SQLiteOpenHelper(ctx, file(name).path, null, 2) {
+            override fun onCreate(db: SQLiteDatabase) {}
+            override fun onUpgrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) {}
+        }
+        try {
+            val error = runCatching { old.writableDatabase }.exceptionOrNull()
+            assertTrue("1.0.53 opened a v${EventDatabase.DATABASE_VERSION} database: $error",
+                error is android.database.sqlite.SQLiteException && error.message.orEmpty().contains("downgrade"))
+        } finally {
+            old.close()
+        }
+        // An update back to this version opens it, with its events.
+        val db = EventDatabase(ctx, 10_000, name)
+        try {
+            assertEquals(3, db.count())
+        } finally {
+            db.close()
+        }
+    }
 }

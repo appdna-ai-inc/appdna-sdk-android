@@ -513,9 +513,10 @@ class ResilienceFixtureTest {
                     try {
                         assertTrue("[$id] a new queue starts unpaused", !ai.appdna.sdk.events.UploadPauseGate.isPaused(ctx))
                         kotlinx.coroutines.runBlocking { q.flushCycleForTest() }
-                        assertEquals("[$id] HTTP $status: the queue drops the rejected batch", backlog - batch, qdb.count())
+                        assertEquals("[$id] HTTP $status: the queue's flush resolves one batch", backlog - batch, qdb.count())
                         assertEquals("[$id] HTTP $status: failed cycles counted (5 = paused)",
-                            if (pauses) EventQueue.MAX_CONSECUTIVE_FAILURES else 1, q.consecutiveFailuresForTest)
+                            if (pauses) EventQueue.MAX_CONSECUTIVE_FAILURES else if (status in 200..299) 0 else 1,
+                            q.consecutiveFailuresForTest)
                         assertEquals("[$id] HTTP $status: queue paused uploads?", pauses,
                             ai.appdna.sdk.events.UploadPauseGate.isPaused(ctx))
                     } finally {
