@@ -217,7 +217,7 @@ object AppDNA {
         set(value) { _pushDelegate = value; push.setDelegate(value) }
 
     /**
-     * SPEC-070-A finalization B6#P0-25 — top-level proxy for `billing.setDelegate(...)`. SPEC-497: reads
+     * Top-level proxy for `billing.setDelegate(...)`: reads
      * the module's storage; the setter delivers queued purchases (`setDelegate(value, true)`).
      */
     @JvmStatic
@@ -463,7 +463,7 @@ object AppDNA {
     private var apiKey: String? = null
     private var environment: Environment = Environment.PRODUCTION
 
-    /** SPEC-497 §3.11 — the base every request uses; set once in `configure`. */
+    /** The base every request uses; set once in `configure`. */
     @Volatile internal var resolvedBaseUrl: String = Environment.PRODUCTION.baseUrl
         private set
     // `internal`, not `private`: the unit tests are a friend module, and the wrapper-attribution
@@ -610,11 +610,11 @@ object AppDNA {
     // (e.g. a deep-link tap that triggered the configure call) survives.
     private const val PRE_INIT_BUFFER_CAP = 200
     // Last tap handled by handlePushTap / push.handleTapData — its `delivery_id ?: push_id`, persisted
-    // to dedup re-delivery across Activity re-creation / process death (SPEC-497 §9.2, PushIdempotency).
+    // to dedup re-delivery across Activity re-creation / process death (PushIdempotency).
     internal const val KEY_LAST_HANDLED_PUSH_TAP = "appdna.last_handled_push_tap_id"
     // The last [PushIdempotency.TAP_CAP] handled taps (a JSON array, oldest first) — one key was not
     // enough: tap A, tap B, process death, the Activity restored with intent A re-fired A (impl audit
-    // round 2, A1). The single key above is still read, for a tap handled by an older SDK version.
+    // ). The single key above is still read, for a tap handled by an older SDK version.
     internal const val KEY_HANDLED_PUSH_TAPS = "appdna.handled_push_tap_ids"
     // SPEC-428 CL-10/CL-1: pre-init overflow drops can't touch the persisted DroppedEventsCounter yet
     // (no app Context before configure()), so accrue them in memory and fold into the durable counter
@@ -707,7 +707,7 @@ object AppDNA {
             this.identityManager = identityMgr
 
             // 3. Initialize networking
-            // SPEC-497 §3.11 — resolved ONCE: the test-only override (debuggable + SANDBOX), else
+            // Resolved ONCE: the test-only override (debuggable + SANDBOX), else
             // the environment's base. Every URL the SDK builds reads `resolvedBaseUrl`.
             resolvedBaseUrl = try {
                 val info = appContext.packageManager.getApplicationInfo(
@@ -1040,7 +1040,7 @@ object AppDNA {
 
         identityManager?.identify(userId, traits)
 
-        // SPEC-497 §13b.2 "Clearing" (R34/R35): identify to a DIFFERENT non-null user runs
+        // "Clearing": identify to a DIFFERENT non-null user runs
         // stop → clear → start (anonymous → first user is exempt). The switch and the re-point happen
         // under the SDK lock; the cache's clear() fans onEntitlementsChanged([]) out AFTER it.
         val billingMgr = billing.manager
@@ -1084,7 +1084,7 @@ object AppDNA {
             webEntitlementManager?.startObserving(orgId, appId, userId)
             // SPEC-203: start journey-triggered pending-messages listener.
             pendingMessageListener?.startObserving(orgId, appId, userId)
-            // SPEC-497 R33: re-point the Firestore entitlement listener at the new user (owning only).
+            // Re-point the Firestore entitlement listener at the new user (owning only).
             if (previousUserId != userId) {
                 synchronized(this@AppDNA) {
                     billingMgr?.takeIf { it.ownsTransactions }?.entitlementCache?.startObserving(orgId, appId, userId)
@@ -1100,16 +1100,16 @@ object AppDNA {
         // identify is not blocked on completion. Errors are swallowed
         // inside refreshEntitlementCache. Mirrors iOS AppDNA.identify.
         //
-        // SPEC-497: the refresh runs PurchaseCompletion (it may report an unreported purchase), then
-        // D-R40-1 trigger (iii) — the drain after identify — delivers purchases queued for this user.
+        // The refresh runs PurchaseCompletion (it may report an unreported purchase), then
+        // Trigger (iii) — the drain after identify — delivers purchases queued for this user.
         scope.launch { billingAfterIdentify(userId, previousUserId) }
     }
 
     /**
      * The billing half of [identify], part 1 — run synchronously inside it: identify to a DIFFERENT
-     * non-null user runs stop → clear (anonymous → first user is exempt, §13b.2 "Clearing") and drops
+     * non-null user runs stop → clear (anonymous → first user is exempt, "Clearing") and drops
      * the in-memory reported-since-identity list. `internal` so the fixture drivers run THIS code
-     * rather than a copy of it (I4 minor 10).
+     * rather than a copy of it.
      */
     internal fun billingOnIdentitySwitch(userId: String, previousUserId: String?) {
         if (previousUserId == null || previousUserId == userId) return
@@ -1123,7 +1123,7 @@ object AppDNA {
     /**
      * The billing half of [identify], part 2 — launched after it: record the identified user (the
      * owner-token set), the silent refresh (`PurchaseCompletion` IDENTIFY_REFRESH), then drain trigger
-     * (iii). `internal` for the fixture drivers (I4 minor 10).
+     * (iii). `internal` for the fixture drivers.
      */
     internal suspend fun billingAfterIdentify(userId: String, previousUserId: String?) {
         val mgr = billing.manager
@@ -1137,9 +1137,9 @@ object AppDNA {
     }
 
     /**
-     * The billing half of [reset] (§13b.2 "Clearing"): stop → clear the entitlement cache (memory and
-     * disk). Queued purchase deliveries of other identities are kept, never delivered across (D-R40-1
-     * rule 4). `internal` for the fixture drivers (I4 minor 10).
+     * The billing half of [reset] ("Clearing"): stop → clear the entitlement cache (memory and
+     * disk). Queued purchase deliveries of other identities are kept, never delivered across
+     * identities. `internal` for the fixture drivers.
      */
     internal fun billingOnReset() {
         billing.manager?.let { m ->
@@ -1187,8 +1187,8 @@ object AppDNA {
         appContext?.let {
             ai.appdna.sdk.billing.NativeBillingManager.clearPersistedSnapshot(ai.appdna.sdk.storage.LocalStorage(it))
         }
-        // SPEC-497 §13b.2 "Clearing": stop → clear the entitlement cache (memory and disk). Queued
-        // purchase deliveries of other identities are kept, never delivered across (D-R40-1 rule 4).
+        // "Clearing": stop → clear the entitlement cache (memory and disk). Queued
+        // purchase deliveries of other identities are kept, never delivered across.
         billingOnReset()
 
         // 🔴 USER A'S ONBOARDING ANSWERS SURVIVED THE SIGN-OUT AND RENDERED INTO USER B'S PAYWALL.
@@ -1267,7 +1267,7 @@ object AppDNA {
     }
 
     /**
-     * SPEC-497 §11.9 — every INTERNAL billing emit (NativeBillingManager, the RevenueCat / Adapty
+     * Every INTERNAL billing emit (NativeBillingManager, the RevenueCat / Adapty
      * bridges, BillingModule). Adds `emitted_by: "sdk"` so the analytics dedupe can tell an SDK device
      * row from a host-tracked one; the public [track] strips that marker from host events.
      */
@@ -1275,13 +1275,13 @@ object AppDNA {
         trackImpl(event, ai.appdna.sdk.billing.BillingEventProps.marked(properties), internalBilling = true)
     }
 
-    /** Whether `configure()` has published the event tracker (R65: purchase_failed only when one exists). */
+    /** Whether `configure()` has published the event tracker (purchase_failed only when one exists). */
     internal fun hasEventTracker(): Boolean = eventTracker != null
 
     /**
      * The body of [track]: keeps the pre-init buffer and the message / survey triggers. For a host call
      * (`internalBilling = false`) the reserved keys `emitted_by` and `_appdna_origin` are stripped FIRST,
-     * before the pre-init buffer decision, so a buffered event is stripped too (R74).
+     * before the pre-init buffer decision, so a buffered event is stripped too.
      */
     private fun trackImpl(event: String, rawProperties: Map<String, Any>?, internalBilling: Boolean) {
         val properties = if (internalBilling || rawProperties == null) rawProperties
@@ -1373,8 +1373,12 @@ object AppDNA {
     // MARK: - Public API: Experiments
 
     /**
-     * Get the variant assignment for an experiment.
-     * Exposure is auto-tracked on first call per session.
+     * Get the variant assignment for an experiment: the variant ID set in the Console, or `null` when the user is
+     * not in the experiment — it is not running (or not in the config yet), does not target Android, a targeting
+     * rule excludes the user, or the user is outside the traffic allocation (or the SDK is not configured).
+     * The `experiment_exposure` event is tracked automatically on the first assignment of each experiment, once
+     * until `reset()` or the next app launch (exposures are kept in memory; a new session does not reset them).
+     * A `null` answer tracks nothing.
      */
     @JvmStatic
     fun getExperimentVariant(experimentId: String): String? {
@@ -1628,7 +1632,7 @@ object AppDNA {
      * SPEC-070-A I.11 — fetch the structured [ai.appdna.sdk.onboarding.LocationData]
      * captured by the named onboarding form field. Mirrors iOS `AppDNA.getLocationData(fieldId:)`.
      *
-     * SPEC-497 §13h (D2) — built tolerantly from whatever the field stored: a selected suggestion
+     * Built tolerantly from whatever the field stored: a selected suggestion
      * gives the full object; a typed-but-not-selected answer gives `{formatted_address, raw_query}`
      * with null coordinates (it used to return null); a partial or legacy `{address, …}` answer gives
      * the fields it has. Returns `null` when the field is unanswered, empty, or not a location.
@@ -1850,9 +1854,9 @@ object AppDNA {
      *   2. Fire [AppDNAPushDelegate.onPushTapped] with a typed [PushPayload],
      *   3. Auto-route the tap without requiring host code — the tapped button's action, then the
      *      notification's `action`, flat `action_type` / `action_value`, `screen_id`, `deep_link`
-     *      (SPEC-497 §9.2, the same ladder as [PushModule.handleTapData]).
+     *      (the same ladder as [PushModule.handleTapData]).
      *
-     * Safe to call with any intent: SPEC-497 §9.2 — it does nothing and returns `false` unless the
+     * Safe to call with any intent: — it does nothing and returns `false` unless the
      * intent carries the AppDNA marker extra (`appdna = "1"`), so a host's own notification taps are
      * never tracked or routed. One exception: the tap intent of a notification the previous SDK version
      * posted (no marker; see [isLegacyTapIntent]) is routed and fires `onPushTapped`; it is tracked only
@@ -1872,7 +1876,7 @@ object AppDNA {
         if (intent == null) return false
         val extras = intent.extras ?: return false
         val data = stringExtras(extras)
-        // SPEC-497 §17 item 28 — a button tap: the typed text of a `text_reply` button reaches
+        // A button tap: the typed text of a `text_reply` button reaches
         // `onPushTapped` as `data["reply_text"]`, and the notification is removed (a button tap does
         // not auto-cancel it). Only for AppDNA pushes.
         if (push.isAppDNAMessage(data) || isLegacyTapIntent(extras)) {
@@ -1891,7 +1895,7 @@ object AppDNA {
             legacyKeys.forEach { intent.removeExtra(it) }
         }
         if (handled) {
-            // Make the intent INERT (I4 M8). The persisted dedup key holds only the LAST tap, so after
+            // Make the intent INERT. The persisted dedup key holds only the LAST tap, so after
             // tap A, then tap B through `onNewIntent` without `setIntent`, a re-created Activity re-runs
             // `handlePushTap(A)` against key B — and A would be tracked and routed again. Without the
             // marker the re-run is not an AppDNA tap at all.
@@ -2256,7 +2260,12 @@ object AppDNA {
 
         if (bootstrapFailed) {
             if (keyRefused) Log.warning("Bootstrap not retried — the server refused the API key")
-            else startBootstrapRecovery(client, remoteCfg, tracker, epoch)
+            else {
+                // A 429's Retry-After holds back the first retry too (not only the retries' own).
+                val initial = (answer as? ApiClient.GetResult.Failed)
+                    ?.let { BootstrapRecovery.outcomeForFailure(it.status, it.retryAfterSeconds) }
+                startBootstrapRecovery(client, remoteCfg, tracker, epoch, initial)
+            }
         }
     }
 
@@ -2283,7 +2292,7 @@ object AppDNA {
 
             Log.info("Bootstrap successful: orgId=$orgId, appId=$appId")
 
-            // SPEC-404 — reconcile runtime lock state. Fire delegate
+            // Reconcile runtime lock state. Fire delegate
             // callbacks ONLY on state transitions (idle <-> locked), not
             // on every bootstrap. Repeated bootstraps in the same state
             // are a no-op for the delegate.
@@ -2292,15 +2301,15 @@ object AppDNA {
                 val lockedAt = lockObj.optString("locked_at", "")
                 if (reason.isNotEmpty() && lockedAt.isNotEmpty()) Pair(reason, lockedAt) else null
             }
-            // SPEC-451 — the customer's own Mapbox token, absent when they have not set one up.
+            // The customer's own Mapbox token, absent when they have not set one up.
             applyRemoteMapboxToken(
                 result.optJSONObject("settings")?.optString("mapboxToken", "")?.ifEmpty { null },
             )
-            // SPEC-495 §B — same path, same ownership rules, for the Google provider.
+            // Same path, same ownership rules, for the Google provider.
             applyRemoteGoogleMapsKey(
                 result.optJSONObject("settings")?.optString("googleMapsApiKey", "")?.ifEmpty { null },
             )
-            // SPEC-495 — the engine those two keys select between, same delivery path.
+            // The engine those two keys select between, same delivery path.
             applyRemoteMapProvider(
                 result.optJSONObject("settings")?.optString("mapProvider", "")?.ifEmpty { null },
             )
@@ -2337,9 +2346,9 @@ object AppDNA {
                 // Start web entitlement observer if user is already identified
                 identityManager?.currentIdentity?.userId?.let { userId ->
                     webEntitlementManager?.startObserving(orgId, appId, userId)
-                    // SPEC-203: pending-messages listener when already identified.
+                    // Pending-messages listener when already identified.
                     pendingMessageListener?.startObserving(orgId, appId, userId)
-                    // SPEC-497 R33: the Firestore entitlement listener — it never ran before, because
+                    // The Firestore entitlement listener — it never ran before, because
                     // billing init sees no orgId. The user id is re-read under this lock; only when
                     // the SDK owns transactions (the doc is written by AppDNA's own verification).
                     billing.manager?.takeIf { it.ownsTransactions }?.entitlementCache
@@ -2394,7 +2403,13 @@ object AppDNA {
      * still what it holds. An attempt for a configure that has ended (`shutdown()`, a later `configure()`)
      * applies nothing and ends the loop.
      */
-    private fun startBootstrapRecovery(client: ApiClient, remoteCfg: RemoteConfigManager, tracker: EventTracker, epoch: Int) {
+    private fun startBootstrapRecovery(
+        client: ApiClient,
+        remoteCfg: RemoteConfigManager,
+        tracker: EventTracker,
+        epoch: Int,
+        initial: BootstrapRecovery.Outcome? = null,
+    ) {
         val monitor = connectivityMonitor
         val online = bootstrapRetryOnlineForTest ?: { monitor?.isConnected ?: true }
         val backoff = bootstrapRetryBackoffForTest ?: BootstrapRecovery::defaultBackoffMs
@@ -2408,7 +2423,7 @@ object AppDNA {
         monitor?.onConnectivityRegained = regained
         // However the loop ends (applied, refused, out of attempts, stopped), it stops listening.
         recovery.onEnded = { if (monitor != null && monitor.onConnectivityRegained === regained) monitor.onConnectivityRegained = null }
-        recovery.start(scope) {
+        recovery.start(scope, initial) {
             if (!isCurrentConfigure(epoch)) return@start BootstrapRecovery.Outcome.Done
             val got = try { client.getWithRetryResult("/api/v1/sdk/bootstrap") } catch (e: Exception) {
                 Log.debug("Bootstrap retry failed: ${e.message}"); ApiClient.GetResult.Failed(null)
@@ -2583,10 +2598,10 @@ object AppDNA {
         if (billing.manager != null) return
         val ctx = appContext ?: return
 
-        // SPEC-070-B PN row 6 (N1): honor the configured provider.
+        // Honor the configured provider.
         val provider = options.billingProvider
-        // SPEC-497 §3.2 (SDK minor 12): the policy is assigned BEFORE the `none` early return, so the
-        // PaywallManager never reads an unassigned policy. I4 minor 9: for every provider with a manager it is
+        // The policy is assigned BEFORE the `none` early return, so the
+        // PaywallManager never reads an unassigned policy. For every provider with a manager it is
         // assigned TOGETHER with `billing.manager` (manager first, then the policy, under one lock), so a
         // purchase or a paywall tap in between sees `NotConfigured` ("not configured yet", `unknown`) —
         // never a configured policy with no manager (`providerNotAvailable`).
@@ -2599,7 +2614,7 @@ object AppDNA {
 
         val storage = LocalStorage(ctx)
         try {
-            // LD-R4-1: the verifier declares the owner from the policy, never from a host string.
+            // The verifier declares the owner from the policy, never from a host string.
             val verifier = ai.appdna.sdk.billing.ReceiptVerifier(
                 client,
                 billingOwner = ai.appdna.sdk.billing.BillingOwnership.billingOwner(provider),
@@ -2610,8 +2625,8 @@ object AppDNA {
                 receiptVerifier = verifier,
                 entitlementCache = cache,
                 storage = storage,
-                // §3.2 rule 3/4: RevenueCat and Adapty never verify, acknowledge or consume (owner Q1);
-                // RevenueCat's device lifecycle events stop (Q2), Adapty keeps them (LD-R10-1).
+                // /4: RevenueCat and Adapty never verify, acknowledge or consume;
+                // RevenueCat's device lifecycle events stop (Q2), Adapty keeps them.
                 ownsTransactions = policy.ownsTransactions,
                 emitsLifecycleEvents = policy.emitsLifecycleEvents,
                 providerName = provider.type,
@@ -2622,7 +2637,7 @@ object AppDNA {
                 billing.ownershipPolicy = policy
             }
             // The Firestore entitlement listener starts in the bootstrap-success block (orgId is not known
-            // yet here — R33: this is why it never ran), and only when the SDK owns transactions.
+            // yet here: this is why it never ran), and only when the SDK owns transactions.
 
             when (provider) {
                 is BillingProvider.Adapty -> {
@@ -2635,7 +2650,7 @@ object AppDNA {
                 else -> Unit
             }
 
-            // D-R40-1 trigger (iv): the queue and the identity are loaded — a drain is no longer a
+            // Trigger (iv): the queue and the identity are loaded — a drain is no longer a
             // no-op, and a delivering delegate set before configure gets its queued purchases now.
             mgr.completion.drainReady = true
             if (billing.deliveringDelegate() != null) mgr.triggerDrain()
@@ -2693,7 +2708,7 @@ object AppDNA {
             // schedules the WorkManager upload for what is left and closes the database (EventQueue.shutdown).
             val queueOwnsDatabase = eventQueue != null
             eventQueue?.shutdown()
-            // SPEC-067: Schedule background upload for remaining events — here only when there is no queue
+            // Schedule background upload for remaining events — here only when there is no queue
             // (a configure that failed before building it); otherwise the queue does it after its attempt.
             val ctx = appContext
             val key = apiKey
@@ -2722,7 +2737,7 @@ object AppDNA {
                 if (ctx != null) ai.appdna.sdk.background.ConfigRefreshWorker.cancel(ctx)
             } catch (_: Throwable) { /* WorkManager may not be initialized */ }
 
-            // SPEC-497 I4 R8 m2 — cancel the paywall scope BEFORE destroying billing. `destroy()` resolves
+            // Cancel the paywall scope BEFORE destroying billing. `destroy()` resolves
             // a purchase in flight as `Failed("shutdown")`; called off Main, that resumption can run on Main
             // before a later `paywallManager.shutdown()` cancels the paywall's purchase coroutine, and the
             // paywall then reports `onPaywallPurchaseFailed` for a purchase that was only cancelled.
@@ -2759,7 +2774,7 @@ object AppDNA {
 
             // SPEC-070-A audit Round 2 finding 6: cancel paywall + deferred
             // deep-link scopes so they don't outlive shutdown. (The paywall scope is cancelled above,
-            // before billing is destroyed — SPEC-497 I4 R8 m2.)
+            // before billing is destroyed.)
             try { deferredDeepLinkManager?.shutdown() } catch (_: Throwable) {}
 
             // SPEC-070-A final audit pass B F1 — release the

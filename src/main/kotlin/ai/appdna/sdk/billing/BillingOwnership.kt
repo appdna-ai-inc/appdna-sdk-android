@@ -3,7 +3,7 @@ package ai.appdna.sdk.billing
 import ai.appdna.sdk.BillingProvider
 
 /**
- * SPEC-497 §3.2 (A1) — who owns a store transaction, decided once from the provider the host asked for.
+ * Who owns a store transaction, decided once from the provider the host asked for.
  *
  * On Android `observerMode` names the reconcile mode (there is no `Transaction.updates` observer):
  * `storeKitOwned` = the reconcile verifies, acknowledges and consumes (`storeKit2`); `providerOwned` =
@@ -29,7 +29,7 @@ internal data class BillingOwnershipPolicy(
 ) {
     companion object {
         /**
-         * The explicit initial state (R64/R65), before `initBillingModuleIfNeeded` runs and again after
+         * The explicit initial state, before `initBillingModuleIfNeeded` runs and again after
          * `shutdown()`. Never the result of [BillingOwnership.policy].
          */
         val NotConfigured = BillingOwnershipPolicy(
@@ -46,11 +46,11 @@ internal data class BillingOwnershipPolicy(
     }
 }
 
-/** The one pure seam (§2 principle 5): production and the fixture runner both call it. */
+/** The one pure seam (principle 5): production and the fixture runner both call it. */
 internal object BillingOwnership {
     /**
-     * SPEC-497 I4 R8 m4 / R9 — the message of a REFUSED purchase or restore (the direct API and the
-     * paywall tap alike), word for word the iOS `BillingOwnershipPolicy.refusalMessage` (§3.2 rule 2: a
+     * The message of a REFUSED purchase or restore (the direct API and the
+     * paywall tap alike), word for word the iOS `BillingOwnershipPolicy.refusalMessage` (a
      * non-owning provider's restore throws the same error as its purchase), so hosts on both platforms
      * see one string.
      */
@@ -76,7 +76,7 @@ internal object BillingOwnership {
             observerMode = ObserverMode.ProviderOwned,
             emitsLifecycleEvents = false,
         )
-        // Owner Q1 + LD-R10-1: never owns on Android, but keeps the device lifecycle events this release.
+        // Owner Q1 +: never owns on Android, but keeps the device lifecycle events this release.
         is BillingProvider.Adapty -> BillingOwnershipPolicy(
             ownsTransactions = false,
             sdkCanPurchase = false,
@@ -97,7 +97,7 @@ internal object BillingOwnership {
     )
 
     /**
-     * LD-R4-1 — the `billing_owner` a new SDK sends on `/billing/verify` and `/billing/restore`: `"sdk"`
+     * The `billing_owner` a new SDK sends on `/billing/verify` and `/billing/restore`: `"sdk"`
      * when the SDK owns transactions, otherwise the provider's wire name. Derived from the policy the
      * verifier is constructed with, never from a string the host passes.
      */
@@ -106,7 +106,7 @@ internal object BillingOwnership {
 }
 
 /**
- * §11.9 — the marker that tells the analytics dedupe an event came from the SDK's own billing layer.
+ * The marker that tells the analytics dedupe an event came from the SDK's own billing layer.
  * The public `AppDNA.track` strips it from host events; SDK billing emits add it through here (the
  * static path uses `AppDNA.trackBillingEvent`, which calls this).
  */

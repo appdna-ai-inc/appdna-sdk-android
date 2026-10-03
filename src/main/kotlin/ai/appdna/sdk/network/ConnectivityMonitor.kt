@@ -42,55 +42,59 @@ internal class ConnectivityMonitor(context: Context) {
         }
     }
 
+    /**
+     * The networks the system has reported through the callback (capabilities included), so a loss can settle on
+     * what is still up even when the system has not switched its default network yet — at `onLost` time
+     * `activeNetwork` can still be null, or still the lost network, while cellular is connected. Guarded by itself.
+     */
+    private val reported = LinkedHashMap<Network, NetworkCapabilities>()
+
     private val networkCallback = object : ConnectivityManager.NetworkCallback() {
         // `onCapabilitiesChanged` always follows `onAvailable` (API 26+), so the regain is reported there.
         override fun onCapabilitiesChanged(network: Network, capabilities: NetworkCapabilities) {
             val wasNone = currentConnectionType == ConnectionType.NONE
-            val hasWifi = capabilities.hasTransport(NetworkCapabilities.TRANSPORT_WIFI)
-            val hasCellular = capabilities.hasTransport(NetworkCapabilities.TRANSPORT_CELLULAR)
-            val hasEthernet = capabilities.hasTransport(NetworkCapabilities.TRANSPORT_ETHERNET)
-
-            currentConnectionType = when {
-                hasWifi || hasEthernet -> ConnectionType.WIFI
-                hasCellular -> ConnectionType.CELLULAR
-                else -> ConnectionType.WIFI // Default to wifi for unknown connected types
-            }
-
-            isMetered = !capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_NOT_METERED)
+            synchronized(reported) { reported[network] = capabilities }
+            apply(capabilities)
             Log.debug("Network changed: $currentConnectionType, metered=$isMetered")
             regainedIfWasNone(wasNone)
         }
 
         // One network lost is not necessarily all of them: Wi-Fi dropping while cellular is up leaves the
-        // device online. Re-read what the active network is now (NONE only when there is none) instead of
-        // setting NONE for any loss — which emptied the batch size and stopped uploads while online.
+        // device online. Settle on what is still up (NONE only when nothing is) instead of setting NONE for any
+        // loss — which emptied the batch size and stopped uploads while online.
         override fun onLost(network: Network) {
+            synchronized(reported) { reported.remove(network) }
             readActiveNetwork(lost = network)
             Log.debug("Network lost — now $currentConnectionType")
         }
     }
 
+    /** Set the state from one network's capabilities (the one mapping every path uses). */
+    private fun apply(capabilities: NetworkCapabilities) {
+        currentConnectionType = typeOf(capabilities)
+        isMetered = !capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_NOT_METERED)
+    }
+
     /**
      * Set the state from the active network ([lost]: a network just reported lost, which the system may
-     * still name as active for a moment — it counts as gone).
+     * still name as active for a moment — it counts as gone). When the system names no usable active network,
+     * the best network the callback reported that is still up (Wi-Fi / wired over cellular) decides; NONE only
+     * when there is none.
      */
     private fun readActiveNetwork(lost: Network? = null) {
         val current: Network? = try { connectivityManager.activeNetwork } catch (_: Throwable) { null }
         val activeNetwork = current?.takeIf { it != lost }
         val capabilities = activeNetwork?.let {
             try { connectivityManager.getNetworkCapabilities(it) } catch (_: Throwable) { null }
-        }
-        if (capabilities != null) {
-            currentConnectionType = when {
-                capabilities.hasTransport(NetworkCapabilities.TRANSPORT_WIFI) -> ConnectionType.WIFI
-                capabilities.hasTransport(NetworkCapabilities.TRANSPORT_ETHERNET) -> ConnectionType.WIFI
-                capabilities.hasTransport(NetworkCapabilities.TRANSPORT_CELLULAR) -> ConnectionType.CELLULAR
-                else -> ConnectionType.NONE
-            }
-            isMetered = !capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_NOT_METERED)
-        } else {
-            currentConnectionType = ConnectionType.NONE
-        }
+        } ?: activeNetwork?.let { synchronized(reported) { reported[it] } }
+            ?: bestReported(except = lost)
+        if (capabilities != null) apply(capabilities) else currentConnectionType = ConnectionType.NONE
+    }
+
+    /** The best network the callback reported, other than [except]: Wi-Fi / wired before cellular. */
+    private fun bestReported(except: Network?): NetworkCapabilities? {
+        val candidates = synchronized(reported) { reported.filterKeys { it != except }.values.toList() }
+        return candidates.minByOrNull { if (typeOf(it) == ConnectionType.CELLULAR) 1 else 0 }
     }
 
     /** Test seam: the callback the system calls. */
@@ -105,6 +109,21 @@ internal class ConnectivityMonitor(context: Context) {
             .addCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
             .build()
         connectivityManager.registerNetworkCallback(request, networkCallback)
+    }
+
+    companion object {
+        /**
+         * The connection type of a connected network — the ONE mapping the callback and the active-network read
+         * both use: Wi-Fi or Ethernet → WIFI; cellular → CELLULAR; any other connected transport (VPN, Bluetooth,
+         * USB, unknown) → WIFI, as iOS `NetworkMonitor` treats "wired or other connected interface". A network
+         * that carries Wi-Fi or Ethernet and cellular (rare) is WIFI.
+         */
+        internal fun typeOf(capabilities: NetworkCapabilities): ConnectionType = when {
+            capabilities.hasTransport(NetworkCapabilities.TRANSPORT_WIFI) -> ConnectionType.WIFI
+            capabilities.hasTransport(NetworkCapabilities.TRANSPORT_ETHERNET) -> ConnectionType.WIFI
+            capabilities.hasTransport(NetworkCapabilities.TRANSPORT_CELLULAR) -> ConnectionType.CELLULAR
+            else -> ConnectionType.WIFI
+        }
     }
 
     /**
@@ -123,6 +142,7 @@ internal class ConnectivityMonitor(context: Context) {
 
     fun shutdown() {
         onConnectivityRegained = null
+        synchronized(reported) { reported.clear() }
         try {
             connectivityManager.unregisterNetworkCallback(networkCallback)
         } catch (_: Exception) {

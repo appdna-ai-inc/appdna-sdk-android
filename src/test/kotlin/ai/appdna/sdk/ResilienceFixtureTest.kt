@@ -280,20 +280,35 @@ class ResilienceFixtureTest {
                             val triggers = if (c.has("triggers")) c.getInt("triggers") else if (c.optBoolean("triggered")) 1 else 0
                             val answer = if (c.has("failure_status")) outcome(c.getInt("failure_status"), retryAfter) else BootstrapRecovery.Outcome.Done
                             val want = c.getInt("attempts_made")
+                            // The configure-time failure the loop starts from (its own outcome, as `configure` hands it).
+                            val initial = if (c.has("configure_failure_status")) outcome(c.getInt("configure_failure_status"), retryAfter) else null
+                            val duringAttempt = c.optBoolean("trigger_during_attempt", false)
                             val made = java.util.concurrent.atomic.AtomicInteger(0)
                             val scope = kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.Default)
                             val recovery = BootstrapRecovery(isOnline = { online }, backoffMs = { 3_600_000L },
                                 random = { 0.0 }, triggerDelayMaxMs = 0L)
-                            recovery.start(scope) { made.incrementAndGet(); answer }
+                            recovery.start(scope, initial) {
+                                made.incrementAndGet()
+                                if (duringAttempt) recovery.trigger() // a trigger while this attempt is in flight
+                                answer
+                            }
+                            // Each trigger is fired while the loop waits (not while an attempt is in flight).
+                            fun awaitWaiting() {
+                                val deadline = System.currentTimeMillis() + 500
+                                while (System.currentTimeMillis() < deadline && !recovery.isWaitingForTest) Thread.sleep(5)
+                            }
                             for (t in 0 until triggers) {
+                                awaitWaiting()
                                 recovery.trigger()
                                 val deadline = System.currentTimeMillis() + 500
                                 while (System.currentTimeMillis() < deadline && made.get() <= t) Thread.sleep(20)
                             }
+                            awaitWaiting()
                             Thread.sleep(100)
                             recovery.stop()
                             scope.coroutineContext[kotlinx.coroutines.Job]?.cancel()
-                            assertEquals("[$id] attempts with online=$online triggers=$triggers failure=${c.opt("failure_status")}", want, made.get())
+                            assertEquals("[$id] attempts with online=$online triggers=$triggers failure=${c.opt("failure_status")} " +
+                                "configure_failure=${c.opt("configure_failure_status")} during_attempt=$duringAttempt", want, made.get())
                         } else if (c.has("failure_status")) {
                             val status = c.getInt("failure_status")
                             val got = when (val o = outcome(status, retryAfter)) {
@@ -364,9 +379,10 @@ class ResilienceFixtureTest {
                         val wireKey = when (setting) { "flush_interval" -> "flushInterval"; "config_ttl" -> "configTTL"; else -> "batchSize" }
                         num(c, "bootstrap")?.let { settings.put(wireKey, it) }
                         val options = when (setting) {
-                            "flush_interval" -> AppDNAOptions(flushInterval = explicit?.toLong())
-                            "config_ttl" -> AppDNAOptions(configTTL = explicit?.toLong())
-                            "batch_size" -> AppDNAOptions(batchSize = explicit?.toInt())
+                            // Not set by the host = the option left at its default (the public types stay non-null).
+                            "flush_interval" -> AppDNAOptions(flushInterval = explicit?.toLong() ?: AppDNAOptions.DEFAULT_FLUSH_INTERVAL)
+                            "config_ttl" -> AppDNAOptions(configTTL = explicit?.toLong() ?: AppDNAOptions.DEFAULT_CONFIG_TTL)
+                            "batch_size" -> AppDNAOptions(batchSize = explicit?.toInt() ?: AppDNAOptions.DEFAULT_BATCH_SIZE)
                             else -> { fail("[$id] unknown runtime setting '$setting'"); return }
                         }
                         val r = RuntimeSettings.resolveAll(options, RuntimeSettings.Bootstrap.from(settings))

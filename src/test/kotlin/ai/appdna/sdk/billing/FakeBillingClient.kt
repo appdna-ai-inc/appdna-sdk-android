@@ -8,7 +8,7 @@ import org.json.JSONArray
 import org.json.JSONObject
 
 /**
- * SPEC-497 §3.10 — a scripted Play [BillingClient] for JVM / Robolectric tests. Records every
+ * A scripted Play [BillingClient] for JVM / Robolectric tests. Records every
  * `acknowledgePurchase` / `consumeAsync` / `launchBillingFlow` call and serves scripted
  * `queryPurchasesAsync` / `queryProductDetailsAsync` results. Injected through [BillingClientFactory].
  *
@@ -83,7 +83,7 @@ internal class FakeBillingClient(private val listener: PurchasesUpdatedListener)
     /** The setup answer (BILLING_UNAVAILABLE simulates a device without Play billing). */
     var setupCode: Int = BillingResponseCode.OK
 
-    /** I4 m7 — when true, [startConnection] keeps its listener in [heldSetupListener] and does not answer. */
+    /** When true, [startConnection] keeps its listener in [heldSetupListener] and does not answer. */
     @Volatile var holdSetup: Boolean = false
     @Volatile var heldSetupListener: BillingClientStateListener? = null
 
@@ -93,7 +93,7 @@ internal class FakeBillingClient(private val listener: PurchasesUpdatedListener)
         listener.onBillingSetupFinished(result(setupCode))
     }
 
-    /** I4 R8 m2 — runs inside [endConnection] (on the caller's thread), e.g. to interleave Main work. */
+    /** Runs inside [endConnection] (on the caller's thread), e.g. to interleave Main work. */
     @Volatile var onEndConnection: (() -> Unit)? = null
 
     override fun endConnection() {
@@ -107,7 +107,7 @@ internal class FakeBillingClient(private val listener: PurchasesUpdatedListener)
     // -- queries -------------------------------------------------------------------------------
 
     /**
-     * I4 M2 — a query callback that PARKS: while [queryGate] is set and not completed, every
+     * A query callback that PARKS: while [queryGate] is set and not completed, every
      * `queryPurchasesAsync` answer is held and delivered (with the owned list AS OF the release) on
      * Main once it completes. [queriesParked] counts the held calls.
      */
@@ -115,7 +115,7 @@ internal class FakeBillingClient(private val listener: PurchasesUpdatedListener)
     @Volatile var queriesParked = 0
 
     /**
-     * Round 19 — one gate PER SUBS query, taken in call order: the query answers with the owned list AS OF
+     * One gate PER SUBS query, taken in call order: the query answers with the owned list AS OF
      * THE CALL (what Play returned then), on Main once its own gate completes. Lets a test release two
      * reconciles' reads in the opposite order to the one they were made in.
      */
@@ -152,7 +152,7 @@ internal class FakeBillingClient(private val listener: PurchasesUpdatedListener)
     }
 
     /**
-     * I4 R8 M1 — a product query that PARKS: while [productQueryGate] is set and not completed, every
+     * A product query that PARKS: while [productQueryGate] is set and not completed, every
      * `queryProductDetailsAsync` answer is held and delivered on Main once it completes.
      */
     @Volatile var productQueryGate: kotlinx.coroutines.CompletableDeferred<Unit>? = null

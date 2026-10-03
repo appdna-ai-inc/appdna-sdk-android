@@ -25,7 +25,7 @@ import org.robolectric.annotation.Config
 import java.util.concurrent.TimeUnit
 
 /**
- * SPEC-497 I4 M3 — the §13a.2 / §13a.5 cases the implementation audit found untested, each driven
+ * The cases the implementation audit found untested, each driven
  * through the production entry points (`PurchaseCompletion.run`, the Play listener, the drain,
  * `AppDNA.billingAfterIdentify`) with [FakeBillingClient] and a scripted server.
  */
@@ -53,7 +53,7 @@ class PurchaseCompletionRequiredCasesTest {
     private class SimulatedCrash : RuntimeException("process died between persist and emit")
 
     // ---------------------------------------------------------------------------------------------
-    // §13a.2 queue list
+    // Queue list
     // ---------------------------------------------------------------------------------------------
 
     @Test fun `Q6 - a caller cancelled after the step-3 decision is queued and delivered once, never inline too`() {
@@ -227,7 +227,7 @@ class PurchaseCompletionRequiredCasesTest {
     }
 
     // ---------------------------------------------------------------------------------------------
-    // §13a.5
+    // Reported tokens and pending finalizes
     // ---------------------------------------------------------------------------------------------
 
     @Test fun `a SUBS purchase whose verify failed - identify wins the race and reports it once`() {
@@ -392,7 +392,7 @@ class PurchaseCompletionRequiredCasesTest {
     }
 
     // ---------------------------------------------------------------------------------------------
-    // ITEM_ALREADY_OWNED (I4 minors 6, 7)
+    // ITEM_ALREADY_OWNED
     // ---------------------------------------------------------------------------------------------
 
     @Test fun `ITEM_ALREADY_OWNED - a consumable whose pending consume fails again resolves Failed item_already_owned`() {
@@ -426,7 +426,7 @@ class PurchaseCompletionRequiredCasesTest {
     }
 
     // ---------------------------------------------------------------------------------------------
-    // I4 minors 3, 5
+    // Identity changes and consumables
     // ---------------------------------------------------------------------------------------------
 
     @Test fun `minor 5 - a token the in-flight purchase owns gets no precedence-2 retry either`() {

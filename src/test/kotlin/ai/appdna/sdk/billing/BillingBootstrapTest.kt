@@ -28,8 +28,8 @@ import org.robolectric.annotation.Config
 import java.util.concurrent.TimeUnit
 
 /**
- * SPEC-497 §3.2 rule 3 (R33, R65–R68, R72) — billing across the REAL `AppDNA.configure()` bootstrap,
- * with the SDK's HTTP pointed at a loopback [TestHttpServer] through the §3.11 test-only base-URL
+ * Billing across the REAL `AppDNA.configure()` bootstrap,
+ * with the SDK's HTTP pointed at a loopback [TestHttpServer] through the test-only base-URL
  * override (a debuggable sandbox build), so `/sdk/bootstrap` can be answered — or held pending.
  */
 @RunWith(RobolectricTestRunner::class)
@@ -93,7 +93,7 @@ class BillingBootstrapTest {
         pointSdkAt(srv.baseUrl)
 
         AppDNA.configure(ctx, "adn_test_mid_bootstrap", Environment.SANDBOX)
-        // R68: wait for billing's manager (built at the start of the launched bootstrap), not a race.
+        // Wait for billing's manager (built at the start of the launched bootstrap), not a race.
         await("billing's manager") { AppDNA.billing.manager != null }
         assertTrue("the bootstrap is still pending", srv.awaitRequest(30))
         assertEquals(BillingOwnership.policy(BillingProvider.StoreKit2), AppDNA.billing.ownershipPolicy)

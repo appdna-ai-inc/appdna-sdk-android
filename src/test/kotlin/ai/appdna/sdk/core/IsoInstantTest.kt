@@ -178,7 +178,7 @@ class IsoInstantTest {
     @Test @Config(sdk = [33]) fun `api 33 - shared fixtures countdown_target_datetime and form_date_bounds_parsing`() = assertConfigDateFixtures()
 
     /**
-     * Round 28 — the range edge, MEASURED on iOS (26.2 simulator = macOS 26.3 Foundation, 2026-10-02). iOS keeps
+     * The range edge, MEASURED on iOS (26.2 simulator = macOS 26.3 Foundation, 2026-10-02). iOS keeps
      * the date as a Double of seconds, so its value at this magnitude is within 32 ms of the exact one.
      * NEGATIVE CONTROL: with the old `year <= 5_900_000` cut-off, the nil rows below (06-04, 24:00 roll-over,
      * 07-01, the rest of 5874898, 5874899…, and 01-01 / 03-02 of -5877520) answer a date and this fails.

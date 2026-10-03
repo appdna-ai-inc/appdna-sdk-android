@@ -21,7 +21,7 @@ import org.robolectric.annotation.Config
 import java.util.concurrent.TimeUnit
 
 /**
- * SPEC-497 §13a.5 — the named `PurchaseCompletion` cases (LD-R19-1, R20–R24, D-R40-1) end to end through
+ * The named `PurchaseCompletion` cases end to end through
  * the entry points, with FakeBillingClient and a scripted server. (The fixture scenarios themselves run
  * in SharedFixtureTest through the same [BillingScenario].)
  */
@@ -134,8 +134,8 @@ class ConsumablePurchaseTest {
     }
 
     /**
-     * SPEC-497 I4 R8 M1 — the caller is cancelled while `purchase()` waits for the billing connection,
-     * BEFORE the continuation (and its `invokeOnCancellation`) exists. R40: the in-flight flag is cleared
+     * The caller is cancelled while `purchase()` waits for the billing connection,
+     * BEFORE the continuation (and its `invokeOnCancellation`) exists: the in-flight flag is cleared
      * on every exit, so the next `purchase()` launches. NEGATIVE CONTROL: without the `catch` around the
      * body of `purchase()`, `purchaseInFlight` stays true and the second call fails `purchase_in_progress`
      * with no launch — this test fails.
@@ -171,7 +171,7 @@ class ConsumablePurchaseTest {
     }
 
     /**
-     * SPEC-497 I4 R8 M1 — the same, with the caller cancelled while `purchase()` waits for the SUBS / INAPP
+     * The same, with the caller cancelled while `purchase()` waits for the SUBS / INAPP
      * product query. NEGATIVE CONTROL: without the `catch` in `purchase()`, the second call fails
      * `purchase_in_progress` — this test fails.
      */
@@ -203,7 +203,7 @@ class ConsumablePurchaseTest {
     }
 
     /**
-     * SPEC-497 I4 R8 M1 — a purchase that LOST its scope while parked (here: resolved from outside, as
+     * A purchase that LOST its scope while parked (here: resolved from outside, as
      * `destroy()` does) never touches the scope of the newer purchase that took it over: it stops without
      * launching, and the newer purchase keeps its flag, its product and its launch.
      */
@@ -232,7 +232,7 @@ class ConsumablePurchaseTest {
     }
 
     /**
-     * SPEC-497 R9 — purchase A answers ITEM_ALREADY_OWNED and its handler parks in `run()` (the owned
+     * Purchase A answers ITEM_ALREADY_OWNED and its handler parks in `run()` (the owned
      * query). A's caller is cancelled, purchase B starts and launches, then A's handler finishes with an
      * `Owned` outcome. B must not be resolved, relaunched or cleared by A's handler, and A's outcome is not
      * reported against B's scope. NEGATIVE CONTROL: without the `ownsScope(owner)` check after `run()` in
@@ -277,7 +277,7 @@ class ConsumablePurchaseTest {
     }
 
     /**
-     * SPEC-497 R9 — A's caller is cancelled with its sheet still up; purchase B is waiting for its product
+     * A's caller is cancelled with its sheet still up; purchase B is waiting for its product
      * query (no continuation yet) when Play answers A's sheet with USER_CANCELED, then ERROR. Neither may
      * resolve or clear B's scope; each is reported once, unattributed. NEGATIVE CONTROL: without the
      * `hasLiveContinuation()` guard on the listener's non-OK branches, the late answer clears B's scope and
@@ -322,7 +322,7 @@ class ConsumablePurchaseTest {
     }
 
     /**
-     * SPEC-497 I4 m2 — A's caller is cancelled with its sheet up and Play then answers ITEM_ALREADY_OWNED
+     * A's caller is cancelled with its sheet up and Play then answers ITEM_ALREADY_OWNED
      * through the listener, with no live caller. The owned, unreported consumable Play refers to is rescued
      * right away (reported once, consumed, queued) — not left until the next ON_START. NEGATIVE CONTROL:
      * without `rescueOwnedPurchases()` in the listener's no-live-caller branch, nothing is reported or
@@ -354,7 +354,7 @@ class ConsumablePurchaseTest {
     }
 
     /**
-     * SPEC-497 I4 m2 — `handleItemAlreadyOwned` whose owner lost the scope before it ran (the pre-`run()`
+     * `handleItemAlreadyOwned` whose owner lost the scope before it ran (the pre-`run()`
      * owner check) resolves nothing but rescues the owned consumable. NEGATIVE CONTROL: without
      * `rescueOwnedPurchases()` in that early return, nothing is reported or consumed — this test fails.
      */
@@ -375,7 +375,7 @@ class ConsumablePurchaseTest {
     }
 
     /**
-     * SPEC-497 R9 — a cancelled `awaitConnectedClient` waiter takes its callback with it. NEGATIVE CONTROL:
+     * A cancelled `awaitConnectedClient` waiter takes its callback with it. NEGATIVE CONTROL:
      * without `invokeOnCancellation` in `awaitConnectedClient`, the count stays 1 — this test fails.
      */
     @Test fun `a cancelled connection waiter is removed`() {

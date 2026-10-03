@@ -9,7 +9,7 @@ import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
 
-/** SPEC-497 §7.2 / §7.8 — the interactive map plan, rule by rule. */
+/** The interactive map plan, rule by rule. */
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [34])
 class MapInteractivePlanTest {
@@ -73,7 +73,7 @@ class MapInteractivePlanTest {
     fun singlePointCentresAtZoom15EvenWithAuthoredZoom() {
         val plan = MapInteractivePlan.compute(block("map_zoom" to 9, "map_stops" to listOf(a)))
         assertEquals(MapInteractivePlan.Camera.Center(48.85661, 2.35222, 15.0), plan.camera)
-        // A one-point polyline and no stops: no line, but the camera centres on it (§7.4).
+        // A one-point polyline and no stops: no line, but the camera centres on it.
         val one = MapInteractivePlan.compute(block("map_route_polyline" to encodeMapPolyline(listOf(10.0 to 20.0))))
         assertEquals("none", one.route.source)
         assertEquals(MapInteractivePlan.Camera.Center(10.0, 20.0, 15.0), one.camera)
@@ -91,7 +91,7 @@ class MapInteractivePlanTest {
         assertTrue("fixture polyline must contain {{: $braced", braced.contains("{{"))
         val blk = block("map_route_variable" to braced, "map_route_polyline" to sample)
 
-        // The RAW path (the host-data pass resolved the variable, R69): the variable IS the polyline.
+        // The RAW path (the host-data pass resolved the variable): the variable IS the polyline.
         val raw = MapInteractivePlan.compute(blk, rawResolved = true)
         assertEquals("polyline", raw.route.source)
         assertEquals(2, raw.route.points.size)

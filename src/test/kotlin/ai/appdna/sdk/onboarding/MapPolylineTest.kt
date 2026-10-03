@@ -4,7 +4,7 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Test
 
-/** SPEC-497 §7.8 — the pure precision-5 decoder. */
+/** The pure precision-5 decoder. */
 class MapPolylineTest {
 
     private fun assertPoints(expected: List<Pair<Double, Double>>, actual: List<Pair<Double, Double>>?) {

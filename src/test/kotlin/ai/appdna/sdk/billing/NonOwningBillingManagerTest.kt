@@ -15,8 +15,8 @@ import org.robolectric.annotation.Config
 import kotlinx.coroutines.launch
 
 /**
- * SPEC-497 §3.10 — with `ownsTransactions == false` the manager makes NO server call and NO store
- * write anywhere (§3.2 rule 3), builds the entitlement cache locally, and gates only the lifecycle
+ * With `ownsTransactions == false` the manager makes NO server call and NO store
+ * write anywhere, builds the entitlement cache locally, and gates only the lifecycle
  * emit on `emitsLifecycleEvents` (rule 4) — the snapshot is saved either way.
  */
 @RunWith(RobolectricTestRunner::class)
@@ -74,7 +74,7 @@ class NonOwningBillingManagerTest {
         val s = scenario(owns = false)
         val r = s.drive { s.mgr.restorePurchases() }
         assertTrue(r.exceptionOrNull() is BillingError.ProviderNotAvailable)
-        // I4 R8 m4 — the iOS wording, on both platforms.
+        // The iOS wording, on both platforms.
         assertEquals("RevenueCat: purchases are made by RevenueCat in your app", r.exceptionOrNull()?.message)
         assertEquals(1, pipe!!.count("purchase_restore_failed"))
     }
@@ -164,7 +164,7 @@ class NonOwningBillingManagerTest {
     }
 
     /**
-     * Round 19 — an OUT-OF-ORDER apply. Reconcile 1 reads Play before the renewal (GPA.1..0) and its answer
+     * An OUT-OF-ORDER apply. Reconcile 1 reads Play before the renewal (GPA.1..0) and its answer
      * is held; Play then renews (GPA.1..1) and reconcile 2 is started; reconcile 2's read is answered first,
      * then reconcile 1's.
      * NEGATIVE CONTROL: with Play read OUTSIDE the snapshot mutex (and `isRenewal` not requiring the purchase

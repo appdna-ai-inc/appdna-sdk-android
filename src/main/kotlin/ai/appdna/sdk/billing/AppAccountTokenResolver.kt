@@ -53,7 +53,7 @@ internal object AppAccountTokenResolver {
      */
     fun token(forUserId: String): UUID? {
         if (forUserId.isEmpty()) return null
-        // Fast path: userId is already a UUID — ONLY the canonical 8-4-4-4-12 form (SPEC-497 §13b.2
+        // Fast path: userId is already a UUID — ONLY the canonical 8-4-4-4-12 form (the
         // derivation fixture). Java's lenient `UUID.fromString` also accepts short forms such as
         // `1-2-3-4-5`, which Swift and the server hash instead; those now hash here too.
         if (CANONICAL_UUID.matches(forUserId)) return UUID.fromString(forUserId)

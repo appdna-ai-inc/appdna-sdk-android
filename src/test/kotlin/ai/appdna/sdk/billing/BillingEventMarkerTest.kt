@@ -11,7 +11,7 @@ import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
 
-/** SPEC-497 §11.9 — the `emitted_by` marker survives SDK billing emits and never host events. */
+/** The `emitted_by` marker survives SDK billing emits and never host events. */
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [34])
 class BillingEventMarkerTest {

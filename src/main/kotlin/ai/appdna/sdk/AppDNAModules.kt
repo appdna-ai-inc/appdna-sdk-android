@@ -227,7 +227,7 @@ class PushModule internal constructor() {
     internal fun delegate(): AppDNAPushDelegate? = manager?.pushListener
 
     // ---------------------------------------------------------------------------------------------
-    // SPEC-497 §9.2 (B2) — forwarding API for a host that owns Firebase Messaging.
+    // Forwarding API for a host that owns Firebase Messaging.
     // ---------------------------------------------------------------------------------------------
 
     /** Test seam: the context the push entry points use (production: the configured app context). */
@@ -303,7 +303,7 @@ class PushModule internal constructor() {
         val deliveryId = data["delivery_id"]?.takeIf { it.isNotBlank() }
         val key = deliveryId ?: pushId
         val mgr = manager
-        // Impl audit round 2 (A2): ALWAYS claim, so a message displayed before `configure` is not
+        // Impl (A2): ALWAYS claim, so a message displayed before `configure` is not
         // displayed again when it is forwarded after it. A claim with no manager to track it is marked
         // untracked; the first later forward that can track it tracks it and fires `onPushReceived`
         // (never delivered before `configure`: no delegate yet) — once, and without displaying again.
@@ -321,7 +321,7 @@ class PushModule internal constructor() {
                 }
             }
         }
-        // SPEC-497 §17 item 28 — create a custom sound's channel on first sight, so a later push FCM
+        // Create a custom sound's channel on first sight, so a later push FCM
         // displays itself (app in the background, `android.notification.channel_id`) plays it too.
         if (!data["sound"].isNullOrBlank()) {
             ctx?.let {
@@ -377,7 +377,7 @@ class PushModule internal constructor() {
         if (!PushIdempotency.claimTap(storage, key)) return true
 
         // A body tap carries iOS's `UNNotificationDefaultActionIdentifier` sentinel so the `action`
-        // column is non-null and comparable across platforms (SPEC-401-A R81).
+        // column is non-null and comparable across platforms.
         val resolvedAction = actionId?.takeIf { it.isNotBlank() }
             ?: data["action_type"]?.takeIf { it.isNotBlank() }
             ?: "com.apple.UNNotificationDefaultActionIdentifier"
@@ -462,7 +462,7 @@ class BillingModule internal constructor() {
     private val scope = CoroutineScope(Dispatchers.Main + SupervisorJob())
 
     /**
-     * SPEC-497 §3.2 — the ownership policy chosen at `configure` (`BillingOwnership.policy(provider)`),
+     * The ownership policy chosen at `configure` (`BillingOwnership.policy(provider)`),
      * assigned BEFORE the `none` early return; a failed billing init sets the `none` policy. Its explicit
      * initial value is [BillingOwnershipPolicy.NotConfigured] (and again after `shutdown()`), so the
      * paywall never reads an unassigned policy.
@@ -566,7 +566,7 @@ class BillingModule internal constructor() {
     ): TransactionInfo {
         val policy = ownershipPolicy
         if (!policy.isConfigured) {
-            // R65: before configure — an `unknown` error (no new error type); `purchase_failed` only
+            // Before configure — an `unknown` error (no new error type); `purchase_failed` only
             // when a tracker exists.
             val msg = ai.appdna.sdk.billing.BillingOwnershipPolicy.NOT_CONFIGURED_MESSAGE
             if (AppDNA.hasEventTracker()) {
@@ -577,7 +577,7 @@ class BillingModule internal constructor() {
             throw IllegalStateException(msg)
         }
         val mgr = manager ?: run {
-            // §3.2 rule 5: no provider (or a failed billing init) — exactly one purchase_failed, no
+            // No provider (or a failed billing init) — exactly one purchase_failed, no
             // purchase_started, no paywall_id.
             val msg = "No billing provider configured"
             AppDNA.trackBillingEvent("purchase_failed", mapOf(
@@ -593,7 +593,7 @@ class BillingModule internal constructor() {
             is PurchaseResult.Purchased -> {
                 val ent = result.entitlement
                 TransactionInfo(
-                    // SPEC-497 §13a.2 (V2-M4, R79): the real id, `orderId ?: purchaseToken`.
+                    // The real id, `orderId ?: purchaseToken`.
                     transactionId = result.transactionId ?: ent.productId,
                     productId = ent.productId,
                     // 🔴 THIS RETURNED THE EXPIRY AS THE PURCHASE DATE — a FUTURE date for a subscription,
@@ -638,14 +638,14 @@ class BillingModule internal constructor() {
             throw IllegalStateException(ai.appdna.sdk.billing.BillingOwnershipPolicy.NOT_CONFIGURED_MESSAGE)
         }
         val mgr = manager ?: run {
-            // SPEC-497 R37 SDK major 2: `none` throws (was `[]`), tracked once.
+            // `none` throws (was `[]`), tracked once.
             val e = ai.appdna.sdk.billing.BillingError.ProviderNotAvailable("No billing provider configured")
             AppDNA.trackBillingEvent("purchase_restore_failed", mapOf(
                 "error" to (e.message ?: "providerNotAvailable"), "error_type" to "providerNotAvailable",
             ))
             throw e
         }
-        // SPEC-497 restore error contract: every failure reaches the host as a typed BillingError
+        // Restore error contract: every failure reaches the host as a typed BillingError
         // (already tracked once by the manager); the cache is unchanged.
         return mgr.restorePurchases().map { it.productId }
     }
@@ -711,7 +711,7 @@ class BillingModule internal constructor() {
     }
 
     /**
-     * SPEC-497 D-R40-1 — set the billing delegate and say whether it takes queued purchase deliveries.
+     * Set the billing delegate and say whether it takes queued purchase deliveries.
      * A delegate registered with `deliversPurchases = false` is never called by the delivery queue's
      * drain (it still receives the live `purchase()` caller's `onPurchaseCompleted`). Any delegate set
      * through [setDelegate] delivers — implement `onPurchaseCompleted` and grant idempotently by
@@ -721,7 +721,7 @@ class BillingModule internal constructor() {
         assignBillingDelegate(delegate, deliversPurchases)
     }
 
-    /** The delegate and its `delivers` flag, held as ONE volatile snapshot (R46). */
+    /** The delegate and its `delivers` flag, held as ONE volatile snapshot. */
     private class DelegateSlot(val delegate: AppDNABillingDelegate?, val delivers: Boolean)
 
     @Volatile
@@ -736,7 +736,7 @@ class BillingModule internal constructor() {
         delegateSlot.let { if (it.delivers) it.delegate else null }
 
     /**
-     * The ONE entry point that writes the delegate storage and the flag (R42/R43). The flag is set with
+     * The ONE entry point that writes the delegate storage and the flag. The flag is set with
      * the delegate in one snapshot, and a delivering delegate triggers the drain itself (trigger (ii)).
      */
     internal fun assignBillingDelegate(delegate: AppDNABillingDelegate?, delivers: Boolean) {
@@ -767,7 +767,7 @@ class PurchasePendingException(val productId: String) : RuntimeException("Purcha
 class PurchaseFailedException @JvmOverloads constructor(
     val productId: String,
     val error: String,
-    /** SPEC-497 §13a.3 — the `billingErrorType` of the underlying failure (`verificationFailed`, …). */
+    /** The `billingErrorType` of the underlying failure (`verificationFailed`, …). */
     val errorType: String? = null,
 ) : RuntimeException("Purchase failed for $productId: $error")
 
@@ -985,7 +985,7 @@ class InAppMessagesModule internal constructor() {
     }
 
     /**
-     * SPEC-070-A A.11: Set a delegate for in-app message lifecycle events. Kept across `configure()`.
+     * Set a delegate for in-app message lifecycle events. Kept across `configure()`.
      * Synchronized with [applyTo], and `configure()` publishes the manager BEFORE applying: a delegate
      * set while `configure()` runs on another thread either sees the published manager here, or is
      * read by the [applyTo] that follows the publish — never lost, never overwritten by an older one.
@@ -1041,7 +1041,7 @@ class SurveysModule internal constructor() {
 class DeepLinksModule internal constructor() {
     private var listener: AppDNADeepLinkDelegate? = null
 
-    /** Test seam (SPEC-497 §8.7): where `deep_link_handled` goes. Production: the public `AppDNA.track`. */
+    /** Test seam: where `deep_link_handled` goes. Production: the public `AppDNA.track`. */
     internal var track: (String, Map<String, Any>) -> Unit = { name, props -> AppDNA.track(name, props) }
 
     /**

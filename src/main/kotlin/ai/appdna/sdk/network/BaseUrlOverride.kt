@@ -7,7 +7,7 @@ import android.os.Bundle
 import java.net.URI
 
 /**
- * SPEC-497 §3.11 — TEST-ONLY base-URL override, so an E2E host can point a debug build at a local
+ * TEST-ONLY base-URL override, so an E2E host can point a debug build at a local
  * server. Not public API and not documented for hosts.
  *
  * The `<application>` meta-data [BASE_URL_OVERRIDE_META_KEY] applies only when the app is

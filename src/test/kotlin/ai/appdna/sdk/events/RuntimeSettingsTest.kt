@@ -25,7 +25,7 @@ import java.util.UUID
  * queue. The precedence and cap tables are the shared fixture `resilience/runtime_settings_precedence`
  * (ResilienceFixtureTest); iOS `RuntimeSettingsTests`, same contract.
  *
- * NEGATIVE CONTROLS (build Mac, patched sources — status file round 33): the queue ignoring its cap → the
+ * NEGATIVE CONTROLS (build Mac, patched sources): the queue ignoring its cap → the
  * threshold / upload-size test fails; the worker ignoring the persisted cap → the worker test fails (1
  * request of 5).
  */
@@ -85,7 +85,9 @@ class RuntimeSettingsTest {
     @Test
     fun optionsAreUnsetUnlessTheHostSetsThem() {
         val o = AppDNAOptions()
-        assertNull(o.flushInterval); assertNull(o.batchSize); assertNull(o.configTTL)
+        // The public values keep their non-null defaults; "not set by the host" is the default value.
+        assertEquals(30L, o.flushInterval); assertEquals(100, o.batchSize); assertEquals(3600L, o.configTTL)
+        assertNull(o.requestedFlushInterval); assertNull(o.requestedBatchSize); assertNull(o.requestedConfigTTL)
         assertEquals(RuntimeSettings.Resolved(30L, null, 3600L), RuntimeSettings.resolveAll(o, null))
         assertEquals(RuntimeSettings.Resolved(10L, 5, 60L),
             RuntimeSettings.resolveAll(AppDNAOptions(flushInterval = 10L, batchSize = 5, configTTL = 60L), null))

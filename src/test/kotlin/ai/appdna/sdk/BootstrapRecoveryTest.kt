@@ -34,14 +34,14 @@ import java.util.concurrent.atomic.AtomicInteger
  * fires once (at the failure), `lastInitError` holds the failed bootstrap until it recovers and is null
  * after, and a retry whose configure has ended applies nothing.
  *
- * NEGATIVE CONTROLS (build Mac, patched sources — status file round 30):
+ * NEGATIVE CONTROLS (build Mac, patched sources):
  *  - no `startBootstrapRecovery` call → the recovery tests fail (org id stays null);
  *  - the retry loop ignoring `isOnline()` → the offline test fails (attempts made offline);
  *  - the loop run on a scope `shutdown()` does not cancel, not stopped by `shutdown()`, AND the epoch checks
  *    removed from the retry and from `applyBootstrapAnswer` → the stale-retry test fails (the old configure's
  *    org replaces the new one's). The three guards are redundant: with any one left the test passes (a
  *    stopped or cancelled loop's held request returns into a cancelled coroutine).
- * Round 31:
+ *
  *  - the `stopped` check removed from `start()` → the start-after-stop test fails (a loop is launched; it makes
  *    no attempt even then — the closed trigger channel ends it: two guards);
  *  - `end()` not removing the foreground observer → the observer tests fail;
@@ -187,7 +187,7 @@ class BootstrapRecoveryTest {
         assertEquals("a retry of the ended configure overwrote the new one", "org_second_configure", AppDNA.bootstrapOrgIdForTest())
     }
 
-    // MARK: - Round 31
+    // MARK: -
 
     @Test fun aStartAfterStopStartsNothingAndObservesNothing() {
         val made = AtomicInteger(0)

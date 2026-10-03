@@ -59,7 +59,7 @@ import java.util.zip.InflaterInputStream
  *    flush `sdk_initialized` starts) delivered its batch but threw on return, so the batch was sent again
  *    by the final attempt. Found by the first run of the hand-off test (100 events sent twice).
  *
- * NEGATIVE CONTROLS (run on the build Mac against patched sources, see the status file round 30):
+ * NEGATIVE CONTROLS (run on the build Mac against patched sources):
  *  - the worker answering success when the claim is held → `aWorkerThatFindsTheClaimHeldRetries` fails;
  *  - the worker scheduled at `shutdown()` again (and no schedule after the attempt) → the hand-off test
  *    fails (events left on disk);

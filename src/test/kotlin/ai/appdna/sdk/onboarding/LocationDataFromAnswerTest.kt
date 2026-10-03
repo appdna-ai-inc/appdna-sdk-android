@@ -13,7 +13,7 @@ import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
 
-/** SPEC-497 §13h.3 (D2) — getLocationData over every stored shape. */
+/** getLocationData over every stored shape. */
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [34])
 class LocationDataFromAnswerTest {
@@ -99,7 +99,7 @@ class LocationDataFromAnswerTest {
     }
 
     /**
-     * Impl audit round 2 A3 (iOS parity): a suggestion without coordinates is KEPT, and its stored
+     * Impl (iOS parity): a suggestion without coordinates is KEPT, and its stored
      * answer omits the missing coordinate — never 0.0.
      */
     @Test

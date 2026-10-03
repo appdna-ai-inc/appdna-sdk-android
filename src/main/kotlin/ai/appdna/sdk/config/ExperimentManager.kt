@@ -23,7 +23,7 @@ internal class ExperimentManager(
     private val exposedExperiments = mutableMapOf<String, String>()
 
     /**
-     * SPEC-070-A I.14 — Get the variant id for an experiment, or `null` if the user is not in it (not running,
+     * I.14 — Get the variant id for an experiment, or `null` if the user is not in it (not running,
      * platform / targeting / traffic allocation excludes them). Auto-tracks the exposure on the first assignment.
      * Return type matches iOS `getVariant(experimentId:) -> String?`.
      *

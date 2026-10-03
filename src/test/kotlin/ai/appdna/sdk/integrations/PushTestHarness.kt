@@ -16,7 +16,7 @@ import android.content.Context
 import org.json.JSONObject
 
 /**
- * SPEC-497 §9 — a REAL push pipeline for the forwarding tests: the SDK's own PushTokenManager on a
+ * A REAL push pipeline for the forwarding tests: the SDK's own PushTokenManager on a
  * real EventTracker → EventQueue → EventDatabase (batchSize 0, so nothing leaves the device; no
  * ApiClient, so no network call), injected into `AppDNA.push`, with a recording push delegate.
  */

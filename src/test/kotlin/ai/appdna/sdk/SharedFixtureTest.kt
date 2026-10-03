@@ -240,7 +240,7 @@ class SharedFixtureTest(
             "receive_push" -> runReceivePush(action, spy)
             "tap_push" -> runTapPush(action, spy)
             "classify_push" -> runClassifyPush(action, spy)
-            // Round 19 — the notification channels the REAL poster creates (Android only).
+            // The notification channels the REAL poster creates (Android only).
             "post_push_notification" -> runPostPushNotification(action, spy)
             "present_surface_under_experiment" -> runPresentSurfaceUnderExperiment(action, spy)
             "get_variant" -> runGetVariant(action, spy)
@@ -250,22 +250,22 @@ class SharedFixtureTest(
             "host_data_scenario" -> runHostDataScenario(action, spy)
             // SPEC-496 §5b C2 — the core decoder every bridge forwards `dataContext` through.
             "decode_interaction_result" -> runDecodeInteractionResult(spy)
-            // SPEC-497 §4.8 — the sign-in bridge floor (the core half; bridge_waits is the bridge tests').
+            // The sign-in bridge floor (the core half; bridge_waits is the bridge tests').
             "bridge_timeout_floor" -> runBridgeTimeoutFloor(action, spy)
-            // SPEC-497 §7.7 — the pure polyline decoder and the interactive map plan.
+            // The pure polyline decoder and the interactive map plan.
             "decode_polyline" -> runDecodePolyline(action, spy)
             // An in-app message's start_date / end_date, through the REAL MessageManager reader.
             "parse_window_date" -> runParseWindowDate(action, spy)
             "countdown_initial_seconds" -> runCountdownInitialSeconds(action, spy)
             "form_date_bounds" -> runFormDateBounds(action, spy)
             "map_interactive_plan" -> runMapInteractivePlan(action, spy)
-            // SPEC-497 §13h.3 — getLocationData over the stored answer.
+            // getLocationData over the stored answer.
             "location_data_from_answer" -> runLocationDataFromAnswer(action, spy)
-            // SPEC-497 §13h — what a location field stores (the one rule both writers use), read back.
+            // What a location field stores (the one rule both writers use), read back.
             "location_answer_from_input" -> runLocationAnswerFromInput(action, spy)
-            // SPEC-497 §4.2 — the core rule every wrapper bridge's auth gate and decoder use.
+            // The core rule every wrapper bridge's auth gate and decoder use.
             "bridge_step_advance_reply" -> runBridgeStepAdvanceReply(action, spy)
-            // SPEC-497 billing (A1, C1, C2, D-R40-1, C5) — the REAL billing core, FakeBillingClient-driven.
+            // Billing — the REAL billing core, FakeBillingClient-driven.
             "billing_ownership" -> runBillingOwnership(action, spy)
             "purchase_completion_plan" -> runPurchaseCompletionPlan(action, spy)
             "delivery_queue" -> runDeliveryQueue(action, spy)
@@ -687,7 +687,7 @@ class SharedFixtureTest(
         // context.screen is populated by the screen provider (NavigationInterceptor in production).
         val screen = props["screen_name"] as? String
         p.tracker.setScreenProvider { screen }
-        // SPEC-497 §11.9 (R52): through the PUBLIC AppDNA.track — the host path, which strips the reserved
+        // Through the PUBLIC AppDNA.track — the host path, which strips the reserved
         // `emitted_by` / `_appdna_origin` keys — with the capturing tracker installed.
         AppDNA.installEventTrackerForTest(p.tracker)
         // `setup.device_timezone` — installed as the JVM default zone (what `TimeZone.getDefault()`
@@ -1808,10 +1808,10 @@ class SharedFixtureTest(
     }
 
     // ---------------------------------------------------------------------------------------------
-    // SPEC-497 — A2 bridge floor, A5 map geometry, D2 location data
+    // A2 bridge floor, A5 map geometry, D2 location data
     // ---------------------------------------------------------------------------------------------
 
-    /** Only `cases` (the floor function) — asserting max() here would be a tautology (§4.8). */
+    /** Only `cases` (the floor function) — asserting max() here would be a tautology. */
     private fun runBridgeTimeoutFloor(action: JSONObject, spy: Spy) {
         val cases = action.optJSONArray("cases") ?: unsupported("bridge_timeout_floor without action.cases")
         val floors = (0 until cases.length()).map { i ->
@@ -2054,7 +2054,7 @@ class SharedFixtureTest(
     }
 
     /**
-     * SPEC-497 §8.7 — wire the REAL push entry points (`AppDNA.push.*`, `AppDNA.handlePushTap`) to this
+     * Wire the REAL push entry points (`AppDNA.push.*`, `AppDNA.handlePushTap`) to this
      * fixture's pipeline: the PushTokenManager and context they read are injected, the idempotency
      * state is reset (so two fixtures sharing a push_id do not dedup each other), the route sink
      * records where a tap routed, and `deep_link_handled` lands in the same pipeline.
@@ -2099,13 +2099,13 @@ class SharedFixtureTest(
         return shadowOf(nm).allNotifications.isNotEmpty()
     }
 
-    /** SPEC-497 §9.2 — the REAL classifier every entry point gates on. */
+    /** The REAL classifier every entry point gates on. */
     private fun runClassifyPush(action: JSONObject, spy: Spy) {
         spy.state["is_appdna"] = AppDNA.push.isAppDNAMessage(fcmData(action.getJSONObject("payload")))
     }
 
     /**
-     * Round 19 — each payload posted through the REAL `AppDNANotificationPoster.post` (the path
+     * Each payload posted through the REAL `AppDNANotificationPoster.post` (the path
      * AppDNAMessagingService and `AppDNA.push.handleMessage` display through), then the channels read back
      * from Robolectric's NotificationManager. `setup.bundled_sounds` stands in for the app's `res/raw`.
      */
@@ -2156,7 +2156,7 @@ class SharedFixtureTest(
         val data = fcmData(action.getJSONObject("payload"))
 
         when (val via = action.optStringOrNull("via")) {
-            // SPEC-497 §8.7 — the host-forwarded entry point: marker-gated, tracks delivery with the
+            // The host-forwarded entry point: marker-gated, tracks delivery with the
             // delivery_id, fires onPushReceived, NEVER posts a notification.
             "handleMessageData" -> {
                 installPush(p, spy)
@@ -2178,7 +2178,7 @@ class SharedFixtureTest(
         spy.events += p.envelopes().map { it.toEventPair() }
     }
 
-    /** SPEC-497 §8.7 — the REAL `AppDNA.push.handleTapData`: tracking, the delegate and routing are outputs. */
+    /** The REAL `AppDNA.push.handleTapData`: tracking, the delegate and routing are outputs. */
     private fun runTapPush(action: JSONObject, spy: Spy) {
         val p = Pipeline(fixtureName).also { pipeline = it }
         installPush(p, spy)
@@ -2293,13 +2293,18 @@ class SharedFixtureTest(
     /** The device facts a fixture declares in session_data (absent / null = unknown). */
     private fun eligibilityContextFromSession(): (Map<String, Any>) -> ExperimentEligibilityContext {
         val appVersion = sessionData.optStringOrNull("app_version")
-        val region = sessionData.optStringOrNull("device_region")
+        // `region_candidates` (instead of `device_region`): the raw locale / SIM regions, resolved by the REAL
+        // DeviceRegion.resolve — the first ISO-3166 alpha-2 code.
+        val candidates = sessionData.optJSONArray("region_candidates")
+        val region = if (candidates != null) {
+            ai.appdna.sdk.config.DeviceRegion.resolve((0 until candidates.length()).map { if (candidates.isNull(it)) null else candidates.optString(it) })
+        } else sessionData.optStringOrNull("device_region")
         val installed = (sessionData.opt("install_epoch_ms") as? Number)?.toLong()
         return { traits -> ExperimentEligibilityContext("android", appVersion, region, installed, traits) }
     }
 
     // ---------------------------------------------------------------------------------------------
-    // SPEC-497 billing — the REAL billing core (BillingOwnership, NativeBillingManager, PurchaseCompletion,
+    // Billing — the REAL billing core (BillingOwnership, NativeBillingManager, PurchaseCompletion,
     // ReceiptVerifier, EntitlementCache) against a FakeBillingClient and a scripted server
     // ---------------------------------------------------------------------------------------------
 
@@ -2311,7 +2316,7 @@ class SharedFixtureTest(
         return BillingProvider.fromWire(raw) ?: unsupported("billing provider $v does not decode (BillingProvider.fromWire)")
     }
 
-    /** §3.9 — the ownership policy, straight from the production seam. */
+    /** The ownership policy, straight from the production seam. */
     private fun runBillingOwnership(action: JSONObject, spy: Spy) {
         val policy = ai.appdna.sdk.billing.BillingOwnership.policy(providerFrom(action.get("provider")))
         spy.state["policy"] = mapOf(
@@ -2324,7 +2329,7 @@ class SharedFixtureTest(
     }
 
     /**
-     * §3.9 `paywall_purchase_*_fails_loudly` — the tap driven through the REAL PaywallManager purchase
+     * `paywall_purchase_*_fails_loudly` — the tap driven through the REAL PaywallManager purchase
      * path with the billing production builds for the provider: `none` → no manager; `revenueCat` → a
      * non-owning NativeBillingManager. No store call happens on this path.
      */
@@ -2375,7 +2380,7 @@ class SharedFixtureTest(
     }
 
     /**
-     * §13a.5 — the C1 scenarios through the PurchaseCompletion entry point named by `action.entry`.
+     * The C1 scenarios through the PurchaseCompletion entry point named by `action.entry`.
      * `purchase` drives `NativeBillingManager.purchase()` end to end (launch → Play listener → run); the
      * launch half's `purchase_started` / `billing_purchase_requested` are pinned elsewhere
      * (PurchaseEventsEmittedOnceTest) and are not part of these fixtures' event lists.
@@ -2415,7 +2420,7 @@ class SharedFixtureTest(
     }
 
     /**
-     * D-R40-1 — the delivery queue. Steps: `set_delegate` (trigger ii), `identify` (trigger iii — the
+     * The delivery queue. Steps: `set_delegate` (trigger ii), `identify` (trigger iii — the
      * production billing half of AppDNA.identify: `billingOnIdentitySwitch` + `billingAfterIdentify`, i.e.
      * the identity switch, `noteIdentified`, the refresh, the drain), `reset` (`AppDNA.billingOnReset`),
      * `report` (a Play update with no live caller, through the real listener).
@@ -2429,7 +2434,7 @@ class SharedFixtureTest(
             val step = steps.getJSONObject(i)
             when (val k = step.getString("kind")) {
                 "set_delegate" -> { sc.setDelegate(); sc.idle() }
-                // I4 minor 10: the REAL billing halves of AppDNA.reset / AppDNA.identify (the identity
+                // The REAL billing halves of AppDNA.reset / AppDNA.identify (the identity
                 // itself is the scenario's `currentUser`, which the manager's provider reads).
                 "reset" -> {
                     sc.currentUser = null
@@ -2472,7 +2477,7 @@ class SharedFixtureTest(
         fun recordFirst(userId: String) = ai.appdna.sdk.billing.AppAccountTokenResolver.recordFirstIdentifiedUserIdIfNeeded(userId)
     }
 
-    /** §13b.4 — the verify reply DTO through the REAL ReceiptVerifier parser. */
+    /** The verify reply DTO through the REAL ReceiptVerifier parser. */
     private fun runDecodeVerifyReply(action: JSONObject, spy: Spy) {
         val out = LinkedHashMap<String, Any?>()
         val cases = action.optJSONArray("cases") ?: unsupported("decode_verify_reply without cases")
@@ -2495,7 +2500,7 @@ class SharedFixtureTest(
         spy.state["parsed"] = out
     }
 
-    /** §13b.2 — the account-token derivation, through the production resolver. */
+    /** The account-token derivation, through the production resolver. */
     private fun runDeriveAppAccountToken(action: JSONObject, spy: Spy) {
         val cases = action.optJSONArray("cases") ?: unsupported("derive_app_account_token without cases")
         spy.state["tokens"] = (0 until cases.length()).map { i ->
@@ -2503,7 +2508,7 @@ class SharedFixtureTest(
         }
     }
 
-    /** §13b.2 — the entitlement cache merge; each case runs its own setup against a fresh cache. */
+    /** The entitlement cache merge; each case runs its own setup against a fresh cache. */
     private fun runEntitlementSnapshotMerge(action: JSONObject, spy: Spy) {
         val cases = action.optJSONArray("cases") ?: unsupported("entitlement_snapshot_merge without cases")
         val out = LinkedHashMap<String, Any?>()
@@ -2539,7 +2544,7 @@ class SharedFixtureTest(
         spy.state["entitlements"] = out
     }
 
-    /** §13a.2 (R43–R47) — the price a purchase reports, from the verify reply's `is_trial`. */
+    /** The price a purchase reports, from the verify reply's `is_trial`. */
     private fun runTrialPrice(action: JSONObject, spy: Spy) {
         val (p, sc) = billingScenario(spy, recordDelegates = false)
         val activity = org.robolectric.Robolectric.buildActivity(android.app.Activity::class.java).setup().get()
@@ -2551,7 +2556,7 @@ class SharedFixtureTest(
     }
 
     /**
-     * §13e.5 rule 2 — the production diff. `previous_snapshot` is saved and read back through the
+     * The production diff. `previous_snapshot` is saved and read back through the
      * production save/load (so legacy blank ids are normalised as on device); properties compare EXACTLY.
      */
     private fun runSubscriptionSnapshotDiff(action: JSONObject, spy: Spy) {
@@ -2598,7 +2603,7 @@ class SharedFixtureTest(
         }
         val events = p.envelopes().map { it.toEventPair() }
         spy.events += events
-        // EXACT property sets (R49): a key the fixture does not list must be absent from the event.
+        // EXACT property sets: a key the fixture does not list must be absent from the event.
         val expected = fixtureJson.getJSONObject("expect").optJSONArray("events") ?: JSONArray()
         for (i in 0 until minOf(expected.length(), events.size)) {
             val want = expected.getJSONObject(i).optJSONObject("properties")?.keys()?.asSequence()?.toSet() ?: continue
@@ -2635,7 +2640,7 @@ class SharedFixtureTest(
         }
 
         val expectedCalls = expect.optJSONArray("delegate_calls") ?: JSONArray()
-        // SPEC-497 §14 per-category rule: push_payload compares delegate_calls ORDER-INSENSITIVELY —
+        // Per-category rule: push_payload compares delegate_calls ORDER-INSENSITIVELY —
         // a push delegate is posted to the main looper, a deep-link delegate fires inline, so their
         // relative order is not part of the contract. Every other category compares in order.
         if (fixtureJson.optString("category") == "push_payload") {

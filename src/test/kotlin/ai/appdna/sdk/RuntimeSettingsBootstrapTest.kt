@@ -27,7 +27,7 @@ import java.util.concurrent.atomic.AtomicInteger
  * WorkManager uploader's cap and the config TTL — from a first bootstrap and from a recovered one; a host
  * option always wins, and a non-positive value is ignored. iOS `RuntimeSettingsTests`, same contract.
  *
- * NEGATIVE CONTROLS (build Mac, patched sources — status file round 33): `applyRuntimeSettings` not called
+ * NEGATIVE CONTROLS (build Mac, patched sources): `applyRuntimeSettings` not called
  * from `applyBootstrapAnswer` → every test but the defaults one fails; the bootstrap value beating the host
  * option → the explicit test fails; a non-positive bootstrap value accepted → the non-positive test fails.
  */

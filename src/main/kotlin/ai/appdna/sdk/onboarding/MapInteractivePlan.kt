@@ -3,7 +3,7 @@ package ai.appdna.sdk.onboarding
 import ai.appdna.sdk.Log
 
 /**
- * SPEC-497 §7.2 (A5) — Google's encoded-polyline format, precision 5, decoded.
+ * Google's encoded-polyline format, precision 5, decoded.
  *
  * Hand-written (the mirror of [encodeMapPolyline]); no `android-maps-utils` dependency. Pure, so the
  * shared fixtures run it without the Maps SDK.
@@ -52,7 +52,7 @@ internal object MapPolyline {
 }
 
 /**
- * SPEC-497 §7.2 (A5) — what the interactive map draws and where its camera goes. The ONE seam:
+ * What the interactive map draws and where its camera goes. The ONE seam:
  * [GoogleInteractiveMap] only consumes it, and the shared fixtures assert it directly.
  */
 internal data class MapInteractivePlan(
@@ -101,7 +101,7 @@ internal data class MapInteractivePlan(
             val camera: Camera = if (isPlace) {
                 Camera.Center(block.mapNum("place_lat") ?: DEFAULT_LAT, block.mapNum("place_lng") ?: DEFAULT_LNG, zoom)
             } else {
-                // A one-point polyline draws no line, but it is still where the route is (§7.4).
+                // A one-point polyline draws no line, but it is still where the route is.
                 val routePoints = if (route.source == "none" && decoded?.size == 1) decoded else route.points
                 val fitSet = LinkedHashSet<Pair<Double, Double>>().apply {
                     addAll(routePoints)

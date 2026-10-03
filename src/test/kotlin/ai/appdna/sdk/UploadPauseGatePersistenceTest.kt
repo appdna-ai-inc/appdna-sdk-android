@@ -25,7 +25,7 @@ import org.robolectric.annotation.Config
  * uploader reads. And a queue that `shutdown()` ended cannot set the gate after the next `configure()`'s queue
  * cleared it: the gate belongs to the newest queue. iOS `UploadPauseGatePersistenceTests`, same contract.
  *
- * NEGATIVE CONTROLS (build Mac, patched sources — status file round 31):
+ * NEGATIVE CONTROLS (build Mac, patched sources):
  *  - the `UploadPauseGate.set(context, true, …)` in `bumpFailureCounter` removed → the first test fails;
  *  - the owner check in `UploadPauseGate.set` removed → the replaced-queue test fails (the ended queue's
  *    fifth failure sets the new session's gate).

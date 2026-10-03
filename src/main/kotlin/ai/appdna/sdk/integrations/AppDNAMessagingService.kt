@@ -40,12 +40,12 @@ import org.json.JSONObject
 open class AppDNAMessagingService : FirebaseMessagingService() {
 
     override fun onMessageReceived(message: RemoteMessage) {
-        // SPEC-497 §9.2 (B2) — only AppDNA's own messages. A host's (or a third-party pusher's)
+        // Only AppDNA's own messages. A host's (or a third-party pusher's)
         // message is not tracked, fires no delegate and is never shown as a blank notification.
         if (!AppDNA.push.isAppDNAMessage(message.data)) return
 
         // Tracks push_delivered (with delivery_id), records the session push id and fires
-        // AppDNAPushDelegate.onPushReceived BEFORE the notification is built (SPEC-070-A H.7/H.8).
+        // AppDNAPushDelegate.onPushReceived BEFORE the notification is built.
         // A message a host already forwarded through AppDNA.push.handleMessage* is not re-handled.
         val outcome = AppDNA.push.receive(
             message.data,
@@ -65,7 +65,7 @@ open class AppDNAMessagingService : FirebaseMessagingService() {
         // host's own display is never doubled.
         val notifTitle = message.notification?.title
         val notifBody = message.notification?.body
-        // SPEC-497 §9.2 — an AppDNA message with a blank title AND body is data for the app, not
+        // An AppDNA message with a blank title AND body is data for the app, not
         // something to show: no blank notification.
         if (!AppDNANotificationPoster.isDisplayable(message.data, notifTitle, notifBody)) {
             Log.debug("Push has no title or body — not displaying a notification")
@@ -94,7 +94,7 @@ open class AppDNAMessagingService : FirebaseMessagingService() {
         const val DEFAULT_CHANNEL_ID = "appdna_push"
 
         /**
-         * SPEC-070-A H.16: foreground detection that works in any process,
+         * Foreground detection that works in any process,
          * including `:fcm`. Reads the running-process importance of the
          * app's main process — `IMPORTANCE_FOREGROUND` means the user is
          * actively interacting; anything else means backgrounded or killed.
@@ -126,7 +126,7 @@ internal object AppDNANotificationPoster {
         data["delivery_id"]?.takeIf { it.isNotBlank() } ?: data["push_id"].orEmpty()
 
     /**
-     * SPEC-497 §9.2 — keyed on the delivery, so two deliveries of one campaign (same `push_id`,
+     * Keyed on the delivery, so two deliveries of one campaign (same `push_id`,
      * different `delivery_id`) are two notifications that keep their own extras.
      */
     fun notificationId(data: Map<String, String>): Int = deliveryKey(data).hashCode()
@@ -152,7 +152,7 @@ internal object AppDNANotificationPoster {
         notifTitle: String?,
         notifBody: String?,
     ): android.app.Notification {
-        // SPEC-497 §17 item 28: a bundled custom sound posts on its own `appdna_sound_<key>` channel
+        // A bundled custom sound posts on its own `appdna_sound_<key>` channel
         // (Android 8+ plays the channel's sound); pre-8 the sound is set on the notification below.
         val soundChannel = PushSoundChannels.ensureChannel(context, data)
         val channelId = soundChannel ?: data["channel_id"]?.takeIf { it.isNotBlank() } ?: AppDNAMessagingService.DEFAULT_CHANNEL_ID
@@ -220,7 +220,7 @@ internal object AppDNANotificationPoster {
         // (action_type, action_value, screen_id, deep_link).
         val tapIntent = context.packageManager.getLaunchIntentForPackage(context.packageName)?.apply {
             putExtra("push_id", pushId)
-            // SPEC-497 §9.2 — the marker and the delivery id reach handlePushTap, which is gated on
+            // The marker and the delivery id reach handlePushTap, which is gated on
             // the marker and tracks the tap against this delivery.
             putExtra("appdna", data["appdna"])
             putExtra("delivery_id", data["delivery_id"])
@@ -257,8 +257,8 @@ internal object AppDNANotificationPoster {
             )
         )
 
-        // SPEC-084 / SPEC-497 §17 item 28: action buttons (dismiss / background buttons via
-        // PushActionReceiver, text_reply with a RemoteInput) + SPEC-088 label interpolation.
+        // Action buttons (dismiss / background buttons via
+        // PushActionReceiver, text_reply with a RemoteInput) + label interpolation.
         PushNotificationActions.addTo(builder, context, data, key, notificationId(data)) { label ->
             ai.appdna.sdk.core.TemplateEngine.interpolate(label, pushCtx)
         }
@@ -323,7 +323,7 @@ internal object AppDNANotificationPoster {
 }
 
 /**
- * SPEC-070-A H.6: Receives the dismissal broadcast (the notification's deleteIntent, an explicit
+ * Receives the dismissal broadcast (the notification's deleteIntent, an explicit
  * intent for this class) and emits a `push_dismissed` event on behalf of the user. It MUST be declared
  * in the manifest — the SDK's own `AndroidManifest.xml` declares it (not exported): an explicit
  * broadcast to an undeclared receiver is never delivered, which is why `push_dismissed` used to be

@@ -4,17 +4,17 @@ import ai.appdna.sdk.AppDNA
 import ai.appdna.sdk.storage.LocalStorage
 
 /**
- * SPEC-497 §9.2 — idempotency for the push entry points.
+ * Idempotency for the push entry points.
  *
  * A host that owns Firebase Messaging may forward a message the SDK's own service (or a second host
  * handler) also saw. Each message is handled ONCE per kind, keyed on `delivery_id ?: push_id`:
  *   - **delivered** — an in-process set, capped at [CAP] (oldest evicted), that dedupes the DISPLAY
- *     and `onPushReceived`. A message is claimed there even before `configure` (impl audit round 2,
- *     A2): the first forward displays it; a forward of the same message after `configure` must not
+ *     and `onPushReceived`. A message is claimed there even before `configure`:
+ *     the first forward displays it; a forward of the same message after `configure` must not
  *     display it again. A claim that could not be tracked (no push manager yet) also goes into the
  *     [untracked] set, and the first forward that CAN track it does so — once — without displaying.
  *     Across a process restart the set is empty; since the server counts only real status transitions
- *     for a `delivery_id` (§8.2), a re-forward after relaunch no longer double-counts.
+ *     for a `delivery_id`, a re-forward after relaunch no longer double-counts.
  *   - **tapped** — the persisted list [AppDNA.KEY_HANDLED_PUSH_TAPS] of the last [TAP_CAP] handled
  *     taps, shared by `AppDNA.handlePushTap(intent)` and `AppDNA.push.handleTapData(data)`, so both
  *     entry points for one tap track once, and an Activity re-created with ANY recent tap's intent —
@@ -82,7 +82,7 @@ internal object PushIdempotency {
     }
 
     /**
-     * Check-and-mark in ONE step (I4 minor 31): true the first time [key] is claimed as tapped, false
+     * Check-and-mark in ONE step: true the first time [key] is claimed as tapped, false
      * when it already is. Synchronized, so two entry points racing on the same tap (the intent and a
      * host's `handleTapData`) cannot both pass the check. `setString` updates the in-memory
      * SharedPreferences map before returning, so the next claim in this process sees it.
@@ -111,7 +111,7 @@ internal object PushIdempotency {
 }
 
 /**
- * SPEC-497 §9.2 / §8.7 — the push-tap router. [routeSink] is a test seam: production leaves it null.
+ * The push-tap router. [routeSink] is a test seam: production leaves it null.
  * When set, the router reports `("show_screen", id)` / `("deep_link", url)` / … to it BEFORE the real
  * navigation, because the navigation sits inside a catch-all that would swallow a Robolectric
  * failure and skip a sink called after it.
@@ -123,7 +123,7 @@ internal object PushTapRouter {
 
     /**
      * Route [tapped] exactly as `handlePushTap` always has: show_screen, deep_link, show_paywall,
-     * show_survey. SPEC-497 §17 item 28 — `open_url` (the console's URL action) goes to the host's
+     * show_survey. `open_url` (the console's URL action) goes to the host's
      * deep-link handler exactly like `deep_link`, as on iOS (`PushTapRouter.resolve`).
      */
     fun route(tapped: ai.appdna.sdk.PushAction?) {

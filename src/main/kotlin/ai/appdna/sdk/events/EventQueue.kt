@@ -66,7 +66,7 @@ internal class EventQueue(
     @Volatile private var flushInterval: Long = flushInterval
 
     /**
-     * SPEC-067: The current effective batch size — the network-sized one (100 without a connectivity
+     * The current effective batch size — the network-sized one (100 without a connectivity
      * monitor), capped by [batchSizeCap].
      */
     private val effectiveBatchSize: Int
@@ -162,7 +162,7 @@ internal class EventQueue(
         // dropped-meta counter decrement (only decrement after the meta is on disk, never a zero-reset).
         onPersisted?.invoke()
 
-        // SPEC-067: Check adaptive threshold. A threshold flush KEEPS the failure pause: it used to call
+        // Check adaptive threshold. A threshold flush KEEPS the failure pause: it used to call
         // the public [flush], which clears it, so during an outage every `track()` that reached the batch
         // size ran a full 1 + 3-attempt upload cycle. iOS keeps the pause here too.
         val currentBatchSize = effectiveBatchSize
@@ -264,6 +264,7 @@ internal class EventQueue(
             return
         }
         pruneStaleEvents()
+        if (queue.isEmpty()) reloadWindowFromDisk()
         if (queue.isEmpty()) return
 
         val currentBatchSize = effectiveBatchSize
@@ -365,6 +366,34 @@ internal class EventQueue(
             EventUploadCoordinator.release() // SPEC-428 CL-9: release the cross-path upload claim
         }
     }
+
+    /**
+     * The in-memory window is drained, but SQLite may hold more — the older rows of a backlog larger than the
+     * window (the constructor loads only the newest [MAX_IN_MEMORY_EVENTS]), or events that left the window when
+     * it was full. Load the oldest of them, so the in-process queue keeps sending them. Before, a drained window
+     * stayed empty until the next `track()` or launch, and only the WorkManager uploader sent the rest. Under
+     * [flushMutex]. iOS `EventQueue.reloadWindowFromDisk`, same rule.
+     */
+    private fun reloadWindowFromDisk() {
+        if (eventDatabase.count() == 0) return
+        val rows = eventDatabase.loadBatch(MAX_IN_MEMORY_EVENTS)
+        // A `track()` racing this reload is already in memory (and may be in `rows` too): never twice.
+        val present = queue.mapTo(HashSet()) { it.optString("event_id") }
+        val older = ArrayList<JSONObject>(rows.size)
+        for ((_, json) in rows) {
+            val obj = try { JSONObject(json) } catch (_: Exception) { continue }
+            val id = obj.optString("event_id")
+            if (id in present || EventUploadCoordinator.wasResolved(id)) continue
+            older.add(obj)
+        }
+        if (older.isEmpty()) return
+        queue.addAll(0, older)
+        trimInMemoryCap()
+        Log.debug("Reloaded ${older.size} persisted events into the drained in-memory window")
+    }
+
+    /** Test reader: the events in the in-memory window. */
+    internal val inMemoryCountForTest: Int get() = queue.size
 
     private fun bumpFailureCounter() {
         consecutiveFailures++
@@ -494,7 +523,7 @@ internal class EventQueue(
          * a very large interval (e.g. Long.MAX_VALUE, which every test pipeline passes to mean "never")
          * into a NEGATIVE delay — which returns at once, so the loop spun on Dispatchers.IO flushing the
          * database forever: saturate. An interval of 0 or less spun the same way (`delay(0)`): at least
-         * one second (SPEC-497 impl audit round 2, A8).
+         * one second.
          */
         internal fun autoFlushIntervalMs(flushIntervalSeconds: Long): Long {
             val seconds = flushIntervalSeconds.coerceAtLeast(1)

@@ -67,7 +67,9 @@ private class NoBackupContext(base: Context, dbName: String) : ContextWrapper(ba
 /**
  * SPEC-067: SQLite-based event persistence replacing SharedPreferences.
  * Provides atomic row-level operations that survive process kills.
- * Enforces both event count cap (10K) and disk quota (5 MB).
+ * Enforces both event count cap (10K) and disk quota (5 MB of LIVE event bytes — each stored event's UTF-8
+ * JSON plus one byte, the newline iOS stores after each line — the same measure as iOS `EventStore`, not the
+ * SQLite file, whose pages, indexes and free list are not events).
  *
  * Stored in `noBackupFilesDir` — see [NoBackupContext].
  */
@@ -77,6 +79,8 @@ internal class EventDatabase(
     // small cap with an isolated db. Production callers use the defaults.
     private val maxEvents: Int = MAX_EVENTS,
     dbName: String = DATABASE_NAME,
+    /** The disk quota in live event bytes (injectable for the shared fixtures; production: [MAX_DISK_BYTES]). */
+    private val maxDiskBytes: Int = MAX_DISK_BYTES,
 ) : SQLiteOpenHelper(NoBackupContext(context, dbName), dbName, null, DATABASE_VERSION) {
 
     init {
@@ -86,9 +90,10 @@ internal class EventDatabase(
 
     companion object {
         private const val DATABASE_NAME = "appdna_events.db"
-        // SPEC-428 STEP-7: v2 adds idx_events_created_at on upgrade. v3 adds the event_id / ts_ms /
+        // V2 adds idx_events_created_at on upgrade. v3 adds the event_id / ts_ms /
         // meta_count columns, so a flush's prune and removal are SQL statements, not a JSON parse of every row.
-        private const val DATABASE_VERSION = 3
+        // v4 adds payload_bytes, so the disk quota measures the live events' bytes (iOS's measure), not the file.
+        internal const val DATABASE_VERSION = 4
         private const val TABLE_EVENTS = "pending_events"
         private const val COL_ID = "_id"
         private const val COL_EVENT_JSON = "event_json"
@@ -97,6 +102,10 @@ internal class EventDatabase(
         private const val COL_TS_MS = "ts_ms"
         /** The `count` a `_sdk_events_dropped` meta carries; NULL for a normal event (which counts 1). */
         private const val COL_META_COUNT = "meta_count"
+        /** The stored JSON's UTF-8 length. */
+        private const val COL_PAYLOAD_BYTES = "payload_bytes"
+        /** Rows parsed per step of the v3 back-fill. */
+        private const val BACKFILL_CHUNK = 1_000
         /** SQLite's default bound-parameter limit is 999. */
         private const val IN_CHUNK = 500
 
@@ -130,31 +139,126 @@ internal class EventDatabase(
                 $COL_CREATED_AT INTEGER NOT NULL DEFAULT (strftime('%s', 'now') * 1000),
                 $COL_EVENT_ID TEXT,
                 $COL_TS_MS INTEGER,
-                $COL_META_COUNT INTEGER
+                $COL_META_COUNT INTEGER,
+                $COL_PAYLOAD_BYTES INTEGER
             )
         """.trimIndent())
         db.execSQL("CREATE INDEX IF NOT EXISTS idx_events_created_at ON $TABLE_EVENTS($COL_CREATED_AT)")
         createLookupIndexes(db)
     }
 
+    /**
+     * Every upgrade brings the table to this version's shape through [ensureSchema], which checks what is there
+     * before it changes anything. `SQLiteOpenHelper` reads the version BEFORE it takes the write lock, so two
+     * helpers on one file (the event queue's and the WorkManager uploader's) can both run `onUpgrade(2, 4)`, the
+     * second after the first committed: an unconditional `ALTER TABLE … ADD COLUMN` then threw "duplicate
+     * column" and the second helper could not open the database.
+     */
     override fun onUpgrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) {
-        // SPEC-428 STEP-7: v1 installs never ran onCreate again, so they lack idx_events_created_at → a
-        // full-scan on the ORDER BY created_at, _id ordering query. Create it idempotently on upgrade.
-        if (oldVersion < 2) {
-            db.execSQL("CREATE INDEX IF NOT EXISTS idx_events_created_at ON $TABLE_EVENTS($COL_CREATED_AT)")
+        ensureSchema(db)
+    }
+
+    /**
+     * A newer SDK wrote a higher version (the host app rolled back an SDK update). The default `onDowngrade`
+     * throws, and no event could be stored or sent until the app was reinstalled. Keep the table when this
+     * version can use it ([ensureSchema]: the columns it needs are there or can be added, and no unknown column
+     * demands a value on insert); otherwise rebuild it, counting the rows that are lost.
+     */
+    override fun onDowngrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) {
+        try {
+            ensureSchema(db)
+            Log.warning("Event database v$oldVersion opened by an SDK that writes v$newVersion — kept")
+        } catch (e: Exception) {
+            val lost = try {
+                db.rawQuery("SELECT COUNT(*) FROM $TABLE_EVENTS", null).use { if (it.moveToFirst()) it.getInt(0) else 0 }
+            } catch (_: Exception) { 0 }
+            db.execSQL("DROP TABLE IF EXISTS $TABLE_EVENTS")
+            onCreate(db)
+            if (lost > 0) ai.appdna.sdk.events.DroppedEventsCounter.increment(lost)
+            Log.warning("Event database v$oldVersion could not be used by this SDK (${e.message}) — rebuilt; $lost events lost (counted)")
         }
-        // v3: the lookup columns, filled once from the stored JSON (the only full parse the table ever needs).
-        if (oldVersion < 3) {
-            db.execSQL("ALTER TABLE $TABLE_EVENTS ADD COLUMN $COL_EVENT_ID TEXT")
-            db.execSQL("ALTER TABLE $TABLE_EVENTS ADD COLUMN $COL_TS_MS INTEGER")
-            db.execSQL("ALTER TABLE $TABLE_EVENTS ADD COLUMN $COL_META_COUNT INTEGER")
-            db.query(TABLE_EVENTS, arrayOf(COL_ID, COL_EVENT_JSON), null, null, null, null, null).use { c ->
-                while (c.moveToNext()) {
-                    val values = lookupValues(c.getString(1)) ?: continue
-                    db.update(TABLE_EVENTS, values, "$COL_ID = ?", arrayOf(c.getLong(0).toString()))
-                }
+    }
+
+    /** The table's columns: name → (NOT NULL, has a default). */
+    private fun columns(db: SQLiteDatabase): Map<String, Pair<Boolean, Boolean>> {
+        val out = HashMap<String, Pair<Boolean, Boolean>>()
+        db.rawQuery("PRAGMA table_info($TABLE_EVENTS)", null).use { c ->
+            val name = c.getColumnIndex("name")
+            val notNull = c.getColumnIndex("notnull")
+            val dflt = c.getColumnIndex("dflt_value")
+            val pk = c.getColumnIndex("pk")
+            while (c.moveToNext()) {
+                out[c.getString(name)] = (c.getInt(notNull) != 0 && c.getInt(pk) == 0) to !c.isNull(dflt)
             }
-            createLookupIndexes(db)
+        }
+        return out
+    }
+
+    /**
+     * Brings the table to this version's shape, idempotently: creates it when absent, adds only the columns that
+     * are missing (checked with `PRAGMA table_info`, inside the upgrade's transaction), back-fills the rows that
+     * lack them, and creates the indexes. Throws when the table cannot be used (no `_id` / `event_json`, or a
+     * column this SDK does not know that requires a value on insert).
+     */
+    private fun ensureSchema(db: SQLiteDatabase) {
+        val cols = columns(db)
+        if (cols.isEmpty()) { onCreate(db); return }
+        require(COL_ID in cols && COL_EVENT_JSON in cols) { "no $COL_ID / $COL_EVENT_JSON column" }
+        val known = setOf(COL_ID, COL_EVENT_JSON, COL_CREATED_AT, COL_EVENT_ID, COL_TS_MS, COL_META_COUNT, COL_PAYLOAD_BYTES)
+        for ((name, flags) in cols) {
+            require(name in known || !flags.first || flags.second) { "column $name requires a value this SDK does not write" }
+        }
+        fun add(name: String, type: String) {
+            if (name !in cols) db.execSQL("ALTER TABLE $TABLE_EVENTS ADD COLUMN $name $type")
+        }
+        add(COL_CREATED_AT, "INTEGER NOT NULL DEFAULT 0")
+        add(COL_EVENT_ID, "TEXT")
+        add(COL_TS_MS, "INTEGER")
+        add(COL_META_COUNT, "INTEGER")
+        add(COL_PAYLOAD_BYTES, "INTEGER")
+        db.execSQL("CREATE INDEX IF NOT EXISTS idx_events_created_at ON $TABLE_EVENTS($COL_CREATED_AT)")
+        backfillLookupColumns(db)
+        // The payload size is SQL: the UTF-8 length of the stored JSON.
+        db.execSQL("UPDATE $TABLE_EVENTS SET $COL_PAYLOAD_BYTES = LENGTH(CAST($COL_EVENT_JSON AS BLOB)) WHERE $COL_PAYLOAD_BYTES IS NULL")
+        createLookupIndexes(db)
+    }
+
+    /**
+     * Fills `event_id` / `ts_ms` / `meta_count` from the stored JSON for the rows that have none of them (rows an
+     * SDK before v3 wrote) — the only full parse the table ever needs. In chunks of [BACKFILL_CHUNK] rows by `_id`,
+     * with ONE compiled UPDATE statement re-bound per row, inside the caller's transaction (`onUpgrade` runs in
+     * one). It used to build a ContentValues `db.update(…)` per row, compiling the statement 10,000 times for a
+     * 10,000-event backlog on the thread that first opened the database.
+     */
+    private fun backfillLookupColumns(db: SQLiteDatabase) {
+        val update = db.compileStatement(
+            "UPDATE $TABLE_EVENTS SET $COL_EVENT_ID = ?, $COL_TS_MS = ?, $COL_META_COUNT = ? WHERE $COL_ID = ?"
+        )
+        try {
+            var lastId = -1L
+            while (true) {
+                var seen = 0
+                db.rawQuery(
+                    "SELECT $COL_ID, $COL_EVENT_JSON FROM $TABLE_EVENTS WHERE $COL_ID > ? AND $COL_EVENT_ID IS NULL " +
+                        "AND $COL_TS_MS IS NULL AND $COL_META_COUNT IS NULL ORDER BY $COL_ID LIMIT $BACKFILL_CHUNK",
+                    arrayOf(lastId.toString()),
+                ).use { c ->
+                    while (c.moveToNext()) {
+                        seen++
+                        lastId = c.getLong(0)
+                        val v = lookupValues(c.getString(1)) ?: continue
+                        update.clearBindings()
+                        v.getAsString(COL_EVENT_ID)?.let { update.bindString(1, it) } ?: update.bindNull(1)
+                        v.getAsLong(COL_TS_MS)?.let { update.bindLong(2, it) } ?: update.bindNull(2)
+                        v.getAsLong(COL_META_COUNT)?.let { update.bindLong(3, it) } ?: update.bindNull(3)
+                        update.bindLong(4, lastId)
+                        update.executeUpdateDelete()
+                    }
+                }
+                if (seen < BACKFILL_CHUNK) break
+            }
+        } finally {
+            update.close()
         }
     }
 
@@ -204,6 +308,7 @@ internal class EventDatabase(
             val values = ContentValues().apply {
                 lookup?.let { putAll(it) }
                 put(COL_EVENT_JSON, eventJson)
+                put(COL_PAYLOAD_BYTES, eventJson.toByteArray(Charsets.UTF_8).size)
                 put(COL_CREATED_AT, System.currentTimeMillis()) // SPEC-428 CL-6: milliseconds, not seconds
             }
             db.insert(TABLE_EVENTS, null, values)
@@ -226,6 +331,7 @@ internal class EventDatabase(
                     val values = ContentValues().apply {
                         lookupValues(eventJson)?.let { putAll(it) }
                         put(COL_EVENT_JSON, eventJson)
+                        put(COL_PAYLOAD_BYTES, eventJson.toByteArray(Charsets.UTF_8).size)
                         put(COL_CREATED_AT, System.currentTimeMillis()) // SPEC-428 CL-6: milliseconds, not seconds
                     }
                     db.insert(TABLE_EVENTS, null, values)
@@ -370,7 +476,7 @@ internal class EventDatabase(
                     "SELECT COUNT(*), COALESCE(SUM(COALESCE($COL_META_COUNT, 1)), 0) FROM $TABLE_EVENTS WHERE $where",
                     args,
                 ).use { c ->
-                    // SPEC-428 STEP-4: meta-aware — a stale `_sdk_events_dropped` carries N drops.
+                    // Meta-aware — a stale `_sdk_events_dropped` carries N drops.
                     if (c.moveToFirst()) { pruned = c.getInt(0); lost = c.getInt(1) }
                 }
                 if (pruned > 0) db.delete(TABLE_EVENTS, where, args)
@@ -447,6 +553,24 @@ internal class EventDatabase(
         ).use { c -> return if (c.moveToFirst()) c.getInt(0) else 0 }
     }
 
+    /** The live events' bytes: each row's JSON plus one (iOS stores a newline after each line). */
+    private fun liveBytes(db: SQLiteDatabase): Long =
+        db.rawQuery(
+            "SELECT COALESCE(SUM(COALESCE($COL_PAYLOAD_BYTES, LENGTH(CAST($COL_EVENT_JSON AS BLOB))) + 1), 0) FROM $TABLE_EVENTS",
+            null,
+        ).use { c -> if (c.moveToFirst()) c.getLong(0) else 0L }
+
+    /** The bytes [liveBytes] counts for the oldest [limit] rows. */
+    private fun oldestBytes(db: SQLiteDatabase, limit: Int): Long =
+        db.rawQuery(
+            "SELECT COALESCE(SUM(COALESCE($COL_PAYLOAD_BYTES, LENGTH(CAST($COL_EVENT_JSON AS BLOB))) + 1), 0) FROM " +
+                "(SELECT $COL_PAYLOAD_BYTES, $COL_EVENT_JSON FROM $TABLE_EVENTS ORDER BY $COL_CREATED_AT ASC, $COL_ID ASC LIMIT $limit)",
+            null,
+        ).use { c -> if (c.moveToFirst()) c.getLong(0) else 0L }
+
+    /** Live event bytes now (test reader; see [liveBytes]). */
+    internal fun liveBytesForTest(): Long = try { liveBytes(readableDatabase) } catch (_: Exception) { 0L }
+
     private fun enforceQuotas(db: SQLiteDatabase) {
         // 1. Count cap
         val currentCount = count()
@@ -462,20 +586,35 @@ internal class EventDatabase(
             Log.warning("Event database overflow: dropped $excess oldest events (count cap; loss metric +$loss)")
         }
 
-        // 2. Disk quota
-        val dbFile = db.path?.let { java.io.File(it) }
-        val diskSize = dbFile?.length() ?: 0
-        if (diskSize > MAX_DISK_BYTES) {
-            // Drop 10% of oldest events
-            val dropCount = (count() * 0.1).toInt().coerceAtLeast(1)
-            val loss = evictionLoss(db, dropCount)
-            db.execSQL("""
-                DELETE FROM $TABLE_EVENTS WHERE $COL_ID IN (
-                    SELECT $COL_ID FROM $TABLE_EVENTS ORDER BY $COL_CREATED_AT ASC, $COL_ID ASC LIMIT $dropCount
-                )
-            """.trimIndent())
-            ai.appdna.sdk.events.DroppedEventsCounter.increment(loss) // SPEC-428 CL-1/D2/STEP-4
-            Log.warning("Event database disk quota enforced: dropped $dropCount events (${MAX_DISK_BYTES / 1024}KB limit; loss +$loss)")
+        // 2. Disk quota: the live events' bytes (iOS `EventStore`'s measure), not the SQLite file — the file
+        // carries pages, three indexes and a free list, so measuring it evicted events well under 5 MB of them,
+        // and (10 % once per insert) could stay over the quota. Drop the oldest 10 % until the events fit, as
+        // iOS does. One transaction: the uploader's handle never sees a half-evicted table.
+        var bytes = liveBytes(db)
+        if (bytes <= maxDiskBytes) return
+        var dropped = 0
+        var loss = 0
+        db.beginTransaction()
+        try {
+            var remaining = count()
+            while (bytes > maxDiskBytes && remaining > 0) {
+                val dropCount = maxOf(remaining / 10, 1)
+                val passLoss = evictionLoss(db, dropCount) // recover meta-carried drops BEFORE the DELETE
+                bytes -= oldestBytes(db, dropCount)
+                db.execSQL("""
+                    DELETE FROM $TABLE_EVENTS WHERE $COL_ID IN (
+                        SELECT $COL_ID FROM $TABLE_EVENTS ORDER BY $COL_CREATED_AT ASC, $COL_ID ASC LIMIT $dropCount
+                    )
+                """.trimIndent())
+                ai.appdna.sdk.events.DroppedEventsCounter.increment(passLoss)
+                loss += passLoss
+                dropped += dropCount
+                remaining -= dropCount
+            }
+            db.setTransactionSuccessful()
+        } finally {
+            db.endTransaction()
         }
+        Log.warning("Event database disk quota enforced: dropped $dropped events (${maxDiskBytes / 1024}KB of live events; loss +$loss)")
     }
 }

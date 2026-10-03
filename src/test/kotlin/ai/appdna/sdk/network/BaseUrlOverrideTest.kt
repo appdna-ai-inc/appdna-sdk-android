@@ -15,7 +15,7 @@ import org.robolectric.RobolectricTestRunner
 import org.robolectric.Shadows.shadowOf
 import org.robolectric.annotation.Config
 
-/** SPEC-497 §3.11 — the test-only base-URL override. */
+/** The test-only base-URL override. */
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [34])
 class BaseUrlOverrideTest {

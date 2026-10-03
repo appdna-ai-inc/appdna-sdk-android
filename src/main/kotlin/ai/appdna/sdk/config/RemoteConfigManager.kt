@@ -124,8 +124,18 @@ internal class RemoteConfigManager(
      */
     @Volatile private var messages: Map<String, ai.appdna.sdk.messages.MessageConfig> = emptyMap()
 
-    /** Callback when survey configs are updated from Firestore. */
+    /**
+     * Callback when survey configs are updated from Firestore. Setting it replays the surveys already loaded (the
+     * disk cache read at construction, or the bundle), which arrived before any handler existed: without that an
+     * offline cold start's cached surveys never reached `SurveyManager` until a fetch. iOS
+     * `onSurveyConfigsUpdated`, same rule.
+     */
     var surveyUpdateHandler: ((Map<String, Map<String, Any>>) -> Unit)? = null
+        set(value) {
+            field = value
+            val current = surveys
+            if (value != null && current.isNotEmpty()) value(current)
+        }
 
     init {
         loadCachedConfigs()
@@ -239,14 +249,14 @@ internal class RemoteConfigManager(
                 // Normalize each entry to its RAW value (FeatureFlagManager/getConfig expect Bool/Number/
                 // String, not the served {value,type,...} wrapper); omit null-valued (unset) flags.
                 flags = unwrapped.entries.mapNotNull { e -> flagRawValue(e.value)?.let { e.key to it } }.toMap()
-                cacheData("flags", JSONObject(flags as Map<*, *>).toString())
+                cacheMap("flags", flags)
                 notifyChangeListeners()
             },
             pruneToKeys = { keys ->
                 flags = flags.filterKeys { it in keys }
                 // Rewrite the disk cache to match (clears it when keys is empty — else a cold start
                 // resurrects removed flags). Per-item adds re-cache the full set afterward.
-                try { cacheData("flags", JSONObject(flags as Map<*, *>).toString()) } catch (_: Exception) {}
+                try { cacheMap("flags", flags) } catch (_: Exception) {}
                 notifyChangeListeners()  // fire on full-clear too (no per-item parse runs when empty)
             },
             onComplete = { ok -> markFetchComplete(ok) }
@@ -259,7 +269,7 @@ internal class RemoteConfigManager(
         db.document("$basePath/experiments").get().addOnSuccessListener { snapshot ->
             snapshot.data?.let { data ->
                 parseExperiments(data)
-                cacheData("experiments", JSONObject(data).toString())
+                cacheMap("experiments", data)
                 prefetchVariantDocs(db)
             }
             markFetchComplete(success = true)
@@ -274,7 +284,7 @@ internal class RemoteConfigManager(
             indexPath = "paywall_index", indexKey = "paywalls",
             itemCollection = "paywall_index/paywalls", megaDocPath = "paywalls",
             parseItem = { id, data -> parseSinglePaywall(id, data) },
-            parseMegaDoc = { data -> parsePaywalls(data); cacheData("paywalls", JSONObject(data).toString()) },
+            parseMegaDoc = { data -> parsePaywalls(data); cacheMap("paywalls", data) },
             onComplete = { ok -> markFetchComplete(ok) }
         )
 
@@ -284,7 +294,7 @@ internal class RemoteConfigManager(
             indexPath = "onboarding_index", indexKey = "flows",
             itemCollection = "onboarding_index/flows", megaDocPath = "onboarding",
             parseItem = { id, data -> parseSingleOnboardingFlow(id, data) },
-            parseMegaDoc = { data -> parseOnboarding(data); cacheData("onboarding", JSONObject(data).toString()) },
+            parseMegaDoc = { data -> parseOnboarding(data); cacheMap("onboarding", data) },
             extraIndexParse = { indexData ->
                 (indexData["active_flow_id"] as? String)?.let { activeOnboardingFlowId = it }
             },
@@ -297,7 +307,7 @@ internal class RemoteConfigManager(
             indexPath = "survey_index", indexKey = "surveys",
             itemCollection = "survey_index/surveys", megaDocPath = "surveys",
             parseItem = { id, data -> parseSingleSurvey(id, data) },
-            parseMegaDoc = { data -> parseSurveys(data); cacheData("surveys", JSONObject(data).toString()) },
+            parseMegaDoc = { data -> parseSurveys(data); cacheMap("surveys", data) },
             onComplete = { ok -> markFetchComplete(ok) }
         )
 
@@ -337,7 +347,7 @@ internal class RemoteConfigManager(
             parseMegaDoc = { data ->
                 @Suppress("UNCHECKED_CAST")
                 messages = ai.appdna.sdk.messages.MessageConfigParser.parseMessages(data as Map<String, Any>)
-                cacheData("messages", JSONObject(data).toString())
+                cacheMap("messages", data)
                 notifyChangeListeners()
             },
             pruneToKeys = { keys ->
@@ -345,10 +355,7 @@ internal class RemoteConfigManager(
                 rawMessageData.keys.retainAll(keys)
                 // Rewrite the disk cache (clears to {messages:{}} when empty — else cold start resurrects).
                 try {
-                    val combined = JSONObject(); val msgObj = JSONObject()
-                    for ((mid, mdata) in rawMessageData) { msgObj.put(mid, JSONObject(mdata)) }
-                    combined.put("messages", msgObj)
-                    cacheData("messages", combined.toString())
+                    cacheMap("messages", mapOf("messages" to rawMessageData.toMap()))
                 } catch (_: Exception) {}
                 notifyChangeListeners()  // fire on full-clear too (no per-item parse runs when empty)
             },
@@ -459,9 +466,19 @@ internal class RemoteConfigManager(
                         variants = variants,
                         segments = segments,
                         // The audience gate the device evaluates (ExperimentEligibility), as served.
-                        trafficAllocation = (map["traffic_allocation"] as? Number)?.toDouble(),
+                        // Present but not a number (a string, a bool, an object) → NaN, which allocates no one (it
+                        // used to read as absent — everyone); absent / null → everyone. iOS `ExperimentConfig`, same.
+                        trafficAllocation = when (val v = map["traffic_allocation"]) {
+                            null -> null
+                            is Number -> v.toDouble()
+                            else -> Double.NaN
+                        },
                         targeting = ExperimentTargeting.fromAny(map["targeting"]),
-                        startedAtMs = (map["started_at_ms"] as? Number)?.toLong(),
+                        // Not a number → absent, so "new users only" fails closed; a fraction is truncated.
+                        startedAtMs = (map["started_at_ms"] as? Number)?.let { n ->
+                            if (n is Double || n is Float) n.toDouble().takeIf { !it.isNaN() && !it.isInfinite() }?.toLong()
+                            else n.toLong()
+                        },
                     )
                 } catch (e: Exception) {
                     Log.warning("Failed to parse experiment '$key': ${e.message}")
@@ -502,6 +519,9 @@ internal class RemoteConfigManager(
     internal fun injectVariantDocForTesting(path: String, config: Map<String, Any>) {
         variantDocs = variantDocs + (path to config)
     }
+
+    /** Test seam: write [data] to the [section] cache exactly as a fetch does ([cacheMap]). */
+    internal fun cacheSectionForTesting(section: String, data: Map<String, Any>) = cacheMap(section, data)
 
     /** SPEC-036-H test seams — drive the real per-item flag/message parsers + prune. */
     internal fun parseFlagDocForTesting(key: String, data: Map<String, Any>) = parseSingleFlag(key, data)
@@ -665,7 +685,7 @@ internal class RemoteConfigManager(
     private fun parseSingleFlag(key: String, data: Map<String, Any>) {
         val v = flagRawValue(data)
         flags = if (v != null) flags + (key to v) else flags - key  // null value ⇒ unset (omit)
-        try { cacheData("flags", JSONObject(flags as Map<*, *>).toString()) } catch (_: Exception) {}
+        try { cacheMap("flags", flags) } catch (_: Exception) {}
         notifyChangeListeners()
     }
 
@@ -680,11 +700,7 @@ internal class RemoteConfigManager(
         }
         rawMessageData[id] = data
         try {
-            val combined = JSONObject()
-            val msgObj = JSONObject()
-            for ((mid, mdata) in rawMessageData) { msgObj.put(mid, JSONObject(mdata)) }
-            combined.put("messages", msgObj)
-            cacheData("messages", combined.toString())
+            cacheMap("messages", mapOf("messages" to rawMessageData.toMap()))
         } catch (_: Exception) {}
         notifyChangeListeners()
     }
@@ -702,11 +718,7 @@ internal class RemoteConfigManager(
         // Rebuild disk cache in mega-doc format for offline restart
         rawPaywallData[id] = data
         try {
-            val combined = JSONObject()
-            val paywallsObj = JSONObject()
-            for ((pid, pdata) in rawPaywallData) { paywallsObj.put(pid, JSONObject(pdata)) }
-            combined.put("paywalls", paywallsObj)
-            cacheData("paywalls", combined.toString())
+            cacheMap("paywalls", mapOf("paywalls" to rawPaywallData.toMap()))
         } catch (_: Exception) {}
     }
 
@@ -722,12 +734,10 @@ internal class RemoteConfigManager(
         // Rebuild disk cache in mega-doc format for offline restart
         rawOnboardingData[id] = data
         try {
-            val combined = JSONObject()
-            val flowsObj = JSONObject()
-            for ((fid, fdata) in rawOnboardingData) { flowsObj.put(fid, JSONObject(fdata)) }
-            combined.put("flows", flowsObj)
-            activeOnboardingFlowId?.let { combined.put("active_flow_id", it) }
-            cacheData("onboarding", combined.toString())
+            cacheMap("onboarding", buildMap<String, Any> {
+                put("flows", rawOnboardingData.toMap())
+                activeOnboardingFlowId?.let { put("active_flow_id", it) }
+            })
         } catch (_: Exception) {}
     }
 
@@ -737,63 +747,40 @@ internal class RemoteConfigManager(
         surveyUpdateHandler?.invoke(surveys)
         // Rebuild disk cache in mega-doc format
         try {
-            val combined = JSONObject()
-            val surveysObj = JSONObject()
-            for ((sid, sdata) in surveys) { surveysObj.put(sid, JSONObject(sdata)) }
-            combined.put("surveys", surveysObj)
-            cacheData("surveys", combined.toString())
+            cacheMap("surveys", mapOf("surveys" to surveys))
         } catch (_: Exception) {}
     }
 
+    /**
+     * Restore every cached config section on a cold start, before (or without) a network fetch.
+     *
+     * Each cache is JSON text written from Firestore-shaped data ([cacheMap]). Read back with
+     * `JSONObject`, its nested objects are JSONObject / JSONArray — and every parser here was written for the Map /
+     * List values Firestore gives, so it skipped them: an offline cold start lost every cached experiment, paywall,
+     * onboarding flow, survey and in-app message, and an object- or list-valued flag came back as a JSONObject /
+     * JSONArray instead of the Map / List an online session returns. Each section is converted with [jsonToPlain]
+     * first, so the parsers see exactly what a fetch hands them. (iOS reads its caches with JSONSerialization, which
+     * yields the same dictionaries and arrays a fetch does.)
+     */
+    @Suppress("UNCHECKED_CAST")
     private fun loadCachedConfigs() {
-        storage.getString("cache_flags")?.let { json ->
-            try {
-                val obj = JSONObject(json)
-                flags = obj.keys().asSequence().associateWith { obj.get(it) }
-            } catch (_: Exception) {}
+        fun cached(section: String): Map<String, Any>? {
+            val json = storage.getString("cache_$section") ?: return null
+            return try {
+                jsonToPlain(JSONObject(json)) as? Map<String, Any>
+            } catch (e: Exception) {
+                Log.warning("Cached $section could not be read: ${e.message}")
+                null
+            }
         }
-        storage.getString("cache_experiments")?.let { json ->
-            try {
-                val obj = JSONObject(json)
-                val data = obj.keys().asSequence().associateWith { obj.get(it) as Any }
-                @Suppress("UNCHECKED_CAST")
-                parseExperiments(data)
-            } catch (_: Exception) {}
-        }
-        storage.getString("cache_surveys")?.let { json ->
-            try {
-                val obj = JSONObject(json)
-                val data = obj.keys().asSequence().associateWith { obj.get(it) as Any }
-                @Suppress("UNCHECKED_CAST")
-                parseSurveys(data)
-            } catch (_: Exception) {}
-        }
-        storage.getString("cache_paywalls")?.let { json ->
-            try {
-                val obj = JSONObject(json)
-                val data = obj.keys().asSequence().associateWith { obj.get(it) as Any }
-                @Suppress("UNCHECKED_CAST")
-                parsePaywalls(data)
-            } catch (_: Exception) {}
-        }
-        storage.getString("cache_onboarding")?.let { json ->
-            try {
-                val obj = JSONObject(json)
-                val data = obj.keys().asSequence().associateWith { obj.get(it) as Any }
-                @Suppress("UNCHECKED_CAST")
-                parseOnboarding(data)
-            } catch (_: Exception) {}
-        }
-        // SPEC-070-A finalization — restore in-app messages from disk on cold
-        // start. Without this branch, hosts that opened cached without network
-        // saw messages disappear after process death.
-        storage.getString("cache_messages")?.let { json ->
-            try {
-                val obj = JSONObject(json)
-                @Suppress("UNCHECKED_CAST")
-                val data = obj.keys().asSequence().associateWith { obj.get(it) as Any }
-                messages = ai.appdna.sdk.messages.MessageConfigParser.parseMessages(data)
-            } catch (_: Exception) {}
+        cached("flags")?.let { flags = it }
+        cached("experiments")?.let { try { parseExperiments(it) } catch (_: Exception) {} }
+        cached("surveys")?.let { try { parseSurveys(it) } catch (_: Exception) {} }
+        cached("paywalls")?.let { try { parsePaywalls(it) } catch (_: Exception) {} }
+        cached("onboarding")?.let { try { parseOnboarding(it) } catch (_: Exception) {} }
+        // Finalization — restore in-app messages from disk on cold start.
+        cached("messages")?.let { data ->
+            try { messages = ai.appdna.sdk.messages.MessageConfigParser.parseMessages(data) } catch (_: Exception) {}
         }
     }
 
@@ -844,8 +831,95 @@ internal class RemoteConfigManager(
         }
     }
 
+    /**
+     * A JSON tree as Firestore-shaped values: JSONObject → Map, JSONArray → List, JSON null dropped (in a map) / null
+     * (in a list), an Integer → Long (Firestore's integer type). With [cacheMap]'s writer a cached value reads back
+     * with the type it had online (Double stays Double, Long stays Long).
+     */
+    private fun jsonToPlain(value: Any?): Any? = when (value) {
+        null, JSONObject.NULL -> null
+        is JSONObject -> {
+            val out = LinkedHashMap<String, Any>()
+            for (k in value.keys()) jsonToPlain(value.opt(k))?.let { out[k] = it }
+            out
+        }
+        is org.json.JSONArray -> (0 until value.length()).map { jsonToPlain(value.opt(it)) }
+        // Firestore hands every integer over as a Long; org.json reads a small one back as an Integer.
+        is Int -> value.toLong()
+        else -> value
+    }
+
     private fun cacheData(key: String, json: String) {
         storage.setString("cache_$key", json)
+    }
+
+    /**
+     * Cache Firestore-shaped [data] as JSON text that reads back with the SAME number types. `JSONObject.toString()`
+     * writes a whole-valued Double as an integer (2.0 → `2`), so after an offline cold start a value that was a
+     * Double online came back an Integer — a host reading a remote-config value `as? Double` got null, and any strict
+     * numeric cast saw a different type than online. Here a Double / Float always carries a decimal point (`2.0`),
+     * which org.json reads back as a Double; integers stay integers.
+     */
+    private fun cacheMap(key: String, data: Map<*, *>) {
+        try {
+            val out = StringBuilder()
+            writeJson(data, out)
+            cacheData(key, out.toString())
+        } catch (e: Exception) {
+            Log.warning("Could not cache $key: ${e.message}")
+        }
+    }
+
+    /** JSON text for a Firestore-shaped value (see [cacheMap]); values JSON cannot hold are written as null. */
+    private fun writeJson(value: Any?, out: StringBuilder) {
+        when (value) {
+            null, JSONObject.NULL -> out.append("null")
+            is String -> out.append(JSONObject.quote(value))
+            is Boolean -> out.append(value.toString())
+            is Double, is Float -> {
+                val d = (value as Number).toDouble()
+                when {
+                    d.isNaN() || d.isInfinite() -> out.append("null")
+                    d == Math.rint(d) && kotlin.math.abs(d) < 1e15 -> out.append(d.toLong()).append(".0")
+                    else -> out.append(d.toString())
+                }
+            }
+            is Number -> out.append(value.toString())
+            is Map<*, *> -> {
+                out.append('{')
+                var first = true
+                for ((k, v) in value) {
+                    if (k == null || !isJsonWritable(v)) continue
+                    if (!first) out.append(',')
+                    first = false
+                    out.append(JSONObject.quote(k.toString())).append(':')
+                    writeJson(v, out)
+                }
+                out.append('}')
+            }
+            is Iterable<*> -> {
+                out.append('[')
+                var first = true
+                for (v in value) {
+                    if (!first) out.append(',')
+                    first = false
+                    writeJson(v, out)
+                }
+                out.append(']')
+            }
+            is Array<*> -> writeJson(value.asList(), out)
+            is JSONObject -> writeJson(jsonToPlain(value), out)
+            is org.json.JSONArray -> writeJson(jsonToPlain(value), out)
+            // As `JSONObject(map)` did: a java.* value (e.g. a Date) as its text; anything else (a Firestore
+            // Timestamp, GeoPoint, reference) is left out of a map and null in a list.
+            else -> if (isJsonWritable(value)) out.append(JSONObject.quote(value.toString())) else out.append("null")
+        }
+    }
+
+    private fun isJsonWritable(v: Any?): Boolean = when (v) {
+        null, is String, is Boolean, is Number, is Map<*, *>, is Iterable<*>, is Array<*>, is JSONObject,
+        is org.json.JSONArray -> true
+        else -> v === JSONObject.NULL || v.javaClass.name.startsWith("java.")
     }
 
     private fun notifyChangeListeners() {

@@ -12,7 +12,7 @@ import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
 
-/** SPEC-497 D-R40-1 — the durable delivery queue and its drain (Q1–Q6), Android. */
+/** The durable delivery queue and its drain (Q1–Q6), Android. */
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [34])
 class DeliveryQueueTest {

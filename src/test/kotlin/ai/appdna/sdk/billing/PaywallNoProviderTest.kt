@@ -23,7 +23,7 @@ import org.robolectric.Robolectric
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
 
-/** SPEC-497 §3.2 rule 5 / R65 — the paywall tap and the direct API without an owning provider. */
+/** The paywall tap and the direct API without an owning provider. */
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [34])
 class PaywallNoProviderTest {
@@ -58,7 +58,7 @@ class PaywallNoProviderTest {
     @Test fun `none - one purchase_failed, providerNotAvailable, no started`() {
         val resetsBefore = ai.appdna.sdk.paywalls.PaywallActivity.purchaseEndedSignal.get()
         tap(BillingProvider.None)
-        // I4 R8 m5 — a failure with no `on_failure` config still re-enables the paywall's CTA.
+        // A failure with no `on_failure` config still re-enables the paywall's CTA.
         assertTrue(ai.appdna.sdk.paywalls.PaywallActivity.purchaseEndedSignal.get() > resetsBefore)
         assertEquals(listOf("purchase_failed"), pipe!!.names())
         assertEquals("providerNotAvailable", pipe!!.props("purchase_failed").getString("error_type"))
@@ -74,7 +74,7 @@ class PaywallNoProviderTest {
         assertEquals("RevenueCat: purchases are made by RevenueCat in your app", pipe!!.props("purchase_failed").getString("error"))
     }
 
-    /** I4 minor 9: a tap between configure() and billing init is "not configured yet" (`unknown`). */
+    /** A tap between configure() and billing init is "not configured yet" (`unknown`). */
     @Test fun `a paywall tap before billing is configured - unknown not-configured, no started`() {
         tap(null)
         assertEquals(listOf("purchase_failed"), pipe!!.names())
@@ -113,7 +113,7 @@ class PaywallNoProviderTest {
         assertEquals(1, pipe!!.count("purchase_restore_failed"))
     }
 
-    // -- the paywall RESTORE button (I3 r7 m1 + m5) ------------------------------------------------
+    // -- the paywall RESTORE button ------------------------------------------------
 
     private val restoreCalls = mutableListOf<String>()
 
@@ -141,7 +141,7 @@ class PaywallNoProviderTest {
     }
 
     /**
-     * I3 r7 m1 — under a provider that owns restoring, the tap is refused BEFORE `onPaywallRestoreStarted`,
+     * Under a provider that owns restoring, the tap is refused BEFORE `onPaywallRestoreStarted`,
      * as on iOS and as the purchase tap is. NEGATIVE CONTROL: with the policy gate removed from
      * `handleRestore`, Started fires first (`["started", "failed:providerNotAvailable"]`) — this fails.
      */
@@ -151,7 +151,7 @@ class PaywallNoProviderTest {
         assertEquals(listOf("purchase_restore_failed"), pipe!!.names())
         assertEquals("providerNotAvailable", pipe!!.props("purchase_restore_failed").getString("error_type"))
         assertEquals("pw", pipe!!.props("purchase_restore_failed").getString("paywall_id"))
-        // I4 R8 m4 — word for word the iOS `refusalMessage` (was "revenueCat: restore purchases through revenueCat").
+        // Word for word the iOS `refusalMessage` (was "revenueCat: restore purchases through revenueCat").
         assertEquals("RevenueCat: purchases are made by RevenueCat in your app", pipe!!.props("purchase_restore_failed").getString("error"))
         assertEquals("no billing flow", 0, sc!!.fake.launchCount)
         assertEquals(false, AppDNA.paywall.skipNextAutoDismissOnRestore)
@@ -171,9 +171,9 @@ class PaywallNoProviderTest {
     }
 
     /**
-     * I3 r7 m5 — a restore tap before billing is configured (or after `shutdown()`, which puts the policy
+     * A restore tap before billing is configured (or after `shutdown()`, which puts the policy
      * back to `NotConfigured`) fails with the same `unknown` "not configured yet" error as the purchase tap
-     * in the same window (§3.2 rule 3, R65–R67). NEGATIVE CONTROL: without the `isConfigured` check, the tap
+     * in the same window. NEGATIVE CONTROL: without the `isConfigured` check, the tap
      * fails `providerNotAvailable` (no manager) — this fails.
      */
     @Test fun `restore tap before billing is configured - unknown not-configured, no started`() {
@@ -193,7 +193,7 @@ class PaywallNoProviderTest {
         assertEquals("started", restoreCalls.firstOrNull())
     }
 
-    /** I4 R8 m4 — the refused-restore message is the iOS `BillingOwnershipPolicy.refusalMessage`, per provider. */
+    /** The refused-restore message is the iOS `BillingOwnershipPolicy.refusalMessage`, per provider. */
     @Test fun `restore refusal message matches iOS for every provider`() {
         assertEquals("RevenueCat: purchases are made by RevenueCat in your app", BillingOwnership.refusalMessage("revenueCat"))
         assertEquals("Adapty: purchases are made by Adapty in your app", BillingOwnership.refusalMessage("adapty"))

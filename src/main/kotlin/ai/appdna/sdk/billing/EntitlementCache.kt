@@ -41,14 +41,14 @@ internal class EntitlementCache(
     private var firestoreListener: ListenerRegistration? = null
 
     /**
-     * SPEC-497 §13b.2 (R30/R31) — the internal product type of each entry (`"subs"` / `"inapp"`), kept
+     * The internal product type of each entry (`"subs"` / `"inapp"`), kept
      * BESIDE the public [Entitlement] (whose constructor, `copy` and `componentN` are unchanged) and
      * persisted as `product_type`. A Firestore snapshot replaces only the `subs` entries.
      */
     private val productTypes = java.util.concurrent.ConcurrentHashMap<String, String>()
 
     /**
-     * R34/R35 — "the listener is active": a snapshot carrying `subscriptions` (an empty array counts),
+     * "the listener is active": a snapshot carrying `subscriptions` (an empty array counts),
      * not `metadata.isFromCache`, has been applied for the current identity since the last
      * [startObserving]. [startObserving] and [stopObserving] reset it.
      */
@@ -81,7 +81,7 @@ internal class EntitlementCache(
     }
 
     /**
-     * Replace all cached entitlements. Only the non-owning local build (§3.2 rule 3) uses this; the
+     * Replace all cached entitlements. Only the non-owning local build uses this; the
      * owning path merges ([mergeRestoreReply]).
      */
     fun replaceAll(newEntitlements: List<Entitlement>, types: Map<String, String> = emptyMap()) {
@@ -91,7 +91,7 @@ internal class EntitlementCache(
     }
 
     /**
-     * SPEC-497 §13b.2 — THE one merge rule for `/restore` and the refresh (R32/R33, R35):
+     * THE one merge rule for `/restore` and the refresh:
      * `cache = (cache − {google_play inapp entries whose token is not excluded or skipped}) ∪ reply`.
      * The reply only upserts; a Firestore snapshot owns `subs`. While the listener is NOT active, a
      * merge also removes any `google_play` `subs` entry whose product is missing from the OK SUBS query
@@ -124,7 +124,7 @@ internal class EntitlementCache(
     /**
      * A Firestore snapshot: replaces the `subs` entries (and entries of unknown type from other stores)
      * and KEEPS cached `inapp` entries — the doc lists only subscriptions, so replacing the whole cache
-     * wiped the lifetime entitlement on every snapshot (R30).
+     * wiped the lifetime entitlement on every snapshot.
      */
     internal fun applySnapshot(subscriptions: List<Entitlement>) {
         val inapp = entitlements.filter { typeOf(it) == "inapp" && subscriptions.none { s -> s.productId == it.productId } }
@@ -209,7 +209,7 @@ internal class EntitlementCache(
     @Synchronized
     fun startObserving(orgId: String, appId: String, userId: String) {
         stopObserving()
-        // R35: never observe a user who is no longer the current identity (a stale re-point).
+        // Never observe a user who is no longer the current identity (a stale re-point).
         if (userId != currentUserId()) {
             Log.debug("EntitlementCache: not observing $userId — not the current identity")
             return
@@ -245,7 +245,7 @@ internal class EntitlementCache(
      * handed to the main thread: A's subscriptions would then land in B's freshly cleared cache (and be
      * persisted as B's). The listener is re-pointed by `startObserving`, which checks the identity the same way.
      *
-     * SPEC-070-A H.25: empty-snapshot debounce. A null/missing snapshot can happen during a reconnect or when
+     * Empty-snapshot debounce. A null/missing snapshot can happen during a reconnect or when
      * the doc has not yet been provisioned for this user — both are **transient** states that must NOT
      * clobber a non-empty cache. The snapshot is authoritative only when the doc EXISTS and explicitly carries
      * a `subscriptions` field (even an empty array means "the server says no entitlements"). Previously, an
@@ -267,7 +267,7 @@ internal class EntitlementCache(
         }
         val newEntitlements = parseSubscriptions(data)
         Log.debug("EntitlementCache: received ${newEntitlements.size} entitlements from Firestore")
-        // The snapshot owns `subs`; cached in-app entries survive it (R30).
+        // The snapshot owns `subs`; cached in-app entries survive it.
         applySnapshot(newEntitlements)
         if (!fromCache) listenerActive = true
     }
@@ -300,7 +300,7 @@ internal class EntitlementCache(
      */
     private fun loadFromDisk() {
         val json = prefs.getString(KEY_ENTITLEMENTS, null) ?: return
-        // R35: the persisted cache belongs to `owner_user_id`. Another user's cache is discarded; an
+        // The persisted cache belongs to `owner_user_id`. Another user's cache is discarded; an
         // anonymous (null) owner — and a legacy cache with no owner key — is adopted by the current identity.
         if (prefs.contains(KEY_OWNER)) {
             val owner = prefs.getString(KEY_OWNER, null)
@@ -324,7 +324,7 @@ internal class EntitlementCache(
                     offerType = if (obj.isNull("offer_type")) null else obj.optString("offer_type", "").ifEmpty { null },
                 )
                 loaded.add(ent)
-                // R31 SDK minor 1: a legacy entry without a stored type is inferred.
+                // A legacy entry without a stored type is inferred.
                 val t = obj.optString("product_type", "").takeIf { it == "subs" || it == "inapp" } ?: inferType(ent)
                 productTypes[ent.productId] = t
             }
@@ -454,7 +454,7 @@ internal class EntitlementCache(
         private const val KEY_OWNER = "entitlements_cache_owner_user_id"
 
         /**
-         * R31 SDK minor 1 — a legacy entry without a stored type counts as `inapp` when it is a
+         * A legacy entry without a stored type counts as `inapp` when it is a
          * `google_play` entry with no expiry and `status == "active"` (a subscription always carries
          * `expires_at`), else `subs`. A wrong guess self-heals at the next refresh (known).
          */
@@ -462,7 +462,7 @@ internal class EntitlementCache(
             if (e.store == "google_play" && e.expiresAt == null && e.status == "active") "inapp" else "subs"
 
         /**
-         * SPEC-497 §13b.2 "Clearing" — drop the persisted cache (and its owner), the same pattern as
+         * "Clearing" — drop the persisted cache (and its owner), the same pattern as
          * `NativeBillingManager.clearPersistedSnapshot`, so it works even when no manager exists.
          */
         fun clearPersisted(context: Context) {

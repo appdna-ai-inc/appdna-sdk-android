@@ -113,7 +113,7 @@ internal class LocalStorage(val context: Context) {
     }
 
     /**
-     * SPEC-497 §13a.2 (Q1) — write several keys in ONE `edit()` finished with `commit()`, so they are on
+     * Write several keys in ONE `edit()` finished with `commit()`, so they are on
      * disk together when this returns: a crash can never persist the reported set without its delivery
      * queue entry, or the other way round. A `null` value removes the key. Only non-sensitive keys go
      * through here (the billing ledger); a sensitive key would split the write across two files.

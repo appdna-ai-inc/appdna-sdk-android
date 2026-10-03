@@ -5,7 +5,7 @@ import ai.appdna.sdk.storage.LocalStorage
 import org.json.JSONArray
 import org.json.JSONObject
 
-/** The finalize action still owed on a reported purchase (§13a.2 precedence (2)). */
+/** The finalize action still owed on a reported purchase (precedence (2)). */
 internal enum class Finalize(val wire: String) {
     Consume("consume"),
     Acknowledge("acknowledge");
@@ -19,7 +19,7 @@ internal enum class Finalize(val wire: String) {
 internal data class ReportedToken(val token: String, val pendingFinalize: Finalize?)
 
 /**
- * One undelivered `onPurchaseCompleted` (D-R40-1, §13a.2 queue rules 1–7). Keyed and deduped by
+ * One undelivered `onPurchaseCompleted` (queue rules 1–7). Keyed and deduped by
  * [purchaseToken]; [ownerToken] null = untagged.
  */
 internal data class PendingDelivery(
@@ -35,7 +35,7 @@ internal data class PendingDelivery(
 )
 
 /**
- * SPEC-497 §13a.2 — the persisted billing ledger: the reported set, the verify-attempted set, the
+ * The persisted billing ledger: the reported set, the verify-attempted set, the
  * purchase-class cache, the delivery queue and the identified-users set.
  *
  * Every write goes through [write], which lands all changed keys in ONE [LocalStorage.setStringsSync]
@@ -139,7 +139,7 @@ internal class PurchaseLedger(
         if (values.isEmpty()) return true
         writeObserver?.invoke(values)
         val ok = if (storage != null) storage.setStringsSync(values) else { memory.putAll(values); true }
-        // I4 minor 8: `commit()` can fail (disk full, I/O error). The in-memory SharedPreferences map
+        // `commit()` can fail (disk full, I/O error). The in-memory SharedPreferences map
         // still holds the values, so this process keeps its dedupe; a crash before the next successful
         // write could lose them — say so loudly instead of failing silently.
         if (!ok) Log.error("PurchaseLedger: commit() FAILED for ${values.keys} — the billing ledger may not survive a restart")
@@ -149,7 +149,7 @@ internal class PurchaseLedger(
     /**
      * Test seam (null in production): sees every ledger write, before it is committed.
      *
-     * Why the commits stay on Main (I4 minor 8): every write happens inside `purchaseCompletionMutex`
+     * Why the commits stay on Main: every write happens inside `purchaseCompletionMutex`
      * in the Main-confined `runLocked`, and step 3 is "take the live caller → persist → emit → resume"
      * with NO suspension point. Hopping to `Dispatchers.IO` for the commit would add one between the
      * continuation being taken and `clearPurchaseScope()`: a new `purchase()` could start in that gap

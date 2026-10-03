@@ -5,7 +5,7 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Test
 
-/** SPEC-497 §3.10 — the §3.2 ownership table, row by row (Android). */
+/** The ownership table, row by row (Android). */
 class BillingOwnershipTest {
 
     private fun row(p: BillingOwnershipPolicy) =

@@ -81,7 +81,7 @@ class PurchaseLedgerCorruptTest {
     }
 
     /**
-     * Round 19 — an older SDK kept ONE `<key>.corrupt` copy. NEGATIVE CONTROL: it was outside the index, so it
+     * An older SDK kept ONE `<key>.corrupt` copy. NEGATIVE CONTROL: it was outside the index, so it
      * was never listed (`corruptCopyKeys` missed it) and never pruned — a fourth copy beside the cap of three.
      */
     @Test fun `a legacy single corrupt copy is folded into the index as the oldest and pruned by the cap`() {

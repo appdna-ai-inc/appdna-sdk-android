@@ -2453,7 +2453,7 @@ fun OnboardingStepView(
 // silently flow through `onNext` -> `responses` payload while no host
 // authentication side-effect actually runs. iOS logs a warning and
 // stays on the step so the user notices auth didn't happen.
-// The set moved to AuthActionPolicy.delegateRequiredActions (SPEC-497 §4.2).
+// The set moved to AuthActionPolicy.delegateRequiredActions.
 
 /**
  * SPEC-070-A finalization B4#P0 — pure resolver for the OTP delivery

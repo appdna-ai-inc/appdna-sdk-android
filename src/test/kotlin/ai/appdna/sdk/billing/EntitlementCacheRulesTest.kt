@@ -12,7 +12,7 @@ import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
 
-/** SPEC-497 §13b.2 "Android keeps in-app entitlements" + "Clearing and ownership" (R30–R36). */
+/** "Android keeps in-app entitlements" + "Clearing and ownership". */
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [34])
 class EntitlementCacheRulesTest {

@@ -12613,7 +12613,7 @@ private fun FormInputLocationPlaceholder(
                             .fillMaxWidth()
                             .then(if (ddRowHeight != null) Modifier.height(ddRowHeight.dp) else Modifier)
                             .clickable {
-                                // SPEC-497 §13h — the text the user typed is the raw_query.
+                                // The text the user typed is the raw_query.
                                 val typed = text
                                 text = suggestion.address
                                 showSuggestions = false

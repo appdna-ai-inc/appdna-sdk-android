@@ -117,23 +117,25 @@ sealed class BillingProvider(val type: String) {
  */
 data class AppDNAOptions(
     /**
-     * Automatic flush interval in seconds; null (the default) when the host does not set it — then the
-     * bootstrap answer's `settings.flushInterval` (if positive) applies once the bootstrap succeeds, else 30.
+     * Automatic flush interval in seconds. Default: 30. Left at 30, the host has not set it: the bootstrap
+     * answer's `settings.flushInterval` (if positive) applies once the bootstrap succeeds. Any other positive
+     * value is the host's own and wins. A value below 1 is ignored (logged as a warning), as if not set; the
+     * same holds for `batchSize` and `configTTL`.
      */
-    val flushInterval: Long? = null,
+    val flushInterval: Long = DEFAULT_FLUSH_INTERVAL,
     /**
-     * The most events one upload sends, and the queue length that triggers a flush: a cap on the
-     * network-sized batch (100 on Wi-Fi or wired, 50 on cellular, 20 on a metered connection). null (the
-     * default): no cap of the host's own — the bootstrap answer's `settings.batchSize` (if positive) is the
-     * cap, else none. A value below 1 is ignored (logged as a warning), as if the host had not set it; the
-     * same holds for `flushInterval` and `configTTL`.
+     * The most events one upload sends, and the queue length that triggers a flush: a CAP on the network-sized
+     * batch (100 on Wi-Fi or wired, 50 on cellular, 20 on a metered connection). Default: 100, which is no cap
+     * of the host's own — the bootstrap answer's `settings.batchSize` (if positive) is the cap then, else none.
+     * Any other positive value is a hard cap: before this release the value had no effect on Android; a host
+     * that passed, say, 10 now gets uploads of at most 10 events.
      */
-    val batchSize: Int? = null,
+    val batchSize: Int = DEFAULT_BATCH_SIZE,
     /**
-     * Remote config cache TTL in seconds; null (the default) when the host does not set it — then the
-     * bootstrap answer's `settings.configTTL` (if positive), else 3600 (1 hour).
+     * Remote config cache TTL in seconds. Default: 3600 (1 hour). Left at 3600, the host has not set it: the
+     * bootstrap answer's `settings.configTTL` (if positive) applies once the bootstrap succeeds.
      */
-    val configTTL: Long? = null,
+    val configTTL: Long = DEFAULT_CONFIG_TTL,
     /** Log verbosity. Default: WARNING. */
     val logLevel: LogLevel = LogLevel.WARNING,
     /**
@@ -184,6 +186,26 @@ data class AppDNAOptions(
      * their binary signatures; it is not part of `equals` / `hashCode` / `copy`.
      */
     var vetoTimeoutSeconds: Double? = null
+
+    /**
+     * The values the host chose, null where it left the default — the "set by host" half of each runtime
+     * setting (`RuntimeSettings`: host > bootstrap > default). Derived from the value, not recorded: the public
+     * properties keep their non-null types and defaults (Java getters, `copy()` and `componentN()` unchanged),
+     * so a value equal to the default reads as not set — which resolves to the same value unless a bootstrap
+     * answer carries its own (the server sends 30 / 100 / 3600, the defaults). iOS `requested*`.
+     */
+    internal val requestedFlushInterval: Long? get() = flushInterval.takeIf { it != DEFAULT_FLUSH_INTERVAL }
+    internal val requestedBatchSize: Int? get() = batchSize.takeIf { it != DEFAULT_BATCH_SIZE }
+    internal val requestedConfigTTL: Long? get() = configTTL.takeIf { it != DEFAULT_CONFIG_TTL }
+
+    companion object {
+        /** `flushInterval`'s default, seconds. */
+        const val DEFAULT_FLUSH_INTERVAL: Long = 30L
+        /** `batchSize`'s default: the largest network-sized batch, i.e. no cap of the host's own. */
+        const val DEFAULT_BATCH_SIZE: Int = 100
+        /** `configTTL`'s default, seconds. */
+        const val DEFAULT_CONFIG_TTL: Long = 3600L
+    }
 }
 
 /**

@@ -89,7 +89,7 @@ internal object PushPayloadParser {
     }
 
     /**
-     * SPEC-497 §9.2 — the push-tap ROUTING LADDER, one function for every Android tap entry point
+     * The push-tap ROUTING LADDER, one function for every Android tap entry point
      * (`AppDNA.handlePushTap(intent)` and `AppDNA.push.handleTapData(data, actionId)`), so both
      * route identically. First match wins:
      *   (0) a tapped BUTTON (`actionId` matches an entry of `actions`) → that button's own action;
@@ -97,7 +97,7 @@ internal object PushPayloadParser {
      *   (2) the flat `action_type` / `action_value`;
      *   (3) `screen_id` → `show_screen`;
      *   (4) `deep_link` → `deep_link`.
-     * The first rung that is PRESENT decides, as on iOS (`PushTapRouter.route`, I4 minor 33): a tapped
+     * The first rung that is PRESENT decides, as on iOS (`PushTapRouter.route`): a tapped
      * button, or a body action with a type, whose value is blank routes nowhere — it does not fall
      * through to `screen_id` / `deep_link`. Returns null when nothing routes. Pure.
      */

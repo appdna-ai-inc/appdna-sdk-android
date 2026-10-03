@@ -42,11 +42,29 @@ data class ExperimentTargeting(
             val newUsers = when (val v = map["new_users_only"]) { null -> null; is Boolean -> v; else -> { bad = true; null } }
             val traits = when (val v = map["user_traits"]) {
                 null -> null
-                is List<*> -> if (v.all { it is Map<*, *> }) v.map { AudienceRule.fromMap(it as Map<String, Any?>) } else { bad = true; null }
+                is List<*> -> if (v.all { it is Map<*, *> && isEvaluableRule(it) }) v.map { AudienceRule.fromMap(it as Map<String, Any?>) } else { bad = true; null }
                 else -> { bad = true; null }
             }
             val platforms = strings("platforms")
             return ExperimentTargeting(countries, minVersion, newUsers, traits, platforms, malformed = bad)
+        }
+
+        /**
+         * A trait condition the device can evaluate: a non-blank trait name (`trait`, or the console's `field`), each a
+         * string when present, and an `operator` that is a string when present. Anything else fails closed (malformed)
+         * — the shared rule parser would read a non-string trait as "" and a non-string operator as `equals`, so a
+         * `neq` rule on trait 5 passed every user. iOS rejects the same rules (its `AudienceRule` decode, and the
+         * blank-trait check in `ExperimentTargeting`).
+         */
+        private fun isEvaluableRule(rule: Map<*, *>): Boolean {
+            val trait = rule["trait"]
+            val field = rule["field"]
+            val op = rule["operator"]
+            if (trait != null && trait !is String) return false
+            if (field != null && field !is String) return false
+            if (op != null && op !is String) return false
+            val name = (trait as? String)?.takeIf { it.isNotBlank() } ?: (field as? String)
+            return !name.isNullOrBlank()
         }
     }
 }
@@ -60,11 +78,17 @@ internal data class ExperimentEligibilityContext(
     val platform: String,
     /** The host app's `versionName`. */
     val appVersion: String?,
-    /** The device region setting (ISO-3166 alpha-2), not an IP lookup. */
+    /** The device region (ISO-3166 alpha-2, upper case) — [DeviceRegion.current], not an IP lookup. */
     val deviceRegion: String?,
-    /** When the app was first installed on this device (`PackageInfo.firstInstallTime`, epoch ms). */
+    /**
+     * When the app was first installed on this device (`PackageInfo.firstInstallTime`, epoch ms): an update keeps it;
+     * a reinstall, or a restore from a backup / device transfer, starts a new one (iOS `AppInstallDate`, same rule).
+     */
     val installEpochMs: Long?,
-    /** The identity's traits (`setUserProperties`). */
+    /**
+     * The identity's traits: the ones the host passed to `AppDNA.identify(userId, traits)`. There is no API that sets
+     * traits for an anonymous user, so until `identify` there are none (Android adds no bootstrap geo traits).
+     */
     val traits: Map<String, Any>,
 ) {
     companion object {
@@ -76,7 +100,7 @@ internal data class ExperimentEligibilityContext(
             return ExperimentEligibilityContext(
                 platform = "android",
                 appVersion = version,
-                deviceRegion = Locale.getDefault().country.takeIf { it.isNotEmpty() },
+                deviceRegion = DeviceRegion.current(context),
                 installEpochMs = installed,
                 traits = traits,
             )
@@ -101,6 +125,39 @@ internal data class ExperimentEligibilityContext(
             return version to installed
         }
     }
+}
+
+/**
+ * The device's country for the targeting "Countries" rule — one definition on both platforms (iOS `DeviceRegion`):
+ * the first candidate that is an ISO-3166 alpha-2 code (exactly two ASCII letters, upper-cased; a UN M.49 area such as
+ * `419` is not a country). Candidates, in order: the default locale's country, the other entries of the locale list,
+ * then the SIM's country and the mobile network's country. None → null (a country rule then fails closed). A
+ * region-less default locale (`en`) used to give "" here — no country at all — where iOS fell back.
+ */
+internal object DeviceRegion {
+    fun current(context: Context?): String? {
+        val candidates = sequence<String?> {
+            yield(Locale.getDefault().country)
+            val list = android.os.LocaleList.getDefault()
+            for (i in 0 until list.size()) yield(list.get(i)?.country)
+            val tm = try {
+                context?.getSystemService(Context.TELEPHONY_SERVICE) as? android.telephony.TelephonyManager
+            } catch (_: Throwable) { null }
+            if (tm != null) {
+                yield(try { tm.simCountryIso } catch (_: Throwable) { null })
+                yield(try { tm.networkCountryIso } catch (_: Throwable) { null })
+            }
+        }
+        return resolve(candidates)
+    }
+
+    /** The first ISO-3166 alpha-2 code among [candidates], upper-cased; null when there is none. */
+    fun resolve(candidates: Sequence<String?>): String? = candidates
+        .mapNotNull { it?.trim() }
+        .firstOrNull { c -> c.length == 2 && c.all { it in 'a'..'z' || it in 'A'..'Z' } }
+        ?.uppercase(Locale.ROOT)
+
+    fun resolve(candidates: List<String?>): String? = resolve(candidates.asSequence())
 }
 
 /**

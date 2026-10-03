@@ -31,6 +31,12 @@ import kotlin.random.Random
  * request (no attempt — not even a triggered one — before then), [Outcome.Stop] when the server refused
  * the key (401 / 403: retrying cannot help). [stop] ends the loop; a [start] after [stop] does nothing.
  * When the loop ends — for any reason — it removes its foreground observer and runs [onEnded].
+ *
+ * The configure-time bootstrap's own failure is the loop's starting point: [start]'s `initial` outcome, so a 429
+ * at configure holds the FIRST retry back for its `Retry-After` too (before, only a rate-limited retry did).
+ * Triggers coalesce: a trigger that arrives while an attempt is in flight (or in its trigger delay) is spent by
+ * that attempt — it does not start the next one 0–1 s later, so a failed attempt is always followed by its
+ * backoff (or a later trigger). iOS, same rules.
  */
 internal class BootstrapRecovery(
     private val isOnline: () -> Boolean,
@@ -61,18 +67,26 @@ internal class BootstrapRecovery(
     internal val wasLaunchedForTest: Boolean get() = synchronized(lock) { job != null }
     /** Whether the foreground observer is registered now (test reader). */
     internal val isObservingForeground: Boolean get() = lifecycleObserver != null
+    /** Whether the loop is waiting for a trigger or its backoff now (test reader). */
+    @Volatile internal var isWaitingForTest: Boolean = false
+        private set
 
     /** Connectivity came back, or the app came to the foreground: try now (if the loop is waiting). */
     fun trigger() {
         triggers.trySend(Unit)
     }
 
-    fun start(scope: CoroutineScope, attempt: suspend () -> Outcome) {
+    /**
+     * Starts the loop. [initial] is the outcome of the configure-time bootstrap that failed (null: none known): an
+     * [Outcome.RetryAfter] holds the first attempt back, like a rate-limited retry's.
+     */
+    fun start(scope: CoroutineScope, initial: Outcome? = null, attempt: suspend () -> Outcome) {
+        val firstNotBefore = (initial as? Outcome.RetryAfter)?.let { now() + it.ms } ?: 0L
         synchronized(lock) {
             if (stopped || job != null) return
             job = scope.launch {
                 try {
-                    run(attempt)
+                    run(attempt, firstNotBefore)
                 } finally {
                     end()
                 }
@@ -80,8 +94,8 @@ internal class BootstrapRecovery(
         }
     }
 
-    private suspend fun run(attempt: suspend () -> Outcome) {
-        var notBefore = 0L
+    private suspend fun run(attempt: suspend () -> Outcome, initialNotBefore: Long) {
+        var notBefore = initialNotBefore
         while (attempts < maxAttempts) {
             // Wait for a trigger, or for the backoff. Offline neither helps: keep waiting, and let the
             // network coming back (a trigger) start the attempt — an offline device does not use up its
@@ -91,7 +105,12 @@ internal class BootstrapRecovery(
             while (true) {
                 val remaining = deadline - now()
                 if (remaining <= 0) break
-                val got = withTimeoutOrNull(remaining) { triggers.receiveCatching() } ?: break
+                isWaitingForTest = true
+                val got = (try {
+                    withTimeoutOrNull(remaining) { triggers.receiveCatching() }
+                } finally {
+                    isWaitingForTest = false
+                }) ?: break
                 if (got.isClosed) return
                 if (now() < notBefore) continue
                 triggered = true
@@ -102,7 +121,10 @@ internal class BootstrapRecovery(
             notBefore = 0L
             attempts += 1
             Log.info("Retrying the bootstrap (attempt $attempts of $maxAttempts${if (triggered) ", triggered" else ""})")
-            when (val o = attempt()) {
+            val o = attempt()
+            // Coalesce: a trigger that came during this attempt (or its trigger delay) was answered by it.
+            while (triggers.tryReceive().isSuccess) { /* drop */ }
+            when (o) {
                 Outcome.Done -> return
                 Outcome.Stop -> {
                     Log.warning("Bootstrap retries stopped — the server refused the API key; cached and bundled config until the next configure()")

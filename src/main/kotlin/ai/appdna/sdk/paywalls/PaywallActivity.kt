@@ -501,7 +501,7 @@ class PaywallActivity : ComponentActivity() {
         @Volatile internal var postPurchaseOverlay: PostPurchaseOverlayState? = null
 
         /**
-         * SPEC-497 I4 R8 m5 — bumped by [PaywallManager] when a paywall purchase ends without success
+         * Bumped by [PaywallManager] when a paywall purchase ends without success
          * (a failure, a user cancel, a pending approval, or the purchase coroutine cancelled — e.g.
          * `shutdown()` with the paywall on screen) — and, since R9, after a success with no `on_success`
          * config, where the paywall stays up for the host to close. A live paywall re-enables its CTA (`isPurchasing =
@@ -583,7 +583,7 @@ fun PaywallScreen(
     var postPurchaseOverlay by remember { mutableStateOf<PostPurchaseOverlayState?>(null) }
     val coroutineScope = rememberCoroutineScope()
     LaunchedEffect(Unit) {
-        // SPEC-497 I4 R8 m5 — the purchase-ended signal as of this composition; a later bump re-enables
+        // The purchase-ended signal as of this composition; a later bump re-enables
         // the CTA (see [PaywallActivity.signalPurchaseEnded]).
         var seenPurchaseEnded = PaywallActivity.purchaseEndedSignal.get()
         // Poll the companion-object slot for new overlay payloads. Cheap

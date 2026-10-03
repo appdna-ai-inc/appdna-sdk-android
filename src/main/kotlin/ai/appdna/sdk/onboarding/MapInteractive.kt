@@ -51,8 +51,8 @@ import com.google.maps.android.compose.rememberCameraPositionState
  */
 @Composable
 internal fun GoogleInteractiveMap(block: ContentBlock, rawResolved: Boolean = false, modifier: Modifier = Modifier) {
-    // SPEC-497 §7.2 — every decision (route source, markers, camera) is the pure plan; this
-    // composable only draws it. `rawResolved` keeps a raw host polyline containing `{{` (R69).
+    // Every decision (route source, markers, camera) is the pure plan; this
+    // composable only draws it. `rawResolved` keeps a raw host polyline containing `{{`.
     val plan = remember(block, rawResolved) { MapInteractivePlan.compute(block, rawResolved) }
 
     val cameraPositionState = rememberCameraPositionState {

@@ -71,7 +71,7 @@ internal fun restoreOutcome(
     paywallId: String,
     productIds: List<String>,
     hostRequestedSkip: Boolean,
-    // SPEC-497 R21 SDK minor 8: the products this same restore just REPORTED (purchase_completed) are
+    // The products this same restore just REPORTED (purchase_completed) are
     // not counted as restored.
     justReported: Set<String> = emptySet(),
 ): RestoreOutcome = RestoreOutcome(
@@ -304,11 +304,11 @@ internal class PaywallManager(
         metadata: Map<String, Any>,
         listener: AppDNAPaywallDelegate?,
     ) {
-        // SPEC-497 §3.2 rule 5 — evaluated BEFORE anything else: with no billing manager, or a policy
+        // Evaluated BEFORE anything else: with no billing manager, or a policy
         // under which the SDK cannot purchase (RevenueCat, Adapty, none), the tap fails loudly — one
         // purchase_failed, onPaywallPurchaseFailed(providerNotAvailable), the failure routing — and NO
         // purchase_started / onPaywallPurchaseStarted (the purchase never started).
-        // I4 minor 9 / §3.2 rule 3 (R65, R72): before `configure` has chosen a policy — including a tap
+        // Before `configure` has chosen a policy — including a tap
         // between `configure()` and the launched bootstrap's billing init — the tap fails with the same
         // `unknown` "not configured yet" error as `AppDNA.billing.purchase`, not providerNotAvailable.
         if (!AppDNA.billing.ownershipPolicy.isConfigured) {
@@ -338,7 +338,7 @@ internal class PaywallManager(
         }
         val mgrForPolicy = AppDNA.billing.manager
         if (mgrForPolicy == null || !AppDNA.billing.ownershipPolicy.sdkCanPurchase) {
-            // SPEC-497 R9 — the one refusal message (iOS `BillingOwnershipPolicy.refusalMessage`).
+            // The one refusal message (iOS `BillingOwnershipPolicy.refusalMessage`).
             val message = ai.appdna.sdk.billing.BillingOwnership.refusalMessage(mgrForPolicy?.providerName ?: "none")
             val error = ai.appdna.sdk.billing.BillingError.ProviderNotAvailable(message)
             eventTracker.track(
@@ -373,7 +373,7 @@ internal class PaywallManager(
         //
         // It was green only because the TEST assigned the field itself. A test driving a path
         // production cannot reach is not a test.
-        // SPEC-497 R22/R23: never overwrite the attribution of a purchase already in flight (the second
+        // Never overwrite the attribution of a purchase already in flight (the second
         // purchase() then fails with purchase_in_progress).
         AppDNA.billing.manager?.takeIf { !it.purchaseInFlight }?.let { mgr ->
             mgr.currentPaywallMetadata = metadata
@@ -395,10 +395,10 @@ internal class PaywallManager(
                     listener = listener,
                 )
             } catch (e: kotlinx.coroutines.CancellationException) {
-                // SPEC-497 (I4 r7 m1): a cancelled paywall scope (`shutdown()` mid-purchase) is not a failed
+                // A cancelled paywall scope (`shutdown()` mid-purchase) is not a failed
                 // purchase — no onPaywallPurchaseFailed, no failure routing. The purchase itself is not lost:
-                // if Play completes it, D-R40-1 reports and delivers it through the delivery queue.
-                // I4 R8 m5: a paywall still on screen re-enables its CTA.
+                // if Play completes it, reports and delivers it through the delivery queue.
+                // A paywall still on screen re-enables its CTA.
                 PaywallActivity.signalPurchaseEnded()
                 throw e
             } catch (e: PurchaseCancelledException) {
@@ -468,7 +468,7 @@ internal class PaywallManager(
     ) {
         if (config == null) {
             // Legacy: delegate-only behavior — the paywall stays on screen for the host to close, so
-            // re-enable its CTA (SPEC-497 R9; without this it kept spinning after a success).
+            // re-enable its CTA (without this it kept spinning after a success).
             PaywallActivity.signalPurchaseEnded()
             return
         }
@@ -519,7 +519,7 @@ internal class PaywallManager(
                     listener?.onPaywallDismissed(paywallId = paywallId)
                     listener?.onPostPurchaseNextStep(paywallId = paywallId)
                 }
-                // SPEC-497 I4 m4 — an unknown action leaves the paywall up (nothing dismisses it), so re-enable
+                // An unknown action leaves the paywall up (nothing dismisses it), so re-enable
                 // its CTA as the no-config branch does; it kept spinning before.
                 else -> PaywallActivity.signalPurchaseEnded()
             }
@@ -538,7 +538,7 @@ internal class PaywallManager(
         paywallId: String,
         listener: AppDNAPaywallDelegate?,
     ) {
-        // SPEC-497 I4 R8 m5 — every failed / cancelled / pending purchase re-enables the paywall's CTA,
+        // Every failed / cancelled / pending purchase re-enables the paywall's CTA,
         // whatever `on_failure` says (with no config, nothing else ever did).
         PaywallActivity.signalPurchaseEnded()
         if (config == null) return
@@ -584,11 +584,11 @@ internal class PaywallManager(
      * `onPaywallRestoreFailed(error)`.
      *
      * A restore the SDK cannot run is refused BEFORE `onPaywallRestoreStarted`, as [handlePurchase]
-     * refuses a purchase before `onPaywallPurchaseStarted` (SPEC-497 §3.2 rule 5, §3.3):
+     * refuses a purchase before `onPaywallPurchaseStarted`:
      * - before `configure` has chosen a policy (or after `shutdown()`): the `unknown` "not configured
-     *   yet" error (§3.2 rule 3, R65–R67; I3 r7 m5);
+     *   yet" error;
      * - no billing, or a provider that owns restoring (`revenueCat` / `adapty` / `none`):
-     *   `providerNotAvailable` (I3 r7 m1 — iOS never fired Started here, Android did).
+     *   `providerNotAvailable` (iOS never fired Started here, Android did).
      *
      * `internal` (not private) so a test can drive the refusal paths directly.
      */
@@ -627,7 +627,7 @@ internal class PaywallManager(
                 // (Unit); for the delegate completion we want the typed
                 // `List<Entitlement>` so we can pass productIds.
                 // trackFailure = false: this path emits its own purchase_restore_failed (with paywall_id),
-                // so a failure is tracked exactly once (R36).
+                // so a failure is tracked exactly once.
                 val detail = nativeMgr.restoreDetailed(trackFailure = false)
                 val productIds = detail.entitlements.map { it.productId }
                 val outcome = restoreOutcome(paywallId, productIds, hostRequestedSkip = false, justReported = detail.reportedProducts)
@@ -660,9 +660,9 @@ internal class PaywallManager(
                     PaywallActivity.activeInstance(paywallId)?.dismissAfterRestore()
                 }
             } catch (e: kotlinx.coroutines.CancellationException) {
-                // SPEC-497 (I3 r6 m3): a cancelled paywall scope (`shutdown()`) is not a failed restore —
+                // A cancelled paywall scope (`shutdown()`) is not a failed restore —
                 // no purchase_restore_failed, no onPaywallRestoreFailed. The one-shot skip flag is still
-                // cleared (I4 r7 m2): the restore it was set for is over, so it must not leak into the next.
+                // cleared: the restore it was set for is over, so it must not leak into the next.
                 AppDNA.paywall.skipNextAutoDismissOnRestore = false
                 throw e
             } catch (e: Exception) {

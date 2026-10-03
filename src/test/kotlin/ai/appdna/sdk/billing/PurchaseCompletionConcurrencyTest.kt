@@ -21,7 +21,7 @@ import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
 
 /**
- * SPEC-497 I4 M2 — the concurrency cases with REAL contention.
+ * The concurrency cases with REAL contention.
  *
  * The earlier tests ran their "concurrent" entries one after the other: every fake answered
  * synchronously, so an uncontended `withLock` never suspended and the first entry finished before the
@@ -105,7 +105,7 @@ class PurchaseCompletionConcurrencyTest {
     }
 
     /**
-     * SPEC-497 I4 minors 1+2 — the cross-user grant race. Drain 1 marks user A's tagged entry in-flight
+     * +2 — the cross-user grant race. Drain 1 marks user A's tagged entry in-flight
      * and parks before its delegate call; `identify(B)` lands meanwhile (its own drain skips the in-flight
      * entry). When drain 1 resumes, the posted block re-checks the identity ON MAIN: A's entry is not
      * deliverable to B, so it is NOT delivered and stays queued (unmarked). Back as A, it is delivered
@@ -150,7 +150,7 @@ class PurchaseCompletionConcurrencyTest {
     }
 
     /**
-     * SPEC-497 I4 minors 1+2 — the delegate is re-read on Main too. The host clears the delegate AFTER
+     * +2 — the delegate is re-read on Main too. The host clears the delegate AFTER
      * the drain's early check but BEFORE its posted block runs (the clear is posted to Main first, so it
      * runs first): the block finds no delivering delegate, delivers nothing, and the entry stays queued
      * (unmarked) for the next delivering delegate. NEGATIVE CONTROL: with the delegate captured before
@@ -182,7 +182,7 @@ class PurchaseCompletionConcurrencyTest {
     }
 
     // ---------------------------------------------------------------------------------------------
-    // a cancelled drain (impl audit round 2, A5)
+    // a cancelled drain
     // ---------------------------------------------------------------------------------------------
 
     private fun cancelManagerChildren(s: BillingScenario) {
@@ -231,7 +231,7 @@ class PurchaseCompletionConcurrencyTest {
     }
 
     // ---------------------------------------------------------------------------------------------
-    // a cancelled verify (impl audit round 2, A9)
+    // a cancelled verify
     // ---------------------------------------------------------------------------------------------
 
     /**
@@ -267,7 +267,7 @@ class PurchaseCompletionConcurrencyTest {
     }
 
     // ---------------------------------------------------------------------------------------------
-    // a cancelled restore (SPEC-497 §13b.2 R37, I4 r6 M1)
+    // a cancelled restore
     // ---------------------------------------------------------------------------------------------
 
     /**
@@ -324,7 +324,7 @@ class PurchaseCompletionConcurrencyTest {
     }
 
     /**
-     * SPEC-497 I3 r6 m3 — the PAYWALL restore button's run parks in the verify gate and the paywall
+     * The PAYWALL restore button's run parks in the verify gate and the paywall
      * scope is cancelled (`PaywallManager.shutdown()`, as `AppDNA.shutdown()` does). A cancellation is
      * not a failed restore: no `purchase_restore_failed` and no `onPaywallRestoreFailed`. NEGATIVE
      * CONTROL: without the `catch (e: CancellationException) { throw e }` in `handleRestore`, its
@@ -356,7 +356,7 @@ class PurchaseCompletionConcurrencyTest {
             assertEquals("the paywall restore is parked in the verify gate", listOf("tok_pr"), parked)
             assertTrue(s.mgr.completion.purchaseCompletionMutex.isLocked)
 
-            // I4 r7 m2 — the host set the one-shot skip flag for THIS restore; the cancellation must clear
+            // The host set the one-shot skip flag for THIS restore; the cancellation must clear
             // it, or it leaks into the next paywall's restore. NEGATIVE CONTROL: without the clear in the
             // `CancellationException` catch of `handleRestore`, the flag is still true and this fails.
             AppDNA.paywall.skipNextAutoDismissOnRestore = true
@@ -375,10 +375,10 @@ class PurchaseCompletionConcurrencyTest {
     }
 
     /**
-     * SPEC-497 I4 r7 m1 — the PAYWALL purchase is waiting for Play's result and the paywall scope is
+     * The PAYWALL purchase is waiting for Play's result and the paywall scope is
      * cancelled (`PaywallManager.shutdown()`, as `AppDNA.shutdown()` does). A cancellation is not a failed
      * purchase: no `onPaywallPurchaseFailed` and no `purchase_failed` (the purchase may still complete, and
-     * D-R40-1 then reports it through the delivery queue — a failure callback first would contradict it).
+     * Then reports it through the delivery queue — a failure callback first would contradict it).
      * NEGATIVE CONTROL: without the `catch (e: CancellationException) { throw e }` ahead of the
      * `PurchaseCancelledException` catch in `handlePurchase`, the catch-all hands the cancellation to
      * `onPaywallPurchaseFailed` — this test fails.
@@ -416,12 +416,12 @@ class PurchaseCompletionConcurrencyTest {
             s.idle()
             assertEquals("no onPaywallPurchaseFailed / Completed", listOf("started"), paywallEvents)
             assertEquals(0, events("purchase_failed"))
-            // I4 R8 m5 — the cancelled purchase re-enables a paywall still on screen. NEGATIVE CONTROL:
+            // The cancelled purchase re-enables a paywall still on screen. NEGATIVE CONTROL:
             // without `signalPurchaseEnded()` in the CancellationException catch, the signal is unchanged.
             assertTrue("the purchase-ended signal was bumped",
                 ai.appdna.sdk.paywalls.PaywallActivity.purchaseEndedSignal.get() > resetsBefore)
 
-            // I4 R8 m1 — D-R40-1 after the cancel: Play completes the purchase later. The cancelled caller
+            // After the cancel: Play completes the purchase later. The cancelled caller
             // is gone (and its paywall attribution with it), so the report is queued and delivered by the
             // drain: exactly one purchase_completed and one onPurchaseCompleted, and no paywall callback.
             // NEGATIVE CONTROL: with the queue entry for a report that resolved no live caller not written
@@ -438,7 +438,7 @@ class PurchaseCompletionConcurrencyTest {
     }
 
     /**
-     * SPEC-497 R9 — a paywall purchase that SUCCEEDS with no `post_purchase.on_success` config leaves the
+     * A paywall purchase that SUCCEEDS with no `post_purchase.on_success` config leaves the
      * paywall on screen for the host to close, so its CTA must stop spinning. NEGATIVE CONTROL: without
      * `signalPurchaseEnded()` in `handlePostPurchaseSuccess`'s no-config branch, the signal is unchanged.
      */
@@ -514,7 +514,7 @@ class PurchaseCompletionConcurrencyTest {
     }
 
     /**
-     * SPEC-497 I4 m4 — a paywall purchase that SUCCEEDS with an `on_success.action` this SDK does not know
+     * A paywall purchase that SUCCEEDS with an `on_success.action` this SDK does not know
      * leaves the paywall on screen, so its CTA must stop spinning. NEGATIVE CONTROL: with the `else` branch
      * of `handlePostPurchaseSuccess` back to a no-op, the signal is unchanged.
      */
@@ -550,7 +550,7 @@ class PurchaseCompletionConcurrencyTest {
     }
 
     /**
-     * SPEC-497 I4 R8 m2 — `AppDNA.shutdown()` called OFF Main during a paywall purchase. `destroy()` resolves
+     * `AppDNA.shutdown()` called OFF Main during a paywall purchase. `destroy()` resolves
      * the purchase `Failed("shutdown")` and that resumption is dispatched to Main; the test runs Main right
      * there (inside `endConnection`, i.e. after `destroy()` resumed the caller and before shutdown goes on),
      * as a real Main thread may. With the paywall scope cancelled FIRST, the paywall caller is already gone

@@ -15,7 +15,7 @@ import org.json.JSONObject
 import org.robolectric.Shadows.shadowOf
 
 /**
- * SPEC-497 §13a.5 — a [NativeBillingManager] wired to a [FakeBillingClient] and a fake verifier, built
+ * A [NativeBillingManager] wired to a [FakeBillingClient] and a fake verifier, built
  * from the fixture `setup` shape (`owned_purchases`, `reported_tokens`, `verify_replies`, …). Shared by
  * the `purchase_completion_plan` / `delivery_queue` / `entitlement_snapshot_merge` / `trial_price`
  * fixture drivers and the Robolectric tests, so both exercise the same production code.
@@ -37,7 +37,7 @@ internal class BillingScenario(
     val storage = LocalStorage(ctx)
     val cache = EntitlementCache(ctx) { currentUser }
     /**
-     * I4 M2 — a verify that PARKS: when set, every `/billing/verify` suspends in it (with the token)
+     * A verify that PARKS: when set, every `/billing/verify` suspends in it (with the token)
      * before the scripted reply, so a test can hold `run` inside the lock and race another entry.
      */
     @Volatile var verifyGate: (suspend (String) -> Unit)? = null

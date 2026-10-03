@@ -93,7 +93,7 @@ internal class EventUploadWorker(
                 Log.debug("Background upload skipped — batch-size cap 0 (internal test seam) holds events on the device")
                 return Outcome.DONE
             }
-            // SPEC-428 CL-9/D4: single upload owner — never POST the rows the in-process flush is sending.
+            // Single upload owner — never POST the rows the in-process flush is sending.
             if (!ai.appdna.sdk.events.EventUploadCoordinator.tryAcquire()) {
                 Log.debug("Background upload deferred — another upload is active; retrying after backoff")
                 return Outcome.RETRY
@@ -103,7 +103,7 @@ internal class EventUploadWorker(
                     Log.debug("No pending events for background upload")
                     return Outcome.DONE
                 }
-                // SPEC-070-A A.1 + A.12b: API key required; baseUrl required (no host fallback).
+                // API key required; baseUrl required (no host fallback).
                 if (apiKey == null) {
                     Log.error("Background upload: missing API key — refusing to upload")
                     return Outcome.FAILED
@@ -112,7 +112,7 @@ internal class EventUploadWorker(
                     Log.error("Background upload: missing baseUrl input data — refusing to upload (set KEY_BASE_URL via scheduleIfNeeded)")
                     return Outcome.FAILED
                 }
-                // SPEC-428 CL-2/D5: WorkManager can run hours/days after the events were queued — prune past
+                // WorkManager can run hours/days after the events were queued — prune past
                 // the redelivery horizon BEFORE upload so a stale event isn't re-sent past the server dedup
                 // window (double-count). The in-process EventQueue prunes too; the store method covers both.
                 eventDatabase.pruneStale(EventDatabase.REDELIVERY_HORIZON_MS)
@@ -131,7 +131,7 @@ internal class EventUploadWorker(
                 // More than one run's worth: a fresh run takes the rest.
                 return if (eventDatabase.count() > 0) Outcome.RETRY else Outcome.DONE
             } finally {
-                ai.appdna.sdk.events.EventUploadCoordinator.release() // SPEC-428 CL-9
+                ai.appdna.sdk.events.EventUploadCoordinator.release()
             }
         }
 
@@ -153,31 +153,31 @@ internal class EventUploadWorker(
                 } catch (_: Exception) {}
             }
             val body = JSONObject().apply { put("batch", batchArray) }.toString()
-            // SPEC-070-A A.15: Compress with deflate (parity with iOS APIClient.deflateCompress)
+            // Compress with deflate (parity with iOS APIClient.deflateCompress)
             val compressed = ApiClient.deflateCompress(body.toByteArray(Charsets.UTF_8))
             Log.debug("Background upload: ${batch.size} events, ${body.length} → ${compressed.size} bytes")
             return try {
                 val request = okhttp3.Request.Builder()
                     .url("$baseUrl/api/v1/ingest/events")
-                    .header("x-api-key", apiKey) // SPEC-070-A A.1
+                    .header("x-api-key", apiKey)
                     .header("Content-Type", "application/json")
-                    .header("Content-Encoding", "deflate") // SPEC-070-A A.15
+                    .header("Content-Encoding", "deflate")
                     .header("Accept-Encoding", "gzip, deflate")
                     .post(compressed.toRequestBody("application/json".toMediaType()))
                     .build()
                 client.newCall(request).execute().use { response ->
                     val code = response.code
-                    if (response.isSuccessful) {
+                    // The one classifier the in-process queue and iOS use (408 / 429 / 5xx transient, any other
+                    // 4xx permanent). This run had its own: a 408 was dropped as permanent here.
+                    val disposition = ApiClient.dispositionFor(code)
+                    if (disposition == ai.appdna.sdk.network.EventUploadDisposition.SUCCESS) {
                         eventDatabase.removeByIds(batch.map { it.first })
                         ai.appdna.sdk.events.EventUploadCoordinator.markResolved(eventIds)
                         Log.info("Background upload successful: ${batch.size} events")
                         null
-                    } else if (code == 429 || code in 500..599) {
-                        Log.warning("Background upload transient failure (HTTP $code) — will retry")
-                        Outcome.RETRY
-                    } else if (code in 400..499) {
+                    } else if (disposition == ai.appdna.sdk.network.EventUploadDisposition.DROP_PERMANENT) {
                         Log.error("Background upload rejected (HTTP $code) — dropping batch (retry won't help)")
-                        // SPEC-428 D2/STEP-4: the WHOLE dropped batch is a loss — count EVERY normal event (+1)
+                        // The WHOLE dropped batch is a loss — count EVERY normal event (+1)
                         // AND re-add any _sdk_events_dropped meta's carried N, so nothing is silently lost on a
                         // background 4xx drop. A FRESH meta re-emits the total later. Mirrors EventQueue.
                         var loss = 0
@@ -192,9 +192,11 @@ internal class EventUploadWorker(
                         if (loss > 0) ai.appdna.sdk.events.DroppedEventsCounter.increment(loss)
                         eventDatabase.removeByIds(batch.map { it.first })
                         ai.appdna.sdk.events.EventUploadCoordinator.markResolved(eventIds)
-                        Outcome.FAILED
+                        // Resolved: go on with the next batch. The run used to end FAILED here, so the events
+                        // behind a rejected batch waited for the next scheduling; iOS goes on too.
+                        null
                     } else {
-                        Log.warning("Background upload unexpected status (HTTP $code) — will retry")
+                        Log.warning("Background upload transient failure (HTTP $code) — will retry")
                         Outcome.RETRY
                     }
                 }
@@ -210,7 +212,7 @@ internal class EventUploadWorker(
 
         /**
          * Test seam (null in production): the base URL every [scheduleIfNeeded] call receives — the SDK
-         * must hand the worker the SAME resolved base as its `ApiClient` (SPEC-497 §3.11).
+         * must hand the worker the SAME resolved base as its `ApiClient`.
          */
         @Volatile internal var scheduleProbe: ((String) -> Unit)? = null
 

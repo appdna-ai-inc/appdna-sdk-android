@@ -40,8 +40,12 @@ class EventPipelineFixtureTest {
         val droppedMin: Int?,
         val noDup: Boolean,
         val monotonic: Boolean,
+        val liveBytesWithinQuota: Boolean = false,
+        val minLiveBytesFraction: Double? = null,
+        val survivorsAreNewest: Boolean = false,
+        val droppedExact: Boolean = false,
     )
-    private data class Fixture(val id: String, val cap: Int?, val steps: List<Step>, val expect: Expect)
+    private data class Fixture(val id: String, val cap: Int?, val steps: List<Step>, val expect: Expect, val maxBytes: Int? = null)
 
     @Test
     fun eventPipelineFixtures() {
@@ -71,8 +75,9 @@ class EventPipelineFixtureTest {
     private fun runPipeline(f: Fixture) {
         resetCounters()
         val cap = f.cap ?: 10_000
+        val maxBytes = f.maxBytes ?: EventDatabase.MAX_DISK_BYTES
         val dbName = "spec428_${f.id}.db"
-        var db = EventDatabase(ctx, cap, dbName)
+        var db = EventDatabase(ctx, cap, dbName, maxBytes)
         db.clearAll()
         resetCounters()
 
@@ -81,6 +86,7 @@ class EventPipelineFixtureTest {
         val ingested = mutableListOf<JSONObject>()
         var rawSent = 0
         var hadRedeliver = false
+        val tracked = mutableListOf<String>()
 
         fun flush() {
             if (!online) return
@@ -99,18 +105,38 @@ class EventPipelineFixtureTest {
                 "track", "track_before_configure" -> {
                     val n = s.count ?: 1
                     val base = s.name ?: "evt"
-                    for (i in 0 until n) db.insertEvent(makeEvent(if (n > 1) "${base}_$i" else base))
+                    for (i in 0 until n) {
+                        val event = makeEvent(if (n > 1) "${base}_$i" else base)
+                        tracked += JSONObject(event).getString("event_id")
+                        db.insertEvent(event)
+                    }
                 }
                 "flush" -> flush()
                 "go_offline" -> online = false
                 "go_online" -> online = true
-                "restart" -> db = EventDatabase(ctx, cap, dbName) // persistence survives (SQLite + prefs)
+                "restart" -> db = EventDatabase(ctx, cap, dbName, maxBytes) // persistence survives (SQLite + prefs)
                 "redeliver" -> { hadRedeliver = true; flush() }
                 "advance_time_ms" -> {}
                 else -> fail("[${f.id}] unknown pipeline op: ${s.op}")
             }
         }
 
+        // The disk quota: what is left, and what it cost (read before `dropped_events_min` resets the counter).
+        val left = db.loadAll().map { JSONObject(it).getString("event_id") }
+        if (f.expect.liveBytesWithinQuota) {
+            assertTrue("[${f.id}] live bytes within the quota (${db.liveBytesForTest()} of $maxBytes)", db.liveBytesForTest() <= maxBytes)
+        }
+        f.expect.minLiveBytesFraction?.let {
+            assertTrue("[${f.id}] the quota is spent on events (live ${db.liveBytesForTest()} of $maxBytes)",
+                db.liveBytesForTest() > it * maxBytes)
+        }
+        if (f.expect.survivorsAreNewest) {
+            assertTrue("[${f.id}] nothing survived", left.isNotEmpty())
+            assertEquals("[${f.id}] the survivors are the newest, in order", tracked.takeLast(left.size), left)
+        }
+        if (f.expect.droppedExact) {
+            assertEquals("[${f.id}] each evicted event counted once", tracked.size - left.size, DroppedEventsCounter.peek())
+        }
         f.expect.ingestedCount?.let { assertEquals("[${f.id}] ingested_count", it, ingested.size) }
         f.expect.droppedMin?.let {
             val dropped = DroppedEventsCounter.getAndReset()
@@ -214,12 +240,17 @@ class EventPipelineFixtureTest {
             Fixture(
                 id = j.getString("id"),
                 cap = if (cfg != null && cfg.has("max_events")) cfg.getInt("max_events") else null,
+                maxBytes = if (cfg != null && cfg.has("max_bytes")) cfg.getInt("max_bytes") else null,
                 steps = steps,
                 expect = Expect(
                     ingestedCount = if (ex.has("ingested_count")) ex.getInt("ingested_count") else null,
                     droppedMin = if (ex.has("dropped_events_min")) ex.getInt("dropped_events_min") else null,
                     noDup = ex.optBoolean("no_duplicate_event_id", false),
                     monotonic = ex.optBoolean("monotonic_client_seq", false),
+                    liveBytesWithinQuota = ex.optBoolean("live_bytes_within_quota", false),
+                    minLiveBytesFraction = if (ex.has("min_live_bytes_fraction")) ex.getDouble("min_live_bytes_fraction") else null,
+                    survivorsAreNewest = ex.optBoolean("survivors_are_newest", false),
+                    droppedExact = ex.optBoolean("dropped_exact", false),
                 ),
             )
         }

@@ -23,7 +23,7 @@ import org.robolectric.annotation.Config
 import java.io.File
 
 /**
- * SPEC-497 §9.2 / §9.8 (B2) — `AppDNAMessagingService` handles ONLY AppDNA-marked messages.
+ * `AppDNAMessagingService` handles ONLY AppDNA-marked messages.
  */
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [34])

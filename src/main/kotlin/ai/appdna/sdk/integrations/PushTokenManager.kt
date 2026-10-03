@@ -134,7 +134,7 @@ internal class PushTokenManager(
      * Track that a push notification was delivered.
      */
     fun trackDelivered(pushId: String, deliveryId: String? = null) {
-        // SPEC-497 §8.2 — the per-token delivery id rides along when the payload carries one, so the
+        // The per-token delivery id rides along when the payload carries one, so the
         // server updates THAT delivery row (and counts only a real status transition).
         val props = mutableMapOf<String, Any>("push_id" to pushId)
         deliveryId?.takeIf { it.isNotBlank() }?.let { props["delivery_id"] = it }

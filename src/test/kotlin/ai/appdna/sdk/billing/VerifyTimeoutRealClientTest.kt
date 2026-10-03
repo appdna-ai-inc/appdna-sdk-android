@@ -21,7 +21,7 @@ import org.robolectric.annotation.Config
 import java.util.concurrent.TimeUnit
 
 /**
- * SPEC-497 I4 M1 — the 30 s verify bound really bounds the lock, with the REAL [ApiClient] against a
+ * The 30 s verify bound really bounds the lock, with the REAL [ApiClient] against a
  * server that accepts the request and never answers.
  *
  * Before the fix `ApiClient.postForResult` ran a blocking OkHttp `execute()`: cancelling the coroutine

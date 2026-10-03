@@ -109,7 +109,7 @@ class ScreenManager private constructor() {
     }
 
     /**
-     * SPEC-070-A audit attempt 5 F2 helper — ISO8601 instant WITH its zone → epoch millis, as iOS
+     * Helper — ISO8601 instant WITH its zone → epoch millis, as iOS
      * `ISO8601.date(from:)`. Returns `null` otherwise, so callers fall through (an unparsable or
      * zone-less date is "no scheduling constraint", as on iOS). The zone-less `SimpleDateFormat`
      * fallback it used to have read such a value in the device's time zone instead.

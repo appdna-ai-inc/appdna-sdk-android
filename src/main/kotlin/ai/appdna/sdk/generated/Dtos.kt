@@ -40,7 +40,7 @@ data class AppDNAEnvironment(
                 eventsBase = (map["events_base"] as? String)!!,
                 sdkVersion = (map["sdk_version"] as? String)!!,
                 isDev = (map["is_dev"] as? Boolean)!!,
-                rolloutPercentage = (map["rollout_percentage"] as? Double),
+                rolloutPercentage = (map["rollout_percentage"] as? Number)?.toDouble(),
                 region = AppDNAEnvironmentRegion.fromRaw(map["region"] as? String)!!,
                 featureFlags = (map["feature_flags"] as? List<*>)?.filterIsInstance<String>() ?: emptyList(),
         )

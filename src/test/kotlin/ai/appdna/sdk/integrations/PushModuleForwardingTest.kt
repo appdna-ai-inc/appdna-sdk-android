@@ -19,7 +19,7 @@ import org.robolectric.Shadows.shadowOf
 import org.robolectric.annotation.Config
 
 /**
- * SPEC-497 §9.2 (B2) — the public forwarding API for a host that owns Firebase Messaging, driven
+ * The public forwarding API for a host that owns Firebase Messaging, driven
  * through the REAL `AppDNA.push` entry points and the real PushTokenManager.
  */
 @RunWith(RobolectricTestRunner::class)
@@ -248,7 +248,7 @@ class PushModuleForwardingTest {
     }
 
     // ---------------------------------------------------------------------------------------------
-    // SPEC-497 I4 M8 / minors 31–34
+    // 34
     // ---------------------------------------------------------------------------------------------
 
     private fun tapIntent(pushId: String, deliveryId: String, link: String) = Intent().apply {
@@ -297,7 +297,7 @@ class PushModuleForwardingTest {
     }
 
     /**
-     * Minor 32 + round 2 A2: a delivery seen before configure is claimed for display but marked
+     * Minor 32 +: a delivery seen before configure is claimed for display but marked
      * untracked, so the forward after configure tracks it — once — and fires `onPushReceived` once.
      */
     @Test
@@ -340,7 +340,7 @@ class PushModuleForwardingTest {
     }
 
     /**
-     * Round 2 A2: `handleMessage` of a data-only message before configure DISPLAYS it; the same message
+     * `handleMessage` of a data-only message before configure DISPLAYS it; the same message
      * forwarded after configure tracks it and fires `onPushReceived` once, but is NOT displayed again.
      * NEGATIVE CONTROL: the minor-32 code skipped the claim before configure, so the second forward
      * posted a second notification — this test fails.
@@ -363,7 +363,7 @@ class PushModuleForwardingTest {
     }
 
     /**
-     * Round 2 A1: the last [PushIdempotency.TAP_CAP] handled taps persist, not only the last one. Tap
+     * The last [PushIdempotency.TAP_CAP] handled taps persist, not only the last one. Tap
      * A, tap B, then the process dies and the Activity is re-created with a FRESH copy of intent A (the
      * restored launch intent carries its original extras): A is not tracked or routed again.
      * NEGATIVE CONTROL: with only the last key persisted (B), A re-fires — this test fails.
@@ -383,7 +383,7 @@ class PushModuleForwardingTest {
         assertEquals(2, h.tapped.size)
     }
 
-    /** Round 2 A1: the persisted list is capped — the oldest handled tap falls out after TAP_CAP newer ones. */
+    /** The persisted list is capped — the oldest handled tap falls out after TAP_CAP newer ones. */
     @Test
     fun `the handled tap list keeps the last TAP_CAP keys`() {
         val storage = ai.appdna.sdk.storage.LocalStorage(ctx)
@@ -392,7 +392,7 @@ class PushModuleForwardingTest {
         assertTrue("k0 was evicted", PushIdempotency.claimTap(storage, "k0"))
     }
 
-    /** Round 2 A1: a tap an older SDK persisted in the single last-tap key still dedupes. */
+    /** A tap an older SDK persisted in the single last-tap key still dedupes. */
     @Test
     fun `a tap persisted by the older single-key SDK is still handled once`() {
         val storage = ai.appdna.sdk.storage.LocalStorage(ctx)

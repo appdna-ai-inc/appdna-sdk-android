@@ -8,7 +8,8 @@ import org.json.JSONObject
  * The SDK's three runtime settings — `flushInterval`, `batchSize` and `configTTL` — and where each value
  * comes from.
  *
- * Precedence, per setting: a value the host passed to `configure` ([AppDNAOptions], non-null) > the value the
+ * Precedence, per setting: a value the host passed to `configure` ([AppDNAOptions]: one other than the option's
+ * default, `AppDNAOptions.requested*`) > the value the
  * bootstrap answer carries in `settings` > the built-in default. The built-in default applies until a
  * bootstrap answer arrives, and stays when none does or when it does not carry the field. A bootstrap value
  * of 0 or less is ignored, so a server answer can never stop uploads; so is a host value of 0 or less (logged as a
@@ -57,17 +58,17 @@ internal object RuntimeSettings {
 
     /** Resolve all three settings. [bootstrap] is null before (or without) a successful bootstrap. */
     fun resolveAll(options: AppDNAOptions, bootstrap: Bootstrap?): Resolved {
-        warnIgnored("flushInterval", options.flushInterval)
-        warnIgnored("batchSize", options.batchSize?.toLong())
-        warnIgnored("configTTL", options.configTTL)
+        warnIgnored("flushInterval", options.requestedFlushInterval)
+        warnIgnored("batchSize", options.requestedBatchSize?.toLong())
+        warnIgnored("configTTL", options.requestedConfigTTL)
         return resolved(options, bootstrap)
     }
 
     private fun resolved(options: AppDNAOptions, bootstrap: Bootstrap?): Resolved = Resolved(
-        flushInterval = resolveLong(options.flushInterval, bootstrap?.flushInterval, DEFAULT_FLUSH_INTERVAL)
+        flushInterval = resolveLong(options.requestedFlushInterval, bootstrap?.flushInterval, DEFAULT_FLUSH_INTERVAL)
             ?: DEFAULT_FLUSH_INTERVAL,
-        batchSizeCap = resolveInt(options.batchSize, bootstrap?.batchSize, null),
-        configTTL = resolveLong(options.configTTL, bootstrap?.configTTL, DEFAULT_CONFIG_TTL) ?: DEFAULT_CONFIG_TTL,
+        batchSizeCap = resolveInt(options.requestedBatchSize, bootstrap?.batchSize, null),
+        configTTL = resolveLong(options.requestedConfigTTL, bootstrap?.configTTL, DEFAULT_CONFIG_TTL) ?: DEFAULT_CONFIG_TTL,
     )
 
     /** The batch size in effect: the adaptive size, capped by [cap] when one is set (never below 0). */

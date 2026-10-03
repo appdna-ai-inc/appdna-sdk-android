@@ -18,7 +18,7 @@ import org.robolectric.Shadows.shadowOf
 import org.robolectric.annotation.Config
 
 /**
- * SPEC-497 I4 m7 — `awaitConnectedClient`'s check-then-add race. The connection comes up between the
+ * `awaitConnectedClient`'s check-then-add race. The connection comes up between the
  * waiter's fast-path `isConnected` check and its registration; the setup dispatch finds an empty list.
  * The waiter must still get the client. NEGATIVE CONTROL: without the under-lock `isConnected` re-check in
  * `awaitConnectedClient`, the callback is parked after the dispatch and the waiter never resumes — this
@@ -55,7 +55,7 @@ class BillingConnectionRaceTest {
     }
 
     /**
-     * SPEC-497 round 11 — `destroy()` runs between the waiter's fast-path read of the client and its
+     * `destroy()` runs between the waiter's fast-path read of the client and its
      * registration, so its `resumeWaitersWithNull` finds an empty list. The waiter must still get null at
      * once (the `PriceResolver` waits have no timeout). NEGATIVE CONTROL: without the `destroyed` check in
      * the locked check-and-add, the callback is parked after the release and the waiter never resumes — this

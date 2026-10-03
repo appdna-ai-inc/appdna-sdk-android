@@ -95,4 +95,43 @@ class ExperimentEligibilityTest {
         // (the served doc's nested targeting / traffic_allocation / started_at_ms through the REAL RemoteConfigManager
         // parse is covered by the get_variant fixtures in SharedFixtureTest)
     }
+
+    @Test
+    fun `device region is the first alpha-2 candidate`() {
+        assertEquals("US", DeviceRegion.resolve(listOf("us")))
+        assertEquals("DE", DeviceRegion.resolve(listOf("", null, "419", " de ")))
+        assertNull(DeviceRegion.resolve(listOf("419", "USA", "", null)))
+        assertNull(DeviceRegion.resolve(emptyList<String?>()))
+        assertNull("not ASCII letters", DeviceRegion.resolve(listOf("D1", "Ü1")))
+    }
+
+    @Test
+    fun `a trait condition without a string trait or operator fails closed`() {
+        // NEGATIVE CONTROL (base code): none of these was malformed — trait 5 / no trait read as "" and a non-string
+        // operator as `equals`, so the `neq` rules passed every user.
+        assertTrue(t(mapOf("user_traits" to listOf(mapOf("trait" to 5, "operator" to "neq", "value" to "x"))))!!.malformed)
+        assertTrue(t(mapOf("user_traits" to listOf(mapOf("trait" to "plan", "operator" to 7, "value" to "pro"))))!!.malformed)
+        assertTrue(t(mapOf("user_traits" to listOf(mapOf("operator" to "neq", "value" to "x"))))!!.malformed)
+        assertTrue(t(mapOf("user_traits" to listOf(mapOf("trait" to " ", "operator" to "neq", "value" to "x"))))!!.malformed)
+        assertTrue(t(mapOf("user_traits" to listOf(mapOf("field" to 3, "operator" to "eq", "value" to "x"))))!!.malformed)
+        // The console's `field` key and an absent operator (= equals) stay valid.
+        assertFalse(t(mapOf("user_traits" to listOf(mapOf("field" to "plan", "value" to "pro"))))!!.malformed)
+        assertFalse(t(mapOf("user_traits" to listOf(mapOf("trait" to "", "field" to "plan", "operator" to "eq", "value" to "pro"))))!!.malformed)
+    }
+
+    @Test
+    fun `trait value types compare like iOS`() {
+        val E = ExperimentEligibility
+        fun rule(op: String, value: Any) = t(mapOf("user_traits" to listOf(mapOf("trait" to "x", "operator" to op, "value" to value))))
+        // Long (Int64) traits are numbers.
+        assertNull(E.failedRule(rule("gte", "10"), null, ctx(traits = mapOf("x" to 12L))))
+        assertNull(E.failedRule(rule("eq", "9007199254740993"), null, ctx(traits = mapOf("x" to 9_007_199_254_740_993L))))
+        // A Bool is not a number: numeric operators exclude, eq 1 does not match, eq "true" does.
+        assertEquals(ExperimentEligibility.Ineligible.USER_TRAITS, E.failedRule(rule("gte", "1"), null, ctx(traits = mapOf("x" to true))))
+        assertEquals(ExperimentEligibility.Ineligible.USER_TRAITS, E.failedRule(rule("eq", 1), null, ctx(traits = mapOf("x" to true))))
+        assertNull(E.failedRule(rule("eq", "true"), null, ctx(traits = mapOf("x" to true))))
+        assertNull(E.failedRule(rule("eq", true), null, ctx(traits = mapOf("x" to true))))
+        // A Double and a Long of the same value are equal.
+        assertNull(E.failedRule(rule("eq", 12.0), null, ctx(traits = mapOf("x" to 12L))))
+    }
 }

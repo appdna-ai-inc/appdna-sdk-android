@@ -73,7 +73,7 @@ internal class BillingConnectionManager(
     private val pendingCallbacks = mutableListOf<(BillingClient?) -> Unit>()
 
     /**
-     * SPEC-497 round 11 — set by [destroy] under the `pendingCallbacks` lock. A waiter that read the client
+     * Set by [destroy] under the `pendingCallbacks` lock. A waiter that read the client
      * before `destroy` but registers after its `resumeWaitersWithNull` would park forever (the `PriceResolver`
      * waits have no timeout); the registration checks this flag in the same locked check-and-add instead.
      */
@@ -124,9 +124,9 @@ internal class BillingConnectionManager(
                     Log.info("Billing connection established")
                     retryAttempt = 0
 
-                    // Dispatch pending callbacks. SPEC-497 I4 m7 — `isConnected` flips under the same lock
+                    // Dispatch pending callbacks `isConnected` flips under the same lock
                     // `awaitConnectedClient` registers under, so a waiter either sees it or is dispatched.
-                    // Round 11 — the callbacks run OUTSIDE the lock (copied and cleared under it).
+                    // The callbacks run OUTSIDE the lock (copied and cleared under it).
                     val callbacks = synchronized(pendingCallbacks) {
                         isConnected = true
                         val copy = ArrayList(pendingCallbacks)
@@ -164,7 +164,7 @@ internal class BillingConnectionManager(
                 "Billing reconnection gave up after $retryAttempt attempts. " +
                     "Surfacing onBillingUnavailable; will retry on next billing operation."
             )
-            // SPEC-497 R38 SDK minor 2: release the parked waiters with null BEFORE surfacing, so a
+            // Release the parked waiters with null BEFORE surfacing, so a
             // restore / purchase waiting on the connection fails now instead of hanging.
             resumeWaitersWithNull()
             surfaceBillingUnavailable()
@@ -239,9 +239,9 @@ internal class BillingConnectionManager(
                 continuation.resume(connectedClient) {}
             }
             beforeWaiterRegistered?.invoke()
-            // SPEC-497 I4 m7 — check-and-add atomically: the connection may have come up since the fast-path
+            // Check-and-add atomically: the connection may have come up since the fast-path
             // check above, after its dispatch emptied the list; a callback added then would never be called.
-            // Round 11 — likewise `destroy()` may have run since, after its release emptied the list: a
+            // Likewise `destroy()` may have run since, after its release emptied the list: a
             // destroyed manager answers null at once instead of parking the waiter forever.
             val outcome = synchronized(pendingCallbacks) {
                 when {
@@ -255,7 +255,7 @@ internal class BillingConnectionManager(
                 WaiterOutcome.CONNECTED -> { continuation.resume(client) {}; return@suspendCancellableCoroutine }
                 WaiterOutcome.PARKED -> Unit
             }
-            // SPEC-497 R9 — a cancelled waiter (a cancelled caller, or `withTimeoutOrNull` giving up) takes
+            // A cancelled waiter (a cancelled caller, or `withTimeoutOrNull` giving up) takes
             // its callback with it, so a device that never connects does not accumulate dead waiters.
             continuation.invokeOnCancellation {
                 synchronized(pendingCallbacks) { pendingCallbacks.remove(callback) }
@@ -272,7 +272,7 @@ internal class BillingConnectionManager(
 
     private enum class WaiterOutcome { DESTROYED, CONNECTED, PARKED }
 
-    /** Test seam (I4 m7) — runs between the fast-path `isConnected` check and the waiter registration. */
+    /** Test seam — runs between the fast-path `isConnected` check and the waiter registration. */
     @Volatile internal var beforeWaiterRegistered: (() -> Unit)? = null
 
     /** How many [awaitConnectedClient] callers are parked (observed by tests). */

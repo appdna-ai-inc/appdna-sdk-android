@@ -190,7 +190,7 @@ fun LocationFieldComposable(
                         modifier = Modifier
                             .fillMaxWidth()
                             .clickable {
-                                // SPEC-497 §13h — the one stored shape on both platforms and
+                                // The one stored shape on both platforms and
                                 // both writers (LocationAnswer); the typed text is the raw_query.
                                 val typed = text
                                 text = suggestion.address

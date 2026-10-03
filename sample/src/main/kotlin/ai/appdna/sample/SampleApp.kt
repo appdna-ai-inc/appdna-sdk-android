@@ -21,7 +21,7 @@ class SampleApp : Application() {
             apiKey = "appdna_sandbox_demo_key",
             environment = Environment.SANDBOX,
         )
-        // SPEC-497 §3.11 — the local-server precheck line every E2E host logs after configure: the base
+        // The local-server precheck line every E2E host logs after configure: the base
         // URL the SDK resolved (diagnose()'s `base_url: <v>`) and the environment configured.
         val baseUrl = Regex("base_url: (\\S+)").find(AppDNA.diagnose())?.groupValues?.get(1) ?: "unknown"
         android.util.Log.i("AppDNA-E2E", "AppDNA-E2E base_url=$baseUrl env=${Environment.SANDBOX.name.lowercase()}")

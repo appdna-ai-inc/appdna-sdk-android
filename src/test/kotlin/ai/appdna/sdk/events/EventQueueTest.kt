@@ -27,14 +27,17 @@ class EventQueueTest {
     fun `default batch size matches iOS defaultBatchSize`() {
         // iOS and Android: no batchSize option means no cap of the host's own — the network-sized batch
         // (capped by the bootstrap's settings.batchSize once one arrives). See RuntimeSettings.
-        assertEquals(null, ai.appdna.sdk.AppDNAOptions().batchSize)
+        // The option keeps its non-null default (100 = not set by the host), as iOS's resolved `batchSize`.
+        assertEquals(100, ai.appdna.sdk.AppDNAOptions().batchSize)
+        assertEquals(null, ai.appdna.sdk.AppDNAOptions().requestedBatchSize)
         assertEquals(null, RuntimeSettings.resolveAll(ai.appdna.sdk.AppDNAOptions(), null).batchSizeCap)
     }
 
     @Test
     fun `default flush interval is 30s matching iOS`() {
-        // iOS `RuntimeSettings.defaultFlushInterval = 30`; the option itself is unset by default.
-        assertEquals(null, ai.appdna.sdk.AppDNAOptions().flushInterval)
+        // iOS `RuntimeSettings.defaultFlushInterval = 30`; the option's default (30) reads as not set.
+        assertEquals(30L, ai.appdna.sdk.AppDNAOptions().flushInterval)
+        assertEquals(null, ai.appdna.sdk.AppDNAOptions().requestedFlushInterval)
         assertEquals(30L, RuntimeSettings.resolveAll(ai.appdna.sdk.AppDNAOptions(), null).flushInterval)
     }
 
@@ -55,7 +58,7 @@ class EventQueueTest {
         assertTrue("queue is bounded by cap", q.size <= cap)
     }
 
-    /** SPEC-497 impl audit round 2 A8: an interval of 0 or less can no longer spin the auto-flush loop. */
+    /** An interval of 0 or less can no longer spin the auto-flush loop. */
     @Test
     fun `auto-flush interval is at least one second and saturates instead of overflowing`() {
         assertEquals(1_000L, EventQueue.autoFlushIntervalMs(0))

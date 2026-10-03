@@ -9,7 +9,7 @@ import org.json.JSONObject
 import java.io.IOException
 
 /**
- * SPEC-497 §13b.2 — one verified purchase as the server's reply DTO describes it
+ * One verified purchase as the server's reply DTO describes it
  * (`{entitled, product_id, product_type, store, status, expires_at, is_trial, original_transaction_id,
  * consume}`). The public [Entitlement] is unchanged; the extra facts ride beside it.
  */
@@ -40,7 +40,7 @@ internal data class RestoreTransaction(val token: String, val productId: String,
  * - POST /api/v1/billing/restore — verify the owned purchases
  * - GET  /api/v1/billing/entitlements — the server's view of the user's entitlements
  *
- * SPEC-497: every call sends `billing_owner` (LD-R4-1, from the ownership policy this verifier is built
+ * Every call sends `billing_owner` (from the ownership policy this verifier is built
  * with) and `product_type`; failures keep their HTTP status and the server's error code
  * ([VerificationException.httpStatus] / [VerificationException.serverError]) so `PurchaseCompletion`
  * can tell a terminal refusal from a retryable one.
@@ -80,7 +80,7 @@ internal class ReceiptVerifier(
             if (experimentId != null) put("experiment_id", experimentId)
             // The server decodes the purchase's obfuscatedAccountId and compares it with the derived
             // token of this user (tagged + match → grant; tagged + mismatch → 403 unless no other user
-            // owns it, LD-R76-1; untagged → grant and claim). Anonymous → no app_user_id.
+            // owns it; untagged → grant and claim). Anonymous → no app_user_id.
             currentUserId()?.let { put("app_user_id", it) }
         }
         Log.debug("Verifying receipt for product: $productId")
@@ -104,7 +104,7 @@ internal class ReceiptVerifier(
     /**
      * Send the owned purchases to `/billing/restore` and return the server's items.
      *
-     * Error typing (§13b.2 "Restore error contract", R37): a network error → [BillingError.NetworkError];
+     * Error typing ("Restore error contract"): a network error → [BillingError.NetworkError];
      * a non-2xx reply (503 `store_unavailable`, 422 `store_credentials_missing`, …) or an unparseable
      * body → [BillingError.ServerError].
      */
@@ -167,7 +167,7 @@ internal class ReceiptVerifier(
 
     companion object {
         /**
-         * The `/billing/verify` reply → [VerifiedPurchase]. Accepts the SPEC-497 DTO under `data`, and the
+         * The `/billing/verify` reply → [VerifiedPurchase]. Accepts the DTO under `data`, and the
          * legacy `{ data: { entitled, subscription: <entity> } }` shape of older servers.
          */
         fun parseVerifyReply(json: JSONObject): VerifiedPurchase {
@@ -226,7 +226,7 @@ private fun JSONObject.optStringOrNull(key: String): String? {
 /**
  * Exception thrown when receipt verification fails.
  *
- * SPEC-497 §13a.2: [httpStatus] (null = no response) and [serverError] (the server's error code, e.g.
+ * [httpStatus] (null = no response) and [serverError] (the server's error code, e.g.
  * `store_credentials_missing`, `provider_owned`, `token_owned_by_other_app`) are kept so the caller can
  * classify the failure; both default to null so every existing constructor call compiles.
  */
@@ -239,7 +239,7 @@ class VerificationException @JvmOverloads constructor(
 }
 
 /**
- * SPEC-497 §13a.2 "Failure handling" — the per-status class of a verify outcome.
+ * "Failure handling" — the per-status class of a verify outcome.
  * `Terminal`: 400, 403, 409, 422 and any other 4xx except 401/429 — never retried.
  * `Retryable`: 401, 429, 5xx, a network error (no status) or a timeout — retried at the next ON_START.
  */

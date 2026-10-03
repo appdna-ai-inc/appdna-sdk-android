@@ -1,7 +1,7 @@
 package ai.appdna.sdk.onboarding
 
 /**
- * SPEC-497 §4.2 (A2) — the auth-action sets, in one place.
+ * The auth-action sets, in one place.
  *
  * - [delegateRequiredActions]: actions that REQUIRE a host-registered onboarding delegate
  *   (`onBeforeStepAdvance`) before they can advance. iOS source of truth:

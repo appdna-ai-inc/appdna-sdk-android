@@ -21,7 +21,7 @@ import kotlinx.coroutines.withTimeoutOrNull
 import java.util.concurrent.atomic.AtomicInteger
 import kotlin.coroutines.resume
 
-/** The decision for one purchase (§13a.2 "Purchase completion plan"). */
+/** The decision for one purchase ("Purchase completion plan"). */
 internal data class CompletionPlan(
     val verify: Boolean,
     val finalize: Finalize?,
@@ -32,7 +32,7 @@ internal data class CompletionPlan(
 )
 
 /**
- * SPEC-497 §13a.2 — the pure, two-phase decision. `serverConsume == null` means "not verified yet": the
+ * The pure, two-phase decision. `serverConsume == null` means "not verified yet": the
  * first call returns `verify` or a finalize-only plan; after the verify a second call with the reply's
  * `consume` returns the finalize plan. Precedence, first match wins:
  *   (1) `!ownsTransactions` → nothing;
@@ -84,7 +84,7 @@ internal data class OwnedPurchase(val purchase: Purchase, val productType: Strin
 }
 
 /**
- * SPEC-497 §13a.2 (LD-R19-1, D-R40-1) — THE one owner of Android purchase completion.
+ * THE one owner of Android purchase completion.
  *
  * Only this class verifies (`/billing/verify`, `/billing/restore`), acknowledges and consumes an owned
  * purchase, and emits the report (`purchase_completed`, plus `subscription_started` for SUBS). Every
@@ -110,7 +110,7 @@ internal class PurchaseCompletion(
         object Consumed : ItemOutcome()
         /** A consumable (pending consume / classified) whose consume failed again: nothing to relaunch. */
         object ConsumeFailed : ItemOutcome()
-        /** Precedence (4)'s verify failed; the live caller was already resolved `Failed` (R80). */
+        /** Precedence (4)'s verify failed; the live caller was already resolved `Failed`. */
         object VerifyFailed : ItemOutcome()
         data class Owned(val purchase: Purchase, val entitlement: Entitlement) : ItemOutcome()
     }
@@ -145,9 +145,9 @@ internal class PurchaseCompletion(
 
     /**
      * Tokens the purchase path reported since the last identity change, kept in the owned list whatever
-     * `filterOwnedPurchases` returns (R21-V1). In memory only; cleared on an identity change.
+     * `filterOwnedPurchases` returns. In memory only; cleared on an identity change.
      *
-     * Concurrent (I4 minor 4): `identify` / `reset` clear it from the caller's thread while `runLocked`
+     * Concurrent: `identify` / `reset` clear it from the caller's thread while `runLocked`
      * reads it on Main, so a plain set could throw `ConcurrentModificationException`.
      */
     private val reportedSinceIdentity: MutableSet<String> = java.util.concurrent.ConcurrentHashMap.newKeySet()
@@ -168,7 +168,7 @@ internal class PurchaseCompletion(
     /** How many drain delegate calls ran past the 30 s timeout (counted delivered). Observed by tests. */
     internal val delegateTimeouts = AtomicInteger(0)
 
-    /** An empty OK owned list marks the refresh to re-run at the next ON_START (R32 SDK minor 1). */
+    /** An empty OK owned list marks the refresh to re-run at the next ON_START. */
     @Volatile var refreshRerunPending: Boolean = false
 
     /** A drain is a no-op until `configure` has loaded the identity and the queue (trigger (iv)). */
@@ -293,12 +293,12 @@ internal class PurchaseCompletion(
         if (!mgr.ownsTransactions) return
         for (r in ledger.reported()) {
             val pending = r.pendingFinalize ?: continue
-            // R22-S2: a token the in-flight purchase owns is processed by no precedence — not even (2).
+            // A token the in-flight purchase owns is processed by no precedence — not even (2).
             if (r.token in result.skippedTokens) continue
             val op = unfiltered[r.token]
             if (op == null) {
                 // Nothing left to finalize — cleared ONLY when both queries answered OK and the run is
-                // unfiltered (a failed query keeps the pending finalize, R61). The token stays reported.
+                // unfiltered (a failed query keeps the pending finalize). The token stays reported.
                 if (result.queryOk && filter == null) setPending(r.token, null)
                 continue
             }
@@ -385,7 +385,7 @@ internal class PurchaseCompletion(
         val productId = op.productId
         val live = isLiveFor(entry, op)
 
-        // 1. price — PriceResolver is memory-only, so a cache miss queries the product first (R21-S3).
+        // 1. price — PriceResolver is memory-only, so a cache miss queries the product first.
         if (mgr.priceResolver.cachedPriceInfo(productId) == null) {
             try {
                 withTimeoutOrNull(WAIT_MS) { mgr.queryProductDetails(client, productId, op.productType) }
@@ -395,7 +395,7 @@ internal class PurchaseCompletion(
             }
         }
 
-        // 2. verify (C2), bounded so the lock is never held beyond 30 s per token (R79).
+        // 2. verify (C2), bounded so the lock is never held beyond 30 s per token.
         val unacknowledged = !op.purchase.isAcknowledged
         if (unacknowledged && op.token !in ledger.verifyAttempted()) {
             ledger.write(verifyAttempted = ledger.verifyAttempted() + op.token)
@@ -412,13 +412,13 @@ internal class PurchaseCompletion(
                 )
             } ?: throw BillingError.NetworkError(java.io.IOException("verification timed out after 30 s"))
         } catch (e: kotlinx.coroutines.CancellationException) {
-            // A cancelled scope is not a verify failure (impl audit round 2, A9): no purchase_failed, no
+            // A cancelled scope is not a verify failure: no purchase_failed, no
             // Failed for the caller — the token stays for the next rescue, as after a process death.
             throw e
         } catch (e: Exception) {
             result.notCompleted += op.token
             Log.warning("PurchaseCompletion: verify failed for $productId (${e.message}) — left for the next rescue")
-            // R80: on the purchase path — the listener's own purchase, or the ITEM_ALREADY_OWNED owner of
+            // On the purchase path — the listener's own purchase, or the ITEM_ALREADY_OWNED owner of
             // pendingProductId — the live caller resolves Failed (a timeout: networkError) with one
             // purchase_failed; the token is left for the next ON_START / identify rescue.
             if (isListener || live) mgr.reportVerificationFailure(productId, e, live)
@@ -502,7 +502,7 @@ internal class PurchaseCompletion(
             if (decided.compareAndSet(0, 1)) mgr.postPurchaseDelegates(productId, txInfo)
         }
 
-        // 6. finalize — a consumable is consumed immediately (LD-R23-3), anything else acknowledged.
+        // 6. finalize — a consumable is consumed immediately, anything else acknowledged.
         when (plan.finalize) {
             Finalize.Consume -> if (consumeAsyncAwait(client, op.token)) {
                 result.consumed += op.token
@@ -536,9 +536,9 @@ internal class PurchaseCompletion(
         if (matching.any { it.token in result.consumed }) return ItemOutcome.Consumed
         val purchased = matching.firstOrNull { it.purchase.purchaseState == Purchase.PurchaseState.PURCHASED }
         if (purchased != null) {
-            // R80: precedence (4)'s verify failed — the caller already resolved Failed.
+            // Precedence (4)'s verify failed — the caller already resolved Failed.
             if (purchased.token in result.notCompleted) return ItemOutcome.VerifyFailed
-            // I4 minor 6: a consumable (a pending consume, or classified consumable) that is STILL owned
+            // A consumable (a pending consume, or classified consumable) that is STILL owned
             // — its consume failed again — cannot be re-bought; it is never reported as a restore.
             val pendingConsume = ledger.reported().any { it.token == purchased.token && it.pendingFinalize == Finalize.Consume }
             if (pendingConsume || ledger.classCache()[purchased.token] == PurchaseLedger.CLASS_CONSUMABLE) {
@@ -555,27 +555,27 @@ internal class PurchaseCompletion(
                 } catch (e: Exception) {
                     null
                 }
-                ?: localEntitlement(purchased.productId) // R79: no cache entry and a failed verify
+                ?: localEntitlement(purchased.productId) // No cache entry and a failed verify
             return ItemOutcome.Owned(purchased.purchase, ent)
         }
         return ItemOutcome.Pending
     }
 
     /**
-     * SPEC-497 §13a.2 `ITEM_ALREADY_OWNED` — from the listener or the synchronous `launchBillingFlow`
+     * `ITEM_ALREADY_OWNED` — from the listener or the synchronous `launchBillingFlow`
      * result, with `pendingProductId` still set. Never calls `restorePurchases()` and never takes the
      * lock itself: it calls [run] (`filter = pendingProductId`, never `firstOrNull()`), then acts on the
      * outcome after [run] has returned (the relaunch included).
      *
-     * SPEC-497 R9 — [owner] is the purchase scope's owner when Play answered. [run] can wait up to 30 s
+     * [owner] is the purchase scope's owner when Play answered. [run] can wait up to 30 s
      * per step; if that purchase's caller is cancelled meanwhile and a newer purchase takes the scope, this
      * handler must not resolve, relaunch or clear the newer one. So it acts only while [owner] still owns
      * the scope; otherwise it tracks nothing (as for a lost scope in `purchase()`) and only drains — or, when
-     * the scope was lost before [run], runs the owned-purchase rescue (I4 m2).
+     * the scope was lost before [run], runs the owned-purchase rescue.
      */
     suspend fun handleItemAlreadyOwned(owner: Long) {
         if (!mgr.ownsScope(owner)) {
-            // I4 m2 — nothing to resolve, but the owned purchase may be unreported: rescue it now.
+            // Nothing to resolve, but the owned purchase may be unreported: rescue it now.
             Log.warning("ITEM_ALREADY_OWNED: the purchase scope changed before the handler ran — running the owned-purchase rescue")
             mgr.rescueOwnedPurchases()
             return
@@ -610,7 +610,7 @@ internal class PurchaseCompletion(
                 }
             }
             ItemOutcome.ConsumeFailed -> {
-                // §13a.2: the consumable could not be consumed, so a relaunch would only answer
+                // The consumable could not be consumed, so a relaunch would only answer
                 // ITEM_ALREADY_OWNED again — Failed("item_already_owned"), never a restore.
                 mgr.trackPurchaseFailed(reason = "item_already_owned", debugMessage = "item_already_owned", productId = productId, errorType = "unknown")
                 mgr.resumePurchase(PurchaseResult.Failed("item_already_owned", "unknown"))
@@ -667,7 +667,7 @@ internal class PurchaseCompletion(
             return
         }
         if (mgr.currentUserId() != userBefore) {
-            // R35: a reply that started under another identity is dropped.
+            // A reply that started under another identity is dropped.
             result.restoreError = BillingError.ServerError("identity changed")
             return
         }
@@ -682,7 +682,7 @@ internal class PurchaseCompletion(
         )
     }
 
-    /** R36 SDK minor 2: on the anonymous → first user transition, drop entries tagged for someone else. */
+    /** On the anonymous → first user transition, drop entries tagged for someone else. */
     private fun dropOtherTaggedEntries(unfiltered: Map<String, OwnedPurchase>) {
         val current = mgr.currentUserToken()?.toString()?.lowercase() ?: return
         val foreign = unfiltered.values.filter { op ->
@@ -696,7 +696,7 @@ internal class PurchaseCompletion(
     }
 
     // ---------------------------------------------------------------------------------------------
-    // the delivery queue (D-R40-1)
+    // the delivery queue
     // ---------------------------------------------------------------------------------------------
 
     /**
@@ -727,14 +727,14 @@ internal class PurchaseCompletion(
 
     /**
      * Record an identified user's derived token (bounded 50). The first call seeds the set with the
-     * current and the first-identified users' tokens (the upgrade seed, R62).
+     * current and the first-identified users' tokens (the upgrade seed).
      */
     suspend fun noteIdentified(userId: String, previousUserId: String?) {
         purchaseCompletionMutex.withLock {
             val token = AppAccountTokenResolver.token(userId)?.toString()?.lowercase() ?: return@withLock
             val existing = ledger.identifiedTokens()
-            // The upgrade seed (R62): the first-identified user AND the user current before this
-            // identify (I4 minor 3) — so that user's tagged rescues keep their owner after an upgrade.
+            // The upgrade seed: the first-identified user AND the user current before this
+            // identify — so that user's tagged rescues keep their owner after an upgrade.
             val seeded = existing ?: listOfNotNull(
                 AppAccountTokenResolver.firstIdentifiedToken()?.toString()?.lowercase(),
                 previousUserId?.let { AppAccountTokenResolver.token(it)?.toString()?.lowercase() },
@@ -786,14 +786,14 @@ internal class PurchaseCompletion(
             try {
                 delegateCallGate?.invoke(token)
                 // A cheap early exit only — the delegate and the identity are re-checked ON MAIN, in the
-                // same turn as the call (I4 minors 1+2), because an `identify` / `reset` / `setDelegate`
+                // same turn as the call, because an `identify` / `reset` / `setDelegate`
                 // can land between here and the posted block.
                 if (AppDNA.billing.deliveringDelegate() == null) {
                     return // no delivering delegate: everything stays queued for the next trigger
                 }
                 outcome = callDelegateBounded(entry, call)
             } finally {
-                // Impl audit round 2 (A5): ALWAYS unmark — a cancelled drain (or a throwing gate) used to
+                // Impl (A5): ALWAYS unmark — a cancelled drain (or a throwing gate) used to
                 // leave the token in-flight, so no later drain in this process would deliver it. A drain
                 // ended before an outcome abandons a call that has not started (compare-and-set: the
                 // posted call can no longer run, the entry stays queued); a call that already started
@@ -836,10 +836,10 @@ internal class PurchaseCompletion(
     }
 
     /**
-     * Q3(b): call `onPurchaseCompleted` on Main, bounded by 30 s. On Main, in the same turn as the call,
+     * Call `onPurchaseCompleted` on Main, bounded by 30 s. On Main, in the same turn as the call,
      * the entry's identity is re-checked (`deliverable`) and the delivering delegate re-read — an
-     * `identify(B)` that landed while this drain was suspended must never hand A's purchase to B (I4
-     * minors 1+2); either failing → SKIPPED (stays queued). Success, a timeout and a late return all
+     * `identify(B)` that landed while this drain was suspended must never hand A's purchase to B;
+     * either failing → SKIPPED (stays queued). Success, a timeout and a late return all
      * count as DELIVERED (the call started; the docs say to grant idempotently by `transactionId`); a
      * throw keeps the entry queued. A call that never even started (Main busy for 30 s) is abandoned —
      * it can no longer run — and stays queued.

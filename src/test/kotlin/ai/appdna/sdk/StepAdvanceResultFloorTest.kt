@@ -7,7 +7,7 @@ import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
-/** SPEC-497 §4.9 — the sign-in bridge timeout floor. */
+/** The sign-in bridge timeout floor. */
 class StepAdvanceResultFloorTest {
 
     @Test

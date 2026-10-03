@@ -3,7 +3,7 @@ package ai.appdna.sdk.billing
 import org.junit.Assert.assertEquals
 import org.junit.Test
 
-/** SPEC-497 §13a.2 — the two-phase pure decision, precedence (1)–(5). */
+/** The two-phase pure decision, precedence (1)–(5). */
 class PurchaseCompletionPlanTest {
 
     private fun decide(

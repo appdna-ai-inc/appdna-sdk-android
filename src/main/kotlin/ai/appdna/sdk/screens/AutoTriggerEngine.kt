@@ -120,7 +120,7 @@ internal class AutoTriggerEngine {
     }
 
     /**
-     * SPEC-070-A finalization B6 P2 — ISO-8601 instant WITH its zone (`Z` or an offset), as iOS
+     * ISO-8601 instant WITH its zone (`Z` or an offset), as iOS
      * `ISO8601.date(from:)`; null otherwise. The zone-less `SimpleDateFormat` fallback this used to
      * have read a zone-less value in the device's time zone, and returned 0 for anything else — so a
      * bad `end_date` blocked the screen for ever (0 < now) where iOS shows it.

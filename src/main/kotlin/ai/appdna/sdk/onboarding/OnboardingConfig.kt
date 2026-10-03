@@ -334,9 +334,9 @@ enum class FormFieldType(val value: String) {
 }
 
 /**
- * Structured location data from geocoding autocomplete (SPEC-089).
+ * Structured location data from geocoding autocomplete.
  *
- * SPEC-497 §13h (D2) — every field except [formatted_address] is optional: a stored answer may be a
+ * Every field except [formatted_address] is optional: a stored answer may be a
  * typed string (no coordinates, no city) or a partial selection, and a missing value is `null`, never
  * a made-up `0.0` / `""` / `"UTC"`. (Source change for hosts that read these unwrapped.)
  */
@@ -356,7 +356,7 @@ data class LocationData(
 )
 
 /**
- * SPEC-497 §13h.2 — [LocationData] from whatever a location field stored, tolerantly.
+ * [LocationData] from whatever a location field stored, tolerantly.
  *
  * - a map (a selected suggestion, a partial one, or the legacy `{address, latitude, longitude}`):
  *   each field read on its own; `address` is the legacy name of `formatted_address`; a coordinate is
@@ -556,7 +556,7 @@ sealed class StepAdvanceResult {
 
     companion object {
         /**
-         * SPEC-497 §4.2 (A2) — the minimum time a Flutter / React Native bridge waits for the host's
+         * The minimum time a Flutter / React Native bridge waits for the host's
          * `onBeforeStepAdvance` reply on a sign-in action. The native core imposes no timeout; this
          * floor only stops a bridge from cutting a legitimate sign-in (OS sheets, 2FA, a backend
          * round trip), while still bounding a handler that never answers.
@@ -580,7 +580,7 @@ sealed class StepAdvanceResult {
         )
 
         /**
-         * SPEC-497 — did the host make an EXPLICIT, RECOGNISED decision? A wrapper bridge's auth gate
+         * Did the host make an EXPLICIT, RECOGNISED decision? A wrapper bridge's auth gate
          * blocks a sign-in step unless this is true. Not a decision: a non-map, the
          * `__appdna_unhandled` sentinel, a map with no or an unknown `type` — and a `skipTo` /
          * `skipToWithData` whose `stepId` is missing, not a string or blank. That last one used to

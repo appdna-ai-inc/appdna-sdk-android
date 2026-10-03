@@ -28,7 +28,7 @@ import org.robolectric.Shadows.shadowOf
 import org.robolectric.annotation.Config
 
 /**
- * SPEC-497 §17 item 28 — the console's action buttons and custom sound render on Android: buttons from
+ * The console's action buttons and custom sound render on Android: buttons from
  * `data.actions` (SDK shape) routed through the push-tap path, `dismiss` / background buttons through
  * [PushActionReceiver], `text_reply` with a RemoteInput whose text reaches `onPushTapped` as
  * `data["reply_text"]`, and a custom sound on its own `appdna_sound_<key>` channel.
@@ -204,7 +204,7 @@ class PushNotificationActionsTest {
     private val lowCampaign = mapOf("channel_importance" to "low", "channel_name" to "Offers", "channel_description" to "Promotional pushes")
 
     /**
-     * Round 19 — a campaign's channel settings describe its custom-sound channel only. NEGATIVE CONTROL: the
+     * A campaign's channel settings describe its custom-sound channel only. NEGATIVE CONTROL: the
      * default `appdna_push` channel was created from the FIRST push's `channel_*` keys, so one Low campaign
      * fixed it at Low (named "Offers") and every later push without a custom sound posted silently.
      */
@@ -221,7 +221,7 @@ class PushNotificationActionsTest {
     }
 
     /**
-     * Round 20 — a channel a push's custom data names (`data.channel_id`). NEGATIVE CONTROL: it was created as
+     * A channel a push's custom data names (`data.channel_id`). NEGATIVE CONTROL: it was created as
      * "Push Notifications", the default channel's name, so the system settings showed two channels of one name.
      */
     @Test

@@ -60,7 +60,7 @@ sealed class PurchaseResult {
     /** Purchase completed and verified. */
     data class Purchased(val entitlement: Entitlement) : PurchaseResult() {
         /**
-         * SPEC-497 §13a.2 (V2-M4, R79) — the real transaction id, `orderId ?: purchaseToken`. An internal
+         * The real transaction id, `orderId ?: purchaseToken`. An internal
          * property, not a constructor field, so `copy` / `componentN` are unchanged.
          */
         internal var transactionId: String? = null
@@ -84,7 +84,7 @@ sealed class PurchaseResult {
     /** Purchase verification failed. */
     data class Failed @JvmOverloads constructor(
         val error: String,
-        /** SPEC-497 §13a.3 — the `billingErrorType` of the failure (`verificationFailed`, `networkError`, …). */
+        /** The `billingErrorType` of the failure (`verificationFailed`, `networkError`, …). */
         val errorType: String? = null,
     ) : PurchaseResult()
 }
@@ -135,14 +135,14 @@ class NativeBillingManager internal constructor(
     internal val entitlementCache: EntitlementCache,
     internal val storage: LocalStorage? = null,
     /**
-     * SPEC-497 §3.2 rule 3 — false under a non-owning provider (RevenueCat, Adapty): the manager then
+     * False under a non-owning provider (RevenueCat, Adapty): the manager then
      * never verifies, acknowledges or consumes, and `purchase` / `restorePurchases` throw
      * [BillingError.ProviderNotAvailable]. Default true keeps the internal constructor's callers unchanged.
      */
     internal val ownsTransactions: Boolean = true,
-    /** §3.2 rule 4 — gates ONLY [diffAndEmit]; the snapshot is saved either way. */
+    /** Gates ONLY [diffAndEmit]; the snapshot is saved either way. */
     internal val emitsLifecycleEvents: Boolean = true,
-    /** §3.10 — the injectable Play client seam, passed to the connection manager. */
+    /** The injectable Play client seam, passed to the connection manager. */
     billingClientFactory: BillingClientFactory = DefaultBillingClientFactory,
     /** The configured provider's wire name, for messages. */
     internal val providerName: String = "storeKit2",
@@ -192,29 +192,29 @@ class NativeBillingManager internal constructor(
     private var purchaseContinuation: CancellableContinuation<PurchaseResult>? = null
 
     /**
-     * SPEC-402 C3 — product currently mid-purchase, carried through Play's non-OK callbacks (which do
+     * Product currently mid-purchase, carried through Play's non-OK callbacks (which do
      * not surface the requested product) so every purchase analytic keeps `product_id`.
      */
     internal var pendingProductId: String? = null
 
-    /** SPEC-497 — the Play product type resolved by [purchase] (`"subs"` / `"inapp"`). */
+    /** The Play product type resolved by [purchase] (`"subs"` / `"inapp"`). */
     internal var pendingProductType: String? = null
 
     /**
-     * SPEC-497 R40 — set BEFORE the connection wait and cleared on every exit (incl. [failPurchase]);
+     * Set BEFORE the connection wait and cleared on every exit (incl. [failPurchase]);
      * a second [purchase] while it is set fails with `purchase_in_progress`.
      */
     @Volatile internal var purchaseInFlight: Boolean = false
 
     /**
-     * SPEC-497 I4 R8 M1 — which [purchase] call owns the purchase scope (0 = none). Minted when the
+     * Which [purchase] call owns the purchase scope (0 = none). Minted when the
      * in-flight flag is set and reset by [clearPurchaseScope], so a call that loses its scope (cancelled,
      * [destroy]) never clears — or acts on — the scope of a newer purchase.
      */
     @Volatile private var purchaseScopeOwner: Long = 0L
     private var purchaseScopeSeq: Long = 0L
 
-    /** §13a.2 ITEM_ALREADY_OWNED — the purchase's Activity, weakly held so a relaunch can reuse it. */
+    /** ITEM_ALREADY_OWNED — the purchase's Activity, weakly held so a relaunch can reuse it. */
     private var purchaseActivity: java.lang.ref.WeakReference<Activity>? = null
     private var lastFlowParams: BillingFlowParams? = null
     /** The billing flow is relaunched at most once per purchase. */
@@ -240,7 +240,7 @@ class NativeBillingManager internal constructor(
     internal fun hasLiveContinuation(): Boolean = purchaseContinuation?.isActive == true
 
     /**
-     * SPEC-497 R9 — does [owner] still own the purchase scope? An async handler captures
+     * Does [owner] still own the purchase scope? An async handler captures
      * [purchaseScopeOwner] when Play answers and checks this before it resolves, clears or relaunches
      * anything: a handler whose purchase was cancelled while it waited must never act on the scope of a
      * newer purchase.
@@ -254,7 +254,7 @@ class NativeBillingManager internal constructor(
         return c?.takeIf { it.isActive }
     }
 
-    /** Clear every purchase-scoped field (R22-S3: incl. the paywall id, so a later report is unattributed). */
+    /** Clear every purchase-scoped field (incl. the paywall id, so a later report is unattributed). */
     internal fun clearPurchaseScope() {
         pendingProductId = null
         pendingProductType = null
@@ -274,7 +274,7 @@ class NativeBillingManager internal constructor(
         return this
     }
 
-    // SPEC-070-A A.20 — process-lifecycle observer: every foreground entry runs the ON_START reconcile.
+    // Process-lifecycle observer: every foreground entry runs the ON_START reconcile.
     private val foregroundObserver = LifecycleEventObserver { _, event ->
         if (event == Lifecycle.Event.ON_START) {
             scope.launch { reconcileSubscriptionState() }
@@ -293,7 +293,7 @@ class NativeBillingManager internal constructor(
     /**
      * Play's purchase updates. Every owned-purchase branch goes through [completion].
      *
-     * SPEC-497 R9 — a non-OK answer carries no product, so it belongs to the purchase whose sheet is up:
+     * A non-OK answer carries no product, so it belongs to the purchase whose sheet is up:
      * the one with a live continuation. Without one (its caller was cancelled, and a newer purchase may be
      * waiting for its connection or product query) the answer is reported unattributed and resolves,
      * clears and relaunches nothing.
@@ -314,7 +314,7 @@ class NativeBillingManager internal constructor(
                 })
                 if (live) resumePurchase(PurchaseResult.Cancelled)
             }
-            // SPEC-497 §13a.2 — never a restore, never firstOrNull(): the handler works on the purchase
+            // Never a restore, never firstOrNull(): the handler works on the purchase
             // matching pendingProductId, which is still set.
             BillingClient.BillingResponseCode.ITEM_ALREADY_OWNED -> {
                 if (hasLiveContinuation()) {
@@ -322,14 +322,14 @@ class NativeBillingManager internal constructor(
                     val owner = purchaseScopeOwner
                     scope.launch { completion.handleItemAlreadyOwned(owner) }
                 } else {
-                    // I4 m2 — the caller is gone, but Play says the product is owned: run the ON_START
+                    // The caller is gone, but Play says the product is owned: run the ON_START
                     // rescue now so an owned, unreported purchase is not left until the next foreground.
                     Log.warning("Item already owned for a purchase with no live caller — running the owned-purchase rescue")
                     rescueOwnedPurchases()
                 }
             }
             BillingClient.BillingResponseCode.ITEM_NOT_OWNED -> failAndResume("Item not owned", "item_not_owned", billingResult.debugMessage)
-            // SPEC-070-A finalization B-4 — an explicit, typed failure per BillingResponseCode.
+            // Finalization B-4 — an explicit, typed failure per BillingResponseCode.
             BillingClient.BillingResponseCode.SERVICE_DISCONNECTED -> failAndResume("service_disconnected", "service_disconnected", billingResult.debugMessage)
             BillingClient.BillingResponseCode.SERVICE_UNAVAILABLE -> failAndResume("service_unavailable", "service_unavailable", billingResult.debugMessage)
             BillingClient.BillingResponseCode.SERVICE_TIMEOUT -> failAndResume("service_timeout", "service_timeout", billingResult.debugMessage)
@@ -364,7 +364,7 @@ class NativeBillingManager internal constructor(
 
     /**
      * Best-effort answer to "does [productId] auto-renew?" for the RevenueCat / Adapty forward paths:
-     * the stored product type of the cached entitlement (SPEC-497 R32 SDK minor 2), then the Play SUBS
+     * the stored product type of the cached entitlement, then the Play SUBS
      * catalogue [PriceResolver] queried this session. Neither knows → `false`.
      */
     fun isKnownSubscriptionProduct(productId: String): Boolean =
@@ -372,7 +372,7 @@ class NativeBillingManager internal constructor(
             priceResolver.isKnownSubscriptionProduct(productId)
 
     /**
-     * SPEC-070-A finalization R2 P1 (Lens C) — shared purchase-event property builder used by
+     * Finalization (Lens C) — shared purchase-event property builder used by
      * RevenueCatBridge + AdaptyBridge so direct-purchase paths emit the same shape as the native path.
      */
     fun purchaseEventProps(productId: String, provider: String): Map<String, Any> {
@@ -390,9 +390,9 @@ class NativeBillingManager internal constructor(
     }
 
     /**
-     * One `purchase_failed` with a typed `reason` (SPEC-070-A B-4) and iOS's `error` / `error_type`.
+     * One `purchase_failed` with a typed `reason` (B-4) and iOS's `error` / `error_type`.
      * [paywallId] defaults to the purchase in flight; [omitPaywallId] drops the key (the non-owning
-     * direct API, §3.2 rule 5).
+     * direct API).
      */
     internal fun trackPurchaseFailed(
         reason: String,
@@ -424,12 +424,12 @@ class NativeBillingManager internal constructor(
 
     /**
      * The single `purchase_completed` emit for the native Play path — plus `subscription_started` when
-     * the Play product type is SUBS (SPEC-497 R21-S3; it used to key on `expiresAt`). Both events carry
+     * the Play product type is SUBS (it used to key on `expiresAt`). Both events carry
      * the SAME envelope. `subscription_started` never comes from the lifecycle diff.
      *
-     * SPEC-497: `emitted_by: "sdk"` (through `AppDNA.trackBillingEvent`), `is_consumable`,
+     * `emitted_by: "sdk"` (through `AppDNA.trackBillingEvent`), `is_consumable`,
      * `original_transaction_id`, `quantity` (> 1 only); `transaction_id` is the real Play order id and
-     * is OMITTED when there is none (no fake ids, V2-M4); a free trial reports price 0 (R43/R44).
+     * is OMITTED when there is none (no fake ids); a free trial reports price 0.
      * Reports from any entry other than the purchase path pass [paywallId] null → `paywall_id: ""` and
      * no paywall metadata.
      */
@@ -471,7 +471,7 @@ class NativeBillingManager internal constructor(
 
     /**
      * Terminal-failure helper for the early returns inside [purchase] (no client, unknown product,
-     * launch rejected): one `purchase_failed`, then the purchase scope is cleared (R40: the in-flight
+     * launch rejected): one `purchase_failed`, then the purchase scope is cleared (the in-flight
      * flag is cleared on every exit).
      */
     private fun failPurchase(
@@ -495,7 +495,7 @@ class NativeBillingManager internal constructor(
     /** Price resolver for querying product details. */
     internal val priceResolver = PriceResolver(connectionManager)
 
-    /** SPEC-497 §13a.2 — the one owner of purchase completion. */
+    /** The one owner of purchase completion. */
     internal val completion = PurchaseCompletion(this, PurchaseLedger(storage))
 
     // -- Initialization --
@@ -548,7 +548,7 @@ class NativeBillingManager internal constructor(
     }
 
     /**
-     * SPEC-497 I4 m2 — an `ITEM_ALREADY_OWNED` that no live purchase can act on (its caller was cancelled
+     * An `ITEM_ALREADY_OWNED` that no live purchase can act on (its caller was cancelled
      * or its scope taken over) still means Play holds an owned purchase that may be unreported. Run the
      * ON_START reconcile — the same rescue a foreground entry runs — instead of waiting for the next one.
      */
@@ -562,12 +562,12 @@ class NativeBillingManager internal constructor(
     }
 
     /**
-     * SPEC-070-A A.20 / SPEC-497 — the ON_START reconcile.
+     * The ON_START reconcile.
      *
      * Owning (`storeKit2`): [PurchaseCompletion.run] (`ON_START`) applies the completion plan to BOTH the
-     * INAPP and the SUBS arm (a subscription whose purchase-path verify failed is reported once, R20-S1),
+     * INAPP and the SUBS arm (a subscription whose purchase-path verify failed is reported once),
      * then the SUBS-only lifecycle diff runs against the persisted snapshot. Non-owning: a read-only
-     * reconcile — local entitlements, no server call, no store write (§3.2 rule 3). The snapshot is saved
+     * reconcile — local entitlements, no server call, no store write. The snapshot is saved
      * in both; only [diffAndEmit] is gated on [emitsLifecycleEvents] (rule 4).
      */
     internal suspend fun reconcileSubscriptionState() {
@@ -589,7 +589,7 @@ class NativeBillingManager internal constructor(
         }
     }
 
-    /** §3.2 rule 3 — read-only reconcile under a non-owning provider. */
+    /** Read-only reconcile under a non-owning provider. */
     private suspend fun reconcileReadOnly() = applySnapshotDiff {
         val lists = queryOwnedReadOnly() ?: return@applySnapshotDiff null
         val (subs, inapp) = lists
@@ -652,7 +652,7 @@ class NativeBillingManager internal constructor(
     }
 
     /**
-     * A renewal is `purchase_time` advancing, or (R47/R48) the Play order id's `..N` suffix changing —
+     * A renewal is `purchase_time` advancing, or the Play order id's `..N` suffix changing —
      * only when BOTH ids are non-blank and differ, and the purchase time has not gone back (an older
      * read of the same subscription is never a renewal).
      */
@@ -675,7 +675,7 @@ class NativeBillingManager internal constructor(
     }
 
     /**
-     * §3.2 rule 3 "Local entitlements (read-only)": one entitlement per product of each PURCHASED,
+     * "Local entitlements (read-only)": one entitlement per product of each PURCHASED,
      * identity-owned purchase (`store = google_play`, `status = active`, no expiry — Play's client API
      * carries none —, `isTrial = false`), typed by the query arm that returned it. PENDING gives nothing.
      */
@@ -699,9 +699,9 @@ class NativeBillingManager internal constructor(
      * Compare previous and current snapshots and emit lifecycle events (SUBS only — a consumed INAPP
      * never enters the snapshot). Does no I/O.
      *
-     * SPEC-497 §13e.5 rule 2: `subscription_canceled` / `subscription_renewal_failed` carry the LAST-SEEN
+     * `subscription_canceled` / `subscription_renewal_failed` carry the LAST-SEEN
      * `transaction_id` / `original_transaction_id` from the snapshot, `subscription_renewed` the current
-     * ones; absent ids are omitted, never sent empty. A renewal is `purchase_time` advancing, or (R47/R48)
+     * ones; absent ids are omitted, never sent empty. A renewal is `purchase_time` advancing, or
      * the Play order id's `..N` suffix changing — only when BOTH ids are non-blank and differ; in that
      * arm `purchase_time` is omitted unless it advanced. Cancels carry `cancel_semantics`.
      * `subscription_renewed` also carries `price` / `currency` when the product's price is cached
@@ -778,7 +778,7 @@ class NativeBillingManager internal constructor(
                     purchaseTime = obj.optLong("purchaseTime", 0L),
                     isAcknowledged = obj.optBoolean("isAcknowledged", false),
                     isAutoRenewing = obj.optBoolean("isAutoRenewing", false),
-                    // R74: optString defaults to "" — normalise blank to null on load too.
+                    // optString defaults to "" — normalise blank to null on load too.
                     transactionId = obj.optString("transactionId", "").takeIf { it.isNotBlank() },
                     originalTransactionId = obj.optString("originalTransactionId", "").takeIf { it.isNotBlank() },
                 )
@@ -807,8 +807,8 @@ class NativeBillingManager internal constructor(
     }
 
     /**
-     * Lightweight snapshot of a single Play subscription. SPEC-497 §13e.5: the last-seen Play order id
-     * and its suffix-stripped base, normalised blank → null (R64).
+     * Lightweight snapshot of a single Play subscription: the last-seen Play order id
+     * and its suffix-stripped base, normalised blank → null.
      */
     internal class SubSnapshot(
         val productId: String,
@@ -833,7 +833,7 @@ class NativeBillingManager internal constructor(
     }
 
     internal companion object {
-        // SPEC-070-A A.20 — snapshot key persisted in LocalStorage so the reconcile survives process death.
+        // Snapshot key persisted in LocalStorage so the reconcile survives process death.
         const val KEY_LAST_SUB_SNAPSHOT = "billing_last_sub_snapshot_v1"
 
         /**
@@ -853,11 +853,11 @@ class NativeBillingManager internal constructor(
      *
      * Queries SUBS and INAPP in parallel (SUBS wins, iOS order), launches the matching billing flow and
      * suspends until Play answers. The purchase itself completes in [PurchaseCompletion] (verify → one
-     * write → emit → finalize). SPEC-497:
+     * write → emit → finalize).
      * - a non-owning provider throws [BillingError.ProviderNotAvailable] BEFORE `purchase_started` and
-     *   any Play call, with exactly one `purchase_failed{error_type: providerNotAvailable}` (§3.2 rule 3);
-     * - a second call while one is in flight resolves `Failed("purchase_in_progress")` (R22, R40);
-     * - the connection wait is bounded by 30 s → `purchase_failed{error_type: serverError}` (R39).
+     *   any Play call, with exactly one `purchase_failed{error_type: providerNotAvailable}`;
+     * - a second call while one is in flight resolves `Failed("purchase_in_progress")`;
+     * - the connection wait is bounded by 30 s → `purchase_failed{error_type: serverError}`.
      */
     suspend fun purchase(
         activity: Activity,
@@ -894,7 +894,7 @@ class NativeBillingManager internal constructor(
             "experiment_id" to (currentExperimentId ?: ""),
         ).withPaywallMetadata())
 
-        // I4 R8 M1 — every exit clears the scope (R40). The returns below clear it themselves
+        // Every exit clears the scope. The returns below clear it themselves
         // ([failPurchase], [resumePurchase]); an exception — above all the caller's cancellation while
         // this call waits for the connection or the product query, before the continuation (and its
         // `invokeOnCancellation`) exists — is caught here. Guarded by [purchaseScopeOwner]: a scope already
@@ -920,14 +920,14 @@ class NativeBillingManager internal constructor(
             val productType = resolved.productType
             pendingProductType = if (productType == BillingClient.ProductType.SUBS) "subs" else "inapp"
 
-            // Round-34 — warm the price cache so the purchase event carries price/currency.
+            // Warm the price cache so the purchase event carries price/currency.
             try { priceResolver.cacheFromPurchase(productDetails) } catch (_: Throwable) { /* best-effort */ }
 
             val selectedOffer = if (productType == BillingClient.ProductType.SUBS) {
                 val token = options?.offerToken
                 val offers = productDetails.subscriptionOfferDetails
                 if (token != null) offers?.find { it.offerToken == token }
-                // Round-10 #1 — with no named offer prefer the base plan (no offerId), never an arbitrary one.
+                // With no named offer prefer the base plan (no offerId), never an arbitrary one.
                 else offers?.firstOrNull { it.offerId == null } ?: offers?.firstOrNull()
             } else null
 
@@ -939,7 +939,7 @@ class NativeBillingManager internal constructor(
                         .build()
                 ))
 
-            // SPEC-070-A A.28 — the host's token, else the current user's derived token (cross-account leak).
+            // The host's token, else the current user's derived token (cross-account leak).
             val resolvedToken = options?.appAccountToken ?: currentUserToken()
             if (resolvedToken != null) {
                 flowParamsBuilder.setObfuscatedAccountId(resolvedToken.toString())
@@ -962,7 +962,7 @@ class NativeBillingManager internal constructor(
                 val launchResult = client.launchBillingFlow(activity, flowParams)
                 when (launchResult.responseCode) {
                     BillingClient.BillingResponseCode.OK -> Unit
-                    // R24: the SYNCHRONOUS ITEM_ALREADY_OWNED goes to the same handler, before anything is cleared.
+                    // The SYNCHRONOUS ITEM_ALREADY_OWNED goes to the same handler, before anything is cleared.
                     BillingClient.BillingResponseCode.ITEM_ALREADY_OWNED ->
                         scope.launch { completion.handleItemAlreadyOwned(scopeId) }
                     else -> resumePurchase(
@@ -984,11 +984,11 @@ class NativeBillingManager internal constructor(
     }
 
     /**
-     * I4 R8 M1 — this [purchase] lost its scope while it waited: stop without launching the sheet and
+     * This [purchase] lost its scope while it waited: stop without launching the sheet and
      * without touching the scope, which may already belong to a newer purchase. Nothing is tracked, as
      * for [destroy].
      *
-     * SPEC-497 R9 — before the continuation exists, [destroy] is the only thing that can take the scope.
+     * Before the continuation exists, [destroy] is the only thing that can take the scope.
      * The caller's own cancellation throws instead of returning here, and every other path that clears
      * it (the listener's non-OK branches, [PurchaseCompletion.handleItemAlreadyOwned], precedence (4), a
      * PENDING update, a verify failure) acts only for a live continuation or for the scope owner it
@@ -1000,7 +1000,7 @@ class NativeBillingManager internal constructor(
     }
 
     /**
-     * §13a.2 ITEM_ALREADY_OWNED — relaunch the billing flow ONCE with the weakly held Activity, if it is
+     * ITEM_ALREADY_OWNED — relaunch the billing flow ONCE with the weakly held Activity, if it is
      * still alive. Returns false when it cannot (the caller then fails the purchase).
      */
     internal fun relaunchBillingFlow(): Boolean {
@@ -1056,11 +1056,11 @@ class NativeBillingManager internal constructor(
     // -- Restore --
 
     /**
-     * SPEC-401 Fix 1D / SPEC-497 — the silent entitlement-cache refresh ([AppDNA.identify] and hosts).
+     * Fix 1D / — the silent entitlement-cache refresh ([AppDNA.identify] and hosts).
      *
      * Owning: [PurchaseCompletion.run] (`IDENTIFY_REFRESH`) — it may report an unreported purchase
      * (`purchase_completed`, queued `onPurchaseCompleted`), then sends the in-lock owned list to
-     * `/billing/restore` and MERGES the reply (§13b.2). Non-owning: a local, read-only rebuild — no server
+     * `/billing/restore` and MERGES the reply. Non-owning: a local, read-only rebuild — no server
      * call. Errors are logged, never thrown; a failed query leaves the cache unchanged.
      */
     suspend fun refreshEntitlementCache() = refreshEntitlementCache(anonymousToFirstUser = false)
@@ -1084,13 +1084,13 @@ class NativeBillingManager internal constructor(
         }
     }
 
-    /** What a restore produced, and which products the same call reported (R21 SDK minor 8). */
+    /** What a restore produced, and which products the same call reported. */
     internal data class RestoreDetail(val entitlements: List<Entitlement>, val reportedProducts: Set<String>)
 
     /**
      * Restore the owned purchases (SUBS + INAPP).
      *
-     * SPEC-497 (restore error contract, §13b.2): every failure THROWS a typed [BillingError] — a
+     * Every failure THROWS a typed [BillingError] — a
      * non-owning provider `ProviderNotAvailable`; a failed Play query or no client within 30 s
      * `ServerError` (Play `NETWORK_ERROR` / `SERVICE_UNAVAILABLE` → `NetworkError`); an offline `/restore`
      * `NetworkError`; a non-2xx `/restore` `ServerError`. The cache is left unchanged and
@@ -1246,7 +1246,7 @@ class NativeBillingManager internal constructor(
 
     /**
      * Shut down the billing system and release all resources. A purchase in flight resolves
-     * `Failed("shutdown")` (R22 SDK minor 4).
+     * `Failed("shutdown")`.
      */
     fun destroy() {
         Log.info("NativeBillingManager: destroying")

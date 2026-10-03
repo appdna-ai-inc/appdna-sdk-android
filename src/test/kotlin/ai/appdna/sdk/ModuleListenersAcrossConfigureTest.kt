@@ -146,7 +146,7 @@ class ModuleListenersAcrossConfigureTest {
         assertEquals("a flag map carries isEnabled values", false, flagChanges.last()["dark_mode"])
     }
 
-    // ── Round 25 ────────────────────────────────────────────────────────────
+    // ── ────────────────────────────────────────────────────────────
 
     /**
      * `shutdown()` nulls `remoteConfig.manager` / `features.manager`, but `attachedTo` kept the torn-down

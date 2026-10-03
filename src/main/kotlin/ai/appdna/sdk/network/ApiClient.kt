@@ -31,7 +31,7 @@ import java.util.zip.DeflaterOutputStream
 internal class ApiClient(
     private val apiKey: String,
     /**
-     * SPEC-497 §3.11 — every request URL is built from this. Production passes the resolved base
+     * Every request URL is built from this. Production passes the resolved base
      * (the test-only override, else `environment.baseUrl`).
      */
     internal val baseUrl: String,
@@ -131,7 +131,7 @@ internal class ApiClient(
     }
 
     /**
-     * SPEC-497 §13a.2 "Verify result plumbing" (S5-M1) — [post] with the outcome kept: the HTTP status
+     * "Verify result plumbing" (S5-M1) — [post] with the outcome kept: the HTTP status
      * (null = a network error after the retries), the body, and the server's error code. Same retry
      * policy as [post]: network errors and 5xx are retried with [retryDelays]; every 4xx is terminal on
      * the first answer. [post] itself is unchanged for its other callers.
@@ -148,7 +148,7 @@ internal class ApiClient(
                         .header("Content-Type", "application/json")
                         .post(body.toRequestBody(jsonMediaType))
                         .build()
-                    // SPEC-497 I4 M1 — CANCELLABLE: a blocking `execute()` ignores coroutine
+                    // CANCELLABLE: a blocking `execute()` ignores coroutine
                     // cancellation, so `PurchaseCompletion`'s 30 s `withTimeoutOrNull` around a verify
                     // could not end the call and the purchase lock was held for the client's 60 s
                     // `callTimeout` (plus retries). `awaitCancellable` cancels the OkHttp call itself.
@@ -190,7 +190,7 @@ internal class ApiClient(
                 }
 
                 override fun onResponse(call: okhttp3.Call, response: Response) {
-                    // Throwable, not IOException (impl audit round 2, A4): anything else thrown while
+                    // Throwable, not IOException: anything else thrown while
                     // reading the body (a charset / state error, an OOM on a huge body) escaped this
                     // callback into OkHttp's dispatcher and the waiting coroutine never resumed.
                     val read = try {
@@ -629,7 +629,7 @@ internal enum class EventUploadDisposition {
 }
 
 /**
- * SPEC-497 §13a.2 — the outcome of a [ApiClient.postForResult] call. `status == null` is a network
+ * The outcome of a [ApiClient.postForResult] call. `status == null` is a network
  * error after the retries; `errorCode` is the server's error code (see [decodeErrorCode]).
  */
 internal data class ApiResult(val status: Int?, val body: String?, val errorCode: String?) {

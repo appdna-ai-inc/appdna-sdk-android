@@ -12,7 +12,7 @@ import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
 
-/** SPEC-497 §13b.2 restore error contract (R36–R38) — Android `storeKit2`. */
+/** Restore error contract — Android `storeKit2`. */
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [34])
 class RestoreErrorContractTest {
@@ -46,7 +46,7 @@ class RestoreErrorContractTest {
     }
 
     /**
-     * Impl audit round 2, A6: `/restore` is bounded by 30 s like every other wait in the locked run. A
+     * Impl: `/restore` is bounded by 30 s like every other wait in the locked run. A
      * reply that never comes ends in NetworkError, the cache unchanged, the lock released.
      */
     @Test fun `a restore that never answers - NetworkError at 30 s, cache unchanged, lock released`() {

@@ -10,7 +10,7 @@ import org.junit.Assert.assertTrue
 import org.junit.Assert.fail
 import org.junit.Test
 
-/** SPEC-497 §13a.2 "Verify result plumbing" / §13b.4 — ReceiptVerifier with canned ApiResults. */
+/** "Verify result plumbing" / — ReceiptVerifier with canned ApiResults. */
 class ReceiptVerifierTest {
 
     private val dto = JSONObject().put("data", JSONObject().apply {
