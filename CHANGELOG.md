@@ -42,12 +42,17 @@ Wraps iOS 1.0.82. Ships maps and host data (including "Show more").
   takes precedence. No code change needed.
 
 ### Changed
-- **`flushInterval`, `batchSize` and `configTTL` are `null` unless you set them** (`Long?` / `Int?` / `Long?`).
-  Each setting now resolves as: your option > the value the server returns with the bootstrap request (if
-  positive) > the built-in default (30 s, no cap, 3600 s). `batchSize` now works: it caps the network-sized
-  batch (100 / 50 / 20) — the flush threshold and the most one upload sends, in the WorkManager uploader too;
-  a value below 1 is ignored (logged), as if not set. Before, `batchSize` was used only without a connectivity monitor (never),
-  and the bootstrap's settings were not read. Code that reads these three properties now gets a nullable value.
+- **`flushInterval`, `batchSize` and `configTTL` follow one precedence:** your option > the value the server
+  returns with the bootstrap request (if positive) > the built-in default (30 s, no cap, 3600 s). The three
+  properties keep their non-null types (`Long` / `Int` / `Long`); a value left at its default — `30L`, `100`,
+  `3600L` — is "not set" (passing the default is the same as not passing it, on iOS too). `batchSize`'s default
+  is now `100` (was `20`, which had no effect). `batchSize` now works: it caps the network-sized batch
+  (100 / 50 / 20) — the flush threshold and the most one upload sends, in the WorkManager uploader too; a value
+  below 1 is ignored (logged), as if not set. Before, `batchSize` was used only without a connectivity monitor
+  (never), and the bootstrap's settings were not read.
+- ⚠️ **If you already pass `batchSize`, it is now a hard cap.** Before this release the value had no effect;
+  with `batchSize = 10`, every upload now sends at most 10 events. Remove it, or raise it, unless that is what
+  you want.
 - `onElementInteraction` behaviour for every flow: `inputValuePatches` merge onto the answers as they
   are when the reply lands (a pick made during the call is kept); a reply that arrives after the user
   left the step — or started a newer presentation of it — is dropped, `advance` included; the
@@ -97,8 +102,8 @@ Wraps iOS 1.0.82. Ships maps and host data (including "Show more").
 - **A failed bootstrap no longer lasts the whole session.** When the bootstrap request fails (for example,
   the app starts offline), the SDK still becomes ready on cached and bundled config, now reports
   `AppDNAInitError.BootstrapFailed` through `onInitDegraded` / `lastInitError` (as iOS does), and retries the
-  bootstrap: when the network comes back, when the app comes to the foreground (after a random delay of up to
-  1 s), and otherwise after 5 s, doubling to 5 min, each wait ±25 % — at most 10 retries per `configure()`,
+  bootstrap: when the network comes back or the app comes to the foreground — every trigger (foreground or
+  network regained) waits a random 0–1 s — and otherwise after 5 s, doubling to 5 min, each wait ±25 % — at most 10 retries per `configure()`,
   none while offline. A 401 or 403 (the server refused the API key) ends the retries, and one at
   `configure()` starts none; a 429's `Retry-After` (up to 120 s) holds the next retry back. A retry that succeeds is
   applied as a first success would be: remote config is fetched, the Firestore listeners of a signed-in user
@@ -201,8 +206,42 @@ Wraps iOS 1.0.82. Ships maps and host data (including "Show more").
   callback registered before the next `configure()` goes to the new manager only.
 - An in-app message delegate or async veto set on another thread while `configure()` runs is no longer
   lost: the manager is published first, then given them.
+- The event database's v2 → v3 upgrade (lookup columns for a 10,000-event backlog) runs as one chunked
+  back-fill with one compiled statement, not a statement per row, on the thread that first opens the database.
+- Two helpers upgrading the same event database (the queue's and the WorkManager uploader's) no longer fail
+  with "duplicate column": every upgrade checks the table before it changes it.
+- An app that goes back to an older SDK keeps its queued events instead of failing to open the event database
+  (`Can't downgrade database`); a table the older SDK cannot use is rebuilt and its events counted as dropped.
+- The 5 MB event quota measures the queued events' bytes (each event's JSON plus one byte, as iOS) instead of
+  the SQLite file, and evicts the oldest 10 % until they fit (it evicted 10 % once per insert, measuring pages,
+  indexes and the free list — a small quota emptied the table).
+- The WorkManager uploader drops and counts a permanently rejected batch and goes on with the next one (it
+  ended the run, leaving the rest for the next scheduling), and retries a 408 (it dropped it as permanent).
+- The in-process queue reloads its in-memory window from the database once it drains, so a backlog larger than
+  1,000 events is sent without waiting for the background uploader or the next launch.
+- A 429 from the bootstrap at `configure()` holds the first bootstrap retry back for its `Retry-After` (only a
+  retry's own 429 was honoured), and a network-back or foreground trigger that arrives while a retry is in
+  flight no longer starts the next retry 0–1 s later: a failed retry is followed by its backoff.
+- **Offline cold start serves the cached config again.** Paywalls, onboarding flows, surveys, in-app messages
+  and experiments cached by a previous session were skipped on load (each cache was read back as JSON objects
+  its parser did not accept); object / list remote-config values keep the shapes an online session returns,
+  and cached surveys reach the survey manager at start-up instead of after the next fetch. Cached values keep
+  the number types they had online (a whole-number double such as `2.0` came back as the integer `2`, so a
+  remote-config value read as a `Double` was null).
+- Experiment targeting answers as on iOS: the device country falls back to the locale list, then the SIM and
+  the network country (a region-less locale gave none; an area code such as `419` is not a country); a
+  `traffic_allocation` that is not a number allocates no one (was everyone); a trait condition with a missing or
+  non-string trait, or a non-string operator, excludes the user.
+- Losing Wi-Fi while cellular is up no longer leaves the SDK offline (batch size 0) when the system has not yet
+  switched its default network, and a VPN or other connected network counts as connected on every path.
 
 ### Binary compatibility
+
+- **`AppDNAOptions` is binary- and source-compatible with 1.0.53 again.** An unreleased change had made
+  `flushInterval`, `batchSize` and `configTTL` nullable, which changed the getters, `componentN()`, `copy(...)`
+  and the constructors' JVM signatures (a host built against 1.0.53 would fail with `NoSuchMethodError`). They
+  are non-null with their 1.0.53 types again (`batchSize`'s default is now `100`); "set by the host" is the
+  value differing from the default. Proven by a Java and a Kotlin consumer test against the 1.0.53 signatures.
 - `ElementInteractionResult` gains `dataContext` and `AppliedInteraction` gains `inputValuePatches`
   and `dataContext`, each as a defaulted LAST constructor parameter. Kotlin source is unchanged, and
   Java callers keep compiling: both constructors are `@JvmOverloads`, and
