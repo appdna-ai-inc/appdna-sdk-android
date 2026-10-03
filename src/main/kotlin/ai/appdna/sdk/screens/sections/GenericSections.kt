@@ -19,7 +19,7 @@ import ai.appdna.sdk.onboarding.ContentBlock
 import ai.appdna.sdk.core.StyleEngine
 
 /**
- * SPEC-070-A finalization B5 P1 — expanded ContentBlock decoder used by
+ * Expanded ContentBlock decoder used by
  * SDUI ContentBlocksSectionRenderer. Mirrors ~35 of the ContentBlock
  * fields from the canonical OnboardingConfig.kt parser (still missing
  * lottie_json, providers, field_options, timeline_items, loading_items,
@@ -114,9 +114,9 @@ internal fun ContentBlocksSectionRenderer(section: ScreenSection, context: Secti
     val toggleValues = remember { mutableStateMapOf<String, Boolean>() }
     val inputValues = remember { mutableStateMapOf<String, Any>() }
 
-    // SPEC-070-A finalization B5 P1 — gate `next` action on required-field
+    // Gate `next` action on required-field
     // validation. Mirrors iOS GenericSections.swift:58-88 validateFormFields()
-    // (AC-130/131/132). Without this, hosts pressing "next" with an empty
+    // Without this, hosts pressing "next" with an empty
     // required input field would advance silently. We block the advance
     // and (best-effort) leave field-level error UI to the renderer.
     fun validateRequiredFields(): Boolean {
@@ -272,7 +272,7 @@ private fun handleButtonAction(button: Map<String, Any?>, context: SectionContex
 }
 
 /**
- * SPEC-070-A finalization B6 P2 — image_section now loads `image_url`
+ * image_section now loads `image_url`
  * via [ai.appdna.sdk.core.NetworkImage] (Coil under the hood) instead
  * of rendering a gray Box. Mirrors iOS BundledAsyncImage.
  */
@@ -296,7 +296,7 @@ internal fun ImageSectionRenderer(section: ScreenSection, context: SectionContex
 }
 
 /**
- * SPEC-070-A finalization B6 P2 — video_section uses [VideoBlockView]
+ * video_section uses [VideoBlockView]
  * with the section data, mirroring iOS.
  */
 @Composable
@@ -323,7 +323,7 @@ internal fun VideoSectionRenderer(section: ScreenSection, context: SectionContex
 }
 
 /**
- * SPEC-070-A finalization B6 P2 — lottie_section uses [LottieBlockView],
+ * lottie_section uses [LottieBlockView],
  * mirroring iOS.
  */
 @Composable
@@ -350,7 +350,7 @@ internal fun LottieSectionRenderer(section: ScreenSection, context: SectionConte
 }
 
 /**
- * SPEC-070-A finalization B6 P2 — rive_section uses [RiveBlockView],
+ * rive_section uses [RiveBlockView],
  * mirroring iOS.
  */
 @Composable

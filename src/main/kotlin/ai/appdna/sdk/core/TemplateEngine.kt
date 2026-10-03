@@ -3,7 +3,7 @@ package ai.appdna.sdk.core
 import ai.appdna.sdk.AppDNA
 
 /**
- * Context for variable resolution across all SDK modules (SPEC-088).
+ * Context for variable resolution across all SDK modules.
  */
 data class TemplateContext(
     val userTraits: Map<String, Any>?,
@@ -15,7 +15,7 @@ data class TemplateContext(
 )
 
 /**
- * Shared template interpolation engine for all SDK modules (SPEC-088).
+ * Shared template interpolation engine for all SDK modules.
  * Resolves `{{namespace.key}}` and `{{namespace.key | fallback}}` variables.
  */
 object TemplateEngine {
@@ -62,7 +62,7 @@ object TemplateEngine {
     }
 
     /**
-     * SPEC-496 §A5 — the per-token entry point the onboarding raw host-data pass routes every
+     * The per-token entry point the onboarding raw host-data pass routes every
      * NON-block root through (`device`, `computed`, `remote_config`, `input`, bare names), so an old
      * published flow keeps rendering exactly as it did when `loc()` interpolated it. Same semantics as
      * [interpolate] for one token: null on a miss (the caller applies the `| fallback`, else "").
@@ -117,7 +117,7 @@ object TemplateEngine {
             }
 
             "input" -> {
-                // SPEC-070-A finalization parity audit R5 — `{{input.fieldId}}`
+                // `{{input.fieldId}}`
                 // shorthand. Mirrors iOS TemplateEngine.swift:107-116:
                 // searches all onboardingResponses step dicts for the
                 // first matching fieldId; first match wins. Used for
@@ -145,7 +145,7 @@ object TemplateEngine {
             is String -> value
             is Boolean -> value.toString()
             is Number -> {
-                // Round-28/29 — match iOS NSNumber.stringValue: a whole-valued Double/Float renders
+                // Match iOS NSNumber.stringValue: a whole-valued Double/Float renders
                 // WITHOUT the trailing ".0" ("30", not "30.0") in interpolated copy (paywall/message/
                 // onboarding titles like "{{input.goal_weight}} lbs"). An onboarding number answer is
                 // stored as a Double, so this was Android-only ".0" on conversion copy in the first session.
@@ -166,7 +166,7 @@ object TemplateEngine {
     private fun deviceInfo(): Map<String, String> {
         val info = mutableMapOf(
             "platform" to "android",
-            // SPEC-070-A G.15 sibling — match the EventSchema 3-part dotted
+            // Sibling — match the EventSchema 3-part dotted
             // shape ("14.0.1") iOS emits, not the bare integer ("14") that
             // Build.VERSION.RELEASE returns. Without this, console copy
             // referencing {{device.os_version}} renders as "14" on Android
@@ -184,7 +184,7 @@ object TemplateEngine {
 }
 
 /**
- * SPEC-087: Convenience extension to interpolate {{variables}} in onboarding text fields.
+ * Convenience extension to interpolate {{variables}} in onboarding text fields.
  */
 fun String.interpolated(): String {
     if (!this.contains("{{")) return this

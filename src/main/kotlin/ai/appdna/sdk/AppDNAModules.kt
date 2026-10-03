@@ -35,7 +35,7 @@ import kotlin.coroutines.resume
 // MARK: - Module Namespaces (v1.0)
 // Provides `AppDNA.push.*`, `AppDNA.billing.*`, etc.
 
-// MARK: - Typed Data Classes (SPEC-041)
+// MARK: - Typed Data Classes
 
 /**
  * Push notification payload.
@@ -48,7 +48,7 @@ data class PushPayload(
     val data: Map<String, Any>? = null,
     val action: PushAction? = null,
     /**
-     * SPEC-070-B — every action button registered on this notification, in tray order.
+     * Every action button registered on this notification, in tray order.
      *
      * `action` above is only the notification's single primary action, so a push carrying three
      * buttons reached the host delegate looking identical to one carrying none. Hosts (and the
@@ -141,7 +141,7 @@ class PushModule internal constructor() {
     /** The host's push delegate, held independently of the manager so it survives configure / shutdown. */
     @Volatile
     private var heldDelegate: AppDNAPushDelegate? = null
-    // SPEC-070-A H.17: dropped duplicate `listener` field. The single source
+    // Dropped duplicate `listener` field. The single source
     // of truth is `PushTokenManager.pushListener`, which Phase B.1 wires from
     // [setDelegate]. Reading the delegate now goes through [delegate].
 
@@ -162,7 +162,7 @@ class PushModule internal constructor() {
     fun trackTapped(pushId: String, action: String? = null) = AppDNA.trackPushTapped(pushId, action)
 
     /**
-     * SPEC-070-A A.30 + H.4 — typed suspend permission request.
+     * Typed suspend permission request.
      *
      * On Android 13+ (`Build.VERSION_CODES.TIRAMISU` / API 33), requesting
      * `POST_NOTIFICATIONS` is a runtime permission and MUST be triggered from
@@ -220,7 +220,7 @@ class PushModule internal constructor() {
     }
 
     /**
-     * SPEC-070-A H.8: read accessor used by [AppDNAMessagingService] to fire
+     * Read accessor used by [AppDNAMessagingService] to fire
      * `onPushReceived` / `onPushTapped`. Returns the live delegate registered
      * via [setDelegate], or null when no host has registered one.
      */
@@ -424,7 +424,7 @@ class PushModule internal constructor() {
  * Billing module namespace.
  * Delegates to NativeBillingManager when available.
  *
- * SPEC-070-A A.29 / A.30 — public APIs are typed suspend functions returning
+ * Public APIs are typed suspend functions returning
  * concrete data classes (`TransactionInfo`, `ProductInfo`, `Entitlement`),
  * mirroring iOS `AppDNA.Billing` (AppDNA+Modules.swift). Java consumers get
  * `*Future` overloads via [kotlinx.coroutines.future.future].
@@ -477,14 +477,14 @@ class BillingModule internal constructor() {
     }
 
     /**
-     * SPEC-401 Fix 1D — silently refresh cached entitlement state.
+     * Silently refresh cached entitlement state.
      *
      * Calls into [NativeBillingManager.refreshEntitlementCache] which
      * re-reads the user's current entitlements via Play Billing
      * `BillingClient.queryPurchasesAsync` and primes the
      * [EntitlementCache] in place. Designed for two callers:
      *   1. [AppDNA.identify] — auto-refresh after host signs in a user
-     *      so the next paywall_trigger entitlement gate (Fix 1A)
+     *      so the next paywall_trigger entitlement gate
      *      reflects that user's subscriptions, not the previous
      *      anonymous user's empty entitlements.
      *   2. Hosts that complete auth out-of-band (SSO callbacks, deep
@@ -521,7 +521,7 @@ class BillingModule internal constructor() {
         scope.future { refreshEntitlementCache() }
 
     /**
-     * SPEC-070-A A.30 — typed suspend product fetch.
+     * Typed suspend product fetch.
      *
      * Returns `ProductInfo` data classes from [NativeBillingManager.getProducts].
      * Replaces the previous broken `scope.launch; return result` stub which
@@ -545,7 +545,7 @@ class BillingModule internal constructor() {
         scope.future { getProducts(productIds) }
 
     /**
-     * SPEC-070-A A.29 / A.30 — initiate a purchase flow.
+     * Initiate a purchase flow.
      *
      * Activity is now the FIRST parameter (required by Google Play Billing
      * `launchBillingFlow`). Mirrors iOS `BillingModule.purchase(productId:options:)`
@@ -599,7 +599,7 @@ class BillingModule internal constructor() {
                     // 🔴 THIS RETURNED THE EXPIRY AS THE PURCHASE DATE — a FUTURE date for a subscription,
                     // an empty string for a one-off. The `Entitlement` carries no purchase time, so the
                     // honest value is now.
-                    // Round-11 Finding 2 — emit epoch-MILLIS (String), NOT `Instant.now().toString()`
+                    // Emit epoch-MILLIS (String), NOT `Instant.now().toString()`
                     // (ISO). Every OTHER Android purchaseDate is epoch-millis (NativeBillingManager
                     // `purchaseTime.toString()`, RC/Adapty `System.currentTimeMillis().toString()`), and
                     // the RN wrapper passes this field through verbatim — so an ISO string here made the
@@ -626,7 +626,7 @@ class BillingModule internal constructor() {
         scope.future { purchase(activity, productId, options) }
 
     /**
-     * SPEC-070-A A.30 — typed suspend restore. Mirrors iOS
+     * Typed suspend restore. Mirrors iOS
      * `AppDNA+Modules.swift:88` `restorePurchases() async throws -> [String]`.
      * Returns the list of restored product IDs so hosts can show a confirmation
      * UI; the underlying [Entitlement] objects are still surfaced via
@@ -658,7 +658,7 @@ class BillingModule internal constructor() {
         scope.future { restorePurchases() }
 
     /**
-     * SPEC-070-A A.30 — typed suspend entitlements fetch.
+     * Typed suspend entitlements fetch.
      *
      * Returns the current cached active entitlements as `Entitlement`
      * data classes. Suspend so future implementations can refresh from
@@ -687,7 +687,7 @@ class BillingModule internal constructor() {
     }
 
     /**
-     * SPEC-070-B PN row 5 (E3): remove a callback registered by [onEntitlementsChanged].
+     * Remove a callback registered by [onEntitlementsChanged].
      * [EntitlementCache.removeChangeListener] has always existed but was never exposed, so a wrapper
      * that re-`configure()`s (a React Native reload does) accumulated listeners and delivered every
      * change N-fold.
@@ -745,7 +745,7 @@ class BillingModule internal constructor() {
     }
 
     /**
-     * SPEC-070-A H.24 — cancel the wrapper's coroutine scope so any pending
+     * Cancel the wrapper's coroutine scope so any pending
      * `purchaseFuture()` / `getProductsFuture()` / restore continuation is
      * surfaced as cancellation rather than leaking. The owning
      * [NativeBillingManager] is destroyed separately by [AppDNA.shutdown].
@@ -801,7 +801,7 @@ class PaywallModule internal constructor() {
     internal var listener: ai.appdna.sdk.paywalls.AppDNAPaywallDelegate? = null
 
     /**
-     * SPEC-401 Fix 1C — host opt-out for SDK auto-dismiss-on-restore-success.
+     * Host opt-out for SDK auto-dismiss-on-restore-success.
      *
      * When set to `true`, the next successful Restore tap on a presented
      * paywall will fire `onPaywallRestoreCompleted` to the delegate as
@@ -979,7 +979,7 @@ class InAppMessagesModule internal constructor() {
     @Volatile
     private var asyncShouldShowMessage: (suspend (String) -> Boolean)? = null
 
-    /** SPEC-070-A A.11: Temporarily suppress display. Forwards to MessageManager. */
+    /** Temporarily suppress display. Forwards to MessageManager. */
     fun suppressDisplay(suppress: Boolean) {
         AppDNA.messageManager?.suppressDisplay(suppress)
     }
@@ -997,7 +997,7 @@ class InAppMessagesModule internal constructor() {
     }
 
     /**
-     * SPEC-070-C D10 — set the OPTIONAL async `shouldShowMessage` wrapper-veto.
+     * Set the OPTIONAL async `shouldShowMessage` wrapper-veto.
      * Forwards to `MessageManager.asyncShouldShowMessage`, which awaits it (in
      * addition to the sync delegate veto) before presenting. Null clears it. Kept across `configure()`.
      */
@@ -1018,7 +1018,7 @@ class InAppMessagesModule internal constructor() {
 /**
  * Surveys module namespace.
  *
- * SPEC-070-A B.4 — `surveyListener` is `internal` (was private) so
+ * `surveyListener` is `internal` (was private) so
  * `SurveyManager` can fan out lifecycle callbacks to the host's registered
  * delegate. Mirrors the `BillingModule.billingListener` shape.
  */
@@ -1045,7 +1045,7 @@ class DeepLinksModule internal constructor() {
     internal var track: (String, Map<String, Any>) -> Unit = { name, props -> AppDNA.track(name, props) }
 
     /**
-     * SPEC-070-C D10 — OPTIONAL async `shouldOpen` wrapper-veto. This is a
+     * OPTIONAL async `shouldOpen` wrapper-veto. This is a
      * NET-NEW decision point (no native deep-link veto existed). When set (the
      * Flutter plugin), [handleURL] awaits it before dispatching the deep link;
      * a `false` reply skips processing entirely. Null for native hosts →
@@ -1054,7 +1054,7 @@ class DeepLinksModule internal constructor() {
     @Volatile
     var asyncShouldOpen: (suspend (String, Map<String, String>) -> Boolean)? = null
 
-    /** SPEC-070-C D10 — main-thread scope for awaiting the async veto. */
+    /** Main-thread scope for awaiting the async veto. */
     private val vetoScope = CoroutineScope(Dispatchers.Main.immediate + SupervisorJob())
 
     /**
@@ -1073,7 +1073,7 @@ class DeepLinksModule internal constructor() {
                     params[key] = value
                 }
             }
-            // SPEC-070-C D10 — NET-NEW async `shouldOpen` veto. When set, await
+            // NET-NEW async `shouldOpen` veto. When set, await
             // it before processing; a `false` reply skips onDeepLinkReceived +
             // the deep_link_handled event. When null, process synchronously.
             val asyncVeto = asyncShouldOpen
@@ -1113,14 +1113,14 @@ class ExperimentsModule internal constructor() {
     internal var manager: ExperimentManager? = null
 
     /**
-     * SPEC-070-A I.14 — Get the assigned variant id for an experiment, or
+     * Get the assigned variant id for an experiment, or
      * `null` if the user is not eligible.  Type matches iOS
      * `getVariant(experimentId:) -> String?`.
      */
     fun getVariant(experimentId: String): String? = manager?.getVariant(experimentId)
 
     /**
-     * SPEC-070-A I.15 — Get all active exposures as named [ai.appdna.sdk.config.ExposureEntry]
+     * Get all active exposures as named [ai.appdna.sdk.config.ExposureEntry]
      * tuples, matching iOS's `[(experimentId: String, variant: String)]` shape.
      */
     fun getExposures(): List<ai.appdna.sdk.config.ExposureEntry> =
@@ -1145,14 +1145,14 @@ data class OnboardingContext(
  */
 interface AppDNABillingDelegate {
     fun onPurchaseCompleted(productId: String, transaction: TransactionInfo) {}
-    // SPEC-070-A finalization §3.2 — widen `error` to `Throwable` so hosts
+    // Widen `error` to `Throwable` so hosts
     // can catch the new typed BillingError sealed class (also Throwable)
     // and Kotlin Errors. Mirrors iOS `error: Error` parity.
     fun onPurchaseFailed(productId: String, error: Throwable) {}
     fun onEntitlementsChanged(entitlements: List<Entitlement>) {}
     fun onRestoreCompleted(restoredProducts: List<String>) {}
     /**
-     * SPEC-070-A H.14 — fires once when [BillingConnectionManager] gives up
+     * Fires once when [BillingConnectionManager] gives up
      * after exhausting all reconnect slots (Play Services missing or
      * permanently broken). Hosts should hide paywalls / disable purchase UI
      * when this fires so users don't tap a dead button.
@@ -1187,7 +1187,7 @@ interface AppDNADeepLinkDelegate {
 }
 
 /**
- * SPEC-070-A H.20 — delegate for SDK init lifecycle events.
+ * Delegate for SDK init lifecycle events.
  *
  * Currently surfaces only [onInitDegraded], fired once when the SDK detects
  * a recoverable startup failure (missing `google-services-appdna.json`,
@@ -1209,7 +1209,7 @@ interface AppDNAInitDelegate {
 }
 
 /**
- * SPEC-070-B W13 — the recoverable init failures the SDK reports through
+ * The recoverable init failures the SDK reports through
  * [AppDNAInitDelegate.onInitDegraded] and [ai.appdna.sdk.AppDNA.lastInitError].
  *
  * Mirrors iOS `AppDNAInitError` (AppDNA+Delegates.swift:194) case for case, so a cross-platform host

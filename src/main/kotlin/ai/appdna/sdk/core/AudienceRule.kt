@@ -126,7 +126,7 @@ internal object AudienceRuleEvaluator {
                 val v = ConditionEvaluator.toDoubleOrNull(traitValue) ?: return false
                 var lo = ConditionEvaluator.toDoubleOrNull(rule.min)
                 var hi = ConditionEvaluator.toDoubleOrNull(rule.max)
-                // Round-32 — read a 2-element `value` list ONLY when NEITHER min nor max yields a
+                // Read a 2-element `value` list ONLY when NEITHER min nor max yields a
                 // number, so sibling min/max keys WIN when present. iOS AudienceRule.swift has this
                 // exact precedence; the old betweenBounds preferred the list unconditionally, so
                 // {min:18,max:65,value:[30,40]} used [30,40] on Android but [18,65] on iOS.
@@ -137,7 +137,7 @@ internal object AudienceRuleEvaluator {
                         hi = ConditionEvaluator.toDoubleOrNull(list[1])
                     }
                 }
-                // Round-31 — allow a ONE-SIDED bound (e.g. {min:18} with no max); iOS checks only
+                // Allow a ONE-SIDED bound (e.g. {min:18} with no max); iOS checks only
                 // the present bound. Inclusive on both ends.
                 when {
                     lo == null && hi == null -> false

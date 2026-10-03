@@ -14,7 +14,7 @@ import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 
 /**
- * SPEC-070-A A.8 — SessionManager unit tests.
+ * SessionManager unit tests.
  *
  * Covers:
  *  - Fresh-install cold start emits a brand-new session id and increments
@@ -76,7 +76,7 @@ class SessionManagerTest {
         sm.start()
         val firstId = sm.currentSessionId()
 
-        // A real return-to-foreground is always preceded by a background (Round-33 gate: the
+        // A real return-to-foreground is always preceded by a background (gate: the
         // first foreground before any background is a cold-launch no-op). Background, re-seed
         // the sub-threshold gap, then foreground — same session, no rotation.
         sm.handleBackground()
@@ -101,7 +101,7 @@ class SessionManagerTest {
         val rotatedId = sm.currentSessionId()
         assertEquals(8L, sm.sessionsThisInstall())
 
-        // Real return: background first (Round-33 gate), then a >30 min idle gap, then foreground.
+        // Real return: background first, then a >30 min idle gap, then foreground.
         sm.handleBackground()
         val stale2 = System.currentTimeMillis() - (31L * 60L * 1000L)
         dataStore.setSessionData(SessionManager.KEY_LAST_ACTIVE_AT, stale2)
@@ -125,7 +125,7 @@ class SessionManagerTest {
 
         // The initial cold-launch foreground (no prior background) must be swallowed — otherwise
         // it re-reads the still-stale lastActiveAt and rotates a SECOND time, doubling the counter
-        // and firing a phantom session_end + cold-launch app_open (Round-32/33 regression guard).
+        // and firing a phantom session_end + cold-launch app_open (regression guard).
         sm.handleForeground()
         assertEquals("initial foreground must NOT rotate again", 8L, sm.sessionsThisInstall())
         assertEquals("session id must not change on the cold-launch foreground", coldId, sm.currentSessionId())

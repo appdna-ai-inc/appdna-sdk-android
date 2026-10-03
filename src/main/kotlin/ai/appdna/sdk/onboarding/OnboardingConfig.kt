@@ -13,7 +13,7 @@ import kotlinx.collections.immutable.toImmutableList
  * Firestore schema types for onboarding flows (Android).
  * Mirrors the iOS OnboardingConfig.swift.
  *
- * SPEC-070-A J.10 + J.22 — Compose stability:
+ * Compose stability:
  *   These config DTOs are hot-path Compose parameters threaded into
  *   OnboardingFlowHost / FormStepComposable / ContentBlockRenderer.
  *   They're annotated `@Immutable` (or `@Stable` for the few that still hold
@@ -27,12 +27,12 @@ import kotlinx.collections.immutable.toImmutableList
 /**
  * A single onboarding flow definition.
  *
- * SPEC-070-A A.5: `@Keep` so R8/minify cannot strip getters used by
+ * `@Keep` so R8/minify cannot strip getters used by
  * reflective `fromMap`-style parsing in [OnboardingConfigParser].
  */
-// SPEC-070-A J.10 — @Stable rather than @Immutable: graph_layout / graph_nodes
+// @Stable rather than @Immutable: graph_layout / graph_nodes
 // are passthrough JSON bags from Firestore (Map<String, Any?>) that we don't
-// migrate (per SPEC-070-A J.22 EXCLUDE rule for raw JSON parsing maps), and
+// migrate (EXCLUDE rule for raw JSON parsing maps), and
 // audience_rules is `Any?` (untyped passthrough). Steps IS migrated to
 // ImmutableList<OnboardingStep> so the hot-path step list is Compose-stable.
 @Stable
@@ -43,7 +43,7 @@ data class OnboardingFlowConfig(
     val version: Int,
     val steps: ImmutableList<OnboardingStep>,
     val settings: OnboardingSettings,
-    // SPEC-070-A F.1: top-level fields mirroring iOS OnboardingFlowConfig
+    // Top-level fields mirroring iOS OnboardingFlowConfig
     val status: String? = null,
     val graph_layout: Map<String, Any?>? = null,
     /**
@@ -62,7 +62,7 @@ data class OnboardingFlowConfig(
 /**
  * Flow-level settings.
  *
- * SPEC-070-A A.5: `@Keep` so R8/minify cannot strip getters used by reflection
+ * `@Keep` so R8/minify cannot strip getters used by reflection
  * via [OnboardingConfigParser].
  */
 @Immutable
@@ -71,7 +71,7 @@ data class BackButtonStyle(
     val icon_size: Double? = null,
     val icon_color: String? = null,
     val position: String? = null,  // "left" | "right"
-    // EPIC-2 — custom back glyph (any char, default "←") + back-arrow⇄X switch
+    // Custom back glyph (any char, default "←") + back-arrow⇄X switch
     // (close_on_first: show the dismiss "✕" in the leading slot on the first/no-history step).
     val icon: String? = null,
     val close_on_first: Boolean? = null,
@@ -83,21 +83,21 @@ data class OnboardingSettings(
     val show_progress: Boolean = true,
     val allow_back: Boolean = true,
     val skip_to_step: String? = null,
-    // SPEC-085: Rich media config
+    // Rich media config
     val haptic: HapticConfig? = null,
     val particle_effect: ParticleEffect? = null,
     // Gap 9: Custom progress bar colors
     val progress_color: String? = null,
     val progress_track_color: String? = null,
-    // EPIC-2 — thin sizing (custom height; the Material bar floored ~4dp) + multiple colors at once.
+    // Thin sizing (custom height; the Material bar floored ~4dp) + multiple colors at once.
     val progress_height: Double? = null,
     val progress_gradient_colors: List<String>? = null,
-    // EPIC-2 — optional "Skip" link rendered beside the progress bar.
+    // Optional "Skip" link rendered beside the progress bar.
     val progress_skip_label: String? = null,
-    // EPIC-2 — dynamic color flash on step-advance ("success" pulse): the progress fill briefly
+    // Dynamic color flash on step-advance ("success" pulse): the progress fill briefly
     // animates to this color on each advance, then back to the normal fill.
     val progress_flash_color: String? = null,
-    // SPEC-070-A F.1: progress style + back button + content padding (iOS parity)
+    // Progress style + back button + content padding (iOS parity)
     val progress_style: String? = null,  // "dots" | "segmented_bar" | "continuous_bar" | "fraction" | "none"
     val back_button_style: BackButtonStyle? = null,
     val dismiss_allowed: Boolean? = null,
@@ -110,7 +110,7 @@ data class OnboardingSettings(
 /**
  * A single step within a flow.
  *
- * SPEC-070-A A.21: matches iOS `NextStepRule` shape — supports both the
+ * Matches iOS `NextStepRule` shape — supports both the
  * legacy single-`condition` field AND the multi-`conditions` array with
  * AND/OR `logic` composition. Mirrors `OnboardingConfig.swift:122-127`.
  *
@@ -119,7 +119,7 @@ data class OnboardingSettings(
  *   2. Else if `condition` is non-null → wrap as a 1-element list.
  *   3. Else → treat as `always` (rule matches unconditionally).
  */
-// SPEC-070-A J.10 — @Stable: `condition: Any?` and `conditions: List<Map<String, Any?>>`
+// @Stable: `condition: Any?` and `conditions: List<Map<String, Any?>>`
 // are passthrough condition expressions evaluated at runtime; the inner Map is the
 // exception listed in J.22 EXCLUDE (raw JSON parsing map — we don't deep-migrate
 // the per-condition map). The OUTER list IS migrated to ImmutableList so Compose
@@ -153,7 +153,7 @@ data class OnboardingStep(
      */
     val name: String? = null,
     /**
-     * SPEC-496 §A1 — the step's content blocks exactly as published (the same ladder the typed
+     * The step's content blocks exactly as published (the same ladder the typed
      * decode reads), deep-copied once at parse, id-stamped (`<stepId>/<index path>`) and with
      * SDK-internal markers stripped. The raw host-data pass resolves THESE before typed decode, so
      * `data_templates`, `repeat` and tokens in typed slots survive. Null for a step built in code →
@@ -168,7 +168,7 @@ data class OnboardingStep(
         CUSTOM("custom"),
         FORM("form"),
         INTERACTIVE_CHAT("interactive_chat"),
-        // SPEC-401-A — `info` and `permission` are author-friendly step
+        // `info` and `permission` are author-friendly step
         // types declared in `flow.schema.ts STEP_TYPES`. iOS routes both
         // through CustomStepView (OnboardingRenderer.swift:1497). Adding
         // explicit cases here lets Android dispatch route them through
@@ -186,7 +186,7 @@ data class OnboardingStep(
 }
 
 /**
- * SPEC-496 §A1 — the raw step JSON side table carried on [OnboardingStep].
+ * The raw step JSON side table carried on [OnboardingStep].
  *
  * NOT a data class on purpose: equality is IDENTITY. A deep compare of every block map in
  * `equals`/`hashCode` would run on every recomposition, and Compose only needs to know whether the
@@ -202,8 +202,8 @@ class RawContentBlocks internal constructor(
 /**
  * Step configuration -- varies by step type.
  *
- * SPEC-070-A J.10 — @Stable rather than @Immutable: `layout`, `field_defaults`
- * and `localizations` are JSON passthrough Map fields (per J.22 EXCLUDE rule).
+ * @Stable rather than @Immutable: `layout`, `field_defaults`
+ * and `localizations` are JSON passthrough Map fields (EXCLUDE rule).
  * Compose-stable iterables (options/items/fields/content_blocks/next_step_rules)
  * are migrated to ImmutableList<T> below so a re-emit with structurally-equal
  * lists doesn't trigger downstream recomposition.
@@ -228,18 +228,18 @@ data class StepConfig(
     // J.22 EXCLUDE: passthrough JSON map from `step.config.layout` — left raw.
     val layout: Map<String, Any>? = null,
 
-    // form (SPEC-082)
+    // form
     val fields: ImmutableList<FormField>? = null,
     val validation_mode: String? = null,  // "on_submit" or "realtime"
 
-    // SPEC-083: Populated by applyOverrides from StepConfigOverride.fieldDefaults
+    // Populated by applyOverrides from StepConfigOverride.fieldDefaults
     // J.22 EXCLUDE: caller-provided defaults bag — left raw.
     val field_defaults: Map<String, Any>? = null,
 
-    // SPEC-090: Interactive chat
+    // Interactive chat
     val chat_config: ChatConfig? = null,
 
-    // SPEC-084: Rendering fidelity
+    // Rendering fidelity
     val content_blocks: ImmutableList<ContentBlock>? = null,
     val layout_variant: String? = null,  // image_top, image_bottom, image_fullscreen, image_split, no_image
     val background: ai.appdna.sdk.core.BackgroundStyleConfig? = null,
@@ -250,7 +250,7 @@ data class StepConfig(
     val localizations: Map<String, Map<String, String>>? = null,
     val default_locale: String? = null,
 
-    // SPEC-070-A audit Round 2-restart attempt 2 F1+F2:
+    // Restart attempt 2 F1+F2:
     // (F1) layout-level `next_step_rules` so the editor's Logic panel can
     //      author rules under `step.config.next_step_rules` (mirroring iOS
     //      OnboardingRenderer.swift:761-766 where layout rules are preferred
@@ -260,7 +260,7 @@ data class StepConfig(
     val next_step_rules: ImmutableList<NextStepRule>? = null,
     val progress_color: String? = null,
 
-    // SPEC-421 — permission-step contract. The console serializer writes these at the
+    // Permission-step contract. The console serializer writes these at the
     // step-content TOP LEVEL (siblings of `content_blocks`), NOT under the inner `layout`
     // sub-map. Previously only read from `layout[...]` → resolved null → every authored
     // permission step emitted `permission_unavailable` and advanced without prompting.
@@ -277,7 +277,7 @@ data class QuestionOption(
     val label: String,
     val icon: String? = null,
     /**
-     * SPEC-070-A finalization parity audit R2 — per-option caption text
+     * Per-option caption text
      * shown below the label. Mirrors iOS `QuestionOption.subtitle`
      * (OnboardingConfig.swift:340-345) and the QuestionStepView
      * renderer at `QuestionStepView.swift:136-142` which renders this
@@ -304,12 +304,12 @@ data class ValuePropItem(
     val subtitle: String
 )
 
-// MARK: - Form Field Types (SPEC-082)
+// MARK: - Form Field Types
 
 enum class FormFieldType(val value: String) {
     TEXT("text"), TEXTAREA("textarea"), NUMBER("number"),
     EMAIL("email"), PHONE("phone"),
-    // SPEC-401-A: missing field types added — schema in
+    // Missing field types added — schema in
     // `flow.schema.ts FORM_FIELD_TYPES` lists all 22; these were
     // previously unimplemented in the Android SDK so configs that
     // referenced them silently fell back to TEXT (silent breakage).
@@ -429,47 +429,47 @@ data class FormFieldConfig(
     val multi_select: Boolean? = null,
     val max_selections: Int? = null,
     val default_value: Any? = null,
-    // Location (SPEC-089)
+    // Location
     val location_type: String? = null,
     val location_bias_country: String? = null,
     val location_language: String? = null,
     val location_placeholder: String? = null,
     val location_min_chars: Int? = null,
-    // SPEC-401-A R68 (Lens A P2) — opt-out for the prefix location pin.
+    // Opt-out for the prefix location pin.
     // iOS LocationFieldView reads `field_config["show_prefix_icon"]`
     // (default true). Some flows want to hide the pin in dark/minimalist
     // designs.
     val show_prefix_icon: Boolean? = null,
-    // SPEC-401-A R68 (Lens A P2) — caption + icon shown below the field
+    // Caption + icon shown below the field
     // (e.g. select_grid hint "tap multiple to choose"). iOS
     // FormInputBlockViews.swift:769-770 reads from `field_config`.
     val tooltip_text: String? = null,
     val tooltip_icon: String? = null,
-    // SPEC-401-A: rating
+    // Rating
     val max_stars: Int? = null,
     val allow_half: Boolean? = null,
     val star_size: Int? = null,
     val filled_color: String? = null,
     val empty_color: String? = null,
-    // SPEC-401-A: range_slider
+    // range_slider
     val min_label: String? = null,
     val max_label: String? = null,
-    // SPEC-401-A: image_picker
+    // image_picker
     val max_size_mb: Double? = null,
     val allowed_types: String? = null, // "photo" | "camera" | "both"
     val aspect_ratio: String? = null, // e.g. "1:1", "4:3", "16:9", or "free"
     val placeholder_text: String? = null,
-    // SPEC-401-A: color picker
+    // Color picker
     val default_color: String? = null,
     val show_opacity: Boolean? = null,
     val preset_colors: List<String>? = null,
-    // SPEC-401-A: url validation
+    // Url validation
     val validate_format: Boolean? = null,
-    // SPEC-401-A: multiline_chips
+    // multiline_chips
     val max_chips: Int? = null,
     val suggestions: List<String>? = null,
     val allow_custom: Boolean? = null,
-    // SPEC-401-A: signature
+    // Signature
     val stroke_color: String? = null,
     val stroke_width: Double? = null,
     val clear_button_text: String? = null
@@ -477,7 +477,7 @@ data class FormFieldConfig(
 
 @Immutable
 /**
- * SPEC-401-A — per-field style envelope (mirrors `FormFieldStyleSchema`
+ * Per-field style envelope (mirrors `FormFieldStyleSchema`
  * in `flow.schema.ts:101-109`). Authors set these in the console; the
  * renderer applies them to Material3 widgets where applicable:
  *   - `corner_radius` → `OutlinedTextField` shape, button corners
@@ -525,7 +525,7 @@ data class FormField(
     val style: FormFieldStyle? = null,
 )
 
-// MARK: - Async Step Hook Types (SPEC-083)
+// MARK: - Async Step Hook Types
 
 /**
  * Result of the async step hook called before advancing.
@@ -544,7 +544,7 @@ sealed class StepAdvanceResult {
     data class SkipTo(val stepId: String, val data: Map<String, Any>? = null) : StepAdvanceResult()
 
     /**
-     * SPEC-070-A C.8 — port of iOS v1.0.60 SPEC-083 amendment
+     * Port of iOS v1.0.60
      * `OnboardingConfig.swift:485 case stay(message: String? = nil)`.
      *
      * Stay on the current step optionally surfacing a success/info message.
@@ -622,7 +622,7 @@ data class StepConfigOverride(
     val subtitle: String? = null,
     val ctaText: String? = null,
     /**
-     * SPEC-448 §B — options supplied by the HOST APP, keyed by block id.
+     * Options supplied by the HOST APP, keyed by block id.
      *
      * The app reads its own backend with its own client, auth and cache and hands the list over.
      * No network, no credentials and no retry semantics inside this SDK — which is the point: a
@@ -638,7 +638,7 @@ data class StepConfigOverride(
      */
     val fieldOptions: Map<String, List<InputOption>>? = null,
     /**
-     * SPEC-452 — the host's data for THIS step, addressable from the console as `{{hook_data.…}}`.
+     * The host's data for THIS step, addressable from the console as `{{hook_data.…}}`.
      *
      * Not another override: nothing here replaces a field. It is a read-only namespace the
      * renderer's existing resolver reads, so the AUTHOR decides what is dynamic (by typing
@@ -657,7 +657,7 @@ data class StepConfigOverride(
      */
     val dataContext: Map<String, Any>? = null,
     /**
-     * SPEC-451 — the route a `map` block draws, supplied by the HOST APP, keyed by block id.
+     * The route a `map` block draws, supplied by the HOST APP, keyed by block id.
      *
      * The third and last route source, and the only one that can answer "where is this delivery
      * right now": authored stops are fixed at publish time and a template variable can only carry
@@ -675,7 +675,7 @@ data class StepConfigOverride(
 ) {
     companion object {
         /**
-         * SPEC-448 §B — the one public way to turn a wrapper bridge's raw
+         * The one public way to turn a wrapper bridge's raw
          * `[blockId: [option maps]]` into typed options.
          *
          * It lives HERE, in the core, rather than in each wrapper. `OnboardingConfigParser` is
@@ -701,7 +701,7 @@ data class StepConfigOverride(
         }
 
         /**
-         * SPEC-451 — the one public way to turn a wrapper bridge's raw
+         * The one public way to turn a wrapper bridge's raw
          * `[blockId: {polyline, stops}]` into typed route overrides.
          *
          * It lives HERE, in the core, for the same reason `decodeFieldOptions` does:
@@ -737,7 +737,7 @@ data class StepConfigOverride(
 }
 
 /**
- * SPEC-451 — a route handed to a `map` block at runtime.
+ * A route handed to a `map` block at runtime.
  *
  * `polyline` is Google's encoded-polyline format, which is what every routing service returns and
  * what Mapbox's `path` overlay takes. Supplying it draws the real road geometry; supplying only
@@ -756,7 +756,7 @@ data class MapRouteStop(
     val title: String? = null,
 )
 
-// MARK: - Step Hook Config (SPEC-083 P1)
+// MARK: - Step Hook Config
 
 /**
  * Server-side webhook configuration for a step.
@@ -775,7 +775,7 @@ data class StepHookConfig(
  * Delegate for receiving onboarding flow lifecycle events.
  */
 /** Result of [AppDNAOnboardingDelegate.onElementInteraction] — lets the host push state back into the live
- * step from its backend (SPEC-419 EPIC-11 — backend-interactive elements; e.g. a calendar day tap → backend
+ * step from its backend (backend-interactive elements; e.g. a calendar day tap → backend
  * confirms → update the rendered element without leaving the step). */
 data class ElementInteractionResult @JvmOverloads constructor(
     /** Per-block `field_config` patches to merge + re-render. Keyed by blockId -> (key -> value). */
@@ -794,7 +794,7 @@ data class ElementInteractionResult @JvmOverloads constructor(
     /** When true, advance to the next step after handling this interaction. */
     val advance: Boolean = false,
     /**
-     * SPEC-496 §5b C2 — data merged into this step's `{{hook_data.…}}`, shallow, per TOP-LEVEL key:
+     * Data merged into this step's `{{hook_data.…}}`, shallow, per TOP-LEVEL key:
      * a key named here replaces that key's value whole; a `null` value (Kotlin `null` or
      * `JSONObject.NULL`) REMOVES the key; keys not named are untouched. `null` / `{}` changes nothing.
      *
@@ -808,7 +808,7 @@ data class ElementInteractionResult @JvmOverloads constructor(
     val dataContext: Map<String, Any?>? = null,
 ) {
     /**
-     * SPEC-496 §5b C4.1 — the pre-#657 Java constructor `(Map, Map, boolean)`. #657 inserted
+     * The pre-#657 Java constructor `(Map, Map, boolean)`. #657 inserted
      * `fieldOptions` BEFORE `advance`, so no `@JvmOverloads` overload has this parameter order; without
      * this, a Java host written against 1.0.50 stops compiling.
      */
@@ -822,11 +822,11 @@ data class ElementInteractionResult @JvmOverloads constructor(
         /** The interaction action a `refresh_step` button fires. */
         const val REFRESH_ACTION: String = "refresh"
 
-        /** §5b C5.5 — the SDK deadline of a `refresh` call (the ceiling §D allows for host data). */
+        /** The SDK deadline of a `refresh` call (the ceiling for host data). */
         const val REFRESH_TIMEOUT_MS: Long = 8_000L
 
         /**
-         * SPEC-496 §5b C5.5 — the least a wrapper bridge must wait for the host's answer to an
+         * The least a wrapper bridge must wait for the host's answer to an
          * `onElementInteraction` call with [action], or null when the bridge keeps its own timeout.
          * Each bridge applies it in one line — `max(configured, this ?: 0)` — so no bridge carries its
          * own rule (ADR-001): 8000 for `"refresh"`, null otherwise.
@@ -836,7 +836,7 @@ data class ElementInteractionResult @JvmOverloads constructor(
             if (action == REFRESH_ACTION) REFRESH_TIMEOUT_MS else null
 
         /**
-         * SPEC-496 §5b C2 — the ONE decoder for a host's `dataContext`, used by every wrapper bridge
+         * The ONE decoder for a host's `dataContext`, used by every wrapper bridge
          * (one-line forward) and by the core before the value is written, whoever built it.
          *
          * - a non-map input → null;
@@ -891,7 +891,7 @@ data class ElementInteractionResult @JvmOverloads constructor(
 data class AppliedInteraction @JvmOverloads constructor(
     /**
      * The tap-time `inputValues` snapshot with `inputValuePatches` merged over it. Kept for
-     * compatibility; since SPEC-496 §5b C4.1 the renderers apply [inputValuePatches] onto the LIVE
+     * compatibility; since an earlier fix the renderers apply [inputValuePatches] onto the LIVE
      * answers instead, so a pick made while the call was in flight is not reverted.
      */
     val inputValues: Map<String, Any>,
@@ -899,13 +899,13 @@ data class AppliedInteraction @JvmOverloads constructor(
     /** #657 — per-block replacement options the renderer layers at read time. */
     val fieldOptionsOverrides: Map<String, List<InputOption>> = emptyMap(),
     val advance: Boolean,
-    /** SPEC-496 §5b C4.1 — the raw `result.inputValuePatches`, passed through. */
+    /** The raw `result.inputValuePatches`, passed through. */
     val inputValuePatches: Map<String, Any>? = null,
-    /** SPEC-496 §5b C2 — the raw `result.dataContext`, passed through unchanged. */
+    /** The raw `result.dataContext`, passed through unchanged. */
     val dataContext: Map<String, Any?>? = null,
 )
 
-/** SPEC-419 EPIC-11 — pure application of an [ElementInteractionResult] to a step's live state. Merges
+/** Pure application of an [ElementInteractionResult] to a step's live state. Merges
  * `inputValuePatches` over [inputValues] and exposes per-block `fieldConfigPatches` as overrides the renderer
  * layers at READ TIME (ContentBlock is immutable on iOS — both platforms use a read-time override layer for
  * parity). The caller acts on [AppliedInteraction.advance]. Pure + unit-tested. */
@@ -923,7 +923,7 @@ fun applyInteractionResult(result: ElementInteractionResult, inputValues: Map<St
 }
 
 /**
- * SPEC-421 — optional host override for an onboarding permission step. Returned from
+ * Optional host override for an onboarding permission step. Returned from
  * [AppDNAOnboardingDelegate.onPermissionRequest]. [HandledByHost] means the host already resolved the
  * permission (or wants to inject a result) — the SDK writes the result + emits analytics uniformly and
  * does NOT show the OS prompt. [Proceed] (or `null`) lets the SDK run the native OS flow.
@@ -940,7 +940,7 @@ interface AppDNAOnboardingDelegate {
     fun onOnboardingCompleted(flowId: String, responses: Map<String, Any>) {}
     fun onOnboardingDismissed(flowId: String, atStep: Int) {}
 
-    // SPEC-083: Async hook called BEFORE advancing from a step.
+    // Async hook called BEFORE advancing from a step.
     suspend fun onBeforeStepAdvance(
         flowId: String,
         fromStepId: String,
@@ -950,7 +950,7 @@ interface AppDNAOnboardingDelegate {
         stepData: Map<String, Any>?
     ): StepAdvanceResult = StepAdvanceResult.Proceed
 
-    // SPEC-083: Optional hook to modify step config before rendering.
+    // Optional hook to modify step config before rendering.
     suspend fun onBeforeStepRender(
         flowId: String,
         stepId: String,
@@ -959,7 +959,7 @@ interface AppDNAOnboardingDelegate {
         responses: Map<String, Any>
     ): StepConfigOverride? = null
 
-    // SPEC-419 EPIC-11: Async hook fired DURING render when an interactive element acts (calendar day tap,
+    // Async hook fired DURING render when an interactive element acts (calendar day tap,
     // otp digit, memory flip, dark-mode toggle, health connect…). Return a result to push backend state into
     // the live step. blockId/action/value identify the interaction; inputValues is the live snapshot.
     suspend fun onElementInteraction(
@@ -971,7 +971,7 @@ interface AppDNAOnboardingDelegate {
         inputValues: Map<String, Any>,
     ): ElementInteractionResult? = null
 
-    // SPEC-421: Runtime permission hooks for onboarding permission steps.
+    // Runtime permission hooks for onboarding permission steps.
     // Optional pre-hook — return PermissionHandling.HandledByHost(granted) to short-circuit the OS
     // prompt, or PermissionHandling.Proceed/null to let the SDK run the native flow.
     suspend fun onPermissionRequest(permissionType: String): PermissionHandling? = null
@@ -1013,12 +1013,12 @@ internal object OnboardingConfigParser {
     @Suppress("UNCHECKED_CAST")
     private fun parseFlowConfig(id: String, map: Map<String, Any>): OnboardingFlowConfig {
         val stepsList = map["steps"] as? List<Map<String, Any>> ?: emptyList()
-        // SPEC-070-A J.22 — wrap as ImmutableList so the @Stable
+        // Wrap as ImmutableList so the @Stable
         // OnboardingFlowConfig contract holds (Compose stability inference).
         val steps = stepsList.map { parseStep(it) }.toImmutableList()
 
         val settingsMap = map["settings"] as? Map<String, Any> ?: emptyMap()
-        // SPEC-085: Parse haptic config
+        // Parse haptic config
         val hapticMap = settingsMap["haptic"] as? Map<String, Any>
         val haptic = hapticMap?.let { h ->
             val triggersMap = h["triggers"] as? Map<String, Any>
@@ -1037,7 +1037,7 @@ internal object OnboardingConfigParser {
                 } ?: HapticTriggers(),
             )
         }
-        // SPEC-085: Parse particle effect config
+        // Parse particle effect config
         val particleMap = settingsMap["particle_effect"] as? Map<String, Any>
         val particleEffect = particleMap?.let { p ->
             ParticleEffect(
@@ -1048,7 +1048,7 @@ internal object OnboardingConfigParser {
                 colors = (p["colors"] as? List<*>)?.filterIsInstance<String>(),
             )
         }
-        // SPEC-070-A F.1: parse back_button_style + content_padding + block_spacing
+        // Parse back_button_style + content_padding + block_spacing
         val backBtnMap = settingsMap["back_button_style"] as? Map<String, Any>
         val backButtonStyle = backBtnMap?.let { b ->
             BackButtonStyle(
@@ -1079,7 +1079,7 @@ internal object OnboardingConfigParser {
             block_spacing = (settingsMap["block_spacing"] as? Number)?.toDouble(),
         )
 
-        // SPEC-070-A F.1: top-level flow fields (status / graph_layout / graph_nodes / audience_rules)
+        // Top-level flow fields (status / graph_layout / graph_nodes / audience_rules)
         @Suppress("UNCHECKED_CAST")
         val graphLayout = map["graph_layout"] as? Map<String, Any?>
         @Suppress("UNCHECKED_CAST")
@@ -1109,7 +1109,7 @@ internal object OnboardingConfigParser {
             ?: (map["layout"] as? Map<String, Any>)
             ?: emptyMap()
 
-        // SPEC-070-A J.22 — ImmutableList wraps for Compose-stable iteration.
+        // ImmutableList wraps for Compose-stable iteration.
         val options = (configMap["options"] as? List<*>)?.mapNotNull { opt ->
             if (opt is Map<*, *>) {
                 val optMap = opt as Map<String, Any>
@@ -1117,7 +1117,7 @@ internal object OnboardingConfigParser {
                     id = optMap["id"] as? String ?: "",
                     label = optMap["label"] as? String ?: "",
                     icon = optMap["icon"] as? String,
-                    // SPEC-070-A finalization parity audit R2 — per-option subtitle.
+                    // Per-option subtitle.
                     subtitle = optMap["subtitle"] as? String,
                 )
             } else null
@@ -1141,7 +1141,7 @@ internal object OnboardingConfigParser {
         val fields = (configMap["fields"] as? List<*>)?.mapNotNull { f ->
             if (f is Map<*, *>) {
                 val fm = f as Map<String, Any>
-                // SPEC-070-A J.22 — wrap form-field options as ImmutableList.
+                // Wrap form-field options as ImmutableList.
                 val fieldOptions = (fm["options"] as? List<*>)?.mapNotNull { o ->
                     if (o is Map<*, *>) {
                         val om = o as Map<String, Any>
@@ -1155,7 +1155,7 @@ internal object OnboardingConfigParser {
                 }?.toImmutableList()
                 val fieldConfigMap = fm["config"] as? Map<String, Any>
                 val fieldConfig = fieldConfigMap?.let { fc ->
-                    // SPEC-401-A R41 — same shape of parser drift R36/R37
+                    // Same shape of parser drift R36/R37
                     // closed for ContentBlock + R40 closed for nested
                     // children, but for the FormField envelope's `config`
                     // sub-map. Was reading 21 of 47 declared fields → every
@@ -1185,18 +1185,18 @@ internal object OnboardingConfigParser {
                         multi_select = fc["multi_select"] as? Boolean,
                         max_selections = (fc["max_selections"] as? Number)?.toInt(),
                         default_value = fc["default_value"],
-                        // Location (SPEC-089)
+                        // Location
                         location_type = fc["location_type"] as? String,
                         location_bias_country = fc["location_bias_country"] as? String,
                         location_language = fc["location_language"] as? String,
                         location_placeholder = fc["location_placeholder"] as? String,
                         location_min_chars = (fc["location_min_chars"] as? Number)?.toInt(),
-                        // SPEC-401-A R68 (Lens A P2) — show_prefix_icon +
+                        // show_prefix_icon +
                         // tooltip_text/tooltip_icon parsed from field_config.
                         show_prefix_icon = fc["show_prefix_icon"] as? Boolean,
                         tooltip_text = fc["tooltip_text"] as? String,
                         tooltip_icon = fc["tooltip_icon"] as? String,
-                        // SPEC-401-A R41 — rating
+                        // Rating
                         max_stars = (fc["max_stars"] as? Number)?.toInt(),
                         allow_half = fc["allow_half"] as? Boolean,
                         star_size = (fc["star_size"] as? Number)?.toInt(),
@@ -1241,7 +1241,7 @@ internal object OnboardingConfigParser {
                         value = d["value"]
                     )
                 }
-                // SPEC-401-A — parse the per-field `style` envelope from the
+                // Parse the per-field `style` envelope from the
                 // schema's `FormFieldStyleSchema`. Renderer reads it for
                 // toggle track tint, OutlinedTextField border colors, and
                 // corner radius.
@@ -1259,7 +1259,7 @@ internal object OnboardingConfigParser {
                     )
                 }
                 FormField(
-                    // SPEC-401-A R43 — match iOS OnboardingConfig.swift:508
+                    // Match iOS OnboardingConfig.swift:508
                     // `self.id = decodeIfPresent(.id) ?? UUID().uuidString`.
                     // Was empty-string fallback → id-less fields shared
                     // `inputValues[fieldId]` collisions in responses payload.
@@ -1279,11 +1279,11 @@ internal object OnboardingConfigParser {
             } else null
         }?.toImmutableList()
 
-        // SPEC-084: Parse content blocks (fallback to step-level content_blocks if not in configMap)
+        // Parse content blocks (fallback to step-level content_blocks if not in configMap)
         @Suppress("UNCHECKED_CAST")
         val publishedContentBlocks = (configMap["content_blocks"] as? List<*>)
             ?: (map["content_blocks"] as? List<*>)
-        // SPEC-496 §A1 — capture the raw ladder ONCE: a deep copy (the maps are shared with the
+        // Capture the raw ladder ONCE: a deep copy (the maps are shared with the
         // config cache), every id-less block at any depth stamped `<stepId>/<index path>`, authored
         // SDK-internal markers stripped. The typed blocks below are decoded from THIS copy, so
         // authored readers (secret ids, prefetch) and the resolved blocks agree on every id.
@@ -1292,11 +1292,11 @@ internal object OnboardingConfigParser {
         val contentBlocks = rawContentBlocks?.mapNotNull { b ->
             if (b is Map<*, *>) {
                 val bm = b as Map<String, Any>
-                // SPEC-401-A R40 P0 — body extracted into `decodeContentBlock`
+                // Body extracted into `decodeContentBlock`
                 // (defined alongside `parseChildBlocks` further below) so
                 // nested children inside row/stack containers (parsed by
                 // `parseChildBlocks`) take the SAME ~150-field decode path.
-                // Until R40, parseChildBlocks only populated ~25 fields,
+                // Until an earlier fix, parseChildBlocks only populated ~25 fields,
                 // silently shadowing every R3-R39 renderer fix for content
                 // nested inside a container. iOS gets full parity
                 // automatically because ContentBlock is Codable; Android
@@ -1305,7 +1305,7 @@ internal object OnboardingConfigParser {
             } else null
         }?.toImmutableList()
 
-        // SPEC-084: Parse background config
+        // Parse background config
         @Suppress("UNCHECKED_CAST")
         val bgMap = configMap["background"] as? Map<String, Any>
         val background = bgMap?.let { bg ->
@@ -1325,10 +1325,10 @@ internal object OnboardingConfigParser {
                 type = bg["type"] as? String, color = bg["color"] as? String,
                 gradient = gradient, image_url = bg["image_url"] as? String,
                 image_fit = bg["image_fit"] as? String, overlay = bg["overlay"] as? String,
-                // SPEC-401-A R36 — R15 + R35 fixes shadowed because parser
+                // R15 + R35 fixes shadowed because parser
                 // never read these. overlay_opacity drives the dim layer over
                 // image/lottie/rive backgrounds; lottie_url + animation_loop
-                // wire R15's full-screen Lottie branch; rive_url wires R35's
+                // wire the full-screen Lottie branch; rive_url wires the
                 // full-screen Rive branch. Without these parsed, the
                 // canonical iOS-style background payload silently rendered as
                 // theme default.
@@ -1339,7 +1339,7 @@ internal object OnboardingConfigParser {
             )
         }
 
-        // SPEC-084: Parse animation config
+        // Parse animation config
         @Suppress("UNCHECKED_CAST")
         val animMap = configMap["animation"] as? Map<String, Any>
         val animConfig = animMap?.let { a ->
@@ -1354,11 +1354,11 @@ internal object OnboardingConfigParser {
             )
         }
 
-        // SPEC-084: Parse localizations
+        // Parse localizations
         @Suppress("UNCHECKED_CAST")
         val localizations = configMap["localizations"] as? Map<String, Map<String, String>>
 
-        // SPEC-084: Parse step-level text_style and element_style
+        // Parse step-level text_style and element_style
         @Suppress("UNCHECKED_CAST")
         val textStyle = (configMap["text_style"] as? Map<String, Any>)?.let { parseTextStyleConfig(it) }
         @Suppress("UNCHECKED_CAST")
@@ -1376,12 +1376,12 @@ internal object OnboardingConfigParser {
             layout = configMap["layout"] as? Map<String, Any>,
             fields = fields,
             validation_mode = configMap["validation_mode"] as? String,
-            // SPEC-401-A R41 — `field_defaults` parser drop. Data class
+            // `field_defaults` parser drop. Data class
             // declares it (line 193); FormStepComposable.kt reads it via
             // `config.field_defaults?.forEach`; OnboardingActivity merges
             // it with override at line 954. But the JSON parser never
             // assigned it to the StepConfig constructor — only the
-            // SPEC-083 override path populated it. Console-authored
+            // Override path populated it. Console-authored
             // `field_defaults` (vs. hook-supplied) was dropped on parse,
             // so editor pre-fills never reached the form composable.
             field_defaults = configMap["field_defaults"] as? Map<String, Any>,
@@ -1394,14 +1394,14 @@ internal object OnboardingConfigParser {
             localizations = localizations,
             default_locale = configMap["default_locale"] as? String,
             chat_config = parseChatConfig(configMap["chat_config"]),
-            // SPEC-421 — decoded from the SAME top level as content_blocks (console siblings),
+            // Decoded from the SAME top level as content_blocks (console siblings),
             // NOT from the inner `layout` sub-map.
             permission_type = configMap["permission_type"] as? String,
             show_settings_fallback_on_denied = configMap["show_settings_fallback_on_denied"] as? Boolean,
             settings_fallback_label = configMap["settings_fallback_label"] as? String,
         )
 
-        // SPEC-083 P1: Parse hook config
+        // Parse hook config
         @Suppress("UNCHECKED_CAST")
         val hookMap = map["hook"] as? Map<String, Any>
         val hook = hookMap?.let { h ->
@@ -1420,15 +1420,15 @@ internal object OnboardingConfigParser {
             } else null
         }
 
-        // Parse next_step_rules — SPEC-070-A A.21: also pull `conditions` array + `logic`
+        // Parse next_step_rules: also pull `conditions` array + `logic`
         // so the iOS multi-condition shape (`OnboardingConfig.swift:122-127`) round-trips.
         val nextStepRules = parseNextStepRulesList(map["next_step_rules"])
-        // SPEC-070-A audit Round 2-restart attempt 2 F1: also parse layout
+        // Restart attempt 2 F1: also parse layout
         // rules under `step.config.next_step_rules` (the editor's Logic-panel
         // path). These get folded into the StepConfig so iOS-style preference
         // logic (layout rules > step rules when richer) can run client-side.
         val configLayoutRules = parseNextStepRulesList(configMap["next_step_rules"])
-        // SPEC-070-A audit Round 2-restart attempt 2 F2: per-step
+        // Restart attempt 2 F2: per-step
         // progress-color override read from configMap.
         val progressColor = configMap["progress_color"] as? String
 
@@ -1452,7 +1452,7 @@ internal object OnboardingConfigParser {
         )
     }
 
-    /** SPEC-496 §A1 — see [OnboardingStep.rawContentBlocks]. */
+    /** See [OnboardingStep.rawContentBlocks]. */
     internal fun captureRawContentBlocks(published: List<*>, stepId: String): RawContentBlocks =
         RawContentBlocks(
             published.mapIndexed { i, b ->
@@ -1463,14 +1463,14 @@ internal object OnboardingConfigParser {
         )
 
     /**
-     * SPEC-496 — decode one RESOLVED raw block with the SAME decoder the published step uses. JSON
+     * Decode one RESOLVED raw block with the SAME decoder the published step uses. JSON
      * nulls are dropped first (the decoder is all `as?` casts over non-null maps).
      */
     @Suppress("UNCHECKED_CAST")
     internal fun decodeRawBlock(map: Map<String, Any?>): ContentBlock =
         decodeContentBlock(stripNulls(map) as Map<String, Any>)
 
-    /** SPEC-496 — host / interaction option maps through the one option parser. */
+    /** Host / interaction option maps through the one option parser. */
     internal fun decodeRawOptions(list: List<*>): List<InputOption> = parseInputOptionList(list.map { stripNulls(it) })
 
     private fun stripNulls(v: Any?): Any? = when (v) {
@@ -1488,7 +1488,7 @@ internal object OnboardingConfigParser {
      * and the step.config (layout) level so the editor's Logic panel can write
      * to either path. Mirrors iOS `OnboardingRenderer.swift:761-766`.
      *
-     * SPEC-070-A J.22 — returns ImmutableList so step / step.config
+     * Returns ImmutableList so step / step.config
      * `next_step_rules` fields satisfy Compose's stability inference.
      */
     @Suppress("UNCHECKED_CAST")
@@ -1516,7 +1516,7 @@ internal object OnboardingConfigParser {
 
     /**
      * Parse a raw map from Firestore into a TextStyleConfig.
-     * Used for per-block style overrides on ContentBlock.style (SPEC-084).
+     * Used for per-block style overrides on ContentBlock.style.
      */
     @Suppress("UNCHECKED_CAST")
     internal fun parseTextStyleConfig(map: Map<String, Any>): TextStyleConfig {
@@ -1534,7 +1534,7 @@ internal object OnboardingConfigParser {
 
     /**
      * Parse a raw map into an ElementStyleConfig.
-     * Used for step-level element_style (SPEC-084).
+     * Used for step-level element_style.
      */
     @Suppress("UNCHECKED_CAST")
     internal fun parseElementStyleConfig(map: Map<String, Any>): ai.appdna.sdk.core.ElementStyleConfig {
@@ -1593,13 +1593,13 @@ internal object OnboardingConfigParser {
     }
 
     /**
-     * Parse a raw Firestore map into a BlockStyle (SPEC-089d §6.1).
+     * Parse a raw Firestore map into a BlockStyle.
      * Used for per-block design tokens: background, border, shadow, padding, margin, opacity.
      */
     @Suppress("UNCHECKED_CAST")
     internal fun parseBlockStyle(map: Map<String, Any>): BlockStyle {
         val shadowMap = map["shadow"] as? Map<String, Any>
-        // SPEC-401-A R38 — drop legacy parser defaults that walked back R26's
+        // Drop legacy parser defaults that walked back the earlier
         // iOS-parity correction. R26 set data-class defaults to color =
         // "transparent" + y/blur/spread = 0 to match iOS's `.shadow(color:
         // ?? "transparent", radius: blur ?? 0)/2` (ContentBlockTypes.swift:99-104).
@@ -1617,7 +1617,7 @@ internal object OnboardingConfigParser {
             )
         }
         val gradientMap = map["background_gradient"] as? Map<String, Any>
-        // SPEC-401-A R38 — same R26 walk-back fix for BlockGradientStyle.
+        // Same R26 walk-back fix for BlockGradientStyle.
         // R26 set defaults to angle=0/start=#000000/end=#FFFFFF to match iOS
         // (ContentBlockTypes.swift:67-71,121). Parser was overriding with
         // legacy AppDNA brand indigo→purple at 135° → identical JSON
@@ -1653,12 +1653,12 @@ internal object OnboardingConfigParser {
     /**
      * Decode a single Firestore content-block Map into a [ContentBlock].
      *
-     * SPEC-401-A R40 P0 — extracted from the inline `ContentBlock(...)`
+     * Extracted from the inline `ContentBlock(...)`
      * constructor invocation that used to live mid-`parseStep`. Both
      * top-level `content_blocks` (in `parseStep`) AND nested children
      * inside row/stack containers (in `parseChildBlocks`) call into this
      * shared helper so every R3-R39 renderer fix takes effect at every
-     * tree level. Until R40 the inline body decoded ~150 fields while
+     * tree level. Until an earlier fix the inline body decoded ~150 fields while
      * `parseChildBlocks` only populated ~25, silently shadowing all
      * nested-content fixes (lottie autoplay, gauge metrics, pricing
      * cards, etc.). iOS achieves the same outcome automatically because
@@ -1667,7 +1667,7 @@ internal object OnboardingConfigParser {
     @Suppress("UNCHECKED_CAST")
     private fun decodeContentBlock(bm: Map<String, Any>): ContentBlock {
         return ContentBlock(
-            // SPEC-401-A R43 — match iOS ContentBlockTypes.swift:1208
+            // Match iOS ContentBlockTypes.swift:1208
             // `self.id = decodeIfPresent(.id) ?? UUID().uuidString`. Was
             // empty-string fallback so two id-less toggle blocks shared the
             // same `toggleValues[block.id]` map key (last write wins) and
@@ -1706,12 +1706,12 @@ internal object OnboardingConfigParser {
             toggle_description = bm["toggle_description"] as? String,
             toggle_default = bm["toggle_default"] as? Boolean,
             video_thumbnail_url = bm["video_thumbnail_url"] as? String,
-            // SPEC-084: per-block text style + video source fields
+            // Per-block text style + video source fields
             style = (bm["style"] as? Map<String, Any>)?.let { parseTextStyleConfig(it) },
             video_url = bm["video_url"] as? String,
             video_height = (bm["video_height"] as? Number)?.toDouble(),
             video_corner_radius = (bm["video_corner_radius"] as? Number)?.toDouble(),
-            // SPEC-085: Rich media fields
+            // Rich media fields
             lottie_url = bm["lottie_url"] as? String,
             lottie_json = bm["lottie_json"] as? Map<String, Any>,
             lottie_autoplay = bm["lottie_autoplay"] as? Boolean,
@@ -1724,16 +1724,16 @@ internal object OnboardingConfigParser {
             video_autoplay = bm["video_autoplay"] as? Boolean,
             video_loop = bm["video_loop"] as? Boolean,
             video_muted = bm["video_muted"] as? Boolean,
-            // SPEC-089d §6.1: Per-block style design tokens
+            // Per-block style design tokens
             block_style = (bm["block_style"] as? Map<String, Any>)?.let { parseBlockStyle(it) },
-            // SPEC-089d §6.2: 2D positioning
+            // 2D positioning
             vertical_align = bm["vertical_align"] as? String,
             horizontal_align = bm["horizontal_align"] as? String,
             vertical_offset = (bm["vertical_offset"] as? Number)?.toDouble(),
             horizontal_offset = (bm["horizontal_offset"] as? Number)?.toDouble(),
-            // SPEC-070-A I.17 — three-zone layout opt-in.
+            // Three-zone layout opt-in.
             zone = bm["zone"] as? String,
-            // SPEC-089d: page_indicator fields
+            // page_indicator fields
             dot_count = (bm["dot_count"] as? Number)?.toInt(),
             active_index = (bm["active_index"] as? Number)?.toInt(),
             active_color = bm["active_color"] as? String,
@@ -1741,7 +1741,7 @@ internal object OnboardingConfigParser {
             dot_size = (bm["dot_size"] as? Number)?.toDouble(),
             dot_spacing = (bm["dot_spacing"] as? Number)?.toDouble(),
             active_dot_width = (bm["active_dot_width"] as? Number)?.toDouble(),
-            // SPEC-089d: social_login fields
+            // social_login fields
             providers = (bm["providers"] as? List<*>)?.mapNotNull { p ->
                 if (p is Map<*, *>) {
                     @Suppress("UNCHECKED_CAST")
@@ -1750,7 +1750,7 @@ internal object OnboardingConfigParser {
                         type = pm["type"] as? String ?: "",
                         label = pm["label"] as? String,
                         enabled = pm["enabled"] as? Boolean ?: true,
-                        // SPEC-070-A finalization OB-2 — per-provider color/style overrides.
+                        // OB-2 — per-provider color/style overrides.
                         bg_color = pm["bg_color"] as? String,
                         text_color = pm["text_color"] as? String,
                         border_color = pm["border_color"] as? String,
@@ -1771,7 +1771,7 @@ internal object OnboardingConfigParser {
             show_divider = bm["show_divider"] as? Boolean,
             divider_text = bm["divider_text"] as? String,
             // Social-Login styling v2
-            // SPEC-089d: countdown_timer fields
+            // countdown_timer fields
             target_type = bm["target_type"] as? String,
             duration_seconds = (bm["duration_seconds"] as? Number)?.toInt(),
             target_datetime = bm["target_datetime"] as? String,
@@ -1792,7 +1792,7 @@ internal object OnboardingConfigParser {
             accent_color = bm["accent_color"] as? String,
             font_size = (bm["font_size"] as? Number)?.toDouble(),
             alignment = bm["alignment"] as? String,
-            // SPEC-089d: rating fields
+            // Rating fields
             field_id = bm["field_id"] as? String,
             max_stars = (bm["max_stars"] as? Number)?.toInt(),
             default_value = (bm["default_value"] as? Number)?.toDouble(),
@@ -1801,12 +1801,12 @@ internal object OnboardingConfigParser {
             inactive_rating_color = bm["inactive_rating_color"] as? String ?: bm["empty_color"] as? String ?: bm["inactive_color"] as? String,
             allow_half = bm["allow_half"] as? Boolean,
             label = bm["label"] as? String,
-            // SPEC-089d: rich_text fields
+            // rich_text fields
             content = bm["content"] as? String,
             base_style = (bm["base_style"] as? Map<String, Any>)?.let { parseTextStyleConfig(it) },
             link_color = bm["link_color"] as? String,
             max_lines = (bm["max_lines"] as? Number)?.toInt(),
-            // SPEC-089d: progress_bar fields
+            // progress_bar fields
             segment_count = (bm["segment_count"] as? Number)?.toInt() ?: (bm["total_segments"] as? Number)?.toInt(),
             active_segments = (bm["active_segments"] as? Number)?.toInt() ?: (bm["filled_segments"] as? Number)?.toInt(),
             fill_color = bm["fill_color"] as? String,
@@ -1814,7 +1814,7 @@ internal object OnboardingConfigParser {
             segment_gap = (bm["segment_gap"] as? Number)?.toDouble(),
             show_label = bm["show_label"] as? Boolean,
             label_style = (bm["label_style"] as? Map<String, Any>)?.let { parseTextStyleConfig(it) },
-            // SPEC-089d: timeline fields
+            // Timeline fields
             timeline_items = (bm["timeline_items"] as? List<*>
                 ?: bm["items"] as? List<*>)?.mapNotNull { ti ->
                 if (ti is Map<*, *>) {
@@ -1827,7 +1827,7 @@ internal object OnboardingConfigParser {
                         title = title,
                         subtitle = tm["subtitle"] as? String,
                         icon = tm["icon"] as? String,
-                        // SPEC-401-A R39 — drop `?: "upcoming"` parser
+                        // Drop `?: "upcoming"` parser
                         // walk-back of R18. R18 made `status` nullable
                         // on the data class so missing-status timeline
                         // items render in solid title color (not greyed).
@@ -1846,7 +1846,7 @@ internal object OnboardingConfigParser {
             compact = bm["compact"] as? Boolean,
             title_style = (bm["title_style"] as? Map<String, Any>)?.let { parseTextStyleConfig(it) },
             subtitle_style = (bm["subtitle_style"] as? Map<String, Any>)?.let { parseTextStyleConfig(it) },
-            // SPEC-089d: animated_loading fields
+            // animated_loading fields
             loading_items = (bm["loading_items"] as? List<*>
                 ?: if (bm["type"] == "animated_loading") bm["items"] as? List<*> else null)?.mapNotNull { li ->
                 if (li is Map<*, *>) {
@@ -1856,8 +1856,8 @@ internal object OnboardingConfigParser {
                         label = lm["label"] as? String ?: "",
                         duration_ms = (lm["duration_ms"] as? Number)?.toInt() ?: 1000,
                         icon = lm["icon"] as? String,
-                        // SPEC-401-A R35 orbit-variant per-item fields.
-                        // Until R36 these were declared on LoadingItem
+                        // Orbit-variant per-item fields.
+                        // Until an earlier fix these were declared on LoadingItem
                         // but never read from JSON.
                         icon_url = lm["icon_url"] as? String,
                         icon_bg_color = lm["icon_bg_color"] as? String,
@@ -1871,15 +1871,15 @@ internal object OnboardingConfigParser {
             total_duration_ms = (bm["total_duration_ms"] as? Number)?.toInt(),
             auto_advance = bm["auto_advance"] as? Boolean,
             show_percentage = bm["show_percentage"] as? Boolean,
-            // SPEC-089d: Form input fields
+            // Form input fields
             field_label = bm["field_label"] as? String,
             field_placeholder = bm["field_placeholder"] as? String,
             field_required = bm["field_required"] as? Boolean,
-            // SPEC-401-A R49 (Lens A #1) — multi_select on input_select
+            // multi_select on input_select
             // (iOS ContentBlockTypes.swift:1120). Without this Android
             // always renders single-select even when authored multi.
             multi_select = bm["multi_select"] as? Boolean,
-            // SPEC-401-A R49 (Lens A #3-#5) — date picker constraints +
+            // Date picker constraints +
             // chrome (iOS ContentBlockStandaloneViews.swift:966-1239).
             allow_future = bm["allow_future"] as? Boolean,
             allow_past = bm["allow_past"] as? Boolean,
@@ -1890,7 +1890,7 @@ internal object OnboardingConfigParser {
             wheel_bg_color = bm["wheel_bg_color"] as? String,
             wheel_height = (bm["wheel_height"] as? Number)?.toDouble(),
             calendar_bg_color = bm["calendar_bg_color"] as? String,
-            // SPEC-401-A R49 (Lens A #2) — Sprint 7 scroll-collapse.
+            // Sprint 7 scroll-collapse.
             collapse_on_scroll = bm["collapse_on_scroll"] as? Boolean,
             // The `?.let` is load-bearing. Extracting this into the shared parser gave it an
             // `.orEmpty()` tail -- correct for the Option Set path, where an empty list is a real
@@ -1899,7 +1899,7 @@ internal object OnboardingConfigParser {
             // from "options authored, none of them valid", so the two platforms disagreed.
             field_options = (bm["field_options"] as? List<*>)?.let { parseInputOptionList(it).toImmutableList() },
             // Gap 8: Parse field_config for display_style, use_variable, use_webhook
-            // SPEC-419 gap#6 — progress_bar `label_format`/`custom_label` are authored
+            // progress_bar `label_format`/`custom_label` are authored
             // top-level by the console editor, but Android can't add top-level ContentBlock
             // params (JVM arg-budget guard), so fold them into field_config for the renderer.
             // iOS reads them as top-level Codable fields.
@@ -1907,12 +1907,12 @@ internal object OnboardingConfigParser {
                 val base = (bm["field_config"] as? Map<String, Any>)?.toMutableMap()
                 val labelFormat = bm["label_format"] as? String
                 val customLabel = bm["custom_label"] as? String
-                // SPEC-419 pass-14 #3 — fold the top-level `video_controls` key
+                // Fold the top-level `video_controls` key
                 // into field_config so the renderer can honour it without adding
                 // a new top-level ContentBlock field (budget-locked). The console
                 // editor + preview + iOS all read `video_controls`.
                 val videoControls = bm["video_controls"] as? Boolean
-                // SPEC-419 pass-15 #8/#9/#25 — star_background particle_color /
+                // star_background particle_color /
                 // particle_opacity / particle_speed are authored top-level by the
                 // console editor + preview + (now) iOS, but Android is budget-locked
                 // (245/245 top-level params). Fold them into field_config so the
@@ -1920,7 +1920,7 @@ internal object OnboardingConfigParser {
                 val particleColor = bm["particle_color"] as? String
                 val particleOpacity = (bm["particle_opacity"] as? Number)?.toDouble()
                 val particleSpeed = bm["particle_speed"] as? String
-                // SPEC-419 pass-15 #10 — countdown_timer `timer_variant` authored top-level by editor; fold for the renderer.
+                // countdown_timer `timer_variant` authored top-level by editor; fold for the renderer.
                 val timerVariant = bm["timer_variant"] as? String
                 // Progress/Loading v2 — `label_placement` (progress_bar) + `loading_text_align`
                 // (animated_loading) authored top-level by the console editor; fold into
@@ -1928,7 +1928,7 @@ internal object OnboardingConfigParser {
                 // reads them as top-level Codable fields.
                 val labelPlacement = bm["label_placement"] as? String
                 val loadingTextAlign = bm["loading_text_align"] as? String
-                // SPEC-401-A — date_wheel_picker selection-line color/stroke authored
+                // date_wheel_picker selection-line color/stroke authored
                 // top-level by the console editor + preview (block.wheel_line_color /
                 // wheel_line_stroke_width) and read as top-level Codable fields by iOS
                 // (ContentBlockStandaloneViews.swift:1335-1339). Android's top-level
@@ -1984,7 +1984,7 @@ internal object OnboardingConfigParser {
                     merged
                 }
             },
-            // SPEC-089d: Visibility, animation, pressed style, bindings, sizing
+            // Visibility, animation, pressed style, bindings, sizing
             visibility_condition = (bm["visibility_condition"] as? Map<String, Any>)?.let { vc ->
                 VisibilityCondition(
                     type = vc["type"] as? String ?: "always",
@@ -2017,7 +2017,7 @@ internal object OnboardingConfigParser {
             element_height = bm["element_height"] as? String,
             overflow = bm["overflow"] as? String,
             // Row / stack container fields
-            // SPEC-070-A finalization §3.2 — coalesce `children` and
+            // Coalesce `children` and
             // legacy `stack_children`. iOS ContentBlockTypes.swift:1068
             // accepts both keys; Android previously read only `children`,
             // so console-saved stack containers rendered blank.
@@ -2031,10 +2031,10 @@ internal object OnboardingConfigParser {
             align_items = bm["align_items"] as? String,
 
             // ============================================================
-            // SPEC-401-A R36 — Lens A P0 systemic parser drift fix.
+            // Lens A P0 systemic parser drift fix.
             // Many ContentBlock fields were declared on the data class
-            // and read by the renderer (often added by R3/R7/R10/R13/
-            // R15/R16/R35) but never populated from the Firestore JSON
+            // and read by the renderer (often added by
+            // earlier fixes) but never populated from the Firestore JSON
             // payload. Each "honour canonical first" fix was thus
             // shadowed by the parser; console-authored values silently
             // fell through to defaults. Adding all of them here so
@@ -2087,7 +2087,7 @@ internal object OnboardingConfigParser {
             }?.toImmutableList(),
             pricing_layout = bm["pricing_layout"] as? String,
 
-            // Rich text canonical (R4)
+            // Rich text canonical
             markdown_content = bm["markdown_content"] as? String,
             rich_text_variant = bm["rich_text_variant"] as? String,
 
@@ -2099,7 +2099,7 @@ internal object OnboardingConfigParser {
             default_rating = (bm["default_rating"] as? Number)?.toDouble(),
             rating_label = bm["rating_label"] as? String,
 
-            // ProgressBar canonical (Phase F + R3)
+            // ProgressBar canonical (Phase F)
             total_segments = (bm["total_segments"] as? Number)?.toInt(),
             progress_value = (bm["progress_value"] as? Number)?.toDouble(),
             progress_variant = bm["progress_variant"] as? String,
@@ -2107,7 +2107,7 @@ internal object OnboardingConfigParser {
             bar_gradient_colors = (bm["bar_gradient_colors"] as? List<*>)?.mapNotNull { it as? String },
             bar_height = (bm["bar_height"] as? Number)?.toDouble(),
 
-            // WheelPicker (Phase F + R35 horizontal/haptic)
+            // WheelPicker (Phase F + horizontal/haptic)
             min_value = (bm["min_value"] as? Number)?.toDouble(),
             max_value_picker = (bm["max_value_picker"] as? Number)?.toDouble(),
             step_value = (bm["step_value"] as? Number)?.toDouble(),
@@ -2124,7 +2124,7 @@ internal object OnboardingConfigParser {
             min_date = bm["min_date"] as? String,
             max_date = bm["max_date"] as? String,
             default_date_value = bm["default_date_value"] as? String,
-            // SPEC-402 A.2 — `columns` (per-wheel type/label/values list)
+            // `columns` (per-wheel type/label/values list)
             // was declared on ContentBlock + read by the renderer but
             // never extracted from JSON. date_wheel_picker fell through
             // to default month/day/year columns regardless of console.
@@ -2141,7 +2141,7 @@ internal object OnboardingConfigParser {
                 } else null
             }?.toImmutableList(),
 
-            // PulsingAvatar (Phase F + R3)
+            // PulsingAvatar (Phase F)
             pulse_color = bm["pulse_color"] as? String,
             pulse_ring_count = (bm["pulse_ring_count"] as? Number)?.toInt(),
             pulse_speed = (bm["pulse_speed"] as? Number)?.toDouble(),
@@ -2165,7 +2165,7 @@ internal object OnboardingConfigParser {
             // CircularGauge (Phase F — block previously rendered fully default)
             gauge_value = (bm["gauge_value"] as? Number)?.toDouble(),
             max_value = (bm["max_value"] as? Number)?.toDouble(),
-            // SPEC-402 A.2 — both max_value AND max_gauge_value are
+            // Both max_value AND max_gauge_value are
             // accepted iOS-side (ContentBlockRenderer.swift falls back
             // `block.max_value ?? block.max_gauge_value ?? 100.0`).
             // Decoder previously dropped max_gauge_value silently.
@@ -2187,7 +2187,7 @@ internal object OnboardingConfigParser {
             animate = bm["animate"] as? Boolean,
             animation_duration_ms = (bm["animation_duration_ms"] as? Number)?.toInt(),
 
-            // AnimatedLoading variant (R3) — block.variant alias works,
+            // AnimatedLoading variant — block.variant alias works,
             // but loading_variant is the canonical name iOS reads.
             loading_variant = bm["loading_variant"] as? String,
             loading_text = bm["loading_text"] as? String,
@@ -2206,12 +2206,12 @@ internal object OnboardingConfigParser {
             // (iOS ContentBlockTypes.swift, Android data class line 634).
             column_ratios = bm["column_ratios"] as? String,
 
-            // SPEC-401-A R37 Lens A — same-pattern parser drift
+            // Same-pattern parser drift
             // continuation of R36. These four fields are declared on the
             // data class + read first by their respective renderers but
             // never populated from JSON.
 
-            // P0 — `field_style` envelope (FormFieldBlockStyle, 17
+            // `field_style` envelope (FormFieldBlockStyle, 17
             // styling tokens) is read by every form_input_* renderer
             // (text/slider/select/chips/rating/toggle/etc) but parser
             // dropped it entirely; console-authored field styling
@@ -2229,7 +2229,7 @@ internal object OnboardingConfigParser {
                     focused_border_color = fs["focused_border_color"] as? String,
                     label_color = fs["label_color"] as? String,
                     label_font_size = (fs["label_font_size"] as? Number)?.toDouble(),
-                    // SPEC-439 (#546) — Android builds FormFieldBlockStyle key by key, so
+                    // Android builds FormFieldBlockStyle key by key, so
                     // adding a field to the data class is not enough: unmapped here it stays
                     // null forever and the renderer reading it can never fire. This is the
                     // half of the label_position defect that the fixture actually caught.
@@ -2243,8 +2243,8 @@ internal object OnboardingConfigParser {
                     thumb_color = fs["thumb_color"] as? String,
                     toggle_on_color = fs["toggle_on_color"] as? String,
                     toggle_off_color = fs["toggle_off_color"] as? String,
-                    // SPEC-401-A R41 — match iOS ContentBlockTypes.swift:291-312
-                    // (3 fields R37 missed). Renderer wiring follow-up.
+                    // Match iOS ContentBlockTypes.swift:291-312
+                    // (3 fields missed). Renderer wiring follow-up.
                     height = fs["height"] as? String,
                     font_weight = fs["font_weight"] as? String,
                     focused_background_color = fs["focused_background_color"] as? String,
@@ -2257,14 +2257,14 @@ internal object OnboardingConfigParser {
                 )
             },
 
-            // P1 — `filled_segments` parser previously folded it into
+            // `filled_segments` parser previously folded it into
             // active_segments fallback, but renderer at
             // ContentBlockRenderer.kt:2561 reads filled_segments first
             // (`block.filled_segments ?: block.active_segments`).
             // Author intent was lost when only filled_segments was set.
             filled_segments = (bm["filled_segments"] as? Number)?.toInt(),
 
-            // P1 — Rating canonical iOS-first names (R3 added the
+            // Rating canonical iOS-first names (R3 added the
             // renderer fallback at lines 2301-2306 but parser never
             // reads them; rating fell through to default colours).
             filled_color = bm["filled_color"] as? String,
@@ -2284,10 +2284,10 @@ internal object OnboardingConfigParser {
      * Accepts the raw `children` value from a Firestore map and returns a
      * list of [ContentBlock], or null if no children are present.
      *
-     * SPEC-070-A J.22 — returns ImmutableList so ContentBlock.children
+     * Returns ImmutableList so ContentBlock.children
      * stays Compose-stable through the recursive tree.
      *
-     * SPEC-401-A R40 P0 — delegates per-child decoding to
+     * Delegates per-child decoding to
      * [decodeContentBlock] so nested children get the SAME ~150-field
      * decode path as top-level blocks. The previous skeleton populated
      * only ~25 fields, silently shadowing every R3-R39 renderer fix for
@@ -2305,7 +2305,7 @@ internal object OnboardingConfigParser {
     }
 
     /**
-     * SPEC-448 — ONE option parser, shared by the inline `field_options` path and the dynamic
+     * ONE option parser, shared by the inline `field_options` path and the dynamic
      * Option Set path.
      *
      * Extracted from the inline lambda it used to be. The spec requires that an option authored in
@@ -2319,12 +2319,12 @@ internal object OnboardingConfigParser {
                     if (fo is Map<*, *>) {
                         @Suppress("UNCHECKED_CAST")
                         val fm = fo as Map<String, Any>
-                        // SPEC-070-A finalization P0 audit-11 Drift 2 —
+                        // 11 Drift 2
                         // expanded to read all 24 iOS InputOption fields.
                         // Console-authored per-option styling now reaches
                         // the renderer instead of being dropped on parse.
                         InputOption(
-                            // SPEC-401-A R37 — match iOS canonical
+                            // Match iOS canonical
                             // value-first fallback (ContentBlockTypes.swift:358-360
                             // `let rawValue = decode(.value); self.value =
                             // rawValue ?? rawId`). Was id-first → response
@@ -2338,11 +2338,11 @@ internal object OnboardingConfigParser {
                             // Android maps every key by hand — omit this and category is null
                             // forever and the chip filter can never match anything.
                             category = fm["category"] as? String,
-                            // SPEC-444 (#540, #542) — the option's bottom-sheet contents, parsed
+                            // The option's bottom-sheet contents, parsed
                             // with the same child-block helper the stack/row containers use.
                             sheet_blocks = parseChildBlocks(fm["sheet_blocks"]),
                             image_url = fm["image_url"] as? String,
-                            // SPEC-401-A R43 — match iOS rawValue fallback at
+                            // Match iOS rawValue fallback at
                             // ContentBlockTypes.swift:357-360. Was id-only; when
                             // console author writes only `value`, iOS resolves
                             // `id=value`, Android got `id=null` → renderer code
@@ -2370,7 +2370,7 @@ internal object OnboardingConfigParser {
                             selected_bg_color = fm["selected_bg_color"] as? String,
                             selected_text_color = fm["selected_text_color"] as? String,
                             cell_alignment = fm["cell_alignment"] as? String,
-                            // SPEC-419 D7/D5 — leading/trailing labels + per-option badge (were unparsed).
+                            // leading/trailing labels + per-option badge (were unparsed).
                             leading_text = fm["leading_text"] as? String,
                             trailing_text = fm["trailing_text"] as? String,
                             text_alignment = fm["text_alignment"] as? String,

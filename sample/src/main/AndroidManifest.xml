@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
-  SPEC-070-A J.18 — sample/example app manifest.
+  sample/example app manifest.
   Demonstrates: Application subclass that calls AppDNA.configure() on launch,
   a single MainActivity for the demo grid, an FCM service stub that forwards
   tokens to AppDNA.setPushToken(), and an intent-filter for deep links so the
@@ -39,7 +39,7 @@
             </intent-filter>
         </activity>
 
-        <!-- FCM service stub. SPEC-070-A J.18 demo: forwards tokens +
+        <!-- FCM service stub. Demo: forwards tokens +
              messages straight to the SDK so the host app sees push out
              of the box. -->
         <service

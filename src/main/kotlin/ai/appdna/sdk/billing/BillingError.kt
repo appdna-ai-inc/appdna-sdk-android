@@ -6,7 +6,6 @@ package ai.appdna.sdk.billing
  * can `when` over this sealed class in `onPaywallPurchaseFailed` /
  * `onPurchaseFailed` callbacks instead of regex-matching error messages.
  *
- * SPEC-070-A finalization §3.2.
  */
 sealed class BillingError(message: String, cause: Throwable? = null) : Exception(message, cause) {
     /** Product id was not found by Play Billing or the local catalog. */

@@ -39,27 +39,27 @@ internal object PaywallTriggerResolver {
         hasActiveSubscription: Boolean,
         runtimeLocked: Boolean,
     ): PaywallTriggerOutcome {
-        // SPEC-401-A R63 — only the two iOS sources (`paywall_id` / `paywallId`); deriving an id
+        // Only the two iOS sources (`paywall_id` / `paywallId`); deriving an id
         // from the node id itself pointed at paywalls that don't exist.
         val paywallId = (triggerData?.get("paywall_id") as? String)?.takeIf { it.isNotBlank() }
             ?: (triggerData?.get("paywallId") as? String)?.takeIf { it.isNotBlank() }
             ?: return PaywallTriggerOutcome.CompleteFlow
 
-        // SPEC-403 resolver chain — on_subscribed_skip_target wins, falls back to
-        // on_success_target (back-compat with SPEC-401 1.0.61 workaround flows), then to
+        // Resolver chain — on_subscribed_skip_target wins, falls back to
+        // on_success_target (back-compat with 1.0.61 workaround flows), then to
         // "continue" (legacy edge) inside the caller's routeOutcome.
         val onSuccessTarget = (triggerData?.get("on_success_target") as? String)?.takeIf { it.isNotBlank() }
         val onSubscribedSkipTarget =
             (triggerData?.get("on_subscribed_skip_target") as? String)?.takeIf { it.isNotBlank() }
         val skipTarget = onSubscribedSkipTarget ?: onSuccessTarget
 
-        // SPEC-404 — runtime lock skip: the backend has signalled locked mode (per-key suspended
+        // Runtime lock skip: the backend has signalled locked mode (per-key suspended
         // day 20+ OR org cancelled), so every paywall_trigger auto-skips.
         if (runtimeLocked) {
             return PaywallTriggerOutcome.Skip(paywallId, skipTarget, "continue", REASON_RUNTIME_LOCKED)
         }
 
-        // SPEC-401 Fix 1A — entitlement-aware skip gate. Default `true`: paywalls auto-skip for
+        // Entitlement-aware skip gate. Default `true`: paywalls auto-skip for
         // already-subscribed users unless the author explicitly opts out (upsell paywalls).
         val skipIfSubscribed = (triggerData?.get("skip_if_subscribed") as? Boolean) ?: true
         if (skipIfSubscribed && hasActiveSubscription) {

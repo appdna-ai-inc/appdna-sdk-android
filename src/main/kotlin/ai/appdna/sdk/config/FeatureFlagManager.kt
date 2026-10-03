@@ -8,7 +8,7 @@ internal class FeatureFlagManager(private val remoteConfigManager: RemoteConfigM
     /**
      * Check if a feature flag is enabled.
      * Returns true for a truthy value: boolean true, any NON-ZERO number, or a string in
-     * {"true","1","yes","on"} (case-insensitive). Round-19 — the Number case was strictly `== 1`, so a
+     * {"true","1","yes","on"} (case-insensitive). The Number case was strictly `== 1`, so a
      * tri-state/count flag with value 2 read `false` on Android but `true` on iOS (NSNumber.boolValue).
      * Now non-zero → true, matching iOS; the string set is aligned across both platforms.
      */

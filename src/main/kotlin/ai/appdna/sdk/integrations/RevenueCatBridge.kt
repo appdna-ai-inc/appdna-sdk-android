@@ -9,7 +9,7 @@ import ai.appdna.sdk.billing.Entitlement
 import android.app.Activity
 
 /**
- * SPEC-070-A A.19 — RevenueCat billing bridge for Android.
+ * RevenueCat billing bridge for Android.
  *
  * This file mirrors the Swift `RevenueCatBridge.swift`
  * (Integrations/RevenueCatBridge.swift) and exposes the same conceptual API:
@@ -74,7 +74,7 @@ internal class RevenueCatBridge {
             configureMethod.invoke(null, configuration)
             configured = true
             Log.info("RevenueCat bridge initialized")
-            // SPEC-070-A finalization parity audit R4 — install the
+            // Install the
             // UpdatedCustomerInfoListener so cross-device entitlement
             // broadcasts (web purchase syndication, family sharing,
             // foreground subscription restore) auto-fire
@@ -88,7 +88,7 @@ internal class RevenueCatBridge {
     }
 
     /**
-     * SPEC-070-A finalization parity audit R4 — install
+     * Install the
      * UpdatedCustomerInfoListener via reflection so entitlement-change
      * broadcasts auto-fire `purchase_completed` analytics events.
      *
@@ -205,7 +205,7 @@ internal class RevenueCatBridge {
             purchaseDate = System.currentTimeMillis().toString(),
             environment = "production",
         )
-        // SPEC-070-A finalization R2 P1 (Lens C) — enrich with paywall_id /
+        // Enrich with paywall_id /
         // experiment_id / price / currency via the shared helper so the
         // direct-purchase path matches the native Play Billing path shape.
         val props = AppDNA.billing.manager
@@ -225,7 +225,7 @@ internal class RevenueCatBridge {
     }
 
     /**
-     * SPEC-070-A finalization R2 P1 (Lens C) — `purchase_started` symmetry
+     * `purchase_started` symmetry
      * with AdaptyBridge.forwardPurchaseStarted. Hosts call this just before
      * `Purchases.shared.purchase(...)` so funnel dashboards see the started
      * event from the direct-purchase path too. Mirrors iOS RevenueCatBridge.
@@ -238,7 +238,7 @@ internal class RevenueCatBridge {
     }
 
     /**
-     * SPEC-070-A finalization R2 P1 (Lens C) — `purchase_canceled` symmetry
+     * `purchase_canceled` symmetry
      * matches the native Play Billing path (NativeBillingManager.kt:153).
      * Hosts call this when the RC purchase flow surfaces a user-cancel.
      */

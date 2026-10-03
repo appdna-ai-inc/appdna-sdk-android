@@ -7,7 +7,7 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 /**
- * SPEC-070-B — the advance/skip/hook-result machine and the paywall_trigger skip gate used to live
+ * The advance/skip/hook-result machine and the paywall_trigger skip gate used to live
  * in closures inside `@Composable OnboardingFlowHost`, so no test could reach them. This asserts
  * the extracted seams behave exactly as the composable did.
  */

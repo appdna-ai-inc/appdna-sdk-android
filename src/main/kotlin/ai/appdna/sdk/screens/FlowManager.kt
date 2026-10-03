@@ -59,7 +59,7 @@ internal class FlowManager(
     }
 
     /**
-     * SPEC-070-A I.2 — handle every SectionAction the SDUI layer can dispatch.
+     * Handle every SectionAction the SDUI layer can dispatch.
      * Mirrors iOS `Screens/FlowManager.swift handleAction(_:)`. Cases that
      * surface platform-level behavior (deep_link, paywall present, purchase)
      * fan out through [ai.appdna.sdk.AppDNA] so a single source of truth
@@ -150,14 +150,14 @@ internal class FlowManager(
     }
 
     /**
-     * Where the app context comes from. Production reads it off the configured SDK; the SPEC-070-B
-     * W11 test substitutes a Robolectric context so it can drive [handleAction] — the REAL call site
+     * Where the app context comes from. Production reads it off the configured SDK; the
+     * test substitutes a Robolectric context so it can drive [handleAction] — the REAL call site
      * — rather than re-implementing the open in the test.
      */
     internal var contextProvider: () -> android.content.Context? =
         { ai.appdna.sdk.AppDNA.appContextForBridges() }
 
-    // SPEC-070-B W11 — both openers used to be `Intent(ACTION_VIEW, Uri.parse(configString))`,
+    // Both openers used to be `Intent(ACTION_VIEW, Uri.parse(configString))`,
     // straight from remote config, with no allowlist. A `javascript:` or `intent:` URL published
     // into a flow config opened whatever it named. `URLSafety.open` refuses anything that is not
     // https / mailto / tel / sms / market, or a deep link back into the host's own package.

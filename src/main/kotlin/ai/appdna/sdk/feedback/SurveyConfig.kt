@@ -16,9 +16,9 @@ import kotlinx.collections.immutable.ImmutableList
 import kotlinx.collections.immutable.toImmutableList
 
 /**
- * Firestore schema types for surveys (SPEC-023).
+ * Firestore schema types for surveys.
  *
- * SPEC-070-A J.10 + J.22 — Compose stability: SurveyActivity threads these
+ * Compose stability: SurveyActivity threads these
  * DTOs directly into Composables. Hot iterables (`questions`, `options`,
  * `conditions`) are migrated to `ImmutableList<T>` and the data classes are
  * annotated `@Immutable` (or `@Stable` where untyped passthrough fields remain).
@@ -36,7 +36,7 @@ data class SurveyConfig(
     companion object {
         fun fromMap(data: Map<String, Any>): SurveyConfig? {
             return try {
-                // SPEC-070-A J.22 — wrap as ImmutableList for Compose stability.
+                // Wrap as ImmutableList for Compose stability.
                 val questions = (data["questions"] as? List<*>)?.mapNotNull { q ->
                     @Suppress("UNCHECKED_CAST")
                     SurveyQuestion.fromMap(q as? Map<String, Any> ?: return@mapNotNull null)
@@ -74,12 +74,12 @@ data class SurveyQuestion(
     val npsConfig: NPSConfig?,
     val csatConfig: CSATConfig?,
     val ratingConfig: RatingConfig?,
-    // SPEC-070-A J.22 — options iterated by survey question Composables.
+    // Options iterated by survey question Composables.
     val options: ImmutableList<QuestionOption>?,
     val emojiConfig: EmojiConfig?,
     val freeTextConfig: FreeTextConfig?,
     /**
-     * SPEC-070-A J.1: Likert scale config — horizontal numeric scale with
+     * Likert scale config — horizontal numeric scale with
      * optional left/right anchor labels (e.g. "Strongly Disagree" → "Strongly
      * Agree"). Read from `likert_config` (canonical) or `scale_config` (legacy
      * alias) on the question payload. Null when the question type isn't
@@ -87,7 +87,7 @@ data class SurveyQuestion(
      */
     val likertConfig: LikertConfig? = null,
     /**
-     * SPEC-070-A F.6 / SPEC-085: optional question-level hero image rendered
+     * Optional question-level hero image rendered
      * above the question text. Mirrors iOS `SurveyQuestion.image_url`.
      */
     val imageUrl: String? = null,
@@ -106,12 +106,12 @@ data class SurveyQuestion(
             val emojiData = data["emoji_config"] as? Map<String, Any>
             @Suppress("UNCHECKED_CAST")
             val freeTextData = data["free_text_config"] as? Map<String, Any>
-            // SPEC-070-A J.1: Likert config — accept canonical `likert_config`
+            // Likert config — accept canonical `likert_config`
             // and the legacy `scale_config` alias.
             @Suppress("UNCHECKED_CAST")
             val likertData = (data["likert_config"] as? Map<String, Any>)
                 ?: (data["scale_config"] as? Map<String, Any>)
-            // SPEC-070-A audit Round 2-restart attempt 2 F3: prefer the
+            // Restart attempt 2 F3: prefer the
             // Firestore-canonical `choice_config.options` container, fall back
             // to the legacy flat `options` field. Mirrors iOS
             // SurveyQuestion.options resolver (SurveyConfig.swift:23-46).
@@ -128,7 +128,7 @@ data class SurveyQuestion(
                 showIf = showIfData?.let { ShowIfCondition.fromMap(it) },
                 npsConfig = npsData?.let { NPSConfig(it["low_label"] as? String, it["high_label"] as? String) },
                 csatConfig = csatData?.let {
-                    // SPEC-070-A F.4: read Firestore-canonical `scale` + `labels`,
+                    // Read Firestore-canonical `scale` + `labels`,
                     // fall back to legacy `max_rating` + `style`.
                     @Suppress("UNCHECKED_CAST")
                     val labelsList = (it["labels"] as? List<*>)?.filterIsInstance<String>()
@@ -140,7 +140,7 @@ data class SurveyQuestion(
                     )
                 },
                 ratingConfig = ratingData?.let {
-                    // SPEC-070-A F.4: read Firestore `max` + `icon`,
+                    // Read Firestore `max` + `icon`,
                     // fall back to legacy `max_rating` + `style`.
                     RatingConfig(
                         maxRating = (it["max_rating"] as? Number)?.toInt() ?: 5,
@@ -149,11 +149,11 @@ data class SurveyQuestion(
                         icon = it["icon"] as? String,
                     )
                 },
-                // SPEC-070-A J.22 — wrap as ImmutableList for Compose stability.
+                // Wrap as ImmutableList for Compose stability.
                 options = optionsData?.mapNotNull { o ->
                     @Suppress("UNCHECKED_CAST")
                     val om = o as? Map<String, Any> ?: return@mapNotNull null
-                    // SPEC-070-A F.5: accept both `label` (Firestore canonical)
+                    // Accept both `label` (Firestore canonical)
                     // and `text` (legacy) — prefer label, fall back to text.
                     val labelOrText = (om["label"] as? String) ?: (om["text"] as? String) ?: ""
                     QuestionOption(om["id"] as? String ?: "", labelOrText, om["icon"] as? String)
@@ -163,7 +163,7 @@ data class SurveyQuestion(
                     EmojiConfig((it["emojis"] as? List<String>) ?: listOf("\uD83D\uDE21", "\uD83D\uDE15", "\uD83D\uDE10", "\uD83D\uDE0A", "\uD83D\uDE0D"))
                 },
                 freeTextConfig = freeTextData?.let { FreeTextConfig(it["placeholder"] as? String, (it["max_length"] as? Number)?.toInt() ?: 500) },
-                // SPEC-070-A J.1: Likert scale config (numeric scale +
+                // Likert scale config (numeric scale +
                 // optional left/right anchor labels).
                 likertConfig = likertData?.let {
                     LikertConfig(
@@ -177,14 +177,14 @@ data class SurveyQuestion(
                             ?: (it["right_label"] as? String),
                     )
                 },
-                // SPEC-070-A F.6: question-level hero image
+                // Question-level hero image
                 imageUrl = data["image_url"] as? String,
             )
         }
     }
 }
 
-// SPEC-070-A J.10 — @Stable: `answerIn: List<Any>` carries untyped values
+// @Stable: `answerIn: List<Any>` carries untyped values
 // (mixed types from `data["answer_in"]`). Stays a plain list — Compose stability
 // is downstream of SurveyQuestion which is annotated @Immutable.
 @Stable
@@ -206,14 +206,14 @@ data class NPSConfig(val lowLabel: String?, val highLabel: String?)
 /**
  * CSAT (customer satisfaction) question config.
  *
- * SPEC-070-A F.4: matches iOS `CSATConfig` shape — Firestore writes `scale`
+ * Matches iOS `CSATConfig` shape — Firestore writes `scale`
  * (3, 5, or 7), `labels` (per-step), and `style`; legacy SDKs wrote
  * `max_rating`. Use [resolvedMax] to read the effective scale.
  */
-// SPEC-070-A J.10 — @Stable: `labels` is a plain List<String>. Even though
+// @Stable: `labels` is a plain List<String>. Even though
 // stock List is mutable-by-interface, this leaf type is rarely re-emitted
 // independently and we don't want to widen ImmutableList contract beyond the
-// hot-path types listed in SPEC-070-A J.22.
+// hot-path types.
 @Stable
 data class CSATConfig(
     /** Legacy SDK field. Prefer [scale] when both are set. */
@@ -231,7 +231,7 @@ data class CSATConfig(
 /**
  * 1–N rating question config (star/heart/thumb).
  *
- * SPEC-070-A F.4: matches iOS `RatingConfig` shape — Firestore writes `max`
+ * Matches iOS `RatingConfig` shape — Firestore writes `max`
  * (e.g., 5 or 10) + `icon` ("star" | "heart" | "thumb"); legacy SDKs wrote
  * `max_rating` + `style`. Use [resolvedMax] / [resolvedIcon] for the effective
  * values.
@@ -260,7 +260,7 @@ data class EmojiConfig(val emojis: List<String> = listOf("\uD83D\uDE21", "\uD83D
 data class FreeTextConfig(val placeholder: String?, val maxLength: Int = 500)
 
 /**
- * SPEC-070-A J.1: Likert scale question config. Renders a horizontal numeric
+ * Likert scale question config. Renders a horizontal numeric
  * scale from [min]..[max] with optional left/right anchor labels (e.g.
  * "Strongly Disagree" \u2192 "Strongly Agree"). Server may serialize with `min` /
  * `max` (canonical) or `scale` (single-int max alias). Anchor labels accept
@@ -321,7 +321,7 @@ data class SurveyTriggerRules(
 
 data class TriggerCondition(val field: String, val operator: String, val value: Any?)
 
-// SPEC-070-A J.10 — @Stable: SurveyAppearance is threaded into SurveyActivity
+// @Stable: SurveyAppearance is threaded into SurveyActivity
 // Composables. All fields are nullable primitives or fully-immutable holders;
 // the legacy `theme` is mergeable so Compose can short-circuit re-emits when
 // the resolved theme is structurally equal.
@@ -331,22 +331,22 @@ data class SurveyAppearance(
     val theme: SurveyTheme?,
     val dismissAllowed: Boolean,
     val showProgress: Boolean,
-    // SPEC-084: Style engine integration
+    // Style engine integration
     val cornerRadius: Int? = null,
-    // SPEC-084: Gap #20 — question text style token
+    // Gap #20 — question text style token
     val questionTextStyle: TextStyleConfig? = null,
-    // SPEC-084: Gap #21 — option card container style token
+    // Gap #21 — option card container style token
     val optionStyle: ElementStyleConfig? = null,
-    // SPEC-085: Rich media
+    // Rich media
     val introLottieUrl: String? = null,
     val thankyouLottieUrl: String? = null,
     val thankyouParticleEffect: ai.appdna.sdk.core.ParticleEffect? = null,
     val blurBackdrop: ai.appdna.sdk.core.BlurConfig? = null,
     val haptic: ai.appdna.sdk.core.HapticConfig? = null,
-    // SPEC-088: Configurable thank-you text for interpolation
+    // Configurable thank-you text for interpolation
     val thankYouText: String? = null,
     /**
-     * SPEC-205 / SPEC-070-A D.3: optional sparse dark-mode overrides for [theme].
+     * Optional sparse dark-mode overrides for [theme].
      * Mirrors iOS `theme: ThemeSet<SurveyTheme>?` — server may serialize either
      * a flat theme object (legacy → goes into [theme] only) OR
      * `{ light: {...}, dark: {...} }` (Wave 2 → flat fields go into [theme] (the
@@ -355,7 +355,7 @@ data class SurveyAppearance(
     val themeDark: SurveyTheme? = null,
 ) {
     /**
-     * SPEC-205 / SPEC-070-A D.3: render-time theme resolver. In dark mode,
+     * Render-time theme resolver. In dark mode,
      * any field set on [themeDark] overrides the matching field on [theme];
      * unset dark fields fall back to the light value (sparse merge). In
      * light mode, returns [theme] unchanged. Mirrors iOS
@@ -376,7 +376,7 @@ data class SurveyAppearance(
             val qtsData = data["question_text_style"] as? Map<String, Any>
             @Suppress("UNCHECKED_CAST")
             val osData = data["option_style"] as? Map<String, Any>
-            // SPEC-085: Parse particle effect
+            // Parse particle effect
             @Suppress("UNCHECKED_CAST")
             val peData = data["thankyou_particle_effect"] as? Map<String, Any>
             val particleEffect = peData?.let { p ->
@@ -388,7 +388,7 @@ data class SurveyAppearance(
                     colors = (p["colors"] as? List<*>)?.filterIsInstance<String>(),
                 )
             }
-            // SPEC-085: Parse blur config
+            // Parse blur config
             @Suppress("UNCHECKED_CAST")
             val blurData = data["blur_backdrop"] as? Map<String, Any>
             val blurConfig = blurData?.let { b ->
@@ -398,7 +398,7 @@ data class SurveyAppearance(
                     saturation = (b["saturation"] as? Number)?.toFloat(),
                 )
             }
-            // SPEC-085: Parse haptic config
+            // Parse haptic config
             @Suppress("UNCHECKED_CAST")
             val hapticData = data["haptic"] as? Map<String, Any>
             val hapticConfig = hapticData?.let { h ->
@@ -415,10 +415,10 @@ data class SurveyAppearance(
                     } ?: ai.appdna.sdk.core.HapticTriggers(),
                 )
             }
-            // SPEC-070-A F.3: parse rich-media + typography fields from BOTH
+            // Parse rich-media + typography fields from BOTH
             // `appearance.theme.*` (iOS canonical location) and the legacy
             // `appearance.*` location, preferring theme.* when set.
-            // SPEC-070-A F.3: gradient parser (theme.gradient / theme.button_gradient)
+            // Gradient parser (theme.gradient / theme.button_gradient)
             fun parseGradient(raw: Any?): ai.appdna.sdk.core.GradientConfig? {
                 @Suppress("UNCHECKED_CAST")
                 val m = raw as? Map<String, Any> ?: return null
@@ -442,7 +442,7 @@ data class SurveyAppearance(
                 val h = raw as? Map<String, Any> ?: return null
                 @Suppress("UNCHECKED_CAST")
                 val triggersMap = h["triggers"] as? Map<String, Any>
-                // SPEC-070-A F.11: read all 8 trigger fields (iOS HapticTriggers parity).
+                // Read all 8 trigger fields (iOS HapticTriggers parity).
                 return ai.appdna.sdk.core.HapticConfig(
                     enabled = h["enabled"] as? Boolean ?: false,
                     triggers = triggersMap?.let { t ->
@@ -482,7 +482,7 @@ data class SurveyAppearance(
                 )
             }
 
-            // SPEC-205 / SPEC-070-A D.3: server may serialize theme as either:
+            // Server may serialize theme as either:
             //   1. flat: `theme: { background_color: ..., ... }` (legacy)
             //   2. themed: `theme: { light: {...}, dark: {...} }` (Wave 2)
             // In case (2), unwrap `theme.light` as the baseline and keep
@@ -638,13 +638,13 @@ data class SurveyAppearance(
 /**
  * Survey theme tokens. Mirrors iOS `Feedback/SurveyConfig.swift` `SurveyTheme`.
  *
- * SPEC-070-A F.3: adds button text color, gradients, typography overrides,
+ * Adds button text color, gradients, typography overrides,
  * intro/thank-you Lottie URLs, particle effect, blur backdrop, haptic config,
  * and configurable thank-you text. Server writes these under
  * `appearance.theme.*` (mirroring iOS) — see
  * [SurveyAppearance.fromMap] for parser entries.
  *
- * SPEC-205 / SPEC-070-A D.3: implements [ai.appdna.sdk.core.SparseMergeable]
+ * Implements [ai.appdna.sdk.core.SparseMergeable]
  * so a `dark` variant on the same shape can sparse-override any field at
  * render time — `theme.dark` lives on [SurveyAppearance] and is resolved by
  * [SurveyAppearance.resolveTheme]. Mirrors iOS `SurveyTheme: SparseMergeable`.
@@ -656,26 +656,26 @@ data class SurveyTheme(
     val accentColor: String? = null,
     val buttonColor: String? = null,
     val fontFamily: String? = null,
-    // SPEC-070-A F.3: button text color (iOS parity)
+    // Button text color (iOS parity)
     val buttonTextColor: String? = null,
-    // SPEC-070-A F.3: gradients
+    // Gradients
     val gradient: ai.appdna.sdk.core.GradientConfig? = null,
     val buttonGradient: ai.appdna.sdk.core.GradientConfig? = null,
-    // SPEC-070-A F.3: typography
+    // Typography
     val textAlign: String? = null,            // "left" | "center" | "right"
     val questionFontSize: Double? = null,
     val fontWeight: String? = null,            // "normal" | "medium" | "semibold" | "bold"
-    // SPEC-070-A F.3: rich media (mirrors iOS SurveyTheme)
+    // Rich media (mirrors iOS SurveyTheme)
     val introLottieUrl: String? = null,
     val thankyouLottieUrl: String? = null,
     val thankyouParticleEffect: ai.appdna.sdk.core.ParticleEffect? = null,
     val blurBackdrop: ai.appdna.sdk.core.BlurConfig? = null,
     val haptic: ai.appdna.sdk.core.HapticConfig? = null,
-    // SPEC-088 / SPEC-070-A F.3: configurable thank-you text
+    // Configurable thank-you text
     val thankYouText: String? = null,
 ) : ai.appdna.sdk.core.SparseMergeable<SurveyTheme> {
     /**
-     * SPEC-205 / SPEC-070-A D.3: sparse-merge self (overrides) onto baseline.
+     * Sparse-merge self (overrides) onto baseline.
      * Any field set on self wins; otherwise fall back to the baseline value.
      * Mirrors iOS `SurveyTheme.merged(onto:)`.
      */

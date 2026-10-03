@@ -12,7 +12,7 @@ import java.util.Map;
 import org.junit.Test;
 
 /**
- * SPEC-496 §5b C4.1 — Java interop. A Java host constructs {@link ElementInteractionResult} and
+ * Java interop. A Java host constructs {@link ElementInteractionResult} and
  * {@link AppliedInteraction} directly; each SDK release that added a Kotlin-defaulted parameter would
  * otherwise have removed the constructor that host compiled against. This file FAILS TO COMPILE if any
  * shape below is lost:

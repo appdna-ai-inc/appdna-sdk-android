@@ -40,7 +40,7 @@ data class TextStyleConfig(
     val letter_spacing: Double? = null,
     val opacity: Double? = null,
     /**
-     * SPEC-401-A R10 — iOS canonical `text_transform` from
+     * iOS canonical `text_transform` from
      * applyTextStyleDecorations. Values: `"uppercase"`, `"lowercase"`.
      * Applied at the Compose Text composition site (cannot live inside
      * the TextStyle copy because Compose has no text-case modifier on
@@ -51,7 +51,7 @@ data class TextStyleConfig(
 )
 
 /**
- * SPEC-401-A R10 — apply iOS-style `text_transform` to a raw string.
+ * Apply iOS-style `text_transform` to a raw string.
  * Mirrors SwiftUI `.textCase(.uppercase|.lowercase)` from
  * `Core/StyleEngine.swift:194-198`. Returns the input untouched when
  * the field is null/unrecognised.
@@ -69,7 +69,7 @@ data class BackgroundStyleConfig(
     val image_url: String? = null,
     val image_fit: String? = null,
     val overlay: String? = null,
-    // SPEC-401-A R15 — match iOS BackgroundStyle (StyleEngine.swift:343-358 +
+    // Match iOS BackgroundStyle (StyleEngine.swift:343-358 +
     // 361-392). `overlay_opacity` lets authors dim the underlying media; when
     // unset the SDK applies a 0.4 default for pure-black/white #000000/#FFFFFF
     // hexes (editor default) so the image/lottie remains visible. `lottie_url`
@@ -77,7 +77,7 @@ data class BackgroundStyleConfig(
     val overlay_opacity: Double? = null,
     val lottie_url: String? = null,
     val animation_loop: Boolean? = null,
-    // SPEC-401-A R35 — match iOS BackgroundStyle "rive" branch
+    // Match iOS BackgroundStyle "rive" branch
     // (StyleEngine.swift:393-425). Rive step backgrounds rendered transparent
     // on Android because the parser dropped the field.
     val rive_url: String? = null,
@@ -154,14 +154,14 @@ object StyleEngine {
      */
     fun applyTextStyle(base: TextStyle, config: TextStyleConfig?): TextStyle {
         if (config == null) return base
-        // SPEC-401-A R5 — preserve base's per-field defaults instead
+        // Preserve base's per-field defaults instead
         // of clobbering with hardcoded 16sp / Normal / Start / 1.4 *
         // 16. iOS resolves each field independently
         // (ContentBlockRendererView.swift:274-275 / 944-959), so a
         // partial `style: { color: "#000" }` keeps h1's 28sp/Bold
         // and rich_text legal's 12sp/Center defaults instead of
         // collapsing them to 16sp/Normal/Start.
-        // SPEC-401-A R8 — apply `opacity` even when `color` is null.
+        // Apply `opacity` even when `color` is null.
         // iOS adds `.opacity(s.opacity ?? 1.0)` as an always-on view
         // modifier; Android previously only multiplied opacity into
         // resolvedColor.alpha when config.color was set, so
@@ -188,7 +188,7 @@ object StyleEngine {
         val resolvedLineHeight = config.line_height
             ?.let { ((it) * (config.font_size ?: base.fontSize.value.toDouble())).sp }
             ?: base.lineHeight
-        // SPEC-401-A R82 (Lens C P2) — letter_spacing in `.em` not `.sp`.
+        // letter_spacing in `.em` not `.sp`.
         // iOS `.kerning(CGFloat(spacing))` is in POINTS (no Dynamic Type
         // scaling). Compose `.sp` ramps with `fontScale`, so 130% font-scale
         // user sees letter_spacing balloon to 130% of authored value while
@@ -241,7 +241,7 @@ object StyleEngine {
                         val brush = when (bg.gradient.type) {
                             "radial" -> Brush.radialGradient(colors)
                             else -> {
-                                // SPEC-419 — span the FULL bounds (the fixed *1000f offset made the
+                                // Span the FULL bounds (the fixed *1000f offset made the
                                 // gradient finish at ~1000px and show flat end-colour below). Compose
                                 // vertical/horizontal gradients auto-span the draw bounds.
                                 val angle = ((bg.gradient.angle ?: 180.0) % 360 + 360) % 360
@@ -250,11 +250,11 @@ object StyleEngine {
                                     0.0 -> Brush.verticalGradient(colors.reversed())
                                     90.0 -> Brush.horizontalGradient(colors)
                                     270.0 -> Brush.horizontalGradient(colors.reversed())
-                                    // Round-15 F2 — non-cardinal angles previously used FIXED 4000px
+                                    // Non-cardinal angles previously used FIXED 4000px
                                     // offsets, so a small element (button/card/badge) sampled only the
                                     // gradient's start → rendered near-flat, while iOS fills the element.
                                     // AngledGradientBrush reads the ACTUAL draw size and applies iOS's exact
-                                    // per-axis UnitPoint math (0.5±dx/2, 0.5±dy/2) × size. Round-16 — a NAMED
+                                    // per-axis UnitPoint math (0.5±dx/2, 0.5±dy/2) × size. A NAMED
                                     // class with value equals/hashCode (not an anonymous object) so identical
                                     // gradients compare equal across recompositions and Modifier.background
                                     // can skip re-creating the shader.
@@ -302,7 +302,7 @@ object StyleEngine {
     }
 
     /**
-     * SPEC-401-A R9 — universal block-container styling, ported from
+     * Universal block-container styling, ported from
      * iOS `ContentBlockTypes.swift:744-786 applyBlockContainerStyle`.
      *
      * iOS applies this modifier to EVERY ContentBlock at
@@ -399,7 +399,7 @@ object StyleEngine {
      *   - "transparent" / "clear" → Color.Transparent
      *   - any other / parse failure → Color.Transparent (matches iOS fallback `(0, 0, 0, 0)`)
      *
-     * SPEC-070-A A.2 — fixes the prior `Color(colorLong)` ARGB interpretation that
+     * Fixes the prior `Color(colorLong)` ARGB interpretation that
      * rotated channels for every console-saved RGBA color.
      */
     fun parseColor(hex: String): Color {
@@ -407,7 +407,7 @@ object StyleEngine {
             val lowered = hex.lowercase().trim()
             if (lowered == "transparent" || lowered == "clear") return Color.Transparent
 
-            // SPEC-401-A R64 (Lens A P3 #3) — match iOS PaywallHelperViews.swift
+            // Match iOS PaywallHelperViews.swift
             // :81-87 which only handles `count == 6 || count == 8`. Anything
             // else returns transparent. Android previously expanded 3-char
             // (`#ABC` → `#AABBCC`) and 4-char (`#ABCD` → `#AABBCCDD`) shorthand,

@@ -18,8 +18,8 @@ import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
 
 /**
- * SPEC-070-B PN — the Android native additions, each asserted against the behavior it exists to
- * produce. Every test here was checked to go RED with its fix reverted (AC-33).
+ * PN — the Android native additions, each asserted against the behavior it exists to
+ * produce. Every test here was checked to go RED with its fix reverted.
  */
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [33])

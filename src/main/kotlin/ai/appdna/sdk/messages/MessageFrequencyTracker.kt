@@ -5,7 +5,7 @@ import android.content.SharedPreferences
 
 /**
  * Tracks in-app message display frequency. Mirrors iOS
- * `InAppMessaging/MessageFrequencyTracker.swift` (SPEC-070-A F.12).
+ * `InAppMessaging/MessageFrequencyTracker.swift`.
  *
  * Three frequency modes are supported, all evaluated by [canShow]:
  *  - `once` — persisted across sessions; uses `<id>.shown` flag.
@@ -13,7 +13,7 @@ import android.content.SharedPreferences
  *  - `every_time` — always returns `true`.
  *  - `max_times` — persisted counter; show until `count >= max_displays`.
  *
- * SPEC-070-A audit attempt 6 F1: persisted counters live in a dedicated
+ * Persisted counters live in a dedicated
  * `SharedPreferences` instance (`ai.appdna.sdk.msg_freq`) rather than
  * SessionDataStore. SessionDataStore is wiped by [AppDNA.clearSessionData]
  * which would otherwise reset cross-session `once` and `max_times` counters,

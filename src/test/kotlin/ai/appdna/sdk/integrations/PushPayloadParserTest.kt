@@ -6,7 +6,7 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 /**
- * SPEC-070-B — the FCM payload parse was private on a `FirebaseMessagingService` subclass (so it
+ * The FCM payload parse was private on a `FirebaseMessagingService` subclass (so it
  * had no coverage at all), and the `PushPayload` the host delegate received carried only the single
  * primary `action` — a push with three buttons looked identical to one with none.
  */

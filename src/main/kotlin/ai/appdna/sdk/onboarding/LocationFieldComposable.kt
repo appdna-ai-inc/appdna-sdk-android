@@ -27,7 +27,7 @@ import kotlinx.coroutines.withContext
 import org.json.JSONObject
 
 /**
- * SPEC-070-A I.18 — Reusable location-autocomplete composable for legacy
+ * Reusable location-autocomplete composable for legacy
  * form-step `FormFieldType.LOCATION` fields. Ports the autocomplete logic
  * previously embedded inline in
  * `ContentBlockRenderer.kt:3840-3974 FormInputLocationPlaceholder` so the
@@ -56,7 +56,7 @@ fun LocationFieldComposable(
     modifier: Modifier = Modifier,
 ) {
     val config = field.config
-    // SPEC-070-A finalization B4 P2 — iOS LocationFieldView.swift:43-44
+    // iOS LocationFieldView.swift:43-44
     // defaults to 2 keystrokes before triggering autocomplete. Android
     // was at 3, delaying suggestions on short city names.
     val minChars = (config?.location_min_chars ?: 2).coerceAtLeast(1)
@@ -107,7 +107,7 @@ fun LocationFieldComposable(
             },
             label = { Text(field.label) },
             placeholder = { Text(placeholder) },
-            // SPEC-401-A R68 (Lens A P2) — opt-out for the prefix location
+            // Opt-out for the prefix location
             // pin matches iOS LocationFieldView.swift:1384 reading
             // `field_config["show_prefix_icon"]` (default true). Some flows
             // hide the pin in dark/minimalist designs.
@@ -121,7 +121,7 @@ fun LocationFieldComposable(
                 }
             } else null,
             trailingIcon = {
-                // SPEC-401-A R63 (Lens C P1) — clear-X button when a
+                // Clear-X button when a
                 // location is selected (`values[field.id]` is a Map).
                 // iOS LocationFieldView.swift:81-87 + clearSelection() at
                 // :272 lets users clear with one tap. Without this Android
@@ -149,7 +149,7 @@ fun LocationFieldComposable(
                     }
                 }
             },
-            // SPEC-070-A I.5b — Search IME action so Enter triggers a
+            // Search IME action so Enter triggers a
             // keyboard-driven submit (autocomplete still fires on debounce).
             keyboardOptions = KeyboardOptions(
                 keyboardType = KeyboardType.Text,
@@ -161,7 +161,7 @@ fun LocationFieldComposable(
         )
 
         if (showSuggestions) {
-            // SPEC-401-A B2 P1 — Material3 Card elevation replaces the
+            // Material3 Card elevation replaces the
             // 1px border. Elevation is the natural Android cue for a
             // floating menu, matching iOS `LocationFieldView.swift:55`'s
             // shadow + stroke combo.
@@ -172,7 +172,7 @@ fun LocationFieldComposable(
                 colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
             ) { Column(modifier = Modifier.fillMaxWidth()) {
                 suggestions.forEachIndexed { index, suggestion ->
-                    // SPEC-401-A B1.5 — Material3 ListItem primary/secondary
+                    // Material3 ListItem primary/secondary
                     // text hierarchy parity with iOS LocationFieldView's
                     // two-line cells. Primary = first comma-segment of the
                     // formatted address (street/POI), secondary = the
@@ -220,10 +220,10 @@ fun LocationFieldComposable(
                         ),
                     )
                     if (index < suggestions.size - 1) {
-                        // SPEC-401-A R24 — Material3 1.2 deprecated `Divider`
+                        // Material3 1.2 deprecated `Divider`
                         // in favor of `HorizontalDivider`. Switch matches the
                         // R22 LinearProgressIndicator lambda-form pattern.
-                        // SPEC-401-A R50 (Lens C #4, P2) — theme-aware divider
+                        // Theme-aware divider
                         // (was Color.LightGray, faintly visible in dark mode).
                         // Matches iOS native Divider() inheriting separator.
                         HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant, thickness = 0.5.dp)
@@ -249,7 +249,7 @@ private suspend fun fetchLocationSuggestions(
         val baseUrl = ai.appdna.sdk.AppDNA.getApiBaseUrl()
         val apiKey = ai.appdna.sdk.AppDNA.getApiKey()
         val url = java.net.URL("$baseUrl/api/v1/sdk/geocode/autocomplete")
-        // SPEC-401-A R28 P0 — backend route at
+        // Backend route at
         // `src/app/api/v1/sdk/geocode/autocomplete/route.ts:27` exports
         // ONLY POST (Zod-validated body with `query`/`bias_country`).
         // Android was sending GET with `?q=…` query params → 405 Method
@@ -286,7 +286,7 @@ private suspend fun fetchLocationSuggestions(
             }
         }
         if (body == null) return emptyList()
-        // SPEC-401-A R28 — backend wraps suggestions in
+        // Backend wraps suggestions in
         // `{data: {suggestions: [...]}}` (route.ts:65); iOS reads
         // `json.data.suggestions` (LocationFieldView.swift:220-221).
         // Android was reading `json.data` as JSONArray which yields null

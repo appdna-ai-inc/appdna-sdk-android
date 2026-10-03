@@ -1,4 +1,4 @@
-# SPEC-070-A J.26 — centralized version catalog.
+# Centralized version catalog.
 #
 # Single source of truth for Android SDK dependency versions. Replaces inline
 # string literals in build.gradle.kts. Reference from build.gradle.kts via
@@ -10,7 +10,7 @@
 
 [versions]
 # Compile / Kotlin / AGP
-# SPEC-070-A finalization Phase 1 — AGP 8.2.0 → 8.7.3 fixes JdkImageTransform
+# AGP 8.2.0 → 8.7.3 fixes JdkImageTransform
 # under JBR 21 (Android Studio Hedgehog+ bundled JDK), enables 16 KB native-lib
 # alignment for `librive-android.so` + `libc++_shared.so` per Google Play 2025+
 # requirement. Keeps Kotlin 1.9.22 + composeCompiler 1.5.8 (compatible with AGP
@@ -19,15 +19,15 @@ agp = "8.7.3"
 kotlin = "1.9.22"
 kotlinSerializationPlugin = "1.9.22"
 composeCompiler = "1.5.8"
-# Roborazzi visual snapshot harness (SPEC-070-0 §3.4)
+# Roborazzi visual snapshot harness
 roborazzi = "1.21.0"
 
 # AndroidX / Compose
 # NOTE: Compose Compiler 1.5.8 (the version pinned in `composeOptions`) is the
 # matching compiler for Kotlin 1.9.22 and supports BoM up to 2024.02.02. We
 # CANNOT jump to 2024.09.02 without also bumping Kotlin (1.9.22 → 1.9.25) and
-# the Compose Compiler — both are out-of-scope for SPEC-070-A J.13 (the spec
-# scopes "BoM updates" but explicitly keeps Kotlin pinned). 2024.02.02 is the
+# the Compose Compiler — both are out-of-scope for the dependency bump
+# (it covers BoM updates but explicitly keeps Kotlin pinned). 2024.02.02 is the
 # safe upper bound.
 composeBom = "2024.02.02"
 activityCompose = "1.8.2"
@@ -38,7 +38,7 @@ workRuntimeKtx = "2.9.0"
 # Coroutines + serialization
 kotlinxCoroutines = "1.8.1"
 kotlinxSerialization = "1.6.3"
-# SPEC-070-A J.22 — kotlinx-collections-immutable. Backs J.10 @Immutable
+# Kotlinx-collections-immutable. Backs J.10 @Immutable
 # annotations on Compose-consumed config DTOs: stock List<T>/Map<K,V> are
 # structural-equal but mutable-by-interface, so Compose can't prove parameter
 # equivalence and skip recompositions. ImmutableList<T> / PersistentMap<K,V>
@@ -47,15 +47,15 @@ kotlinxCollectionsImmutable = "0.3.7"
 
 # Networking / images
 okhttp = "4.12.0"
-# SPEC-495 — the bundled interactive map tier. maps-compose is the Compose wrapper over
+# The bundled interactive map tier. maps-compose is the Compose wrapper over
 # play-services-maps; both resolve from google()/mavenCentral() with no credential, which is why
 # Google ships in this release and Mapbox does not (its Android SDK needs a secret download token
-# and its own Maven repo — see SPEC-495 §D3).
+# and its own Maven repo).
 mapsCompose = "4.4.1"
 playServicesMaps = "18.2.0"
 coil = "2.7.0"
 
-# Rich media (SPEC-070-A E.1 — SPEC-085 parity)
+# Rich media
 # Hotfix-1.0.33 — Rive 9.11.1 → 9.13.10. The prior claim that 9.11.1 shipped
 # 16 KB-aligned native libs was wrong (Android Studio's install-time popup
 # flagged `librive-android.so` as unaligned). Rive 9.13.0 (2024-12-10) added
@@ -116,7 +116,7 @@ kotlinx-coroutines-android   = { module = "org.jetbrains.kotlinx:kotlinx-corouti
 kotlinx-coroutines-jdk8      = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-jdk8", version.ref = "kotlinxCoroutines" }
 kotlinx-coroutines-test      = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-test", version.ref = "kotlinxCoroutines" }
 
-# SPEC-070-A J.22 — immutable collections backing J.10 Compose stability annotations.
+# Immutable collections backing J.10 Compose stability annotations.
 kotlinx-collections-immutable = { module = "org.jetbrains.kotlinx:kotlinx-collections-immutable", version.ref = "kotlinxCollectionsImmutable" }
 
 # Billing / Play
@@ -137,7 +137,7 @@ work-testing                 = { module = "androidx.work:work-testing", version.
 coil-compose                 = { module = "io.coil-kt:coil-compose", version.ref = "coil" }
 coil-gif                     = { module = "io.coil-kt:coil-gif", version.ref = "coil" }
 
-# Rich media (SPEC-070-A E.1)
+# Rich media
 lottie-compose               = { module = "com.airbnb.android:lottie-compose", version.ref = "lottie" }
 rive-android                 = { module = "app.rive:rive-android", version.ref = "rive" }
 media3-exoplayer             = { module = "androidx.media3:media3-exoplayer", version.ref = "media3" }

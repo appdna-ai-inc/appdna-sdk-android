@@ -59,7 +59,7 @@ object HapticEngine {
     }
 
     /**
-     * SPEC-070-A J.15 — extracted helper that ASSUMES API 30+ so Android Lint
+     * Extracted helper that ASSUMES API 30+ so Android Lint
      * flags any accidental call that isn't behind a
      * `Build.VERSION.SDK_INT >= R` guard. [HapticFeedbackConstants.CONFIRM]
      * was introduced in API 30; on older devices the field is absent and
@@ -69,7 +69,7 @@ object HapticEngine {
     private fun confirmConstant(): Int = HapticFeedbackConstants.CONFIRM
 
     /**
-     * SPEC-070-A J.15 — see [confirmConstant]. [HapticFeedbackConstants.REJECT]
+     * See [confirmConstant]. [HapticFeedbackConstants.REJECT]
      * is also API 30+.
      */
     @RequiresApi(Build.VERSION_CODES.R)

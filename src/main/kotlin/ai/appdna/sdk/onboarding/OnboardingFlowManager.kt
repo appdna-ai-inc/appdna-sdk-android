@@ -16,7 +16,7 @@ import ai.appdna.sdk.events.EventTracker
 internal class OnboardingFlowManager(
     private val remoteConfigManager: RemoteConfigManager,
     private val eventTracker: EventTracker,
-    // SPEC-036-F §1.2 — consulted at present-time for a running onboarding
+    // Consulted at present-time for a running onboarding
     // experiment targeting the resolved flow.
     private val experimentManager: ai.appdna.sdk.config.ExperimentManager? = null,
 ) {
@@ -29,7 +29,7 @@ internal class OnboardingFlowManager(
         flowId: String? = null,
         listener: AppDNAOnboardingDelegate? = null
     ): Boolean {
-        // SPEC-070-A F.13: when no explicit flowId is supplied, evaluate every
+        // When no explicit flowId is supplied, evaluate every
         // flow's audience_rules against current userTraits and pick the
         // highest-priority match. Falls back to the active flow when nothing
         // matches. Mirrors iOS OnboardingFlowManager.swift:121-137.
@@ -39,7 +39,7 @@ internal class OnboardingFlowManager(
             return false
         }
 
-        // SPEC-036-F §1.2 — experiment-aware presentation. A running onboarding
+        // Experiment-aware presentation. A running onboarding
         // experiment targeting this flow + a treatment bucket renders the
         // treatment payload flow; otherwise the active flow (cohort isolation).
         var flow = activeFlow
@@ -98,13 +98,13 @@ internal class OnboardingFlowManager(
                 ))
             },
             onFlowCompleted = { responses ->
-                // SPEC-401-A R59 (Lens B P3) — emit as Int matching iOS
+                // Emit as Int matching iOS
                 // OnboardingFlowManager.swift:84 `Int(... * 1000)`. Without
                 // .toInt() the event payload carries a Long; downstream BQ
                 // schema + dashboards typed against Int from iOS see type
                 // drift on Android-only telemetry.
                 val durationMs = (System.currentTimeMillis() - startTime).toInt()
-                // SPEC-070-B — the completion decision (event + SPEC-088 persistence + delegate)
+                // The completion decision (event + persistence + delegate)
                 // now lives in [OnboardingCompletion], NOT in this Activity-bound lambda, so it is
                 // reachable — and provable — without presenting an Activity. Same event, same
                 // props, same order as before.
@@ -142,7 +142,7 @@ internal class OnboardingFlowManager(
     // MARK: - Private
 
     /**
-     * SPEC-070-A F.13: resolve a flow given an optional explicit id.
+     * Resolve a flow given an optional explicit id.
      *
      * - Explicit id → look up directly via [RemoteConfigManager.getOnboardingFlow].
      * - No id + non-empty userTraits → evaluate every flow's `audience_rules`

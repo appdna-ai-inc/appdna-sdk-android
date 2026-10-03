@@ -26,7 +26,7 @@ internal class EntitlementCache(
 ) {
     private val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
 
-    /** Current cached entitlements. Round-36 — @Volatile: written from the Firestore listener thread + purchase/restore, read from getters on other threads. */
+    /** Current cached entitlements. @Volatile: written from the Firestore listener thread + purchase/restore, read from getters on other threads. */
     @Volatile var entitlements: List<Entitlement> = emptyList()
         private set
 
@@ -191,7 +191,7 @@ internal class EntitlementCache(
     /**
      * Start observing entitlement changes from Firestore.
      *
-     * SPEC-070-A A.23 — Listens to a single document at
+     * Listens to a single document at
      * `orgs/{orgId}/apps/{appId}/users/{userId}/entitlements/current` and parses
      * its `subscriptions[]` array, mirroring iOS `EntitlementCache.swift:30-39,63-64`.
      *
@@ -329,7 +329,7 @@ internal class EntitlementCache(
                 productTypes[ent.productId] = t
             }
             entitlements = loaded
-            // Round-36 — seed the notify diff-guard from the disk-loaded set so the FIRST Firestore
+            // Seed the notify diff-guard from the disk-loaded set so the FIRST Firestore
             // snapshot that merely CONFIRMS the persisted entitlements doesn't fire a spurious
             // onEntitlementsChanged. loadFromDisk bypasses setEntitlements, so without this the guard
             // stayed empty and `empty != {persisted}` fired one no-op callback on every cold start.
@@ -368,7 +368,7 @@ internal class EntitlementCache(
     /**
      * Internal setter that updates in-memory cache, persists, and notifies listeners.
      *
-     * SPEC-070-A B.7 — fan out to:
+     * Fan out to:
      *   1. all callbacks registered via [addChangeListener] (host onEntitlementsChanged
      *      callback via `BillingModule.onEntitlementsChanged(callback)`)
      *   2. the typed `AppDNABillingDelegate.onEntitlementsChanged(...)` registered
@@ -379,13 +379,13 @@ internal class EntitlementCache(
     private fun setEntitlements(newEntitlements: List<Entitlement>) {
         entitlements = newEntitlements
         saveToDisk(newEntitlements)
-        // Round-35/36 — diff-guard the change fan-out (listeners + billing delegate) on the active
+        // Diff-guard the change fan-out (listeners + billing delegate) on the active
         // product-id set, matching iOS BillingModule.refreshEntitlementCache (posts only when
         // newIds != lastKnownEntitlementIds). Android previously notified UNCONDITIONALLY on every
         // update()/replaceAll(), so re-purchasing an already-held entitlement or a restore that
         // returned the already-cached set fired a spurious onEntitlementsChanged that iOS never did.
         // The cache (entitlements + disk) still updates every call so a same-id expiry change persists;
-        // only the notification is gated. Round-36 — the compare-and-set runs under `notifyLock`
+        // only the notification is gated. The compare-and-set runs under `notifyLock`
         // because setEntitlements is reachable from the Firestore listener thread AND purchase/restore
         // callbacks concurrently; notify OUTSIDE the lock (like iOS releases its lock before posting).
         val newIds = newEntitlements.map { it.productId }.toSet()
@@ -423,7 +423,7 @@ internal class EntitlementCache(
     }
 
     /**
-     * SPEC-070-A B.7 — fire the typed delegate's onEntitlementsChanged. Read
+     * Fire the typed delegate's onEntitlementsChanged. Read
      * fresh on every call so a delegate registered after configure() still
      * receives updates. Posted to main thread so host code never runs on
      * the Firestore listener thread.

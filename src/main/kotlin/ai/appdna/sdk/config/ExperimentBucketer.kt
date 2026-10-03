@@ -11,7 +11,7 @@ package ai.appdna.sdk.config
  * SDK-managed `experiments` config doc) can call [hash32] / [assignVariant]
  * directly without depending on internal SDK state.
  *
- * SPEC-070-A finalization parity audit B1#4 — extract public API surface to
+ * Extract public API surface to
  * mirror iOS. Internal SDK code paths still go through [MurmurHash3] in
  * [ExperimentManager] for back-compat; new callers should prefer
  * [ExperimentBucketer.hash32].

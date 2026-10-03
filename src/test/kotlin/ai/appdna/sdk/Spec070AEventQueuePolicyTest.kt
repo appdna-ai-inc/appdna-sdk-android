@@ -10,7 +10,7 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 /**
- * SPEC-070-A A.16 + A.17 — verify the EventQueue retry/backoff/cap contract.
+ * Verify the EventQueue retry/backoff/cap contract.
  *
  * These tests intentionally validate constants + the EventUploadResult sealed
  * class shape so we can guarantee parity with the iOS implementation without

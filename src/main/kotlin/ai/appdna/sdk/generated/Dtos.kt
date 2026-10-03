@@ -47,7 +47,7 @@ data class AppDNAEnvironment(
     }
 }
 
-/** AppDNAPushAction — one structured notification action button on a push payload (SPEC-070-A push section; matches push_payload/action_buttons_parse fixture). */
+/** AppDNAPushAction — one structured notification action button on a push payload (matches the push_payload/action_buttons_parse fixture). */
 data class AppDNAPushAction(
     /** Stable action identifier — registers the notification button and echoes back on tap. */
     val id: String,
@@ -68,7 +68,7 @@ data class AppDNAPushAction(
     }
 }
 
-/** AppDNAPushPayload — a delivered push notification the SDK surfaces to the host app (SPEC-070-A push section; matches push_payload/action_buttons_parse fixture). */
+/** AppDNAPushPayload — a delivered push notification the SDK surfaces to the host app (matches the push_payload/action_buttons_parse fixture). */
 data class AppDNAPushPayload(
     /** Server-assigned push campaign/message id; echoed on push_received / push_tapped events. */
     val pushId: String,

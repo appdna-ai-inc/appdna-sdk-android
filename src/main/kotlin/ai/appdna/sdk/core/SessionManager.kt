@@ -1,7 +1,7 @@
 package ai.appdna.sdk.core
 
-// SPEC-070-A A.8 — instantiated + started in AppDNA.kt configure() (see the
-// `// SPEC-070-A A.8: SessionManager` block in that file).
+// Instantiated + started in AppDNA.kt configure() (see the
+// `/: SessionManager` block in that file).
 //
 // And expose the live session id to the event envelope by calling
 // `eventTracker.setSessionIdProvider { sessionMgr.currentSessionId() }`
@@ -21,7 +21,7 @@ import java.util.concurrent.atomic.AtomicLong
 import java.util.concurrent.atomic.AtomicReference
 
 /**
- * SPEC-070-A A.8 — Tracks app sessions based on foreground/background
+ * Tracks app sessions based on foreground/background
  * lifecycle. Mirrors iOS `Core/Identity/SessionManager.swift`.
  *
  * Behavior:
@@ -66,7 +66,7 @@ internal class SessionManager(
     private val sessionsCountRef: AtomicLong = AtomicLong(0L)
     private var observer: LifecycleEventObserver? = null
     private var started = false
-    // Round-32/33 — `app_open` + idle-rotation fire only on a foreground that FOLLOWS a background,
+    // `app_open` + idle-rotation fire only on a foreground that FOLLOWS a background,
     // mirroring iOS (UIApplication.willEnterForeground does NOT fire on a direct cold launch). The
     // initial cold-launch foreground — whether ON_START replays synchronously at register time OR
     // arrives async when the first Activity starts (configure() runs in Application.onCreate, where
@@ -150,7 +150,7 @@ internal class SessionManager(
     // MARK: - Lifecycle handlers (visible for testing)
 
     internal fun handleForeground() {
-        // Round-33 — skip every foreground until the app has been backgrounded at least once, so the
+        // Skip every foreground until the app has been backgrounded at least once, so the
         // initial cold-launch foreground (start() already handled the session) fires neither app_open
         // nor a second rotation. Real background→foreground returns (hasBackgrounded == true) proceed.
         // Mirrors iOS, where willEnterForeground does not fire on a direct cold launch.

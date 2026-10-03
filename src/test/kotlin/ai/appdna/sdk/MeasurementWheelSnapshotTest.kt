@@ -18,7 +18,7 @@ import org.robolectric.annotation.Config
 import org.robolectric.annotation.GraphicsMode
 
 /**
- * SPEC-420 — measurement wheel_picker visual snapshots (ruler / gauge / dial / wheel),
+ * Measurement wheel_picker visual snapshots (ruler / gauge / dial / wheel),
  * parity with the iOS VisualSnapshotTests testMeasurement_* goldens. Robolectric renders
  * the REAL Compose UI on the JVM; captureRoboImage writes the pixels to a bridge-readable
  * path. Record: ./gradlew recordRoborazziDebug

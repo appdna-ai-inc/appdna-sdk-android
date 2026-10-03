@@ -15,7 +15,7 @@ import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
-/** SPEC-419 EPIC-11 — pure logic of the interactive-state-contract result application. */
+/** Pure logic of the interactive-state-contract result application. */
 class InteractionResultTest {
 
     /** Snapshot state written here has no Compose host to flush it; a later Compose test would never idle. */
@@ -53,7 +53,7 @@ class InteractionResultTest {
         assertFalse(applied.advance)
     }
 
-    // ── SPEC-496 §5b C2 / C4.1 — passthrough ────────────────────────────────────────────────────
+    // ── passthrough ────────────────────────────────────────────────────
 
     @Test
     fun appliedInteractionPassesRawPatchesAndDataContextThrough() {
@@ -89,7 +89,7 @@ class InteractionResultTest {
         assertNull(ElementInteractionResult.decodeDataContext(null))
     }
 
-    // ── SPEC-496 §5b C3 — effective / apply ─────────────────────────────────────────────────────
+    // ── effective / apply ─────────────────────────────────────────────────────
 
     private fun e(v: Any?, stamp: Long) = HostDataLayerEntry(v, removed = v == null, stamp = stamp)
 

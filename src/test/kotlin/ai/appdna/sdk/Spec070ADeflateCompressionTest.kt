@@ -11,7 +11,7 @@ import java.util.zip.Inflater
 import java.util.zip.InflaterInputStream
 
 /**
- * SPEC-070-A A.15 — verify request body compression switched from gzip to
+ * Verify request body compression switched from gzip to
  * raw deflate (matching iOS APIClient.swift:143 / `compression_encode_buffer
  * (..., COMPRESSION_ZLIB)`). The output must NOT be gzip-framed (no 0x1f 0x8b
  * magic bytes) so the backend's `Content-Encoding: deflate` decoder accepts it.

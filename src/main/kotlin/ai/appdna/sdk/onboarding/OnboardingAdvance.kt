@@ -117,7 +117,7 @@ internal object OnboardingAdvance {
                     .copy(computedData = result.data)
             }
 
-            // SPEC-070-A C.8 — Stay renders the success banner when a message is present,
+            // Stay renders the success banner when a message is present,
             // otherwise stays silent so the host can drive its own UI.
             is StepAdvanceResult.Stay -> AdvanceOutcome(
                 navigation = Navigation.Stay,
@@ -157,12 +157,12 @@ internal object OnboardingAdvance {
         val targetIndex = flow.steps.indexOfFirst { it.id == targetStepId }
         if (targetIndex < 0) return advance(flow, currentIndex, responses, navigationHistory)
         val fromStepId = flow.steps.getOrNull(currentIndex)?.id
-        // SPEC-070-A finalization P0 audit-8 D1 — push the leaving step before skip-target
+        // 8 D1 — push the leaving step before skip-target
         // navigation so the destination's previous_step_* rules see the correct prevId.
         return AdvanceOutcome(
             navigation = Navigation.GoToIndex(targetIndex),
             responses = responses,
-            // SPEC-070-B — a skip_to jump used to be analytically INVISIBLE: the flow silently
+            // A skip_to jump used to be analytically INVISIBLE: the flow silently
             // teleported over N steps, so the funnel could not tell a step that was jumped over
             // from one the user never reached. Emit the jump.
             events = listOf(
@@ -190,7 +190,7 @@ internal object OnboardingAdvance {
         navigationHistory: List<String> = emptyList(),
     ): AdvanceOutcome {
         val events = mutableListOf<TrackedEvent>()
-        // SPEC-070-A finalization P0 audit-7 — push the step we're leaving BEFORE the rules
+        // 7 — push the step we're leaving BEFORE the rules
         // branch decides where to go: every routing path advances away from the current step.
         val leaving = flow.steps.getOrNull(currentIndex)?.id
         val historyPush = listOfNotNull(leaving)
@@ -211,7 +211,7 @@ internal object OnboardingAdvance {
         }
 
         val step = if (currentIndex < flow.steps.size) flow.steps[currentIndex] else null
-        // SPEC-070-A audit Round 2-restart attempt 2 F1: prefer the layout-level
+        // Restart attempt 2 F1: prefer the layout-level
         // `step.config.next_step_rules` (Logic-panel-authored) when it carries richer
         // `conditions[]` than the step-level rules. Mirrors iOS OnboardingRenderer.swift:761-766.
         val stepRules = step?.next_step_rules
@@ -225,14 +225,14 @@ internal object OnboardingAdvance {
         }
         val isLastStep = currentIndex >= flow.steps.size - 1
         if (step != null && !rules.isNullOrEmpty()) {
-            // SPEC-070-A A.21: first matching rule wins; unmatched rules fall through.
+            // First matching rule wins; unmatched rules fall through.
             for (rule in rules) {
                 val matches = NextStepRuleEvaluator.evaluateRule(
                     rule = rule,
                     stepId = step.id,
                     responses = responses,
                     step = step,
-                    // SPEC-401-A R50 (Lens B P0) — the just-pushed current step sits at the top
+                    // The just-pushed current step sits at the top
                     // of `history`, so the entry-prior step is `size - 2`.
                     previousStepId = history.elementAtOrNull(history.size - 2),
                     // A condition may name an earlier step's field; without the step list it cannot
@@ -242,7 +242,7 @@ internal object OnboardingAdvance {
                 if (!matches) continue
 
                 val rawClassified = classifyRuleTarget(rule.target_step_id)
-                // SPEC-401-A R10 — upgrade short-id paywall_trigger / end / analytics graph nodes.
+                // Upgrade short-id paywall_trigger / end / analytics graph nodes.
                 @Suppress("UNCHECKED_CAST")
                 when (
                     val classified =
@@ -265,7 +265,7 @@ internal object OnboardingAdvance {
                         if (targetIndex >= 0) return outcome(Navigation.GoToIndex(targetIndex))
                     }
                     is RuleTarget.AnalyticsEvent -> {
-                        // SPEC-070-A finalization Phase D — analytics_event graph node. Mirrors
+                        // Phase D — analytics_event graph node. Mirrors
                         // iOS OnboardingRenderer.swift:789-801: fire `event_name` (default
                         // "onboarding_analytics") with {flow_id, node_id, step_id}, then follow
                         // `next_target` if set, else fall through to the next rule.
@@ -285,7 +285,7 @@ internal object OnboardingAdvance {
                         val nextTarget = nodeData?.get("next_target") as? String
                         if (!nextTarget.isNullOrBlank()) {
                             val tIdx = flow.steps.indexOfFirst { it.id == nextTarget }
-                            // SPEC-401-A R3 — DO NOT push history again here; the leaving step
+                            // DO NOT push history again here; the leaving step
                             // was already pushed above.
                             if (tIdx >= 0) return outcome(Navigation.GoToIndex(tIdx))
                         }
@@ -329,7 +329,7 @@ internal object OnboardingAdvance {
 internal const val ONBOARDING_HOOK_COMPLETED_EVENT = "onboarding_hook_completed"
 
 /**
- * SPEC-070-B — the event fired when the flow JUMPS over one or more steps because a hook (host
+ * The event fired when the flow JUMPS over one or more steps because a hook (host
  * delegate or server webhook) returned `StepAdvanceResult.SkipTo(stepId)`.
  *
  * WHY A NEW NAME AND NOT `onboarding_step_skipped`:
@@ -376,7 +376,7 @@ internal fun StepConfig.applyingOverride(o: StepConfigOverride): StepConfig = co
     subtitle = o.subtitle ?: subtitle,
     cta_text = o.ctaText ?: cta_text,
     field_defaults = o.fieldDefaults ?: field_defaults,
-    // SPEC-448 §B — host-supplied options.
+    // Host-supplied options.
     //
     // ⚠️ NOT another flat `copy()` line like the four above. Those replace scalars on the step;
     // options live at `content_blocks[i].field_options`, one level down inside an ImmutableList.
@@ -406,15 +406,15 @@ private fun applyBlockLevelOverrides(
     if (o.fieldOptions.isNullOrEmpty() && o.mapRoutes.isNullOrEmpty()) return blocks
     return blocks.map { block ->
         var next = block
-        // SPEC-448 §B — host-supplied options.
-        // SPEC-496 §A4 — applying host options REMOVES `option_set_id`, `repeat`, `empty_state` and
+        // Host-supplied options.
+        // Applying host options REMOVES `option_set_id`, `repeat`, `empty_state` and
         // `resolve_state` from the block's field_config: that is what makes "host fieldOptions beat
         // an Option Set and a repeat" true (precedence: host > Option Set > repeat > authored).
         // One giant `ContentBlock.copy` per method — see `withHostOptions` (D8 VerifyError guard).
         o.fieldOptions?.get(block.id)?.let {
             next = next.withHostOptions(it.toImmutableList())
         }
-        // SPEC-451 — host-supplied route. Written into `field_config` under the SAME keys the
+        // Host-supplied route. Written into `field_config` under the SAME keys the
         // console authors, so the renderer has exactly one code path and a delegate route cannot
         // render differently from an authored one.
         o.mapRoutes?.get(block.id)?.let { route ->
@@ -445,7 +445,7 @@ private fun applyBlockLevelOverrides(
  * Mirrors the `socialClick` closure in `ContentBlockRenderer` — the actions a social-login
  * provider button emits, colon-encoded as `action:value`.
  *
- * SPEC-070-A C.1 — the `email` provider in a social_login block is not OAuth, so it dual-emits
+ * The `email` provider in a social_login block is not OAuth, so it dual-emits
  * `email_login:email` (canonical) plus the legacy `social_login:email` that existing handlers
  * switch on. Legacy emit removed in v1.1.0 alongside iOS.
  */

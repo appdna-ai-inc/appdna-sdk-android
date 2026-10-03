@@ -18,7 +18,7 @@ import org.json.JSONObject
 internal object PushPayloadParser {
 
     /**
-     * SPEC-070-A H.10: parse action buttons from a push data payload.
+     * Parse action buttons from a push data payload.
      *
      * Accepts BOTH schemas the AppDNA backend may emit:
      *   1. **Canonical (iOS-shaped)**: `actions` is a JSON array of
@@ -68,7 +68,7 @@ internal object PushPayloadParser {
     }
 
     /**
-     * SPEC-070-A H.10: read the canonical `action` field if present
+     * Read the canonical `action` field if present
      * (`{"type": "show_screen", "value": "settings"}`) — falls back to the flat
      * `action_type` / `action_value` keys for legacy senders.
      */
@@ -118,7 +118,7 @@ internal object PushPayloadParser {
     /**
      * Build the [PushPayload] handed to `AppDNAPushDelegate.onPushReceived`.
      *
-     * SPEC-070-B — the payload now carries the full `actions` list. Previously a host could see the
+     * The payload now carries the full `actions` list. Previously a host could see the
      * single primary `action` only, so a push with three buttons reached `onPushReceived` looking
      * identical to one with none, and the host could not pre-load anything for a button it could
      * not see. The buttons the SDK actually registers on the notification are exactly these.

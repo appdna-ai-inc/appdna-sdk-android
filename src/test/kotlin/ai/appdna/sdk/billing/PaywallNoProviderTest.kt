@@ -70,7 +70,7 @@ class PaywallNoProviderTest {
         assertEquals(listOf("purchase_failed"), pipe!!.names())
         assertEquals(listOf("failed:providerNotAvailable:pro_monthly"), calls)
         assertEquals(0, sc!!.fake.launchCount)
-        // R9 — the paywall tap's refusal reads exactly like the direct API's and the restore's (and iOS).
+        // The paywall tap's refusal reads exactly like the direct API's and the restore's (and iOS).
         assertEquals("RevenueCat: purchases are made by RevenueCat in your app", pipe!!.props("purchase_failed").getString("error"))
     }
 

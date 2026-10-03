@@ -10,7 +10,7 @@ import coil.memory.MemoryCache
 import java.io.File
 
 /**
- * SPEC-070-A A.3 — singleton Coil [ImageLoader] for the SDK's [NetworkImage].
+ * Singleton Coil [ImageLoader] for the SDK's [NetworkImage].
  *
  * Replaces the previous `BitmapFactory.decodeStream` path that re-decoded
  * the bitmap on every recomposition (no caching, blocked the launching
@@ -26,7 +26,7 @@ import java.io.File
  * behaviour can't be accidentally clobbered by a host app that sets a
  * different default singleton via `Coil.setImageLoader(...)`.
  *
- * SPEC-070-A E.5 — animated-GIF decoder registered alongside the static
+ * Animated-GIF decoder registered alongside the static
  * decoders. On API 28+ Coil's [ImageDecoderDecoder] uses the platform
  * `ImageDecoder` (covers GIF + animated WebP + animated HEIF); on older
  * devices the legacy [GifDecoder] is registered as a fallback so GIF
@@ -65,7 +65,7 @@ internal object AppDNAImageLoader {
     private fun build(appContext: Context): ImageLoader {
         return ImageLoader.Builder(appContext)
             .components {
-                // SPEC-070-A E.5 — register GIF decoder so animated GIFs
+                // Register GIF decoder so animated GIFs
                 // render their full animation rather than the first frame.
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
                     add(ImageDecoderDecoder.Factory())

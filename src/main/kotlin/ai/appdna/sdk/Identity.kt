@@ -37,20 +37,20 @@ internal class IdentityManager(private val storage: LocalStorage) {
             id
         }
         _userId = storage.getString("user_id")
-        // SPEC-088: Load persisted traits so they survive app restart
+        // Load persisted traits so they survive app restart
         _traits = loadTraits()
     }
 
     /**
      * Link the anonymous device to a known user.
      *
-     * SPEC-070-A G.21: when [traits] is null we DO NOT overwrite the stored
+     * When [traits] is null we DO NOT overwrite the stored
      * traits — mirrors iOS `IdentityManager.identify(userId:traits:)` which only
      * persists `keychainStore.setUserTraits(traits)` when a non-nil dictionary
      * is supplied (Sources/AppDNASDK/Core/Identity/IdentityManager.swift:49-58).
      */
     fun identify(userId: String, traits: Map<String, Any>?) {
-        // Round-11 Finding 1 — on a null `traits`, clear traits ONLY when the user actually CHANGES (an
+        // On a null `traits`, clear traits ONLY when the user actually CHANGES (an
         // account switch — the prior user's traits don't apply to the new one), and retain them on a
         // same-user re-identify (the common per-launch call). Previously Android retained traits even
         // across a user switch, so user B was evaluated against user A's stale traits; iOS wiped them on
@@ -78,7 +78,7 @@ internal class IdentityManager(private val storage: LocalStorage) {
     }
 
     /**
-     * SPEC-070-A G.1: Merge [newTraits] into the existing trait map without
+     * Merge [newTraits] into the existing trait map without
      * overwriting any user-set keys. Used for auto-injected geo/locale/device
      * traits from the bootstrap response.
      *
@@ -109,7 +109,7 @@ internal class IdentityManager(private val storage: LocalStorage) {
         synchronized(lock) {
             _userId = null
             _traits = null
-            // SPEC-070-A finalization §3.2 G.21 — DO NOT rotate sessionId on
+            // DO NOT rotate sessionId on
             // reset. iOS canonical reset() preserves the in-flight session
             // so post-logout events still attribute to the same session
             // until newSession() / app foreground triggers natural rotation.
@@ -126,7 +126,7 @@ internal class IdentityManager(private val storage: LocalStorage) {
         }
     }
 
-    // SPEC-088: Trait persistence helpers
+    // Trait persistence helpers
 
     private fun persistTraits(traits: Map<String, Any>?) {
         if (traits == null) {
@@ -140,7 +140,7 @@ internal class IdentityManager(private val storage: LocalStorage) {
             }
             storage.setString("user_traits", json.toString())
         } catch (e: Exception) {
-            // SPEC-070-A G.11: surface parse errors instead of silently swallowing.
+            // Surface parse errors instead of silently swallowing.
             Log.warning { "Failed to persist user traits: ${e.message}" }
         }
     }
@@ -158,7 +158,7 @@ internal class IdentityManager(private val storage: LocalStorage) {
             }
             map
         } catch (e: Exception) {
-            // SPEC-070-A G.11: surface parse errors instead of silently swallowing.
+            // Surface parse errors instead of silently swallowing.
             Log.warning { "Failed to load user traits: ${e.message}" }
             null
         }

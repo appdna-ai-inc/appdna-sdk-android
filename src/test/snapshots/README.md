@@ -1,8 +1,6 @@
 # Android Visual Goldens
 
-Committed PNG snapshots produced by [Roborazzi](https://github.com/takahirom/roborazzi) (over Paparazzi — see SPEC-070-0 §3.6 tooling decision) and reviewed during PR.
-
-See [SPEC-070-0 §3.4](../../../../../.ai/specs/SPEC-070-0-2026-05-06-cross-platform-sdk-foundation.md) — visual snapshot harness.
+Committed PNG snapshots produced by [Roborazzi](https://github.com/takahirom/roborazzi) (chosen over Paparazzi) and reviewed during PR.
 
 ## What lives here
 
@@ -12,7 +10,7 @@ Roborazzi runs **on the JVM** via Robolectric — no device, no emulator, no GPU
 
 ## When to add a golden
 
-Add a new committed snapshot in the **same PR** that introduces or modifies a Compose renderer surface. Per SPEC-070-0 §3.4, the initial set is 12 surfaces (mirrors iOS):
+Add a new committed snapshot in the **same PR** that introduces or modifies a Compose renderer surface., the initial set is 12 surfaces (mirrors iOS):
 
 1. Paywall hero (light)
 2. Paywall hero (dark)

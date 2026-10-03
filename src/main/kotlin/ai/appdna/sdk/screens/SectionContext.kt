@@ -46,7 +46,7 @@ sealed class SectionAction {
     data class Haptic(val type: String) : SectionAction()
     data class Custom(val type: String, val value: String? = null) : SectionAction()
 
-    // SPEC-070-A I.2 — extended cases for FlowManager.handleAction parity
+    // Extended cases for FlowManager.handleAction parity
     // with iOS Screens/FlowManager.swift handleAction(_:). The SDUI layer
     // already produces the existing 16 verbs above; these duplicate-named
     // verbs cover the FlowManager-specific routing surface (restart,
@@ -64,14 +64,14 @@ sealed class SectionAction {
 }
 
 /**
- * SPEC-070-C — encode a [SectionAction] as a `{type, <payload fields>}` map,
+ * Encode a [SectionAction] as a `{type, <payload fields>}` map,
  * matching iOS `AppdnaPlugin.sectionActionToMap` 1:1 (lowercase discriminator
  * + identical field names) so the cross-platform screen-action veto payload is
  * byte-identical on both platforms. Host veto logic reads `action["type"]` and
  * the type-specific payload fields (e.g. `action["url"]`).
  *
  * The 16 base verbs mirror iOS's `SectionAction` cases exactly. The 9 extended
- * FlowManager verbs (I.2) have no iOS `SectionAction` counterpart; they use
+ * FlowManager verbs have no iOS `SectionAction` counterpart; they use
  * lowerCamelCase discriminators + native field names for exhaustiveness.
  */
 fun SectionAction.toActionMap(): Map<String, Any?> = when (this) {

@@ -8,7 +8,7 @@ import org.json.JSONObject
 import java.net.URLEncoder
 
 /**
- * SPEC-448 §A/§C — the device side of a dynamic option list. Mirrors iOS `OptionSetStore`.
+ * The device side of a dynamic option list. Mirrors iOS `OptionSetStore`.
  *
  * 🔴 The rule this exists to satisfy is "**never looks like it is fetching**". A Select bound to a
  * set must render instantly with whatever it already has, and improve quietly. The fallback ladder

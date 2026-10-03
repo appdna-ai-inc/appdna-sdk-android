@@ -19,7 +19,7 @@ import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.delay
 
-// SPEC-401-A R84 (Lens C F2) — read once whether the user has Reduce Motion
+// Read once whether the user has Reduce Motion
 // enabled (Settings → Accessibility → Remove animations sets all 3 scale
 // settings to 0). iOS SwiftUI `.animation()` / `.transition()` are gated
 // implicitly by `UIAccessibility.isReduceMotionEnabled` — Compose does not
@@ -47,19 +47,19 @@ fun rememberReduceMotion(): Boolean {
 fun Modifier.entryAnimation(animation: String?, durationMs: Int? = null): Modifier {
     val anim = animation ?: "none"
     if (anim == "none") return this
-    // SPEC-401-A R84 (Lens C F2) — short-circuit when Reduce Motion is on.
+    // Short-circuit when Reduce Motion is on.
     if (rememberReduceMotion()) return this
 
     var appeared by remember { mutableStateOf(false) }
     LaunchedEffect(Unit) { appeared = true }
 
     val duration = durationMs ?: 400
-    // SPEC-401-A R52 (Lens C R52 #2, P2) — easeOut matches iOS
+    // easeOut matches iOS
     // .easeOut(duration:) at AnimationModifiers.swift:15. FastOutSlowInEasing
     // (≈ ease-in-out) made slide_up/scale_in feel slower-finishing.
     val animSpec = tween<Float>(durationMillis = duration, easing = LinearOutSlowInEasing)
 
-    // SPEC-401-A R52 (Lens C R52 #1, P2) — alpha only animates when the
+    // Alpha only animates when the
     // animation type is fade-related. iOS AnimationModifiers.swift:13 only
     // toggles opacity for fade_in / slide_up. scale_in on iOS is pure
     // scale-with-no-fade; Android was cross-fading even on scale_in.
@@ -79,7 +79,7 @@ fun Modifier.entryAnimation(animation: String?, durationMs: Int? = null): Modifi
         label = "entry_offset",
     )
 
-    // SPEC-401-A R65 (Lens C P2) — `Modifier.offset { IntOffset(...) }` lambda
+    // `Modifier.offset { IntOffset(...) }` lambda
     // form is pixel-space, NOT dp. iOS `.offset(y: 800)` is point-space (dp
     // equivalent). Same payload renders 800dp displacement on mdpi (1x) but
     // only 200dp on xhdpi (2x), 100dp on xxhdpi (3x). Convert dp→px via
@@ -98,7 +98,7 @@ fun Modifier.entryAnimation(animation: String?, durationMs: Int? = null): Modifi
 fun Modifier.sectionStagger(animation: String?, delayMs: Int? = null): Modifier {
     val anim = animation ?: "none"
     if (anim == "none") return this
-    // SPEC-401-A R84 (Lens C F2) — short-circuit when Reduce Motion is on.
+    // Short-circuit when Reduce Motion is on.
     if (rememberReduceMotion()) return this
 
     var appeared by remember { mutableStateOf(false) }
@@ -112,7 +112,7 @@ fun Modifier.sectionStagger(animation: String?, delayMs: Int? = null): Modifier 
         animationSpec = tween(400),
         label = "stagger_alpha",
     )
-    // SPEC-401-A R56 (Lens C R56 #4, P2) — Spring.StiffnessLow (~200) matches
+    // Spring.StiffnessLow (~200) matches
     // iOS `.spring(response: 0.5, dampingFraction: 0.6)` ≈ stiffness 158. Was
     // defaulting to Spring.StiffnessMedium (1500) — ~10× stiffer — so
     // bounce-in stagger snapped instantly on Android vs slow-bounce on iOS.
@@ -131,7 +131,7 @@ fun Modifier.sectionStagger(animation: String?, delayMs: Int? = null): Modifier 
         label = "stagger_scale",
     )
 
-    // SPEC-401-A R65 (Lens C P2) — sister of entryAnimation fix above:
+    // Sister of entryAnimation fix above:
     // convert offsetX dp→px via LocalDensity so slide_in distance matches
     // iOS `.offset(x: ±100)` point-space across all density buckets.
     // Was raw 300f pixels: 300dp on mdpi (3x iOS), 150dp on xhdpi (1.5x),
@@ -148,7 +148,7 @@ fun Modifier.sectionStagger(animation: String?, delayMs: Int? = null): Modifier 
 
 @Composable
 fun Modifier.ctaAnimation(animation: String?): Modifier {
-    // SPEC-401-A R84 (Lens C F2) — short-circuit when Reduce Motion is on.
+    // Short-circuit when Reduce Motion is on.
     if (rememberReduceMotion()) return this
     return when (animation) {
         "pulse" -> this.pulseEffect()
@@ -179,7 +179,7 @@ private fun Modifier.glowEffect(): Modifier {
         animationSpec = infiniteRepeatable(tween(1500), RepeatMode.Reverse),
         label = "glow_alpha",
     )
-    // SPEC-401-A R56 (Lens C R56 #1, P1) — accent from MaterialTheme.primary
+    // Accent from MaterialTheme.primary
     // matching iOS `.accentColor` resolution from host app's tint / asset
     // catalog (AnimationModifiers.swift:73). Hardcoded #6366F1 forced indigo
     // regardless of host theme — glow halos always rendered indigo even
@@ -195,7 +195,7 @@ private fun Modifier.glowEffect(): Modifier {
 @Composable
 private fun Modifier.bounceEffect(): Modifier {
     val infiniteTransition = rememberInfiniteTransition(label = "bounce")
-    // SPEC-401-A R52 (Lens C R52 #3, P2) — bounce amplitude 15→5dp matching
+    // Bounce amplitude 15→5dp matching
     // iOS AnimationModifiers.swift:84 `.offset(y: isBouncing ? -5 : 0)` (5pt).
     // Android was 3× iOS — CTA bounced dramatically more than iOS.
     val offsetY by infiniteTransition.animateFloat(
@@ -213,10 +213,10 @@ private fun Modifier.bounceEffect(): Modifier {
 fun Modifier.planSelectionAnimation(animation: String?, isSelected: Boolean): Modifier {
     val anim = animation ?: "none"
     if (anim == "none") return this
-    // SPEC-401-A R84 (Lens C F2) — short-circuit when Reduce Motion is on.
+    // Short-circuit when Reduce Motion is on.
     if (rememberReduceMotion()) return this
 
-    // SPEC-401-A R64 (Lens C P2) — match iOS `spring(response: 0.3,
+    // Match iOS `spring(response: 0.3,
     // dampingFraction: 0.7)` at AnimationModifiers.swift:125. Compose
     // default Spring.StiffnessMedium=1500 was ~3.4x stiffer than iOS
     // (response→stiffness: (2π/0.3)² ≈ 438), so the scale animation
@@ -231,14 +231,14 @@ fun Modifier.planSelectionAnimation(animation: String?, isSelected: Boolean): Mo
         label = "plan_scale",
     )
     val elevation by animateFloatAsState(
-        // SPEC-401-A R84 (Lens C F1) — drop 12→10 to match iOS shadow(radius:10)
+        // Drop 12→10 to match iOS shadow(radius:10)
         // at AnimationModifiers.swift:118. R64 nailed the spring + accent color
         // but missed the radius magnitude — Android halo rendered ~20% larger.
         targetValue = if (anim == "glow" && isSelected) 10f else 0f,
         animationSpec = planSpring,
         label = "plan_glow",
     )
-    // SPEC-401-A R56 (Lens C R56 #1, P1) — accent from MaterialTheme.primary
+    // Accent from MaterialTheme.primary
     // matching iOS `.accentColor` (AnimationModifiers.swift:117 + 122). Was
     // hardcoded #6366F1 — `border_highlight` always rendered indigo on
     // Android regardless of host theme.
@@ -260,10 +260,10 @@ fun Modifier.planSelectionAnimation(animation: String?, isSelected: Boolean): Mo
 fun Modifier.dismissAnimation(animation: String?, dismiss: Boolean): Modifier {
     val anim = animation ?: "none"
     if (anim == "none") return this
-    // SPEC-401-A R84 (Lens C F2) — short-circuit when Reduce Motion is on.
+    // Short-circuit when Reduce Motion is on.
     if (rememberReduceMotion()) return this
 
-    // SPEC-401-A R56 (Lens C R56 #2, P1) — only fade for fade_out anim;
+    // Only fade for fade_out anim;
     // matches iOS AnimationModifiers.swift:138
     // `.opacity(animation == "fade_out" && isDismissing ? 0 : 1)`. Was
     // cross-fading on every dismiss including slide_down — combined fade+
@@ -273,7 +273,7 @@ fun Modifier.dismissAnimation(animation: String?, dismiss: Boolean): Modifier {
         animationSpec = tween(300, easing = FastOutLinearInEasing),
         label = "dismiss_alpha",
     )
-    // SPEC-401-A R56 (Lens C R56 #3, P2) — FastOutLinearInEasing matches
+    // FastOutLinearInEasing matches
     // iOS `.easeIn(duration: 0.3)` (AnimationModifiers.swift:139). Was
     // FastOutSlowInEasing (ease-in-out) so slide-down "hung" at start
     // before accelerating; iOS drops immediately.

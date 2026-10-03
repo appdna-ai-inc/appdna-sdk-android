@@ -22,7 +22,7 @@ import ai.appdna.sdk.feedback.views.SingleChoiceView
 import kotlinx.collections.immutable.toImmutableList
 
 /**
- * SPEC-070-A J.17 — Compose `@Preview` functions for survey question
+ * Compose `@Preview` functions for survey question
  * renderers. Designers can iterate on individual question types inside
  * Android Studio without running the SDK on a device.
  *

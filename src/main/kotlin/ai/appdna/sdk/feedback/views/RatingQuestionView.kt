@@ -29,17 +29,17 @@ fun RatingQuestionView(
     question: SurveyQuestion,
     answer: SurveyAnswer?,
     onAnswer: (SurveyAnswer) -> Unit,
-    // SPEC-084: Gap #20 — question text style token
+    // Gap #20 — question text style token
     questionTextStyle: TextStyle = TextStyle.Default,
-    // R89 — filled rating icons honor the survey theme's resolved accent_color, matching the
+    // Filled rating icons honor the survey theme's resolved accent_color, matching the
     // console SurveyPreview (which fills rating icons with accentColor for every style). Was
     // hardcoded per-style (heart red / thumb #6366F1 / star gold), ignoring accent_color.
     accentColor: Color = ai.appdna.sdk.AppDNA.brandAccentColor()
 ) {
-    // SPEC-070-A finalization S-35 — prefer Firestore-canonical `max`
+    // Prefer Firestore-canonical `max`
     // over legacy `max_rating`. `resolvedMax` already does this resolution.
     val maxRating = question.ratingConfig?.resolvedMax ?: 5
-    // SPEC-401-A R66 (Lens A P1) — prefer Firestore-canonical `icon` over
+    // Prefer Firestore-canonical `icon` over
     // legacy `style` via `resolvedIcon`. iOS RatingQuestionView.swift:13 uses
     // `rating_config?.resolvedIcon`. Android was reading `.style` directly so
     // server-side `rating_config.icon: "heart"` rendered as legacy default
@@ -67,7 +67,7 @@ fun RatingQuestionView(
 
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             for (rating in 1..maxRating) {
-                // SPEC-070-A J.11 — localized "Rating N of M".
+                // Localized "Rating N of M".
                 val ratingCd = stringResource(R.string.appdna_a11y_rating_n_of_m, rating, maxRating)
                 Icon(
                     imageVector = if (selectedRating >= rating) filledIcon else outlinedIcon,

@@ -7,7 +7,7 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 /**
- * SPEC-401 — public API surface tests for the entitlement-aware paywall
+ * Public API surface tests for the entitlement-aware paywall
  * trigger + restore routing fixes (Android symmetric mirror of
  * SPEC401PaywallTests.swift).
  *
@@ -18,9 +18,9 @@ import org.junit.Test
  *   1. `AppDNA.paywall.skipNextAutoDismissOnRestore` exists as a public
  *      mutable Boolean, defaults to false, round-trips through get/set.
  *   2. `AppDNA.billing.refreshEntitlementCache()` is a public suspend
- *      function callable without throwing (Fix 1D contract).
+ *      function callable without throwing (contract).
  *   3. `AppDNA.billing.hasActiveSubscription()` exists synchronously
- *      (Fix 1A relies on it for the entitlement gate).
+ *      (relies on it for the entitlement gate).
  *
  * End-to-end behaviour (entitlement-skip routing, restore-to-success bridge
  * flag, dismissAfterRestore lifecycle guard, identify→refresh chain) is
@@ -40,7 +40,7 @@ class Spec401PaywallTest {
 
     /**
      * `AppDNA.paywall.skipNextAutoDismissOnRestore` exists as a public
-     * mutable Boolean. SPEC-401 R2 audit P0 — the flag is the host's
+     * mutable Boolean. The flag is the host's
      * only supported way to opt out of SDK auto-dismiss on restore
      * success. Compile-time verification + runtime default check.
      */
@@ -84,7 +84,7 @@ class Spec401PaywallTest {
 
     /**
      * Pin the existence of the BillingModule reference on AppDNA — Fix
-     * 1A's gate calls into it, Fix 1D's identify hook calls into its
+     * 1A's gate calls into it, the identify hook calls into its
      * refreshEntitlementCache(). Compile-time check that the public
      * surface is reachable.
      */

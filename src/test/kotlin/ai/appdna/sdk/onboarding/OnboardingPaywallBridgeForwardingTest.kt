@@ -14,7 +14,7 @@ import org.robolectric.RobolectricTestRunner
 import org.robolectric.Shadows.shadowOf
 
 /**
- * SPEC-070-A J.8 — a paywall opened from an onboarding step must forward EVERY lifecycle callback to
+ * A paywall opened from an onboarding step must forward EVERY lifecycle callback to
  * the host's registered paywall delegate. A host that wires analytics onto `AppDNA.paywall.listener`
  * and then opens a paywall mid-onboarding must not silently get a hole in its funnel.
  *

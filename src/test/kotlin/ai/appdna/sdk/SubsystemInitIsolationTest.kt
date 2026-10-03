@@ -13,7 +13,7 @@ import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
 
 /**
- * SPEC-070-B W13 / AC-31(b) — a subsystem that fails to start must take ONLY itself down.
+ * A subsystem that fails to start must take ONLY itself down.
  *
  * 🔴 Android's `configure()` constructed `PaywallManager`, `OnboardingFlowManager`, `SurveyManager`,
  * `WebEntitlementManager`, `MessageManager` and `SessionManager` bare. A throw out of any of their

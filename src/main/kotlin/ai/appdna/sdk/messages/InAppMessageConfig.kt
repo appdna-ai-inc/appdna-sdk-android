@@ -3,7 +3,7 @@ package ai.appdna.sdk.messages
 import androidx.compose.runtime.Immutable
 import androidx.compose.runtime.Stable
 
-// Round-36 — parse `blur_backdrop` from EITHER a bare Boolean (the console/Zod toggle shape production
+// Parse `blur_backdrop` from EITHER a bare Boolean (the console/Zod toggle shape production
 // uses: `blur_backdrop: true`) OR the full {radius,tint,saturation} object, mirroring iOS BlurConfig.init
 // (true → radius 30 / saturation 1.8; false/absent → null = no blur). The Boolean form was previously
 // dropped (`as? Map` failed), so the blur backdrop feature was entirely INERT on Android.
@@ -22,14 +22,14 @@ private fun parseBlurBackdrop(value: Any?): ai.appdna.sdk.core.BlurConfig? = whe
 }
 
 /**
- * SPEC-084: In-app message config models matching Firestore schema.
+ * In-app message config models matching Firestore schema.
  *
- * SPEC-070-A J.10 — Compose stability: MessageConfig is read by
+ * Compose stability: MessageConfig is read by
  * InAppMessageRenderer Composables. Annotated `@Stable` (rather than
  * `@Immutable`) because [MessageContent.cta_icon] / [MessageContent.secondary_cta_icon]
  * are untyped `Any?` (caller-supplied icon refs / emoji / IconReference maps)
  * and [TriggerCondition.value] is `Any?` — we don't widen those to a typed shape
- * here. SPEC-070-A J.22 has no list fields to migrate on this surface
+ * here. There are no list fields to migrate on this surface
  * (`MessageConfig.actions` does not exist on Android — the server schema only
  * carries a single `cta_action` + a `secondary_cta_text`; iOS-listed
  * `MessageConfig.content_blocks` likewise isn't in the Android schema).
@@ -75,22 +75,22 @@ data class MessageContent(
     val background_color: String? = null,
     val banner_position: String? = null, // "top" | "bottom"
     val auto_dismiss_seconds: Int? = null,
-    // SPEC-084: Styling fields
+    // Styling fields
     val text_color: String? = null,
     val button_color: String? = null,
-    // SPEC-070-A F.2: button text color + button corner radius (iOS parity)
+    // Button text color + button corner radius (iOS parity)
     val button_text_color: String? = null,
     val button_corner_radius: Int? = null,
     val corner_radius: Int? = null,
     val secondary_cta_text: String? = null,
-    // SPEC-070-A F.2: typography parity (font family + title/body sizes)
+    // Typography parity (font family + title/body sizes)
     val font_family: String? = null,
     val title_font_size: Double? = null,
     val body_font_size: Double? = null,
-    // SPEC-085: Rich media fields
+    // Rich media fields
     val lottie_url: String? = null,
     val rive_url: String? = null,
-    // SPEC-070-A F.2: rive state machine name (iOS parity)
+    // Rive state machine name (iOS parity)
     val rive_state_machine: String? = null,
     val video_url: String? = null,
     val video_thumbnail_url: String? = null,
@@ -99,12 +99,12 @@ data class MessageContent(
     val haptic: ai.appdna.sdk.core.HapticConfig? = null,
     val particle_effect: ai.appdna.sdk.core.ParticleEffect? = null,
     val blur_backdrop: ai.appdna.sdk.core.BlurConfig? = null,
-    // SPEC-205 / SPEC-070-A F.2: sparse dark-mode overrides
+    // Sparse dark-mode overrides
     val dark: MessageContentDark? = null,
 )
 
 /**
- * SPEC-205 / SPEC-070-A D.4: render-time resolver. In dark mode, any field
+ * Render-time resolver. In dark mode, any field
  * set on [MessageContent.dark] overrides the matching field above; everything
  * else falls back to the light (default) value. In light mode or when no
  * `dark` overrides exist, returns this unchanged.
@@ -140,7 +140,7 @@ fun MessageContent.resolved(isDark: Boolean): MessageContent {
 }
 
 /**
- * SPEC-205 / SPEC-070-A F.2: Dark-mode overrides for [MessageContent].
+ * Dark-mode overrides for [MessageContent].
  * Sparse — only fields set here override the matching light-mode field on the
  * parent. Mirrors iOS `MessageContentDark` in `InAppMessaging/MessageConfig.swift`.
  */
@@ -173,7 +173,7 @@ data class CTAAction(
     val url: String? = null,
 )
 
-// SPEC-070-A J.10 — @Stable, not @Immutable: TriggerCondition.value is `Any?`
+// @Stable, not @Immutable: TriggerCondition.value is `Any?`
 // (passthrough scalar/object). The `conditions` list is short-lived (evaluated
 // once per message check) and not a Compose hot path, so we keep stock `List`
 // rather than widen the API to ImmutableList.
@@ -181,7 +181,7 @@ data class CTAAction(
 data class TriggerRules(
     val event: String,
     val conditions: List<TriggerCondition>? = null,
-    // SPEC-401-A R66 (Lens A P1) — default `once` (NOT `every_time`) matches
+    // Default `once` (NOT `every_time`) matches
     // iOS MessageManager.swift:58 `config.trigger_rules?.frequency ?? .once`.
     // A message authored with no `frequency` field shipped from the console
     // would show every event-fire on Android vs once on iOS — inflating
@@ -222,7 +222,7 @@ internal object MessageConfigParser {
     }
 
     /**
-     * SPEC-036-F §1.2 — parse a single in-app-message config map (e.g. an
+     * Parse a single in-app-message config map (e.g. an
      * experiment treatment `payload`) into a typed [MessageConfig], using the
      * SAME parser the live config path uses. Returns null on failure → caller
      * falls back to the active entity.
@@ -255,19 +255,19 @@ internal object MessageConfigParser {
             auto_dismiss_seconds = (contentMap["auto_dismiss_seconds"] as? Number)?.toInt(),
             text_color = contentMap["text_color"] as? String,
             button_color = contentMap["button_color"] as? String,
-            // SPEC-070-A F.2
+            //
             button_text_color = contentMap["button_text_color"] as? String,
             button_corner_radius = (contentMap["button_corner_radius"] as? Number)?.toInt(),
             corner_radius = (contentMap["corner_radius"] as? Number)?.toInt(),
             secondary_cta_text = contentMap["secondary_cta_text"] as? String,
-            // SPEC-070-A F.2: typography
+            // Typography
             font_family = contentMap["font_family"] as? String,
             title_font_size = (contentMap["title_font_size"] as? Number)?.toDouble(),
             body_font_size = (contentMap["body_font_size"] as? Number)?.toDouble(),
-            // SPEC-085: Rich media fields
+            // Rich media fields
             lottie_url = contentMap["lottie_url"] as? String,
             rive_url = contentMap["rive_url"] as? String,
-            // SPEC-070-A F.2
+            //
             rive_state_machine = contentMap["rive_state_machine"] as? String,
             video_url = contentMap["video_url"] as? String,
             video_thumbnail_url = contentMap["video_thumbnail_url"] as? String,
@@ -296,7 +296,7 @@ internal object MessageConfigParser {
                 )
             },
             blur_backdrop = parseBlurBackdrop(contentMap["blur_backdrop"]),
-            // SPEC-205 / SPEC-070-A F.2: dark mode sparse overrides
+            // Dark mode sparse overrides
             dark = (contentMap["dark"] as? Map<String, Any>)?.let { d ->
                 MessageContentDark(
                     background_color = d["background_color"] as? String,
@@ -337,7 +337,7 @@ internal object MessageConfigParser {
         val triggerRules = TriggerRules(
             event = rulesMap["event"] as? String ?: "",
             conditions = conditions,
-            // R87 P1 — default `once` matches iOS
+            // Default `once` matches iOS
             // `triggerRules.frequency ?? .once` at MessageManager.swift:56,133.
             // Was `every_time` → console-published messages with no frequency
             // configured showed on EVERY event-match on Android while iOS

@@ -16,7 +16,7 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 /**
- * SPEC-496 §5b C5.5 / C10 "Native unit tests" — the pure [InteractionCoordinator] seam that production
+ * "Native unit tests" — the pure [InteractionCoordinator] seam that production
  * (`BlockBasedStepView`) and the fixture driver share.
  */
 @OptIn(ExperimentalCoroutinesApi::class)

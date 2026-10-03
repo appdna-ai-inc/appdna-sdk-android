@@ -3,13 +3,13 @@ package ai.appdna.sdk.storage
 import android.content.Context
 
 /**
- * SPEC-070-B PN row 14 (AC-36 / W8) — the persisted analytics-consent decision.
+ * The persisted analytics-consent decision.
  *
  * Consent used to live only in `EventTracker.analyticsConsent`, an in-memory `Boolean` initialised
  * to `true`. So `setConsent(false)` held for the life of the process and was silently undone by the
  * next cold start: an opted-out user was opted back in on every launch. That is a bug, not a missing
  * feature, which is why the fix lands here rather than waiting for the full multi-purpose consent
- * store (SPEC-424).
+ * store.
  *
  * A dedicated `SharedPreferences` file — not [LocalStorage] — because the decision must be readable
  * before `configure()` wires the pipeline, and because it must never land in the encrypted store's
@@ -61,7 +61,7 @@ internal object ConsentStore {
      *     [requireConsent] is set. The pre-decision exposure at the default is the documented behavior
      *     OF the default, not a hole in the gate.
      *   - The per-purpose consent store (marketing / personalisation / analytics as separate grants)
-     *     is SPEC-424, and that is where a compliant DEFAULT belongs — it needs a consent UI and a
+     *     is separate work, and that is where a compliant DEFAULT belongs — it needs a consent UI and a
      *     host migration, neither of which is a wrapper's to invent.
      *
      * When [requireConsent] is true, the absence of a decision means **denied** (opt-in), and NO event

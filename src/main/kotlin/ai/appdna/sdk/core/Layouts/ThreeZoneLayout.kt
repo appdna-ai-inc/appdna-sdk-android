@@ -11,7 +11,7 @@ import androidx.compose.ui.Modifier
 import ai.appdna.sdk.onboarding.ContentBlock
 
 /**
- * SPEC-070-A I.17 — `ThreeZoneLayout` partitions a step's [ContentBlock]
+ * `ThreeZoneLayout` partitions a step's [ContentBlock]
  * list into three vertical zones — top, center, bottom — and spaces them
  * with weighted spacers so each zone retains its visual region as the
  * screen height changes.

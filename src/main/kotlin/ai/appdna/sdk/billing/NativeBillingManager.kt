@@ -19,7 +19,7 @@ import java.util.UUID
 /**
  * Options applied to a [NativeBillingManager.purchase] call.
  *
- * SPEC-070-A A.28 — mirrors iOS `PurchaseOptions` (AppDNA+Modules.swift:454).
+ * Mirrors iOS `PurchaseOptions` (AppDNA+Modules.swift:454).
  * The `appAccountToken` is forwarded to Google Play as the obfuscated account
  * ID (`BillingFlowParams.setObfuscatedAccountId`) so Play can correlate the
  * receipt with the app's user identity for fraud / chargeback investigations.
@@ -39,7 +39,7 @@ data class PurchaseOptions(
 /**
  * Entitlement model representing an active subscription or purchase.
  *
- * SPEC-070-A A.5: `@Keep` so R8/minify never drops this DTO. Hosts read
+ * `@Keep` so R8/minify never drops this DTO. Hosts read
  * these fields reflectively when bridging to RN/Flutter channels and
  * via direct getters from the RevenueCat shim.
  */
@@ -349,7 +349,7 @@ class NativeBillingManager internal constructor(
 
     /**
      * Track (while the purchase scope still carries its attribution), then resolve the caller. With no
-     * live caller (R9) the failure is reported unattributed and the scope is left alone.
+     * live caller the failure is reported unattributed and the scope is left alone.
      */
     private fun failAndResume(error: String, reason: String, debugMessage: String?) {
         Log.warning("Purchase update: $reason ${debugMessage ?: ""}")
@@ -372,7 +372,7 @@ class NativeBillingManager internal constructor(
             priceResolver.isKnownSubscriptionProduct(productId)
 
     /**
-     * Finalization (Lens C) — shared purchase-event property builder used by
+     * Finalization — shared purchase-event property builder used by
      * RevenueCatBridge + AdaptyBridge so direct-purchase paths emit the same shape as the native path.
      */
     fun purchaseEventProps(productId: String, provider: String): Map<String, Any> {

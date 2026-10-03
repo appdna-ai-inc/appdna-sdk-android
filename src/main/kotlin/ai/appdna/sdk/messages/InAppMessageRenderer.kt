@@ -47,11 +47,11 @@ import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
-// SPEC-070-A J.11 — accessibility string resources for in-app message chrome.
+// Accessibility string resources for in-app message chrome.
 import ai.appdna.sdk.R
 
 /**
- * SPEC-084: Complete in-app message renderer for Android.
+ * Complete in-app message renderer for Android.
  * Renders banner, modal, fullscreen, and tooltip message types
  * with configurable styling (text_color, button_color, corner_radius, background_color).
  */
@@ -61,13 +61,13 @@ fun InAppMessageView(
     config: MessageConfig,
     onCTATap: () -> Unit,
     onDismiss: () -> Unit,
-    // SPEC-205 / SPEC-070-A D.4: optional override; defaults to system setting.
+    // Optional override; defaults to system setting.
     // Callers (MessageManager / PendingMessageListener) wrap the renderer in a
     // ComposeView that does not host MaterialTheme, so we self-host both the
     // dark-mode read and the MaterialTheme seeding here.
     isDark: Boolean = isSystemInDarkTheme(),
 ) {
-    // SPEC-088: Interpolate text fields via TemplateEngine before rendering
+    // Interpolate text fields via TemplateEngine before rendering
     val ctx = ai.appdna.sdk.core.TemplateEngine.buildContext()
     val e = ai.appdna.sdk.core.TemplateEngine
     val interpolated = config.content.copy(
@@ -78,13 +78,13 @@ fun InAppMessageView(
         dismiss_text = config.content.dismiss_text?.let { e.interpolate(it, ctx) },
     )
 
-    // SPEC-205 / SPEC-070-A D.4: apply dark overrides BEFORE handing to the
+    // Apply dark overrides BEFORE handing to the
     // type-specific sub-views, so they see the final resolved colors/images
     // for the current scheme. Mirrors iOS `MessageRenderer.body` which calls
     // `interpolatedContent.resolved(for: colorScheme)`.
     val content = interpolated.resolved(isDark)
 
-    // SPEC-070-A D.6: seed a MaterialTheme color scheme from the resolved
+    // Seed a MaterialTheme color scheme from the resolved
     // content colors so child Material widgets pick up the brand colors. The
     // sub-views still resolve per-token colors directly off `content` so
     // un-styled spots use the platform fallback rather than a brand color
@@ -124,7 +124,7 @@ private fun BannerMessageView(
 
     LaunchedEffect(Unit) {
         isVisible = true
-        // SPEC-070-A finalization parity (Lens B P1) — haptic on appear,
+        // iOS parity — haptic on appear,
         // matches iOS BannerView.swift:29.
         HapticEngine.triggerIfEnabled(currentView, content.haptic?.triggers?.on_button_tap, content.haptic)
         content.auto_dismiss_seconds?.let { seconds ->
@@ -139,13 +139,13 @@ private fun BannerMessageView(
 
     val textColor = content.text_color?.let { StyleEngine.parseColor(it) } ?: Color.Unspecified
     val buttonColor = content.button_color?.let { StyleEngine.parseColor(it) } ?: Color(0xFF6366F1)
-    // SPEC-205 / SPEC-070-A D.6: fall back to MaterialTheme.surface so dark
+    // Fall back to MaterialTheme.surface so dark
     // mode picks up the seeded scheme color rather than hard-coded white.
     val bgColor = content.background_color?.let { StyleEngine.parseColor(it) } ?: MaterialTheme.colorScheme.surface
     val cornerRadius = content.corner_radius ?: 12
 
     Box(modifier = Modifier.fillMaxSize()) {
-        // SPEC-401-A R68 (Lens C P2) — calibrated spring matches iOS
+        // Calibrated spring matches iOS
         // BannerView.swift:30 `withAnimation(.spring(response: 0.4,
         // dampingFraction: 0.8))`. Compose default spring is
         // `StiffnessMediumLow / NoBouncy` — non-bouncy + slower-settling.
@@ -182,17 +182,17 @@ private fun BannerMessageView(
                             content.title?.let {
                                 Text(
                                     text = it,
-                                    // SPEC-070-A finalization P0 audit-11 M-35
+                                    // 11 M-35
                                     // — apply title_font_size + font_family
                                     // (parsed but previously ignored).
-                                    // R89 — Banner title default 15sp matches
+                                    // Banner title default 15sp matches
                                     // iOS BannerView.swift:49 `.subheadline.bold`
                                     // (.subheadline = 15pt). Was 14.
                                     fontSize = (content.title_font_size ?: 15.0).sp,
                                     fontFamily = FontResolver.resolve(content.font_family),
                                     fontWeight = FontWeight.Bold,
                                     color = textColor,
-                                    // SPEC-070-A J.11 — banner title acts as
+                                    // Banner title acts as
                                     // the heading for the message surface.
                                     modifier = Modifier.semantics { heading() },
                                 )
@@ -213,13 +213,13 @@ private fun BannerMessageView(
                         content.cta_text?.let { ctaText ->
                             Button(
                                 onClick = {
-                                    // Round-25 — fire the on_button_tap haptic like modal/fullscreen +
+                                    // Fire the on_button_tap haptic like modal/fullscreen +
                                     // iOS BannerView; banner CTA silently dropped a configured haptic.
                                     HapticEngine.triggerIfEnabled(currentView, content.haptic?.triggers?.on_button_tap, content.haptic)
                                     onCTATap()
                                 },
                                 colors = ButtonDefaults.buttonColors(containerColor = buttonColor),
-                                // SPEC-401-A R86 (Lens C F1) — CTA shape uses
+                                // CTA shape uses
                                 // `content.button_corner_radius ?? 8` matching
                                 // iOS BannerView.swift:78. Was reusing the
                                 // banner card corner_radius — silently dropped
@@ -227,7 +227,7 @@ private fun BannerMessageView(
                                 shape = RoundedCornerShape((content.button_corner_radius ?: 8).dp),
                                 contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
                             ) {
-                                // SPEC-085: CTA icon
+                                // CTA icon
                                 val ctaIcon = resolveIcon(content.cta_icon)
                                 if (ctaIcon != null) {
                                     IconView(ref = ctaIcon, defaultSize = 12f)
@@ -241,7 +241,7 @@ private fun BannerMessageView(
                         val dismissCd = stringResource(R.string.appdna_a11y_message_close)
                         IconButton(
                             onClick = {
-                                // Round-25 \u2014 flip visible + delay 300ms so the slide/fade exit plays
+                                // \u2014 flip visible + delay 300ms so the slide/fade exit plays
                                 // before the ComposeView is torn down, matching iOS BannerView + Android's
                                 // own banner auto-dismiss path (was tearing down synchronously \u2192 instant).
                                 dismissScope.launch {
@@ -250,7 +250,7 @@ private fun BannerMessageView(
                                     onDismiss()
                                 }
                             },
-                            // SPEC-070-A J.11 \u2014 close X uses Material Close
+                            // \u2014 close X uses Material Close
                             // icon (was Text glyph); mirrors iOS SF Symbol
                             // `xmark`. a11y label attached for TalkBack.
                             modifier = Modifier
@@ -297,17 +297,17 @@ private fun ModalMessageView(
 ) {
     val textColor = content.text_color?.let { StyleEngine.parseColor(it) } ?: Color.Unspecified
     val buttonColor = content.button_color?.let { StyleEngine.parseColor(it) } ?: Color(0xFF6366F1)
-    // SPEC-205 / SPEC-070-A D.6: fall back to MaterialTheme.surface so dark
+    // Fall back to MaterialTheme.surface so dark
     // mode picks up the seeded scheme color rather than hard-coded white.
     val bgColor = content.background_color?.let { StyleEngine.parseColor(it) } ?: MaterialTheme.colorScheme.surface
-    // R89 — corner_radius default 12 matches iOS ModalView.swift:134
+    // corner_radius default 12 matches iOS ModalView.swift:134
     // `content.corner_radius ?? 12`. Was 20 — modal cards rendered with
     // dramatically rounder corners than iOS.
     val cornerRadius = content.corner_radius ?: 12
     val currentView = LocalView.current
     var showConfetti by remember { mutableStateOf(false) }
 
-    // SPEC-085: Haptic on appear
+    // Haptic on appear
     LaunchedEffect(Unit) {
         HapticEngine.triggerIfEnabled(currentView, content.haptic?.triggers?.on_button_tap, content.haptic)
         // Auto-trigger confetti on appear
@@ -322,19 +322,19 @@ private fun ModalMessageView(
         modifier = Modifier
             .fillMaxSize()
             .then(
-                // SPEC-085: Blur backdrop for glassmorphism
+                // Blur backdrop for glassmorphism
                 if (content.blur_backdrop != null) {
-                    // Round-36 — iOS ModalView keeps a 0.3 black dim UNDER the blur material; Android
+                    // iOS ModalView keeps a 0.3 black dim UNDER the blur material; Android
                     // had only the blur tint (no dark dim). Layer the dim then the blur, matching iOS.
                     Modifier
                         .background(Color.Black.copy(alpha = 0.3f))
                         .applyBlurBackdrop(content.blur_backdrop, 0f)
                 } else {
-                    // Round-36 — non-blur scrim = black @ 0.4, matching iOS ModalView:21 (was 0.5).
+                    // Non-blur scrim = black @ 0.4, matching iOS ModalView:21 (was 0.5).
                     Modifier.background(Color.Black.copy(alpha = 0.4f))
                 }
             )
-            // SPEC-401-A R86 (Lens C F3) — null indication suppresses Material
+            // Null indication suppresses Material
             // ripple on the dimmed scrim, matching iOS ModalView.swift:23
             // `.onTapGesture` (no ripple). Was flashing a ripple highlight
             // over the dim layer on tap-to-dismiss.
@@ -363,7 +363,7 @@ private fun ModalMessageView(
                     val modalDismissCd = stringResource(R.string.appdna_a11y_message_close)
                     IconButton(
                         onClick = onDismiss,
-                        // SPEC-070-A J.11 \u2014 modal close X uses Material
+                        // \u2014 modal close X uses Material
                         // Close icon (mirrors iOS SF Symbol `xmark`).
                         modifier = Modifier
                             .size(32.dp)
@@ -378,7 +378,7 @@ private fun ModalMessageView(
                     }
                 }
 
-                // SPEC-085: Lottie/Rive hero (preferred over static image)
+                // Lottie/Rive hero (preferred over static image)
                 if (content.lottie_url != null) {
                     LottieBlockView(
                         block = LottieBlock(
@@ -398,7 +398,7 @@ private fun ModalMessageView(
                     )
                     Spacer(modifier = Modifier.height(16.dp))
                 } else if (content.video_url != null) {
-                    // SPEC-085: Video hero
+                    // Video hero
                     CoreVideoBlockView(
                         block = CoreVideoBlock(
                             video_url = content.video_url,
@@ -432,14 +432,14 @@ private fun ModalMessageView(
                 content.title?.let {
                     Text(
                         text = it,
-                        // SPEC-070-A finalization P0 audit-11 M-35 — apply
+                        // 11 M-35 — apply
                         // title_font_size + font_family.
                         fontSize = (content.title_font_size ?: 20.0).sp,
                         fontFamily = FontResolver.resolve(content.font_family),
                         fontWeight = FontWeight.Bold,
                         textAlign = TextAlign.Center,
                         color = textColor,
-                        // SPEC-070-A J.11 — modal message title is the screen
+                        // Modal message title is the screen
                         // heading for accessibility.
                         modifier = Modifier.semantics { heading() },
                     )
@@ -450,7 +450,7 @@ private fun ModalMessageView(
                 content.body?.let {
                     Text(
                         text = it,
-                        // R89 — Modal body default 17sp matches iOS
+                        // Modal body default 17sp matches iOS
                         // ModalView.swift:84 `.body` font (.body = 17pt).
                         // Was 16sp.
                         fontSize = (content.body_font_size ?: 17.0).sp,
@@ -467,7 +467,7 @@ private fun ModalMessageView(
                 content.cta_text?.let { ctaText ->
                     Button(
                         onClick = {
-                            // SPEC-085: Haptic on CTA tap
+                            // Haptic on CTA tap
                             HapticEngine.triggerIfEnabled(currentView, content.haptic?.triggers?.on_button_tap, content.haptic)
                             onCTATap()
                         },
@@ -475,14 +475,14 @@ private fun ModalMessageView(
                             .fillMaxWidth()
                             .height(48.dp),
                         colors = ButtonDefaults.buttonColors(containerColor = buttonColor),
-                        // SPEC-401-A R86 (Lens C F1) — CTA shape uses
+                        // CTA shape uses
                         // `content.button_corner_radius ?? 8` matching iOS
                         // ModalView.swift:107. Was reusing modal card
                         // corner_radius default 12 — dropped every
                         // console-set button_corner_radius.
                         shape = RoundedCornerShape((content.button_corner_radius ?: 8).dp),
                     ) {
-                        // SPEC-085: CTA icon
+                        // CTA icon
                         val ctaIcon = resolveIcon(content.cta_icon)
                         if (ctaIcon != null) {
                             IconView(ref = ctaIcon, defaultSize = 18f)
@@ -520,7 +520,7 @@ private fun ModalMessageView(
             }
         }
 
-        // SPEC-085: Confetti overlay
+        // Confetti overlay
         if (showConfetti && content.particle_effect != null) {
             ConfettiOverlay(
                 effect = content.particle_effect,
@@ -540,7 +540,7 @@ private fun FullscreenMessageView(
 ) {
     val textColor = content.text_color?.let { StyleEngine.parseColor(it) } ?: Color.Unspecified
     val buttonColor = content.button_color?.let { StyleEngine.parseColor(it) } ?: Color(0xFF6366F1)
-    // SPEC-205 / SPEC-070-A D.6: fall back to MaterialTheme.surface so dark
+    // Fall back to MaterialTheme.surface so dark
     // mode picks up the seeded scheme color rather than hard-coded white.
     val bgColor = content.background_color?.let { StyleEngine.parseColor(it) } ?: MaterialTheme.colorScheme.surface
     val cornerRadius = content.corner_radius ?: 14
@@ -548,7 +548,7 @@ private fun FullscreenMessageView(
     var showConfetti by remember { mutableStateOf(false) }
 
     LaunchedEffect(Unit) {
-        // SPEC-070-A finalization parity (Lens B P1) — haptic on appear,
+        // iOS parity — haptic on appear,
         // matches iOS FullscreenView.swift:145.
         HapticEngine.triggerIfEnabled(currentView, content.haptic?.triggers?.on_button_tap, content.haptic)
         if (content.particle_effect?.trigger == "on_appear") {
@@ -570,7 +570,7 @@ private fun FullscreenMessageView(
         ) {
             Spacer(modifier = Modifier.weight(1f))
 
-            // SPEC-085: Lottie/Rive/Video hero (preferred over static image)
+            // Lottie/Rive/Video hero (preferred over static image)
             if (content.lottie_url != null) {
                 LottieBlockView(
                     block = LottieBlock(
@@ -619,8 +619,8 @@ private fun FullscreenMessageView(
             content.title?.let {
                 Text(
                     text = it,
-                    // SPEC-070-A finalization P0 audit-11 M-35
-                    // R89 — Fullscreen title 34sp matches iOS FullscreenView
+                    // 11 M-35
+                    // Fullscreen title 34sp matches iOS FullscreenView
                     // .swift:64 `.largeTitle.bold` (.largeTitle = 34pt).
                     // Was 32.
                     fontSize = (content.title_font_size ?: 34.0).sp,
@@ -628,7 +628,7 @@ private fun FullscreenMessageView(
                     fontWeight = FontWeight.Bold,
                     textAlign = TextAlign.Center,
                     color = textColor,
-                    // SPEC-070-A J.11 — fullscreen message title is the
+                    // Fullscreen message title is the
                     // screen heading for accessibility.
                     modifier = Modifier.semantics { heading() },
                 )
@@ -639,7 +639,7 @@ private fun FullscreenMessageView(
             content.body?.let {
                 Text(
                     text = it,
-                    // R89 — Fullscreen body 17sp matches iOS FullscreenView
+                    // Fullscreen body 17sp matches iOS FullscreenView
                     // .swift:73 `.body` font (.body = 17pt). Was 16.
                     fontSize = (content.body_font_size ?: 17.0).sp,
                     fontFamily = FontResolver.resolve(content.font_family),
@@ -663,7 +663,7 @@ private fun FullscreenMessageView(
                         .fillMaxWidth()
                         .height(54.dp),
                     colors = ButtonDefaults.buttonColors(containerColor = buttonColor),
-                    // SPEC-401-A R86 (Lens C F1) — CTA shape uses
+                    // CTA shape uses
                     // `content.button_corner_radius ?? 8` matching iOS
                     // FullscreenView.swift:99. Was reusing fullscreen card
                     // corner_radius — dropped console-set button radius.
@@ -711,8 +711,8 @@ private fun FullscreenMessageView(
         val fullscreenCloseCd = stringResource(R.string.appdna_a11y_message_close)
         IconButton(
             onClick = onDismiss,
-            // SPEC-070-A J.11 \u2014 fullscreen close X (Text glyph).
-            // SPEC-070-A finalization R6 P1 (Lens B) \u2014 no background fill,
+            // \u2014 fullscreen close X (Text glyph).
+            // \u2014 no background fill,
             // matches iOS FullscreenView.swift:129-135 which renders just the
             // xmark glyph inside a clipShape(Circle()) with no .background.
             modifier = Modifier
@@ -730,7 +730,7 @@ private fun FullscreenMessageView(
             )
         }
 
-        // SPEC-085: Confetti overlay
+        // Confetti overlay
         if (showConfetti && content.particle_effect != null) {
             ConfettiOverlay(
                 effect = content.particle_effect,
@@ -750,7 +750,7 @@ private fun TooltipMessageView(
 ) {
     val textColor = content.text_color?.let { StyleEngine.parseColor(it) } ?: Color.Unspecified
     val buttonColor = content.button_color?.let { StyleEngine.parseColor(it) } ?: Color(0xFF6366F1)
-    // SPEC-205 / SPEC-070-A D.6: fall back to MaterialTheme.surface so dark
+    // Fall back to MaterialTheme.surface so dark
     // mode picks up the seeded scheme color rather than hard-coded white.
     val bgColor = content.background_color?.let { StyleEngine.parseColor(it) } ?: MaterialTheme.colorScheme.surface
     val cornerRadius = content.corner_radius ?: 12
@@ -758,7 +758,7 @@ private fun TooltipMessageView(
     var isDismissed by remember { mutableStateOf(false) }
     val dismissScope = rememberCoroutineScope()
 
-    // SPEC-070-A finalization parity (Lens B P1):
+    // iOS parity:
     // - haptic on appear (iOS TooltipView.swift:23)
     // - auto_dismiss_seconds timer (iOS TooltipView.swift:28-33)
     LaunchedEffect(Unit) {
@@ -774,7 +774,7 @@ private fun TooltipMessageView(
         }
     }
 
-    // SPEC-401-A R68 (Lens C P1) — tooltip is a NON-BLOCKING popover, not a
+    // Tooltip is a NON-BLOCKING popover, not a
     // modal. iOS TooltipView.swift:20 uses `Color.black.opacity(0.01)`
     // (tap-through transparent) with NO `.onTapGesture` on the backdrop.
     // Android was rendering 30% opaque scrim AND tap-outside-to-dismiss —
@@ -787,7 +787,7 @@ private fun TooltipMessageView(
             .fillMaxSize(),
         contentAlignment = Alignment.BottomCenter,
     ) {
-        // SPEC-401-A R68 (Lens C P2) — entry transition matches iOS
+        // Entry transition matches iOS
         // TooltipView.swift:15-26 `if isVisible { … }.transition(.move(edge:
         // .bottom).combined(with: .opacity))`. Drives a `var isVisible by
         // remember` flipped to true via LaunchedEffect on first composition,
@@ -830,7 +830,7 @@ private fun TooltipMessageView(
                         ) {
                             Text(
                                 text = it,
-                                // R89 — Tooltip title default 15sp matches
+                                // Tooltip title default 15sp matches
                                 // iOS TooltipView.swift:44 `.subheadline.bold`
                                 // (.subheadline = 15pt). Was 14.
                                 fontSize = (content.title_font_size ?: 15.0).sp,
@@ -838,17 +838,17 @@ private fun TooltipMessageView(
                                 fontWeight = FontWeight.SemiBold,
                                 textAlign = TextAlign.Start,
                                 color = textColor,
-                                // SPEC-070-A J.11 — tooltip title acts as the
+                                // Tooltip title acts as the
                                 // heading for the tooltip content.
                                 modifier = Modifier.weight(1f).semantics { heading() },
                             )
-                            // SPEC-070-A finalization parity (Lens B P1) —
+                            // iOS parity
                             // inline xmark close button mirrors iOS
                             // TooltipView.swift:56-63 so the user has a
                             // visible affordance even if backdrop tap is
                             // blocked or unclear.
                             IconButton(onClick = {
-                                // Round-25 — animate the fade/scale-out before teardown (matches iOS
+                                // Animate the fade/scale-out before teardown (matches iOS
                                 // TooltipView), rather than tearing the ComposeView down instantly.
                                 dismissScope.launch {
                                     tooltipVisible = false
@@ -888,20 +888,20 @@ private fun TooltipMessageView(
                     // corner_radius, diverging from banner/modal/fullscreen).
                     content.cta_text?.let { ctaText ->
                         Spacer(modifier = Modifier.height(12.dp))
-                        // Round-36 — the tooltip CTA is a colored TEXT-LINK on iOS (TooltipView:
+                        // The tooltip CTA is a colored TEXT-LINK on iOS (TooltipView:
                         // `button_color` colors the TEXT, no fill/shape), NOT a filled pill like the
                         // other three message types. Android had unified it into a filled Button, so
                         // `button_color` meant the opposite (background fill, white text). Match iOS:
                         // unfilled TextButton, button_color as the text color.
                         TextButton(
                             onClick = {
-                                // Round-25 — on_button_tap haptic like modal/fullscreen + iOS TooltipView.
+                                // on_button_tap haptic like modal/fullscreen + iOS TooltipView.
                                 HapticEngine.triggerIfEnabled(currentView, content.haptic?.triggers?.on_button_tap, content.haptic)
                                 onCTATap()
                             },
                             contentPadding = PaddingValues(horizontal = 0.dp, vertical = 8.dp),
                         ) {
-                            // SPEC-085: CTA icon
+                            // CTA icon
                             val ctaIcon = resolveIcon(content.cta_icon)
                             if (ctaIcon != null) {
                                 IconView(ref = ctaIcon, defaultSize = 12f)
@@ -931,7 +931,7 @@ private fun TooltipMessageView(
                 }
             }
 
-            // Pointer arrow (Gap #17). SPEC-070-A finalization R4 P2 (Lens B)
+            // Pointer arrow (Gap #17).
             // — soft drop-shadow matches iOS TooltipView shadow(0.08 opacity).
             Box(
                 modifier = Modifier
@@ -947,6 +947,6 @@ private fun TooltipMessageView(
                     .background(bgColor),
             )
         }
-        } // AnimatedVisibility — SPEC-401-A R68 (Lens C P2) entry transition
+        } // AnimatedVisibility — entry transition
     }
 }

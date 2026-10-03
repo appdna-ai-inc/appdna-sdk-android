@@ -4,7 +4,7 @@ pluginManagement {
         mavenCentral()
         gradlePluginPortal()
     }
-    // SPEC-070-A J.18 — pre-resolve AGP plugin markers at the settings level so
+    // Pre-resolve AGP plugin markers at the settings level so
     // child modules (e.g. `:sample`) can apply `id("com.android.application")`
     // / `id("com.android.library")` without specifying a version. Without this
     // block the `:sample` module fails plugin resolution because the root
@@ -31,7 +31,7 @@ dependencyResolutionManagement {
 
 rootProject.name = "appdna-sdk-android"
 
-// SPEC-070-A J.18 — sample/example app module. Lives at
+// sample/example app module. Lives at
 // packages/appdna-sdk-android/sample/ and depends on `project(":")` so any
 // breaking change in the SDK's public surface fails `./gradlew :sample:assembleDebug`.
 // The library's own assembleDebug does NOT depend on this module, so a

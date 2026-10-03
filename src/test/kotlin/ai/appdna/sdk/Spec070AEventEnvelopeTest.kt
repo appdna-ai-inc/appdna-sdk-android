@@ -10,7 +10,7 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 /**
- * SPEC-070-A A.6 + A.14 — verify event envelope no longer hard-codes the SDK
+ * Verify event envelope no longer hard-codes the SDK
  * version and now carries `context.experiment_exposures` when provided.
  */
 class Spec070AEventEnvelopeTest {
