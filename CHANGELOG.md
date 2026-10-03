@@ -210,8 +210,10 @@ Wraps iOS 1.0.82. Ships maps and host data (including "Show more").
   back-fill with one compiled statement, not a statement per row, on the thread that first opens the database.
 - Two helpers upgrading the same event database (the queue's and the WorkManager uploader's) no longer fail
   with "duplicate column": every upgrade checks the table before it changes it.
-- An app that goes back to an older SDK keeps its queued events instead of failing to open the event database
-  (`Can't downgrade database`); a table the older SDK cannot use is rebuilt and its events counted as dropped.
+- From this version on, going back to an older SDK (1.0.54 or later) keeps the queued events instead of failing to
+  open the event database; a table that version cannot use is rebuilt and its events counted as dropped. Going back
+  to 1.0.53 or earlier still fails to open the newer database (`Can't downgrade database`), so events are not
+  recorded until the app is updated again.
 - The 5 MB event quota measures the queued events' bytes (each event's JSON plus one byte, as iOS) instead of
   the SQLite file, and evicts the oldest 10 % until they fit (it evicted 10 % once per insert, measuring pages,
   indexes and the free list — a small quota emptied the table).
