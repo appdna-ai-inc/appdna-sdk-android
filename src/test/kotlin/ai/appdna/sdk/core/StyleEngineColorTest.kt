@@ -6,7 +6,7 @@ import org.junit.Test
 import kotlin.math.roundToInt
 
 /**
- * SPEC-070-A A.2 — verifies the 8-char hex byte order matches iOS RGBA
+ * Verifies the 8-char hex byte order matches iOS RGBA
  * (`Paywalls/PaywallHelperViews.swift` `Color(hex:)`), not Compose's
  * default ARGB long form.
  *
@@ -38,12 +38,12 @@ class StyleEngineColorTest {
     }
 
     // -----------------------------------------------------------------------
-    // 8-char hex — RGBA (the actual bug A.2 fixes)
+    // 8-char hex — RGBA (the actual bug this fixes)
     // -----------------------------------------------------------------------
 
     @Test
     fun `8-char hex parses as RGBA matching iOS`() {
-        // Before A.2, Color(colorLong) treated the long as ARGB, producing
+        // Before an earlier fix, Color(colorLong) treated the long as ARGB, producing
         // (A=0x11, R=0x22, G=0x33, B=0x4F) — channels rotated, near-transparent.
         // Correct iOS-equivalent decode: R=0x11, G=0x22, B=0x33, A=0x4F.
         assertRgba(StyleEngine.parseColor("#1122334F"), r = 0x11, g = 0x22, b = 0x33, a = 0x4F)
@@ -79,7 +79,7 @@ class StyleEngineColorTest {
 
     @Test
     fun `4-char shorthand returns transparent matching iOS`() {
-        // SPEC-402 A.1 — R64 reverted shorthand expansion to match iOS
+        // R64 reverted shorthand expansion to match iOS
         // PaywallHelperViews.swift:81-87 (`count == 6 || count == 8`
         // only). 3/4-char shorthand falls through to Color.Transparent.
         // Android previously expanded `#1234` → `#11223344`, producing
@@ -90,7 +90,7 @@ class StyleEngineColorTest {
 
     @Test
     fun `3-char shorthand returns transparent matching iOS`() {
-        // SPEC-402 A.1 — same fix as 4-char above; #1A3 returns
+        // Same fix as 4-char above; #1A3 returns
         // Color.Transparent matching iOS.
         assertRgba(StyleEngine.parseColor("#1A3"), r = 0, g = 0, b = 0, a = 0)
     }

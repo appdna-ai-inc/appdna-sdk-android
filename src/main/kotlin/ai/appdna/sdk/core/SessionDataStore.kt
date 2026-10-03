@@ -7,7 +7,7 @@ import org.json.JSONObject
 
 /**
  * Persists cross-module data (onboarding responses, computed hook data, session data)
- * so it can be used by TemplateEngine across all SDK modules (SPEC-088).
+ * so it can be used by TemplateEngine across all SDK modules.
  * Thread-safe via synchronized blocks. Persists to SharedPreferences (not sensitive data).
  */
 class SessionDataStore private constructor(private val prefs: SharedPreferences) {

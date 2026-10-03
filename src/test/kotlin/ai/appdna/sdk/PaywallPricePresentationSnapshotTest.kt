@@ -17,7 +17,7 @@ import org.robolectric.annotation.Config
 import org.robolectric.annotation.GraphicsMode
 
 /**
- * SPEC-438 (#544, #548) — Android pixels for product-level price presentation.
+ * Android pixels for product-level price presentation.
  *
  * The counterpart to iOS `VisualSnapshotTests.testPlanCard_*`, with the SAME plan JSON so the
  * two goldens are directly comparable. Robolectric renders the REAL Compose plan card on the
@@ -101,7 +101,7 @@ class PaywallPricePresentationSnapshotTest {
     @Test
     fun headlineStackedWithSubtitlePill() = capture("paywall_headline_stacked_pill", "headline_stacked")
 
-    /** The default. Must match what shipped before SPEC-438 — struck price inline, no charged total. */
+    /** The default. Must match what shipped before an earlier fix — struck price inline, no charged total. */
     @Test
     fun inlineDefaultUnchanged() = capture("paywall_inline_default", null)
 }

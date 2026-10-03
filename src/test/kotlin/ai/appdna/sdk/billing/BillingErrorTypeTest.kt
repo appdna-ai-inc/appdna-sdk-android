@@ -7,7 +7,7 @@ import org.junit.Assert.assertEquals
 import org.junit.Test
 
 /**
- * SPEC-070-B — `purchase_failed` and the paywall delegate now carry a stable discriminator, so a
+ * `purchase_failed` and the paywall delegate now carry a stable discriminator, so a
  * host (or a Flutter/RN wrapper, which only receives data across its bridge) can tell "user
  * cancelled" from "card declined" without regex-matching an English message.
  */

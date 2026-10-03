@@ -15,7 +15,7 @@ import kotlinx.coroutines.withContext
 import java.util.concurrent.TimeUnit
 
 /**
- * SPEC-070-A H.3: Periodic remote-config refresh via WorkManager.
+ * Periodic remote-config refresh via WorkManager.
  *
  * Runs every 15 minutes (Android's minimum periodic interval) when the app
  * is connected, ensuring the cached config never drifts further than a

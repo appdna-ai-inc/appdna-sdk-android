@@ -10,10 +10,10 @@ import kotlinx.collections.immutable.ImmutableList
 import kotlinx.collections.immutable.toImmutableList
 
 /**
- * SPEC-070-A J.10 — Screens DTOs annotated for Compose stability.
+ * Screens DTOs annotated for Compose stability.
  *
  * `ScreenSection.data: Map<String, Any?>` is a passthrough JSON bag (per
- * SPEC-070-A J.22 EXCLUDE rule for raw JSON parsing maps + caller-supplied
+ * EXCLUDE rule for raw JSON parsing maps + caller-supplied
  * payloads consumed by per-section renderers via `SectionRegistry`). Because
  * of that one field, `ScreenConfig` and `ScreenSection` are `@Stable` rather
  * than `@Immutable`. The `sections` hot iteration list IS migrated to
@@ -28,7 +28,7 @@ data class ScreenConfig(
     val presentation: String = "fullscreen",
     val transition: String? = null,
     val layout: ScreenLayout,
-    // SPEC-070-A J.22 — sections list is the hot Compose iteration in
+    // Sections list is the hot Compose iteration in
     // AppDNAScreenSlot / ScreenManager; migrated to ImmutableList.
     val sections: ImmutableList<ScreenSection>,
     val background: BackgroundConfig? = null,
@@ -46,7 +46,7 @@ data class ScreenConfig(
     val minSdkVersion: String? = null,
     val experimentId: String? = null,
     /**
-     * SPEC-070-A finalization B6 P3 — typed variant overrides. Each entry
+     * Typed variant overrides. Each entry
      * is keyed by variant id and parses into a [ScreenVariantOverride]
      * matching iOS `ScreenVariantOverride`. Mirrors fields the merge step
      * in [ScreenManager] copies onto the base config.
@@ -57,7 +57,7 @@ data class ScreenConfig(
     companion object {
         @Suppress("UNCHECKED_CAST")
         fun fromMap(data: Map<String, Any?>): ScreenConfig {
-            // SPEC-070-A F.7: parse audience_rules (raw list of rule maps)
+            // Parse audience_rules (raw list of rule maps)
             // and variants (per-variant override maps keyed by variant id),
             // matching iOS `Screens/ScreenConfig.swift` ScreenConfig.
             val rawAudienceRules = (data["audience_rules"] as? List<*>)?.mapNotNull {
@@ -78,7 +78,7 @@ data class ScreenConfig(
                 presentation = data["presentation"] as? String ?: "fullscreen",
                 transition = data["transition"] as? String,
                 layout = ScreenLayout.fromMap(data["layout"] as? Map<String, Any?> ?: emptyMap()),
-                // SPEC-070-A J.22 — wrap as ImmutableList for Compose stability.
+                // Wrap as ImmutableList for Compose stability.
                 sections = (data["sections"] as? List<Map<String, Any?>>)?.map { ScreenSection.fromMap(it) }?.toImmutableList()
                     ?: kotlinx.collections.immutable.persistentListOf(),
                 background = (data["background"] as? Map<String, Any?>)?.let { BackgroundConfig.fromMap(it) },
@@ -103,7 +103,7 @@ data class ScreenConfig(
 }
 
 /**
- * SPEC-070-A finalization B6 P3 — typed override applied to a [ScreenConfig]
+ * Typed override applied to a [ScreenConfig]
  * when an experiment variant is selected. Mirrors iOS
  * `Screens/ScreenConfig.swift` `ScreenVariantOverride`. ScreenManager copies
  * the present fields onto the base config; absent fields fall through.
@@ -112,7 +112,7 @@ data class ScreenConfig(
 data class ScreenVariantOverride(
     val sections: kotlinx.collections.immutable.ImmutableList<ScreenSection>? = null,
     val presentation: String? = null,
-    // SPEC-070-A finalization R3 P2 — `transition` parsed at variant level so
+    // `transition` parsed at variant level so
     // experiment-driven A/B variants can change just the present-animation
     // (e.g. control = slide_up, treatment = fade) without redefining the rest.
     val transition: String? = null,
@@ -213,8 +213,8 @@ data class FlowSettings(
     }
 }
 
-// SPEC-070-A J.10 — @Stable: `data: Map<String, Any?>` is the SDK's passthrough
-// JSON bag for per-section renderers (per SPEC-070-A J.22 EXCLUDE rule —
+// @Stable: `data: Map<String, Any?>` is the SDK's passthrough
+// JSON bag for per-section renderers (EXCLUDE rule
 // passthrough Map<String, Any?>). All other fields are nullable primitives or
 // fully-immutable holders. The data field is intentionally NOT migrated to
 // PersistentMap because consumers receive it raw and pass it into custom

@@ -15,7 +15,7 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 /**
- * SPEC-421 — pure/testable logic of the onboarding runtime-permission pipeline (Android mirror of iOS
+ * pure/testable logic of the onboarding runtime-permission pipeline (Android mirror of iOS
  * PermissionManagerTests). The OS dialog itself is not unit-testable; everything around it (type →
  * permission-string mapping, manifest guard decision, status → routing, notification API-level
  * short-circuit, sticky-denied detection, delegate defaults) is.
@@ -216,10 +216,10 @@ class PermissionManagerTest {
         assertFalse(PermissionHandling.HandledByHost(true) == PermissionHandling.HandledByHost(false))
     }
 
-    // MARK: - SPEC-421 console-shape decode (permission_type at step-content TOP LEVEL)
+    // MARK: - console-shape decode (permission_type at step-content TOP LEVEL)
 
     /**
-     * Regression for the SPEC-421 contract bug: the console serializer writes `permission_type` /
+     * Regression for the contract bug: the console serializer writes `permission_type` /
      * `show_settings_fallback_on_denied` / `settings_fallback_label` as SIBLINGS of `content_blocks`
      * at the step-content top level (`step.layout = stepConfig`), NOT inside the inner `layout`
      * sub-map. The SDK previously read them from the inner map → resolved null/"" → every authored

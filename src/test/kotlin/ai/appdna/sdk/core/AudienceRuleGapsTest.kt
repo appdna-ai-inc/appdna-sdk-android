@@ -6,7 +6,7 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 /**
- * SPEC-070-B — the audience-rule gaps the shared fixtures exposed once they started calling real
+ * The audience-rule gaps the shared fixtures exposed once they started calling real
  * SDK code instead of a re-implementation.
  */
 class AudienceRuleGapsTest {

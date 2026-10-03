@@ -1,4 +1,4 @@
-// SPEC-070-A J.18 — sample/example app.
+// sample/example app.
 //
 // Single Activity demo grid that exercises every SDK surface a host app
 // is likely to integrate. Each button is a one-liner against the static
@@ -32,7 +32,7 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
-        // SPEC-070-A J.18 — deep-link handoff on cold start. The intent that
+        // Deep-link handoff on cold start. The intent that
         // launched the activity may carry a deep-link URI from the OS launcher.
         intent?.let { handleDeepLinkIntent(it) }
 

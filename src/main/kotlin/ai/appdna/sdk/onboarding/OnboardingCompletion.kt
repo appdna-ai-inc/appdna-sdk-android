@@ -1,7 +1,7 @@
 package ai.appdna.sdk.onboarding
 
 /**
- * SPEC-070-B — the onboarding flow-completion seam.
+ * The onboarding flow-completion seam.
  *
  * WHY THIS FILE EXISTS: "the flow finished" is the single most important event onboarding emits —
  * it is the denominator of the whole funnel and the only moment the host is handed the user's
@@ -19,7 +19,7 @@ package ai.appdna.sdk.onboarding
  *    name and prop set; the bug was reachability, not naming, so nothing is renamed.
  *  - delegate `onOnboardingCompleted(flowId, responses)` — iOS `OnboardingFlowManager.swift:112`,
  *    Android [AppDNAOnboardingDelegate.onOnboardingCompleted].
- *  - responses are persisted to the session store first (SPEC-088), so a host reacting inside
+ *  - responses are persisted to the session store first, so a host reacting inside
  *    `onOnboardingCompleted` already sees them.
  *
  * NOT `flow_completed`: that name belongs to the SCREENS module
@@ -80,7 +80,7 @@ internal object OnboardingCompletion {
     ) {
         val event = completionEvent(flowId, totalSteps, durationMs, responses)
         track(event.name, event.props)
-        // SPEC-088: persist onboarding responses for cross-module access.
+        // Persist onboarding responses for cross-module access.
         ai.appdna.sdk.core.SessionDataStore.instance?.setOnboardingResponses(responses)
         try {
             delegate?.onOnboardingCompleted(flowId = flowId, responses = responses)

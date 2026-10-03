@@ -22,7 +22,7 @@ import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
 
 /**
- * SPEC-070-A A.20 — the subscription-lifecycle emitter: [NativeBillingManager.diffAndEmit] compares the
+ * The subscription-lifecycle emitter: [NativeBillingManager.diffAndEmit] compares the
  * previous vs current `queryPurchasesAsync` snapshot and emits `subscription_renewed` /
  * `subscription_canceled` / `subscription_renewal_failed`.
  *

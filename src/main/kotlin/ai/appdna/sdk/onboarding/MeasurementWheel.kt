@@ -2,7 +2,7 @@
 
 package ai.appdna.sdk.onboarding
 
-// SPEC-420 — Wheel-picker measurement mode (Android leg).
+// Wheel-picker measurement mode (Android leg).
 //
 // Opt-in measurement branch for the `wheel_picker` content block. Enabled only
 // when `block.field_config["measurement_type"]` is present AND the `units[]`
@@ -320,8 +320,8 @@ internal fun MeasurementWheelBlock(
     block: ContentBlock,
     config: MeasurementConfig,
     inputValues: MutableMap<String, Any>,
-    // SPEC-419 STEP-2 — fired ("value_changed", base value) on a real user commit (pick / unit switch),
-    // NEVER on the pristine onAppear seed and never per-tick. Default no-op for the SPEC-420 test path.
+    // Fired ("value_changed", base value) on a real user commit (pick / unit switch),
+    // NEVER on the pristine onAppear seed and never per-tick. Default no-op for the test path.
     onInteract: (String, String, String?) -> Unit = { _, _, _ -> },
 ) {
     val isDark = isSystemInDarkTheme()
@@ -349,7 +349,7 @@ internal fun MeasurementWheelBlock(
     val accentColor = StyleEngine.parseColor(config.needleColorHex ?: block.highlight_color ?: "#6366F1")
     val toggleColor = StyleEngine.parseColor(config.toggleActiveColorHex ?: block.highlight_color ?: "#6366F1")
 
-    // SPEC-419 STEP-2 — persist + return the snapshot so callers can fire the delegate. The
+    // Persist + return the snapshot so callers can fire the delegate. The
     // `onElementInteraction` payload = { value, display_value, unit }; `value` (base scalar) is the
     // `value_changed` payload. The onAppear seed calls this WITHOUT firing onInteract (render-time seed).
     fun writeSnapshot(): MeasurementSnapshot {

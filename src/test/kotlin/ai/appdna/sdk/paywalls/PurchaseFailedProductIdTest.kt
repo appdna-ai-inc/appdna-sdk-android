@@ -5,7 +5,7 @@ import org.junit.Assert.assertNull
 import org.junit.Test
 
 /**
- * SPEC-070-B (B1) — `onPaywallPurchaseFailed` carried no `productId`, so a paywall selling two
+ * `onPaywallPurchaseFailed` carried no `productId`, so a paywall selling two
  * plans told the host only "something failed on paywall X": it could not retry the right product,
  * attribute the failure, or tell which plan the card was declined on. `onPaywallPurchaseStarted`
  * and `onPaywallPurchaseCompleted` both carried it; only the failure path dropped it.

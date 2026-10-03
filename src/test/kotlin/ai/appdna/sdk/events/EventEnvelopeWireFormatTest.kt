@@ -11,7 +11,7 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 /**
- * SPEC-070-A G.19: Wire-format integration test that locks the JSON shape
+ * Wire-format integration test that locks the JSON shape
  * Android emits against iOS Codable behavior.
  *
  * iOS rule (Sources/AppDNASDK/Events/EventSchema.swift `SDKEvent.encode(to:)`):
@@ -22,7 +22,7 @@ import org.junit.Test
  * Android must mirror this so cross-platform analytics ingest sees a stable
  * shape regardless of which SDK emitted the event.
  *
- * SPEC-070-A G.10/G.15/G.16/G.17 are also covered here so the field-level
+ * Are also covered here so the field-level
  * serialization is locked alongside the omit-when-empty rule.
  */
 class EventEnvelopeWireFormatTest {
@@ -126,7 +126,7 @@ class EventEnvelopeWireFormatTest {
         assertEquals("exp-B", arr.getJSONObject(1).getString("exp"))
     }
 
-    // SPEC-070-A G.10: environment is omitted when null, present when supplied.
+    // Environment is omitted when null, present when supplied.
     @Test
     fun environment_isOmitted_whenNull() {
         val envelope = EventSchema.buildEnvelope(
@@ -155,7 +155,7 @@ class EventEnvelopeWireFormatTest {
         assertEquals("sandbox", envelope.getString("environment"))
     }
 
-    // SPEC-070-A G.17: context.screen is omitted when null, present when supplied.
+    // context.screen is omitted when null, present when supplied.
     @Test
     fun contextScreen_isOmitted_whenNull() {
         val envelope = EventSchema.buildEnvelope(
@@ -186,7 +186,7 @@ class EventEnvelopeWireFormatTest {
         assertEquals("HomeFeed", context.getString("screen"))
     }
 
-    // SPEC-070-A G.15: device.os is normalized to a 3-part dotted string.
+    // device.os is normalized to a 3-part dotted string.
     @Test
     fun deviceOs_isNormalizedToThreeParts() {
         // We can't easily mock Build.VERSION.RELEASE in unit tests so we test
@@ -200,7 +200,7 @@ class EventEnvelopeWireFormatTest {
         assertEquals("14.0.1.2", EventSchema.normalizeOsVersion("14.0.1.2"))
     }
 
-    // SPEC-070-A G.16: device.locale is BCP-47 not legacy `Locale.toString()`.
+    // device.locale is BCP-47 not legacy `Locale.toString()`.
     @Test
     fun deviceLocale_isBcp47() {
         val envelope = EventSchema.buildEnvelope(
@@ -224,7 +224,7 @@ class EventEnvelopeWireFormatTest {
     }
 
     /**
-     * SPEC-070-B §7 rule 4 — `device.framework_version` is the WRAPPER's version.
+     * `device.framework_version` is the WRAPPER's version.
      *
      * `device.sdk_version` is always this native core's version, so in BigQuery a React Native app was
      * indistinguishable from a native one on every version column: all 79 `react_native` rows in

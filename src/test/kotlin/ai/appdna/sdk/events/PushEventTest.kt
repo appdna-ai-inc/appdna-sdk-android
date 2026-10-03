@@ -8,7 +8,7 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 /**
- * SPEC-070-A J.8 — PushEventTest.
+ * PushEventTest.
  *
  * Mirrors `Tests/AppDNASDKTests/PushEventTests.swift`. Validates that the
  * three SDK-emitted push event names match the iOS source-of-truth and

@@ -19,7 +19,7 @@ import org.robolectric.annotation.Config
 import org.robolectric.annotation.GraphicsMode
 
 /**
- * SPEC-441 (#541) — Android pixels for the Select's category chip row.
+ * Android pixels for the Select's category chip row.
  *
  * The counterpart to iOS `VisualSnapshotTests.testSelectCategoryChips_firstChipActive`, with the
  * SAME config so the two goldens are directly comparable. This is the screen the reporter sent:
@@ -41,7 +41,7 @@ import org.robolectric.annotation.GraphicsMode
 class ImageTileLayoutSnapshotTest {
 
     /**
-     * SPEC-447 (#555) — the two layouts that move the text OFF the image.
+     * The two layouts that move the text OFF the image.
      *
      * A dto_parsing fixture proves the keys reach the model and NOT that a renderer honours them:
      * I deleted Android's `tile_image_layout` read and the fixture stayed green. Only pixels close
@@ -107,7 +107,7 @@ class ImageTileLayoutSnapshotTest {
     }
 
     /**
-     * SPEC-447 AC — "in image_strip and contained the overlay covers the IMAGE REGION ONLY;
+     * AC — "in image_strip and contained the overlay covers the IMAGE REGION ONLY;
      * switching layout with a dark scrim set must not dim the text surface."
      *
      * The overlay used matchParentSize(), so it tinted the band as well and the authored
@@ -132,7 +132,7 @@ class ImageTileLayoutSnapshotTest {
     }
 
     /**
-     * SPEC-446 §3 — a Summary Screen stat that HOSTS a control.
+     * A Summary Screen stat that HOSTS a control.
      *
      * The required-gate for these shipped without the rendering half on both platforms:
      * `RequiredFieldGate` blocked on an unanswered stat input while nothing ever drew one, so a
@@ -228,7 +228,7 @@ class ImageTileLayoutSnapshotTest {
     }
 
     /**
-     * SPEC-451 — the map's fallback state, at an aspect-ratio height.
+     * The map's fallback state, at an aspect-ratio height.
      *
      * The state most authors see first (no Mapbox token yet), and the one no decode test can judge.
      * What the picture pins: the surface is the AUTHORED colour, the corner radius is honoured, the

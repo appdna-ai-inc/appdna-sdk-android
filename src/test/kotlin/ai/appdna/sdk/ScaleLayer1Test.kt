@@ -13,15 +13,15 @@ import java.util.zip.Inflater
 import java.util.zip.InflaterInputStream
 
 /**
- * SPEC-067: Tests for SDK Scale Layer 1 optimizations.
+ * Tests for SDK Scale Layer 1 optimizations.
  *
- * SPEC-070-A A.15: gzip compression has been replaced with raw deflate
+ * Gzip compression has been replaced with raw deflate
  * (matching iOS `compression_encode_buffer(..., COMPRESSION_ZLIB)`). These tests
  * use `Inflater(nowrap = true)` to round-trip raw deflate output.
  */
 class ScaleLayer1Test {
 
-    // MARK: - Deflate Compression (SPEC-070-A A.15)
+    // MARK: - Deflate Compression
 
     @Test
     fun `deflate compress produces valid raw deflate data`() {
@@ -163,7 +163,7 @@ class ScaleLayer1Test {
     // MARK: - Helpers
 
     /**
-     * SPEC-070-A A.15: Decompress raw deflate (no zlib wrapper, matches iOS
+     * Decompress raw deflate (no zlib wrapper, matches iOS
      * COMPRESSION_ZLIB output). Use `Inflater(nowrap = true)`.
      */
     private fun deflateDecompress(data: ByteArray): ByteArray {

@@ -26,7 +26,7 @@ import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
 
 /**
- * SPEC-496 §5b C5.1 / C5.5 — the Compose-rule proofs the fixture drivers CANNOT give (they recompose by
+ * The Compose-rule proofs the fixture drivers CANNOT give (they recompose by
  * hand and never render a view):
  *
  *  1. a `refresh_step` button nested in a row, a stack, a section_background, a multi_buttons group and

@@ -7,7 +7,7 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 /**
- * SPEC-070-B — three real gaps the honest cross-platform fixture runner exposed on Android:
+ * Three real gaps the honest cross-platform fixture runner exposed on Android:
  *
  *  B2  a `skip_to` step advance emitted NOTHING, so a flow that branches over steps was invisible
  *      in the funnel (a skipped step looked identical to an unreached one).

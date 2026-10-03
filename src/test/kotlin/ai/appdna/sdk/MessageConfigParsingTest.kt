@@ -9,7 +9,7 @@ import org.junit.Test
 /**
  * Tests that MessageConfig correctly parses from Firestore Map data.
  * Covers all message types, content fields, trigger rules, CTA actions,
- * SPEC-085 rich media, date constraints, and edge cases.
+ * rich media, date constraints, and edge cases.
  * Prevents field name mismatches between console JSON and SDK parsing.
  */
 class MessageConfigParsingTest {
@@ -254,7 +254,7 @@ class MessageConfigParsingTest {
     }
 
     // -----------------------------------------------------------------------
-    // 4. SPEC-085: Rich media fields
+    // 4. Rich media fields
     // -----------------------------------------------------------------------
 
     @Test
@@ -513,7 +513,7 @@ class MessageConfigParsingTest {
 
     @Test
     fun parseTriggerRules_frequencyDefaultsToOnce() {
-        // SPEC-402 A.1 — R87 P1-2 changed parse-site default to `once`
+        // R87 P1-2 changed parse-site default to `once`
         // at InAppMessageConfig.kt:321 to match iOS MessageManager.swift
         // (`triggerRules.frequency ?? .once`). Console-published messages
         // with no frequency configured were showing on every event-match
@@ -846,7 +846,7 @@ class MessageConfigParsingTest {
 
     @Test
     fun parseEdgeCase_missingTriggerRulesMap() {
-        // SPEC-402 A.1 — default frequency is `once` to match iOS
+        // Default frequency is `once` to match iOS
         // (TriggerRules data class default at InAppMessageConfig.kt:171).
         val msgMap = mapOf<String, Any>(
             "name" to "No Triggers",

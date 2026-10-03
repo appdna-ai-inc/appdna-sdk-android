@@ -1,6 +1,6 @@
 package ai.appdna.sdk.screens
 
-// SPEC-070-A A.10 — Application.ActivityLifecycleCallbacks wired in
+// Application.ActivityLifecycleCallbacks, wired in
 // AppDNA.configure() via NavigationInterceptorActivityCallbacks. The public
 // `AppDNA.notifyScreenAppeared(screenName)` API exists for Compose-only
 // screens (no Activity per screen).
@@ -16,7 +16,7 @@ import kotlinx.coroutines.launch
 import java.util.concurrent.CopyOnWriteArrayList
 
 /**
- * SPEC-070-A A.10 — Per-screen interception hook list. Mirrors iOS
+ * Per-screen interception hook list. Mirrors iOS
  * `Screens/NavigationInterceptor.swift:5-58`.
  *
  * Architecture:

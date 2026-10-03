@@ -12,7 +12,7 @@ import kotlinx.collections.immutable.persistentListOf
 import kotlinx.collections.immutable.toImmutableList
 
 /**
- * SPEC-070-A J.17 — Compose `@Preview` functions for the paywall renderer.
+ * Compose `@Preview` functions for the paywall renderer.
  *
  * Designers can iterate on paywall visuals inside Android Studio without
  * running the SDK on a device. These previews call the public
@@ -110,7 +110,7 @@ private fun previewPaywallConfig(): PaywallConfig {
 }
 
 /**
- * SPEC-070-A J.17 — preview wrapper. The renderer reads
+ * Preview wrapper. The renderer reads
  * `isSystemInDarkTheme()` for content-block resolution; we override via the
  * `isDark` parameter so each preview pins its scheme regardless of the
  * Studio host theme.

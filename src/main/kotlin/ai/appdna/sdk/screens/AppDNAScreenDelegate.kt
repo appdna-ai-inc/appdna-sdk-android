@@ -1,7 +1,7 @@
 package ai.appdna.sdk.screens
 
 /**
- * SPEC-070-A B.6 — Server-driven screen lifecycle delegate.
+ * Server-driven screen lifecycle delegate.
  *
  * Mirrors iOS `AppDNAScreenDelegate` (AppDNA+Delegates.swift:78-83). The
  * fourth method ([onScreenAction]) returns `Boolean` for veto/intercept
@@ -32,7 +32,7 @@ interface AppDNAScreenDelegate {
     fun onFlowCompleted(flowId: String, result: Map<String, Any?>) {}
 
     /**
-     * SPEC-070-A B.6 — veto hook. Return `false` to intercept the action
+     * Veto hook. Return `false` to intercept the action
      * and prevent the SDK's default handling (e.g. so the host can perform
      * its own navigation, render its own paywall, etc). Return `true`
      * (default) to let the SDK process the action normally.

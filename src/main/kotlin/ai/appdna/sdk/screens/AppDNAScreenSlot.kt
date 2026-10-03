@@ -74,7 +74,7 @@ fun AppDNAScreenSlot(name: String) {
 
     when {
         isLoading -> {
-            // SPEC-401-A R71 (Lens C P2) — animated shimmer placeholder
+            // Animated shimmer placeholder
             // matching iOS AppDNAScreenSlot.swift:48-63 — gray base with a
             // sweeping LinearGradient highlight band. Was a static gray box
             // — Android users saw an empty-looking slab instead of a
@@ -121,7 +121,7 @@ fun AppDNAScreenSlot(name: String) {
             val slotConfig = config.slotConfig
             val maxHeight = slotConfig?.maxHeight
 
-            // SPEC-070-A I.3 — slot action dispatch mirrors iOS
+            // Slot action dispatch mirrors iOS
             // `Screens/AppDNAScreenSlot.swift handleSlotAction(_:config:)`.
             // Dismiss is intentionally inert (slot is inline content host
             // can't pop). OpenURL + DeepLink both resolve via ACTION_VIEW
@@ -133,16 +133,16 @@ fun AppDNAScreenSlot(name: String) {
             val context = SectionContext(
                 screenId = config.id,
                 onAction = { action ->
-                    // SPEC-070-C — rich, iOS-parity action payload
+                    // Rich, iOS-parity action payload
                     // (`{type, <fields>}`) so the cross-platform veto host reads
                     // `type` + payload fields.
                     val payload = action.toActionMap()
-                    // SPEC-070-C D10 — route through dispatchScreenAction so the
+                    // Route through dispatchScreenAction so the
                     // sync delegate veto AND the optional async wrapper-veto both
                     // gate the action. Native hosts (no async veto) run inline.
                     ScreenManager.shared.dispatchScreenAction(config.id, payload) {
                         when (action) {
-                            // SPEC-070-B PN row 18 (W11): config-driven URLs — scheme-checked first.
+                            // Config-driven URLs — scheme-checked first.
                             is SectionAction.OpenURL -> {
                                 ai.appdna.sdk.core.URLSafety.sanitized(action.url, activityContext)?.let { uri ->
                                     try {
@@ -181,7 +181,7 @@ fun AppDNAScreenSlot(name: String) {
                 } else mod
             }
 
-            // SPEC-070-A finalization B6 P2 — split sticky_footer sections
+            // Split sticky_footer sections
             // out so they pin to the bottom of the slot. iOS ScreenRenderer
             // separates `sticky_footer` / `paywall_sticky_footer` from main
             // content and renders pinned at bottom inset. Android previously
@@ -193,17 +193,17 @@ fun AppDNAScreenSlot(name: String) {
                 it.type == "sticky_footer" || it.type == "paywall_sticky_footer"
             }
             val spacing = (config.layout.spacing ?: 12.0).dp
-            // SPEC-070-A finalization B6 P2 — honor ScreenLayout.type.
+            // Honor ScreenLayout.type.
             // iOS supports `scroll` (default), `fixed` (no scroll), and
             // `pager` (HorizontalPager). Android collapsed everything to
             // a non-scrolling Column. `pager` falls through to scroll on
             // Android until an accompanist-compose dependency lands.
             val layoutType = config.layout.type
-            // R89 — `pager` layout uses Compose foundation HorizontalPager
+            // `pager` layout uses Compose foundation HorizontalPager
             // (available since BoM 2023.10+, already used by paywalls).
             // Mirrors iOS ScreenRenderer TabView .page style.
             val isPagerLayout = layoutType == "pager"
-            // SPEC-070-A finalization B6 P2 — honor `layout.safe_area` by
+            // Honor `layout.safe_area` by
             // adding system-status-bar padding when truthy (iOS renders
             // inside the safeAreaInsets by default). Hosts that embed
             // a slot with safe_area=false get edge-to-edge content.
@@ -214,7 +214,7 @@ fun AppDNAScreenSlot(name: String) {
             } else androidx.compose.ui.Modifier
             androidx.compose.foundation.layout.Box(modifier = modifier.then(safeAreaModifier)) {
                 Column(modifier = androidx.compose.ui.Modifier.fillMaxWidth()) {
-                    // SPEC-070-A finalization B6 P2 — render NavBarConfig
+                    // Render NavBarConfig
                     // (title + back/close + bg color) when set. iOS
                     // ScreenRenderer puts this above content; Android slots
                     // render inline so we put it at the top of the column.
@@ -248,7 +248,7 @@ fun AppDNAScreenSlot(name: String) {
                         }
                     }
                 if (isPagerLayout) {
-                    // R89 — HorizontalPager: one main section per page,
+                    // HorizontalPager: one main section per page,
                     // mirrors iOS ScreenRenderer TabView(.page). Visibility
                     // filter applied up-front so page indices stay stable.
                     val pages = mainSections.filter { evaluateScreenSectionVisibility(it.visibilityCondition) }
@@ -283,7 +283,7 @@ fun AppDNAScreenSlot(name: String) {
                     verticalArrangement = Arrangement.spacedBy(spacing),
                 ) {
                     for (section in mainSections) {
-                        // SPEC-070-A finalization B6 P1 — per-section
+                        // Per-section
                         // visibility_condition + entrance_animation. Mirrors iOS
                         // ScreenRenderer.
                         if (!evaluateScreenSectionVisibility(section.visibilityCondition)) continue
@@ -326,7 +326,7 @@ fun AppDNAScreenSlot(name: String) {
 }
 
 /**
- * SPEC-070-A finalization B6 P1 — pure evaluator for section-level
+ * Pure evaluator for section-level
  * `visibility_condition`. Mirrors iOS ScreenRenderer's per-section
  * filtering. Returns true (section is visible) for `null` and `"always"`,
  * false-by-default for unknown types so authors can't accidentally

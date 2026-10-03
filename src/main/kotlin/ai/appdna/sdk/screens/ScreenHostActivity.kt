@@ -87,7 +87,7 @@ class ScreenHostActivity : ComponentActivity() {
         }
         val token = intent.getStringExtra(EXTRA_LAUNCH_TOKEN)
         val slot = token?.let { activeLaunches[it] } ?: run {
-            // SPEC-070-A finalization (Lens B P0) — process-death recovery.
+            // Process-death recovery.
             // Mirrors PaywallActivity: if the static slot is gone but the OS
             // recreated us from `savedInstanceState`, fire a synthetic
             // `screen_dismissed` and onScreenDismissed delegate so analytics
@@ -114,17 +114,17 @@ class ScreenHostActivity : ComponentActivity() {
         snapshotScreenId = screenId
         val config = slot.config
 
-        // SPEC-070-A finalization R3 P1 (Lens D) — honor `config.transition`
+        // Honor `config.transition`
         // via overridePendingTransition. iOS uses UIModalTransitionStyle on
         // ScreenPresenter; Android equivalent is the per-Activity enter/exit
         // anim pair applied immediately after the Intent fires. Falls back to
         // platform default ("none") when the value is unknown or missing.
-        // SPEC-401-A R67 (Lens C P1) — `slide_up` now uses custom
+        // `slide_up` now uses custom
         // R.anim.appdna_slide_up_in (vertical translateY 100%→0) matching
         // iOS UIModalTransitionStyle.coverVertical at
         // ScreenPresenter.swift:80. Stock `slide_in_left` is horizontal —
         // visible cross-platform divergence.
-        // (Lens C R67 P2) — unknown / null transition defaults to slide_up
+        // Unknown / null transition defaults to slide_up
         // matching iOS `default: return .coverVertical` at
         // ScreenPresenter.swift:84.
         @Suppress("DEPRECATION")
@@ -242,7 +242,7 @@ class ScreenHostActivity : ComponentActivity() {
     }
 
     private fun cleanup() {
-        // SPEC-401-A R67 (Lens C P1) — pair the symmetric exit animation to
+        // Pair the symmetric exit animation to
         // the entry transition so dismiss matches present. iOS
         // `modalTransitionStyle` (ScreenPresenter.swift:20) is symmetric;
         // Android requires explicit `overridePendingTransition` AFTER finish().
@@ -332,7 +332,7 @@ class ScreenHostActivity : ComponentActivity() {
         }
 
         /**
-         * SPEC-070-A finalization R3 P0 (Lens D) — clear all in-flight slot
+         * Clear all in-flight slot
          * captures so SDK shutdown doesn't leak ScreenConfig + onDismiss
          * closures. Called from `AppDNA.shutdown()`. Mirrors the same call
          * shape as PaywallActivity / SurveyActivity static-map cleanup.
@@ -384,7 +384,7 @@ private fun ScreenHostBody(
     val bgColor = config.background?.color?.let { StyleEngine.parseColor(it) }
         ?: MaterialTheme.colorScheme.background
 
-    // SPEC-070-A finalization (Lens B P1) — fire haptic + particle effect on
+    // Fire haptic + particle effect on
     // present, mirroring iOS ScreenRenderer.swift:82-90 (ConfettiOverlay) +
     // 101-106 (HapticEngine.trigger). DTOs were parsed at ScreenConfig.kt:37-38
     // but no render path consumed them.
@@ -414,10 +414,10 @@ private fun ScreenHostBody(
         currentScreenIndex = currentScreenIndex,
         totalScreens = totalScreens,
         onAction = { action ->
-            // SPEC-070-C — rich, iOS-parity action payload (`{type, <fields>}`)
+            // Rich, iOS-parity action payload (`{type, <fields>}`)
             // so the cross-platform veto host reads `type` + payload fields.
             val payload = action.toActionMap()
-            // SPEC-070-C D10 — route through dispatchScreenAction so BOTH the
+            // Route through dispatchScreenAction so BOTH the
             // synchronous delegate veto AND the optional async wrapper-veto are
             // consulted before the action is performed. With no async veto
             // registered (native hosts) the `perform` lambda runs inline.
@@ -426,11 +426,11 @@ private fun ScreenHostBody(
                     onAction(action)
                     return@dispatchScreenAction
                 }
-                // Round-33 — full standalone-screen action dispatch, mirroring iOS
+                // Full standalone-screen action dispatch, mirroring iOS
                 // ScreenManager.performAction. Previously only 6 of 16 verbs were handled and the
                 // DEFAULT `next`/`back` CTA fell to `else -> {}`, leaving the user STUCK on the
                 // screen. `next`/`back` on a standalone (non-flow) screen dismiss it (iOS :305-311).
-                // SPEC-070-B PN row 18 (W11): config-driven URLs are scheme-checked before the OS.
+                // Config-driven URLs are scheme-checked before the OS.
                 fun openUri(raw: String) {
                     ai.appdna.sdk.core.URLSafety.sanitized(raw, activityContext)?.let { uri ->
                         try {
@@ -482,7 +482,7 @@ private fun ScreenHostBody(
                     is SectionAction.Custom -> {}
                     else -> {}
                 }
-                // Round-36 — emit screen_action HERE (in the standalone performer, after the veto gate
+                // Emit screen_action HERE (in the standalone performer, after the veto gate
                 // allowed the action AND the native dispatch above ran), matching iOS performAction:
                 // ONCE, AFTER side-effects, only when BOTH the sync AND async vetoes allow (this perform
                 // lambda runs only then). The veto gate (ScreenManager.handleScreenAction) no longer
@@ -507,7 +507,7 @@ private fun ScreenHostBody(
     }
     val spacing = (config.layout.spacing ?: 12.0).dp
 
-    // SPEC-070-A finalization R4 P1 (Lens B) — presentation-mode container.
+    // Presentation-mode container.
     // iOS ScreenPresenter routes via UIModalPresentationStyle:
     //   "fullscreen" → fillMaxSize + edge-to-edge
     //   "page_sheet" → top inset + rounded top + dim backdrop
@@ -588,7 +588,7 @@ private fun ScreenHostBody(
         modifier = innerModifier,
     ) {
         Column(modifier = Modifier.fillMaxWidth()) {
-            // SPEC-070-A finalization R4 P1 (Lens B) — bottom-sheet grabber
+            // Bottom-sheet grabber
             // affordance. iOS pageSheet + bottom_sheet show a grabber pill at
             // the top edge by default; Android needs to draw one explicitly
             // since we host in a translucent Activity, not a BottomSheetDialog.

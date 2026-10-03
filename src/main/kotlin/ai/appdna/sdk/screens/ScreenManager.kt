@@ -4,7 +4,7 @@ import ai.appdna.sdk.AppDNA
 import ai.appdna.sdk.core.AudienceRuleEvaluator
 import ai.appdna.sdk.core.ConditionEvaluator
 import java.util.concurrent.locks.ReentrantLock
-// SPEC-070-A J.22 — ScreenConfig.sections is ImmutableList<ScreenSection> for
+// ScreenConfig.sections is ImmutableList<ScreenSection> for
 // Compose stability; override-merging needs to re-wrap after .map { ... }.
 import kotlinx.collections.immutable.toImmutableList
 import kotlinx.coroutines.CoroutineScope
@@ -12,7 +12,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
 
-// SPEC-070-A B.6 — visibility relaxed from `internal` to public so hosts can
+// Visibility relaxed from `internal` to public so hosts can
 // register an `AppDNAScreenDelegate` via `ScreenManager.shared.setDelegate(...)`.
 // The class itself remains opaque — only the delegate-setter and a couple of
 // existing fan-out methods (`showScreen`/`showFlow`) form the public API.
@@ -30,14 +30,14 @@ class ScreenManager private constructor() {
     @Volatile private var interceptionFilter: List<String>? = null
 
     /**
-     * SPEC-070-A B.6 — server-driven screen delegate. Hosts register via
+     * Server-driven screen delegate. Hosts register via
      * [setDelegate]. Read fresh on every callback so a delegate registered
      * after the first showScreen() call still receives subsequent events.
      */
     @Volatile private var screenDelegate: AppDNAScreenDelegate? = null
 
     /**
-     * SPEC-070-C D10 — OPTIONAL async `onScreenAction` wrapper-veto. Set by a
+     * OPTIONAL async `onScreenAction` wrapper-veto. Set by a
      * cross-platform wrapper (the Flutter plugin) that can only answer a veto
      * asynchronously. Consulted by [dispatchScreenAction] in ADDITION to the
      * synchronous [handleScreenAction] veto; either can block the action. Null
@@ -46,13 +46,13 @@ class ScreenManager private constructor() {
      */
     @Volatile var asyncOnScreenAction: (suspend (String, Map<String, Any?>) -> Boolean)? = null
 
-    /** SPEC-070-A B.6 — register the host's screen delegate. */
+    /** Register the host's screen delegate. */
     fun setDelegate(delegate: AppDNAScreenDelegate?) {
         screenDelegate = delegate
     }
 
     /**
-     * SPEC-070-C D10 — main-thread scope for awaiting the async wrapper-veto.
+     * Main-thread scope for awaiting the async wrapper-veto.
      * Only used when [asyncOnScreenAction] is set.
      */
     private val vetoScope = CoroutineScope(Dispatchers.Main.immediate + SupervisorJob())
@@ -64,7 +64,7 @@ class ScreenManager private constructor() {
     internal fun getCachedFlow(id: String): FlowConfig? { lock.lock(); try { return flowCache[id] } finally { lock.unlock() } }
 
     /**
-     * SPEC-070-A I.11 — preview a screen from a raw JSON payload (host-side,
+     * Preview a screen from a raw JSON payload (host-side,
      * not from remote config). Mirrors iOS `ScreenManager.previewScreen(json:)`.
      * Parses → cache under the parsed `id` → present via [showScreen].
      * Used by the console preview flow + integration tests.
@@ -135,7 +135,7 @@ class ScreenManager private constructor() {
             if (config == null) {
                 val errResult = ScreenResult(screenId = screenId, dismissed = true, error = ScreenError.SCREEN_NOT_FOUND)
                 callback?.invoke(errResult)
-                // SPEC-070-A G.8 — emit `screen_dismissed` even on the not-found
+                // Emit `screen_dismissed` even on the not-found
                 // path so analytics shows the failed surface. Mirrors iOS error
                 // dispatch shape.
                 AppDNA.track("screen_dismissed", mapOf(
@@ -146,7 +146,7 @@ class ScreenManager private constructor() {
                 fireOnScreenDismissed(screenId, errResult)
                 return
             }
-            // SPEC-070-A audit attempt 5 F2: validate empty sections (mirrors
+            // Validate empty sections (mirrors
             // iOS ScreenManager.swift:118-123 AC-088/089).
             if (config.sections.isEmpty()) {
                 val errResult = ScreenResult(screenId = screenId, dismissed = true, error = ScreenError.CONFIG_INVALID)
@@ -159,8 +159,8 @@ class ScreenManager private constructor() {
                 fireOnScreenDismissed(screenId, errResult)
                 return
             }
-            // SPEC-070-A audit attempt 5 F2: honor `start_date`/`end_date`
-            // scheduling on the manual API path (AC-098/099). Mirrors iOS
+            // Honor `start_date`/`end_date`
+            // scheduling on the manual API path. Mirrors iOS
             // ScreenManager.swift:125-135 ISO8601 comparisons.
             val nowMs = System.currentTimeMillis()
             val startMs = config.startDate?.let { parseIsoToEpochMs(it) }
@@ -178,9 +178,9 @@ class ScreenManager private constructor() {
                 return
             }
 
-            // SPEC-070-A audit attempt 5 F1: resolve experiment variant +
+            // Resolve experiment variant +
             // apply variant overrides + tag track props with `experiment_id`
-            // and `variant_key` (AC-093/094/095). Mirrors iOS
+            // and `variant_key`. Mirrors iOS
             // ScreenManager.swift:137-181.
             var resolvedConfig = config
             var variantKey: String? = null
@@ -191,7 +191,7 @@ class ScreenManager private constructor() {
                 if (bucket != null) {
                     variantKey = bucket
                     val override = variantsMap[bucket]
-                    // SPEC-070-A finalization B6 P3 — variants is now typed
+                    // Variants is now typed
                     // (Map<String, ScreenVariantOverride>); merge straight
                     // off the typed fields. Sections present means the
                     // variant supplied its own list — fall through to base
@@ -200,7 +200,7 @@ class ScreenManager private constructor() {
                         resolvedConfig = config.copy(
                             sections = override.sections,
                             presentation = override.presentation ?: config.presentation,
-                            // SPEC-070-A finalization R3 P2 — variant transition merge.
+                            // Variant transition merge.
                             transition = override.transition ?: config.transition,
                             background = override.background ?: config.background,
                             triggerRules = override.triggerRules ?: config.triggerRules,
@@ -209,7 +209,7 @@ class ScreenManager private constructor() {
                 }
             }
 
-            // SPEC-070-A audit attempt 5 F3: route every manual-API
+            // Route every manual-API
             // presentation through PresentationCoordinator so concurrent
             // surface conflicts are arbitrated centrally (mirrors iOS
             // ScreenManager.swift:189). Without this, a direct
@@ -229,13 +229,13 @@ class ScreenManager private constructor() {
                 isAutoTriggered = false,
             ) {
                 AppDNA.track("screen_presented", trackProps)
-                // SPEC-070-A B.6 — fire onScreenPresented to host delegate.
+                // Fire onScreenPresented to host delegate.
                 fireOnScreenPresented(screenId)
 
                 val result = ScreenResult(screenId = screenId)
                 callback?.invoke(result)
 
-                // SPEC-070-A finalization (Lens B P0) — actually present
+                // Actually present
                 // the screen via [ScreenHostActivity]. iOS counterpart is
                 // ScreenPresenter.swift:7-55 which wraps the renderer in
                 // a UIHostingController and presents it. Without this Activity
@@ -287,7 +287,7 @@ class ScreenManager private constructor() {
         if (config == null) {
             val errResult = FlowResult(flowId = flowId, error = ScreenError.SCREEN_NOT_FOUND)
             callback?.invoke(errResult)
-            // SPEC-070-A G.8 — `flow_abandoned` covers the not-found bailout
+            // `flow_abandoned` covers the not-found bailout
             // (no flow ran to completion). Mirrors iOS shape.
             AppDNA.track("flow_abandoned", mapOf(
                 "flow_id" to flowId,
@@ -328,7 +328,7 @@ class ScreenManager private constructor() {
             } else {
                 AppDNA.track("flow_abandoned", props)
             }
-            // SPEC-070-A B.6 — fire onFlowCompleted delegate (fires on both
+            // Fire onFlowCompleted delegate (fires on both
             // completed and abandoned paths — host reads result.completed).
             fireOnFlowCompleted(flowId, result)
             callback?.invoke(result)
@@ -356,7 +356,7 @@ class ScreenManager private constructor() {
     }
 
     /**
-     * SPEC-070-A finalization B6 P1 — best-effort dismissal of the currently
+     * Best-effort dismissal of the currently
      * presented SDUI screen. Mirrors iOS `ScreenManager.dismissScreen` which
      * dismisses the top UIViewController.
      *
@@ -376,7 +376,7 @@ class ScreenManager private constructor() {
         } catch (_: Throwable) { /* best-effort */ }
     }
 
-    // SPEC-070-A B.6 — main-thread delegate fan-out helpers. All read the
+    // Main-thread delegate fan-out helpers. All read the
     // delegate fresh on every call so hosts can register/unregister
     // dynamically without missing events.
 
@@ -425,7 +425,7 @@ class ScreenManager private constructor() {
     }
 
     /**
-     * SPEC-070-A B.6 + G.8 — public hook for SectionRegistry / Activity-based
+     * Public hook for SectionRegistry / Activity-based
      * action dispatch to fire the screen delegate's `onScreenAction` veto
      * hook AND emit the `screen_action` analytics event. Returns `false`
      * when the host vetoed the action — the caller MUST NOT execute the
@@ -435,10 +435,10 @@ class ScreenManager private constructor() {
      * type-specific fields).
      */
     fun handleScreenAction(screenId: String, action: Map<String, Any?>): Boolean {
-        // SPEC-070-A B.6 — veto hook: false from delegate prevents default handling. Synchronous
+        // Veto hook: false from delegate prevents default handling. Synchronous
         // because the caller relies on the return value to skip default behavior. Errors swallowed →
         // treat as "no veto" (allow).
-        // Round-35/36 — this no longer emits `screen_action`. The PERFORMER emits it (the standalone
+        // This no longer emits `screen_action`. The PERFORMER emits it (the standalone
         // ScreenHostActivity dispatch, after side-effects, only when BOTH vetoes allow), matching iOS
         // performAction: NO emit on a vetoed action (sync OR async), NO emit for inline slots, and the
         // emit ordered AFTER the action's side-effects. Emitting in the gate fired BEFORE the async
@@ -452,7 +452,7 @@ class ScreenManager private constructor() {
     }
 
     /**
-     * SPEC-070-C D10 — full veto gate for a screen action. Runs the synchronous
+     * Full veto gate for a screen action. Runs the synchronous
      * [handleScreenAction] veto (which also emits the `screen_action` analytics)
      * exactly as before; if it allows AND an async wrapper-veto
      * ([asyncOnScreenAction]) is registered, awaits it too. [perform] runs only
@@ -484,7 +484,7 @@ class ScreenManager private constructor() {
     }
 
     /**
-     * SPEC-070-A G.8 — emit `screen_response_submitted` for form/submit
+     * Emit `screen_response_submitted` for form/submit
      * actions. Hosts call this when a screen submits a form payload to
      * the SDK. Mirrors iOS ScreenManager.swift:311.
      */
@@ -507,7 +507,7 @@ class ScreenManager private constructor() {
     }
 
     fun evaluateTriggers(event: String, properties: Map<String, Any>?) {
-        // SPEC-070-A finalization spec audit-2 P1 — consent gate. Mirrors
+        // Spec audit-2 P1 — consent gate. Mirrors
         // iOS ScreenManager.swift:362 — `read path` (screenForSlot,
         // NavigationInterceptor) already checks consent; the trigger path
         // was missing it. Without this, screens fire from analytics
@@ -516,7 +516,7 @@ class ScreenManager private constructor() {
         val index = screenIndex ?: return
         val entries = index.screens ?: return
         val traits = AppDNA.getUserTraits()
-        // SPEC-070-A finalization spec audit-2 P1 — wire SessionManager
+        // Spec audit-2 P1 — wire SessionManager
         // into AutoTriggerEngine instead of the previous hardcoded
         // sessionCount=1 / daysSinceInstall=0. Audience rules using
         // `sessionCount.min: 5` previously NEVER matched on Android.
@@ -535,7 +535,7 @@ class ScreenManager private constructor() {
     fun enableNavigationInterception(forScreens: List<String>? = null) {
         interceptionEnabled = true
         interceptionFilter = forScreens
-        // SPEC-070-A A.10: register a marker hook per pattern so
+        // Register a marker hook per pattern so
         // `NavigationInterceptor.shared` knows which screens this host has
         // opted in for. The hook body is a no-op returning `Allow` —
         // server-driven `screen_index.interceptions[*]` evaluation is

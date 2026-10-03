@@ -24,7 +24,7 @@ class ContentBlockParsingTest {
         return step?.config?.content_blocks ?: emptyList()
     }
 
-    // MARK: - Unknown block type doesn't crash (AC-002)
+    // MARK: - Unknown block type doesn't crash
 
     @Test
     fun unknownBlockTypeRendersEmpty() {
@@ -91,7 +91,7 @@ class ContentBlockParsingTest {
         assertEquals(200.0, blocks[0].height ?: 0.0, 0.01)
     }
 
-    // MARK: - SPEC-089d new block types
+    // MARK: - new block types
 
     @Test
     fun parsePageIndicator() {
@@ -224,7 +224,7 @@ class ContentBlockParsingTest {
         assertEquals(3, blocks[0].active_segments)
     }
 
-    // MARK: - Block Style Design Tokens (AC-005 through AC-009)
+    // MARK: - Block Style Design Tokens
 
     @Test
     fun parseBlockStyle() {
@@ -281,7 +281,7 @@ class ContentBlockParsingTest {
         assertEquals(-5.0, blocks[0].horizontal_offset ?: 0.0, 0.01)
     }
 
-    // MARK: - Form Input Blocks (AC-040 through AC-053)
+    // MARK: - Form Input Blocks
 
     @Test
     fun parseFormInputText() {
@@ -393,8 +393,7 @@ class ContentBlockParsingTest {
             )
         )
         assertEquals("circular_gauge", blocks[0].type)
-        // SPEC-402 A.1+A.2 — Phase F decoder wired in SPEC-070-A audit
-        // batches; max_gauge_value decoder gap closed in SPEC-402 A.2.
+        // Phase F decoder; the max_gauge_value decoder gap is closed.
         assertEquals(75.0, blocks[0].gauge_value ?: 0.0, 0.01)
         assertEquals(100.0, blocks[0].max_gauge_value ?: 0.0, 0.01)
         assertEquals("Health Score", blocks[0].sublabel)
@@ -418,7 +417,7 @@ class ContentBlockParsingTest {
         assertEquals("pulsing_avatar", blocks[0].type)
         assertEquals("https://example.com/avatar.jpg", blocks[0].image_url)
         assertEquals(120.0, blocks[0].height ?: 0.0, 0.01)
-        // SPEC-402 A.1 — Phase F decoder wired in SPEC-070-A audit batches;
+        // Phase F decoder wired in batches;
         // OnboardingConfig.kt:1561-1563 reads all 3 fields.
         assertEquals("#6366f1", blocks[0].pulse_color)
         assertEquals(3, blocks[0].pulse_ring_count)
@@ -427,7 +426,7 @@ class ContentBlockParsingTest {
 
     @Test
     fun parseWheelPicker() {
-        // SPEC-402 A.1 — `max_value_picker` is the iOS canonical name
+        // `max_value_picker` is the iOS canonical name
         // (ContentBlockTypes.swift); `max_value` is reserved for the
         // CircularGauge block. JSON test fixture renamed accordingly.
         val blocks = parseBlocks(
@@ -445,7 +444,7 @@ class ContentBlockParsingTest {
         )
         assertEquals("wheel_picker", blocks[0].type)
         assertEquals("age", blocks[0].field_id)
-        // SPEC-402 A.1 — Phase F decoder wired in SPEC-070-A audit batches;
+        // Phase F decoder wired in batches;
         // OnboardingConfig.kt:1528-1533 reads all 5 fields.
         assertEquals(99.0, blocks[0].max_value_picker ?: 0.0, 0.01)
         assertEquals(1.0, blocks[0].step_value ?: 0.0, 0.01)
@@ -473,8 +472,7 @@ class ContentBlockParsingTest {
         )
         assertEquals("date_wheel_picker", blocks[0].type)
         assertEquals("birthdate", blocks[0].field_id)
-        // SPEC-402 A.1+A.2 — Phase F decoder wired in SPEC-070-A audit
-        // batches; `columns` decoder gap closed in SPEC-402 A.2.
+        // Phase F decoder; the `columns` decoder gap is closed.
         assertEquals(3, blocks[0].columns?.size)
         assertEquals("month", blocks[0].columns?.get(0)?.type)
         assertEquals("Month", blocks[0].columns?.get(0)?.label)
@@ -593,7 +591,7 @@ class ContentBlockParsingTest {
             )
         )
         assertEquals("custom_view", blocks[0].type)
-        // SPEC-402 A.1 — Phase F decoder wired in SPEC-070-A audit batches;
+        // Phase F decoder wired in batches;
         // OnboardingConfig.kt:1667-1668 reads view_key + custom_config.
         assertEquals("onboarding_map", blocks[0].view_key)
         assertEquals(3, blocks[0].custom_config?.size)
@@ -750,7 +748,7 @@ class ContentBlockParsingTest {
             )
         )
         assertEquals("image", blocks[0].type)
-        // SPEC-402 A.1 — Phase F decoder wired in SPEC-070-A audit batches;
+        // Phase F decoder wired in batches;
         // OnboardingConfig.kt:1665 reads z_index.
         assertEquals(10.0, blocks[0].z_index ?: 0.0, 0.01)
     }
@@ -905,7 +903,7 @@ class ContentBlockParsingTest {
                 )
             )
         )
-        // SPEC-402 A.1 — `value` takes priority over `id` to match iOS
+        // `value` takes priority over `id` to match iOS
         // ContentBlockTypes.swift:358-360 (`rawValue ?? rawId`). Parser at
         // OnboardingConfig.kt:1373: `fm["value"] ?: fm["id"]`. Was id-first,
         // breaking server-side answer-code joins for authors who set both.

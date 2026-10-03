@@ -23,9 +23,9 @@ fun SingleChoiceView(
     question: SurveyQuestion,
     answer: SurveyAnswer?,
     onAnswer: (SurveyAnswer) -> Unit,
-    // SPEC-084: Gap #20 — question text style token
+    // Gap #20 — question text style token
     questionTextStyle: TextStyle = TextStyle.Default,
-    // SPEC-084: Gap #21 — option card container style token
+    // Gap #21 — option card container style token
     optionStyle: ElementStyleConfig? = null
 ) {
     val selectedId = answer?.answer as? String
@@ -40,14 +40,14 @@ fun SingleChoiceView(
 
         question.options?.forEach { option ->
             val isSelected = selectedId == option.id
-            // SPEC-401-A R66 (Lens C P1) — single click target via
+            // Single click target via
             // `Modifier.selectable(role = Role.RadioButton)` mirrors iOS
             // `Button { … }` wrapping the row: TalkBack reads each row as one
             // RadioButton (selected/not), not as Surface+RadioButton (two
             // focus stops). Inner RadioButton has `onClick = null` so the
             // entire row is the single tap target.
             if (optionStyle != null) {
-                // SPEC-084: Gap #21 — apply full style engine token to option card
+                // Gap #21 — apply full style engine token to option card
                 Surface(
                     modifier = with(StyleEngine) {
                         Modifier
@@ -86,7 +86,7 @@ fun SingleChoiceView(
                             onClick = { onAnswer(SurveyAnswer(question.id, option.id)) },
                         ),
                     shape = RoundedCornerShape(8.dp),
-                    // R89 — honor the survey theme's resolved accent_color for the selected
+                    // Honor the survey theme's resolved accent_color for the selected
                     // border (console SurveyPreview.tsx:179 paints the selected radio border
                     // with accent_color). `MaterialTheme.colorScheme.primary` is seeded from
                     // SurveyTheme.accent_color (SurveyActivity.kt:152), so this matches the

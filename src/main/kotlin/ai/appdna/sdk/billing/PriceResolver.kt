@@ -14,7 +14,7 @@ internal class PriceResolver(
 ) {
 
     /**
-     * SPEC-070-A G.6 — In-memory cache of last-seen price/currency keyed
+     * In-memory cache of last-seen price/currency keyed
      * by productId. Populated by [getSubscriptionProducts] / [getInAppProducts]
      * / [getOffers] and read by [NativeBillingManager.handleSuccessfulPurchase]
      * to enrich `purchase_completed` analytics. Best-effort — if the host
@@ -23,7 +23,7 @@ internal class PriceResolver(
      */
     private val priceInfoCache = java.util.concurrent.ConcurrentHashMap<String, ProductInfo>()
 
-    /** SPEC-070-A G.6 — fetch the cached ProductInfo for analytics enrichment. */
+    /** Fetch the cached ProductInfo for analytics enrichment. */
     fun cachedPriceInfo(productId: String): ProductInfo? = priceInfoCache[productId]
 
     /**
@@ -195,7 +195,7 @@ internal class PriceResolver(
     }
 
     /**
-     * Round-34 — warm the price cache directly from the ProductDetails resolved during a purchase,
+     * Warm the price cache directly from the ProductDetails resolved during a purchase,
      * so `trackPurchaseCompleted` emits `price`/`currency` on purchase_completed/subscription_started
      * even when the host never called getProducts() (the common AppDNA-paywall path, which renders
      * console-authored price strings and never touches PriceResolver). iOS always includes these

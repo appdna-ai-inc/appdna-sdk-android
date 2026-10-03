@@ -4,12 +4,12 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
-// SPEC-070-A J.22 — NextStepRule.conditions migrated to ImmutableList<Map<String, Any?>>.
+// NextStepRule.conditions migrated to ImmutableList<Map<String, Any?>>.
 import kotlinx.collections.immutable.persistentListOf
 import kotlinx.collections.immutable.toImmutableList
 
 /**
- * SPEC-070-A A.21 — coverage for [NextStepRuleEvaluator] + [classifyRuleTarget].
+ * Coverage for [NextStepRuleEvaluator] + [classifyRuleTarget].
  *
  * iOS reference: `OnboardingRenderer.swift:851-1100`. Each Kotlin test
  * mirrors a behavior the iOS unit suite exercises so cross-platform
@@ -275,7 +275,7 @@ class NextStepRuleEvaluatorTest {
 
     @Test
     fun `last-step fallback event name matches spec`() {
-        // SPEC-070-A A.21 requires this exact event name so ETL can
+        // Requires this exact event name so ETL can
         // distinguish "natural end" from "all rules failed". Locking it
         // in a unit test prevents accidental rename drift.
         assertEquals("flow_completed_via_fallback", FLOW_COMPLETED_VIA_FALLBACK_EVENT)
@@ -293,11 +293,11 @@ class NextStepRuleEvaluatorTest {
         assertEquals(RuleTarget.Step("step3"), classifyRuleTarget("step3"))
     }
 
-    // -- previous_step_* operators (SPEC-070-A finalization audit-7) ----------
+    // -- previous_step_* operators (7) ----------
 
     @Test
     fun `previous_step_equals matches when prev id matches`() {
-        // SPEC-070-A finalization audit-7 — mirrors iOS
+        // 7 — mirrors iOS
         // OnboardingRenderer.swift:1065-1070.
         val cond = mapOf<String, Any?>("type" to "previous_step_equals", "value" to "step_a")
         val rule = NextStepRule(condition = cond, target_step_id = "paywall_a")
@@ -338,7 +338,7 @@ class NextStepRuleEvaluatorTest {
 
     @Test
     fun `previous_step_in matches when prev id in array`() {
-        // SPEC-070-A finalization audit-7 — mirrors iOS
+        // 7 — mirrors iOS
         // OnboardingRenderer.swift:1071-1088.
         val cond = mapOf<String, Any?>(
             "type" to "previous_step_in",

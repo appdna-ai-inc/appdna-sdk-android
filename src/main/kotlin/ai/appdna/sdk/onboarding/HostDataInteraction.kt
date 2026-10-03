@@ -32,7 +32,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.selects.select
 
 /*
- * SPEC-496 §5b (Phase 1b) — "Show more": `ElementInteractionResult.dataContext` and `refresh_step`.
+ * "Show more": `ElementInteractionResult.dataContext` and `refresh_step`.
  *
  *   HostDataLayering        the pure `effective` / `apply` functions of the per-step interaction layer (C3)
  *   HostDataInteractionStore the flow-level owner: the layer, the base stamps and `callSeq` (C3)
@@ -49,7 +49,7 @@ import kotlinx.coroutines.selects.select
  */
 
 // ─────────────────────────────────────────────────────────────────────────────────────────────────
-// C3 — the interaction data layer
+// The interaction data layer
 // ─────────────────────────────────────────────────────────────────────────────────────────────────
 
 /** One layer entry: a value, or a removal marker, stamped with the `callSeq` of the call that wrote it. */
@@ -60,7 +60,7 @@ internal class HostDataLayerEntry(val value: Any?, val removed: Boolean, val sta
     override fun toString(): String = if (removed) "removed@$stamp" else "$value@$stamp"
 }
 
-/** SPEC-496 §5b C3 — the pure merge rules. Ordering is by call START (`callSeq`), never by arrival. */
+/** The pure merge rules. Ordering is by call START (`callSeq`), never by arrival. */
 internal object HostDataLayering {
 
     /**
@@ -124,7 +124,7 @@ internal object HostDataLayering {
 }
 
 /**
- * SPEC-496 §5b C3 — the flow-level owner of the interaction layer, the base stamps and `callSeq`.
+ * The flow-level owner of the interaction layer, the base stamps and `callSeq`.
  * Lives in [OnboardingViewModel] beside `configOverrides` (survives Activity recreation; `reset()`
  * clears it), or in a `remember` when the flow host has no ViewModel. The layer is SNAPSHOT state, so a
  * reply that carries only `dataContext` recomposes the step. `callSeq` and the stamps are plain fields.
@@ -155,7 +155,7 @@ internal class HostDataInteractionStore {
 }
 
 /**
- * SPEC-496 §5b C3 "What is threaded down" — built by the flow host over the ViewModel's (or the
+ * "What is threaded down" — built by the flow host over the ViewModel's (or the
  * `remember` fallback's) `configOverrides`, [HostDataInteractionStore] and [HostDataPresentations].
  * Every reader of `hook_data` computes the effective map from HERE, at call time — never from a
  * composition snapshot.
@@ -193,7 +193,7 @@ internal class HostDataInteractionAccess(
     fun nextCallSeq(): Long = store.nextCallSeq()
 
     /**
-     * §B0 / C3 "cached" on arrival: a non-nil base, or a layer VALUE under a key the step's raw blocks
+     * "cached" on arrival: a non-nil base, or a layer VALUE under a key the step's raw blocks
      * reference. Removal markers and unreferenced keys do not count. [HostDataPresentations] samples
      * it once, when it creates the presentation (the latch).
      */
@@ -221,7 +221,7 @@ internal fun effectiveHookDataForView(access: HostDataInteractionAccess, stepId:
     access.effectiveHookData(stepId) as Map<String, Any>?
 
 // ─────────────────────────────────────────────────────────────────────────────────────────────────
-// C5.5 — the interaction coordinator
+// The interaction coordinator
 // ─────────────────────────────────────────────────────────────────────────────────────────────────
 
 /** The host call an [InteractionCoordinator] makes: `(stepId, blockId, action, value, inputValues)`. */
@@ -229,12 +229,12 @@ internal typealias ElementInteractionCall =
     suspend (String, String, String, String?, Map<String, Any>) -> ElementInteractionResult?
 
 /**
- * SPEC-496 §5b C5.5 — one per PRESENTATION (`remember(myPresentation)`), bound for life to its own
+ * One per PRESENTATION (`remember(myPresentation)`), bound for life to its own
  * step id and its own "is this presentation still current?" check.
  *
  * - [start] refuses — no host call, no `callSeq` draw, no loading state, a debug log — when the
  *   presentation is no longer current, when a call is already in flight (the lock is per
- *   presentation), when a refresh is tapped while the presentation is §B0-pending, or when there is no
+ *   presentation), when a refresh is tapped while the presentation is pending, or when there is no
  *   `onElementInteraction` handler.
  * - A `refresh` call ends at min(reply, 8 s) on an INDEPENDENT timer ([delayMs] is the injectable
  *   clock). Other actions have no SDK timeout, as before.
@@ -268,7 +268,7 @@ internal class InteractionCoordinator(
     var generation: Int = 0
         private set
 
-    /** §5b C5.3/C5.4 — a `refresh_step` button is tappable when nothing is in flight and not pending. */
+    /** A `refresh_step` button is tappable when nothing is in flight and not pending. */
     @Suppress("UNUSED_PARAMETER")
     fun isTappable(blockId: String, pending: Boolean): Boolean = !pending && !inFlight
 
@@ -326,7 +326,7 @@ internal class InteractionCoordinator(
             } catch (c: CancellationException) {
                 throw c
             } catch (t: Throwable) {
-                // §5b C5.8 — a throwing host is a nil reply, for every action.
+                // A throwing host is a nil reply, for every action.
                 log("SPEC-496: onElementInteraction threw for $action on $blockId — treated as null: $t")
                 null
             }
@@ -335,7 +335,7 @@ internal class InteractionCoordinator(
         // However the host coroutine ends, the call ends. A host that throws `CancellationException`
         // itself (e.g. its own `withTimeout` expiring) ends its job as CANCELLED, not failed — without
         // this the reply would never complete, `finally` below would never run and the step's lock
-        // would stay held for the rest of the presentation (§5b C5.3: released on a reply, nil or throw).
+        // would stay held for the rest of the presentation (released on a reply, nil or throw).
         // A no-op when the host already replied. Our own scope's cancellation still cancels runCall.
         // Only the HOST's own cancellation is logged as the host's: not our deadline (`timedOut`, set
         // before we cancel it) and not our scope ending (the step composition left — `!scope.isActive`).
@@ -391,7 +391,7 @@ internal class InteractionCoordinator(
  * What the flow host hands ONE step composition: the flow-level [access], this composition's own
  * presentation (null when the lookup fails — three navigations inside one exit tween), and the host
  * call. A CompositionLocal rather than a parameter: `OnboardingStepView` is public API and these types
- * are internal; the value is the same holder §5b C3 describes.
+ * are internal; the value is the same holder.
  */
 internal class StepHostDataWiring(
     val access: HostDataInteractionAccess,
@@ -429,7 +429,7 @@ internal fun rememberStepHostDataWiring(
 }
 
 /**
- * SPEC-496 §5b C5.1 — the step's interaction wiring as nested renderers see it (row, stack,
+ * The step's interaction wiring as nested renderers see it (row, stack,
  * section_background, carousel pages, multi_buttons children): the call, the loading block and
  * tappability. Provided by `BlockBasedStepView`; `null` in Screens / SDUI and — explicitly — inside an
  * option sheet. When non-null it is AUTHORITATIVE for `refresh_step` buttons; when null the button's
@@ -503,7 +503,7 @@ internal fun rememberInteractionCoordinator(
                 scope = scope,
                 isCurrentPresentation = { true },
                 drawSeq = { ++seq },
-                // §5b C5.2 — a step shown on its own has a handler only when the caller passed a legacy
+                // A step shown on its own has a handler only when the caller passed a legacy
                 // interaction seam. The default seam is the [NoElementInteraction] sentinel: then a refresh
                 // makes no call, shows no loading state and logs "no onElementInteraction handler".
                 hasHandler = { latestFallback !== NoElementInteraction },
@@ -531,7 +531,7 @@ private fun AppliedInteraction.asResult(): ElementInteractionResult = ElementInt
 )
 
 /**
- * SPEC-496 §5b C4 steps 1–4 — one reply's four outputs, written TOGETHER in one snapshot so no frame
+ * Steps 1–4 — one reply's four outputs, written TOGETHER in one snapshot so no frame
  * renders a partial application:
  *  1. `inputValuePatches` key by key onto the CURRENT answers (never the tap-time snapshot);
  *  2. `dataContext` into the step's layer, stamped with the call's `callSeq`;
@@ -564,7 +564,7 @@ internal fun applyInteractionReply(
 }
 
 // ─────────────────────────────────────────────────────────────────────────────────────────────────
-// C5.3 — the loading state of the tapped button (SDK chrome, not authorable)
+// The loading state of the tapped button (SDK chrome, not authorable)
 // ─────────────────────────────────────────────────────────────────────────────────────────────────
 
 internal const val REFRESH_SPINNER_TAG = "appdna_refresh_spinner"

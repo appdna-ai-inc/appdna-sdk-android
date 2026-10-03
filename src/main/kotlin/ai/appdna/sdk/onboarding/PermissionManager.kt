@@ -14,7 +14,7 @@ import androidx.core.content.ContextCompat
 import kotlinx.coroutines.CompletableDeferred
 
 /**
- * SPEC-421 — Coarse, cross-type permission status the onboarding permission pipeline routes on.
+ * Coarse, cross-type permission status the onboarding permission pipeline routes on.
  *
  * [UNAVAILABLE] means the request cannot be made safely (permission not declared in the host
  * manifest, or an unsupported/unknown type) — it is NEVER routed to [DENIED] (mirrors iOS's
@@ -28,7 +28,7 @@ enum class PermissionStatus {
 }
 
 /**
- * SPEC-421 — pure routing decision the pipeline derives from a [PermissionStatus].
+ * Pure routing decision the pipeline derives from a [PermissionStatus].
  * Kept separate + pure so the status→action mapping is unit-testable without the OS.
  */
 enum class PermissionRouteDecision {
@@ -43,7 +43,7 @@ enum class PermissionRouteDecision {
 }
 
 /**
- * SPEC-421 — runtime permission manager for onboarding permission steps (Android mirror of the
+ * Runtime permission manager for onboarding permission steps (Android mirror of the
  * iOS `PermissionManager`).
  *
  * Two responsibilities:

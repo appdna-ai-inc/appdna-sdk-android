@@ -17,9 +17,9 @@ fun YesNoView(
     question: SurveyQuestion,
     answer: SurveyAnswer?,
     onAnswer: (SurveyAnswer) -> Unit,
-    // SPEC-084: Gap #20 — question text style token
+    // Gap #20 — question text style token
     questionTextStyle: TextStyle = TextStyle.Default,
-    // R89 — honor the survey theme's resolved colors (was hardcoded brandAccentColor() fill +
+    // Honor the survey theme's resolved colors (was hardcoded brandAccentColor() fill +
     // Color.White label, which ignored SurveyTheme.accent_color/button_text_color). Defaults
     // preserve prior behavior for callers (e.g. SurveyPreview) that do not pass them.
     accentColor: Color = ai.appdna.sdk.AppDNA.brandAccentColor(),

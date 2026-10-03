@@ -20,7 +20,7 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 /**
- * SPEC-070-A J.8 — DelegateWiringTest.
+ * DelegateWiringTest.
  *
  * Mirrors `Tests/AppDNASDKTests/DelegateWiringTests.swift`. Asserts that:
  *
@@ -219,7 +219,7 @@ class DelegateWiringTest {
         assertEquals(1, d.calls)
     }
 
-    // ─── 8. Init delegate (H.20) ────────────────────────────────────────
+    // ─── 8. Init delegate ────────────────────────────────────────
     private class CountingInit : AppDNAInitDelegate {
         var degradedCount = 0
         override fun onInitDegraded(reason: Throwable) { degradedCount++ }

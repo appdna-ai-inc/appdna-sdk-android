@@ -7,7 +7,7 @@ import androidx.lifecycle.ViewModel
 import ai.appdna.sdk.events.EventTracker
 
 /**
- * SPEC-070-A J.21 — survives Activity recreation (config changes / process
+ * Survives Activity recreation (config changes / process
  * death-then-restore) without leaking pre-launch state across distinct flow
  * launches.
  *
@@ -82,7 +82,7 @@ internal class OnboardingViewModel : ViewModel() {
     val responses: SnapshotStateMap<String, Any> = mutableStateMapOf()
 
     /**
-     * SPEC-070-A finalization P0 audit-8 D2 — navigation history stack
+     * 8 D2 — navigation history stack
      * for `previous_step_equals` / `previous_step_in` rule operators
      * (iOS OnboardingRenderer.swift:982-988, 1065-1088). Hoisted into
      * the ViewModel alongside [currentIndex] / [responses] so it
@@ -94,7 +94,7 @@ internal class OnboardingViewModel : ViewModel() {
         androidx.compose.runtime.mutableStateListOf()
 
     /**
-     * SPEC-401-A R57 (Lens B P1) — `onBeforeStepRender` overrides survive
+     * `onBeforeStepRender` overrides survive
      * Activity recreation (rotation, locale change, dark/light toggle,
      * process-death restore). Was a composable-scoped `remember`; resets
      * on every recreation while sister state ([currentIndex] / [responses]
@@ -110,7 +110,7 @@ internal class OnboardingViewModel : ViewModel() {
     val configOverrides: SnapshotStateMap<String, StepConfigOverride> = mutableStateMapOf()
 
     /**
-     * SPEC-401-A R58 (Lens B P2) — gate `LaunchedEffect(currentIndex)` so
+     * Gate `LaunchedEffect(currentIndex)` so
      * onBeforeStepRender + onStepViewed only fire ONCE per currentIndex
      * change, not on every Activity recreation (rotation, locale change,
      * dark/light toggle, process-death restore). iOS
@@ -125,14 +125,14 @@ internal class OnboardingViewModel : ViewModel() {
     var lastViewedStepIndex: Int = -1
 
     /**
-     * SPEC-496 §B0 — the host-data "pending" state of the step on screen, per presentation. Held
+     * The host-data "pending" state of the step on screen, per presentation. Held
      * here (not in composition) so an Activity recreation mid-call keeps the presentation, sees the
      * call was cancelled before replying, and re-fires it once.
      */
     val hostDataPresentations = HostDataPresentations()
 
     /**
-     * SPEC-496 §5b C3 — the per-step interaction data layer (`ElementInteractionResult.dataContext`),
+     * The per-step interaction data layer (`ElementInteractionResult.dataContext`),
      * the `onBeforeStepRender` base stamps and the flow-level `callSeq`. Beside [configOverrides], with
      * exactly its lifetime: survives Activity recreation, cleared by [reset] and nothing else.
      */
@@ -199,7 +199,7 @@ internal class OnboardingViewModel : ViewModel() {
         restoredResponses = null
         responses.clear()
         currentIndex.intValue = 0
-        // SPEC-070-A finalization P0 audit-9 — navigationHistory is
+        // 9 — navigationHistory is
         // flow-scoped state alongside responses + currentIndex. Reset
         // must clear it so a re-presented onboarding doesn't see stale
         // history from a previous flow. Currently masked by Activity
@@ -207,11 +207,11 @@ internal class OnboardingViewModel : ViewModel() {
         // instance), but the contract of reset() is "drop every
         // reference held by this VM" — keeping these aligned.
         navigationHistory.clear()
-        // SPEC-401-A R57 (Lens B P1) — clear override map alongside other
+        // Clear override map alongside other
         // flow-scoped state so a re-presented onboarding doesn't see stale
         // overrides from a previous flow.
         configOverrides.clear()
-        // SPEC-401-A R58 (Lens B P2) — clear viewed-index sentinel so the
+        // Clear viewed-index sentinel so the
         // re-presented onboarding fires onBeforeStepRender + onStepViewed
         // for its own first step.
         lastViewedStepIndex = -1

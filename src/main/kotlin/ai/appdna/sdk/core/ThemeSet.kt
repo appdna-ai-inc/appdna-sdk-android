@@ -1,7 +1,7 @@
 package ai.appdna.sdk.core
 
 /**
- * SPEC-205 / SPEC-070-A D.1: Theme variants for light / dark mode.
+ * Theme variants for light / dark mode.
  *
  * Generic wrapper that allows ANY theme-shaped data class to be specified
  * either as a flat object (legacy — treated as light) or as a

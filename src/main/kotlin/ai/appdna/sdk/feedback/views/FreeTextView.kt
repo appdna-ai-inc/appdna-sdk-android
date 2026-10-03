@@ -20,7 +20,7 @@ fun FreeTextView(
     question: SurveyQuestion,
     answer: SurveyAnswer?,
     onAnswer: (SurveyAnswer) -> Unit,
-    // SPEC-084: Gap #20 — question text style token
+    // Gap #20 — question text style token
     questionTextStyle: TextStyle = TextStyle.Default
 ) {
     val maxLength = question.freeTextConfig?.maxLength ?: 500
@@ -38,7 +38,7 @@ fun FreeTextView(
         OutlinedTextField(
             value = text,
             onValueChange = { newValue ->
-                // SPEC-401-A R66 (Lens A P1) — truncate paste-overflow instead of
+                // Truncate paste-overflow instead of
                 // silently rejecting. iOS FreeTextView.swift:42-44 uses
                 // `String(newValue.prefix(maxLength))` so a 600-char paste into
                 // a 500-char field yields the first 500 chars. Android was
@@ -56,7 +56,7 @@ fun FreeTextView(
             // cornerRadius:8 stroke. Material3 default outlined textfield
             // uses asymmetric rounding; force symmetric 8dp corners.
             shape = androidx.compose.foundation.shape.RoundedCornerShape(8.dp),
-            // SPEC-070-A I.5b — text keyboard with `Done` IME action so the
+            // Text keyboard with `Done` IME action so the
             // soft keyboard exposes a dismiss key. Mirrors iOS
             // `submitLabel(.done)` used by SurveyRenderer's free-text view.
             keyboardOptions = KeyboardOptions(

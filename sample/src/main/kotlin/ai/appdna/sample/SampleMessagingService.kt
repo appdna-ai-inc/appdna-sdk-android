@@ -1,4 +1,4 @@
-// SPEC-070-A J.18 — sample/example app.
+// sample/example app.
 //
 // Minimal Firebase Cloud Messaging service that hands every push token and
 // every incoming message off to the AppDNA SDK. Hosts that already extend

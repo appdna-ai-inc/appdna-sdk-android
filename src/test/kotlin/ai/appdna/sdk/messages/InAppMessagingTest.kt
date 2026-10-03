@@ -7,7 +7,7 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 /**
- * SPEC-070-A J.8 — InAppMessagingTest.
+ * InAppMessagingTest.
  *
  * Mirrors `Tests/AppDNASDKTests/InAppMessagingTests.swift`. Validates two
  * core message-pipeline behaviors that are independent of any Android

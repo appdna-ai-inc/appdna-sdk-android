@@ -5,7 +5,7 @@
 
 package ai.appdna.sdk.generated
 
-/** SPEC-419 render-contract default constants (shared with iOS + console preview). Wrap numbers with .dp in Compose. */
+/** Render-contract default constants (shared with iOS + console preview). Wrap numbers with .dp in Compose. */
 object RenderDefaults {
     /** Horizontal spacing between row elements (HStack spacing). */
     const val selectRowSpacing: Int = 12

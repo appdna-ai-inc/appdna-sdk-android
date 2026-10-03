@@ -20,19 +20,19 @@ import java.net.URL
  * Helper for building rich push notifications with images.
  * Used by AppDNAMessagingService to display BigPictureStyle notifications.
  *
- * SPEC-070-A H.21 — small-icon resolution delegated to
+ * Small-icon resolution delegated to
  * [NotificationIconResolver] so the icon priority chain stays in lockstep
  * with [AppDNAMessagingService].
  *
- * SPEC-070-A H.21b — server-supplied `channel_importance` overrides the
+ * Server-supplied `channel_importance` overrides the
  * default `IMPORTANCE_HIGH` when the channel is created here.
  *
- * SPEC-070-A H.23 — bitmap download moved off the FCM listener thread into
+ * Bitmap download moved off the FCM listener thread into
  * a coroutine with an 8-second wall-clock cap (well under FCM's 10s service
  * window). Previously, the default URL connection's 25s combined timeout
  * could cause the FCM service to be killed before the notification posted.
  *
- * SPEC-070-A E.6 — rich-media handling for GIF and video URLs:
+ * Rich-media handling for GIF and video URLs:
  *   - **GIF**: FCM/[NotificationCompat.BigPictureStyle] only renders a
  *     single still bitmap, so we decode the first frame of the GIF and
  *     surface it as the BigPicture. (Animated rendering inside the
@@ -57,14 +57,14 @@ object RichPushHandler {
         customSound: String? = null,
     ): NotificationCompat.Builder {
         val builder = NotificationCompat.Builder(context, channelId)
-            // SPEC-070-A H.21 — host-aware icon resolution.
+            // Host-aware icon resolution.
             .setSmallIcon(NotificationIconResolver.resolve(context))
             .setContentTitle(title)
             .setContentText(body)
             .setAutoCancel(true)
             .setPriority(NotificationCompat.PRIORITY_HIGH)
 
-        // SPEC-070-A H.23 / E.6: dispatch to the right decoder based on
+        // Dispatch to the right decoder based on
         // declared media type (with extension fallback). We always cap
         // the wall-clock at 8s — bitmap decode, GIF first-frame extract,
         // and video sync-frame extract are all subject to the same
@@ -147,7 +147,7 @@ object RichPushHandler {
     private fun downloadBitmap(url: String): Bitmap? {
         return try {
             val connection = URL(url).openConnection()
-            // SPEC-070-A H.23 — keep individual socket timeouts tight so the
+            // Keep individual socket timeouts tight so the
             // 8s outer cap can preempt slow servers. Connect: 4s, read: 4s.
             connection.connectTimeout = 4_000
             connection.readTimeout = 4_000
@@ -161,7 +161,7 @@ object RichPushHandler {
     }
 
     /**
-     * SPEC-070-A E.6 — GIFs in the Android notification shade can only
+     * GIFs in the Android notification shade can only
      * surface a single static frame (`BigPictureStyle.bigPicture` accepts
      * only a [Bitmap]). We decode the first frame via the platform
      * `ImageDecoder` on API 28+, and fall back to `BitmapFactory` (which
@@ -185,7 +185,7 @@ object RichPushHandler {
     }
 
     /**
-     * SPEC-070-A E.6 — pulls a thumbnail near t=0 from a remote video URL
+     * Pulls a thumbnail near t=0 from a remote video URL
      * via [MediaMetadataRetriever]. We deliberately use the closest sync
      * frame (`OPTION_CLOSEST_SYNC`) so we don't have to decode forwards
      * from the start; on any keyframed encoding (the standard for h264 +
@@ -217,7 +217,7 @@ object RichPushHandler {
     }
 
     /**
-     * SPEC-070-A J.15 — extracted helper that ASSUMES API 29+ so Android Lint
+     * Extracted helper that ASSUMES API 29+ so Android Lint
      * flags any accidental call that isn't behind a
      * `Build.VERSION.SDK_INT >= Q` guard. [MediaMetadataRetriever.close] was
      * added in API 29 (`AutoCloseable` was implemented on the same release);
@@ -229,7 +229,7 @@ object RichPushHandler {
     }
 
     /**
-     * SPEC-070-A H.21b — overload that accepts server-supplied importance.
+     * Overload that accepts server-supplied importance.
      * Existing 2-arg overload retained for source-compat.
      */
     fun ensureChannel(
@@ -245,7 +245,7 @@ object RichPushHandler {
     }
 
     /**
-     * SPEC-070-A J.15 — extracted helper that ASSUMES API 26+ so Android Lint
+     * Extracted helper that ASSUMES API 26+ so Android Lint
      * flags any accidental call that isn't behind a
      * `Build.VERSION.SDK_INT >= O` guard. [NotificationChannel],
      * `NotificationManager.getNotificationChannel`, and

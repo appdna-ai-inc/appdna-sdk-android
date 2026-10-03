@@ -2,30 +2,26 @@
 <!--
     AppDNA Android SDK — library manifest.
 
-    SPEC-070-A Phase A.4 (A.4.1–A.4.4): ship a library AndroidManifest so host
+    Ship a library AndroidManifest so host
     apps integrating `ai.appdna:sdk-android:1.0.33` get all required SDK
     declarations via manifest-merger without copy/pasting boilerplate.
 
-    Reference:
-      .ai/specs/SPEC-070-A-2026-05-05-android-sdk-catchup.md §3.1 P0-5/P0-A.4
-      ADR-001 (thin native SDK wrappers) + SPEC-070-0 (cross-platform SDK foundation)
-
-    A.4.1 Permissions:
+    1. Permissions:
       INTERNET, ACCESS_NETWORK_STATE, WAKE_LOCK, POST_NOTIFICATIONS (33+),
       VIBRATE.
 
-    A.4.2 <queries>:
+    2. <queries>:
       Custom Tabs / Intent.ACTION_VIEW http+https resolution on API 30+.
 
-    A.4.3 <application> components, all `android:exported="false"`:
+    3. <application> components, all `android:exported="false"`:
       PaywallActivity, OnboardingActivity, SurveyActivity,
       AppDNAScreenSlotActivity (forward-declared — current SDK uses an
       inline Compose host `screens/AppDNAScreenSlot.kt`; a dedicated
-      Activity is forward-compatible and tracked for SPEC-070-A H/L phases).
+      Activity is forward-compatible).
       AppDNAMessagingService (FirebaseMessagingService) with the
       `com.google.firebase.MESSAGING_EVENT` intent filter.
 
-    A.4.4 manifest-merger strategy:
+    4. Manifest-merger strategy:
       WorkManager auto-init: hosts that disable WorkManager auto-init via
       androidx.startup must use tools:node="merge" — SDK does NOT declare
       a <provider>; we rely on host's WorkManager initialization.
@@ -37,7 +33,7 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:tools="http://schemas.android.com/tools">
 
-    <!-- A.4.1 Permissions -->
+    <!-- 1. Permissions -->
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
     <uses-permission android:name="android.permission.WAKE_LOCK" />
@@ -46,7 +42,7 @@
     <uses-permission android:name="android.permission.VIBRATE" />
 
     <!--
-        A.4.2 <queries>: required on API 30+ so InAppBrowser / Custom Tabs
+        2. <queries>: required on API 30+ so InAppBrowser / Custom Tabs
         invocation via Intent.ACTION_VIEW resolves. Without this,
         `intent.resolveActivity(packageManager)` returns null and links
         silently fail on Android 11+.
@@ -63,7 +59,7 @@
     </queries>
 
     <!--
-        SPEC-070-A J.12 — RTL: declare supportsRtl on the SDK's <application>
+        RTL: declare supportsRtl on the SDK's <application>
         with `tools:node="merge"` so any host that did NOT explicitly opt in
         still inherits RTL-aware layout from the SDK. Hosts that already
         declare their own value win via manifest-merger precedence (they
@@ -93,12 +89,12 @@
         tools:node="merge">
 
         <!--
-            A.4.3 SDK-owned Activities. All translucent, no title bar,
+            3. SDK-owned Activities. All translucent, no title bar,
             android:exported="false" (Android 12+ install requirement).
         -->
 
         <!--
-            SPEC-070-A I.16 — `android:windowSoftInputMode="adjustResize"` so
+            `android:windowSoftInputMode="adjustResize"` so
             Compose IME insets behave correctly for forms / surveys / paywall
             promo-code inputs. Combined with `WindowCompat.setDecorFitsSystemWindows(false)`
             in `onCreate` and `imePadding()` modifiers in renderer roots, this
@@ -131,7 +127,7 @@
             SDUI screen host Activity — packages/.../screens/ScreenHostActivity.kt.
             Mirrors iOS Screens/ScreenPresenter.swift. Launched when a host
             calls AppDNA.showScreen("foo") so server-driven screens get a
-            real Activity surface. SPEC-070-A finalization Lens B P0.
+            real Activity surface.
         -->
         <activity
             android:name="ai.appdna.sdk.screens.ScreenHostActivity"

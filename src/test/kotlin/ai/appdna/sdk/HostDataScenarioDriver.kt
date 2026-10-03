@@ -51,7 +51,7 @@ import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.withContext
 
 /**
- * SPEC-496 — `host_data_scenario`: a presented onboarding step driven through the REAL SDK seams the
+ * `host_data_scenario`: a presented onboarding step driven through the REAL SDK seams the
  * step view uses, in the order the view uses them:
  *
  *   OnboardingConfigParser (raw capture + stamping) → HostDataPresentations (pending starts before
@@ -61,7 +61,7 @@ import kotlinx.coroutines.withContext
  *   pruneHostDataSelections → RequiredFieldGate.evaluateDetailed / lookup-only loc / mapRoutePolyline /
  *   filterOptionsLocally / recordOptionPick / resolveSheetBlocks / AuthSecretRedactor.
  *
- * SPEC-496 §5b (P1b) — every element interaction goes through the production [InteractionCoordinator]
+ * Every element interaction goes through the production [InteractionCoordinator]
  * (one per presentation, as `remember(myPresentation)` builds it), its reply through the production
  * [applyInteractionReply], and `hook_data` is the production [HostDataInteractionAccess] effective map
  * over a [HostDataInteractionStore] — the same flow-level owner the ViewModel holds. The driver models
@@ -298,7 +298,7 @@ internal class HostDataScenarioDriver(
             step = step,
             stepIndex = 0,
             hasDelegate = delegateMode != "none",
-            // §5b C3 — the REAL layer-aware "cached" value, latched when the presentation is created.
+            // The REAL layer-aware "cached" value, latched when the presentation is created.
             hasCachedOverride = access.cachedAtArrival(step),
         )
         val st = StepState(step, 0, pipeline, presentation)
@@ -324,7 +324,7 @@ internal class HostDataScenarioDriver(
         hookJob = launch {
             beforeStepRenderEffect(
                 stepIndex = st.stepIndex,
-                // The placeholder step at index 1 (§5b C10 "How the Android revisit re-fires").
+                // The placeholder step at index 1 ("How the Android revisit re-fires").
                 stepCount = 2,
                 presentation = p,
                 lastViewedStepIndex = { lastViewedStepIndex },
@@ -410,7 +410,7 @@ internal class HostDataScenarioDriver(
     private fun onInteractionReply(st: StepState, result: ElementInteractionResult, stamp: Long) {
         applyInteractionReply(result, stamp, st.step.id, st.inputValues, access, st.fieldConfigOverrides, st.fieldOptionsOverrides)
         // `advance: true` → handleAction("next") BEFORE the next frame: canAdvance judges the step
-        // re-resolved with what was just written AND its vanished §B0 selections pruned (the
+        // re-resolved with what was just written AND its vanished selections pruned (the
         // `interactionGate` of BlockBasedStepView, via the same resolveForInteractionAdvance).
         // Blocked → the step stays; allowed → onNext.
         if (result.advance) {
@@ -644,7 +644,7 @@ internal class HostDataScenarioDriver(
             "field_config_has_repeat" to (b.field_config?.containsKey("repeat") == true),
             "field_config_has_option_set_id" to (b.field_config?.containsKey("option_set_id") == true),
             "route_polyline_used" to mapRoutePolyline(b, rawResolved = st.pipeline != null),
-            // §5b C5.3 — what ButtonBlock reads from the step's coordinator (StepInteraction).
+            // What ButtonBlock reads from the step's coordinator (StepInteraction).
             "loading" to (refresh && st.coordinator.loadingBlockId == b.id),
             "tappable" to (!refresh || st.coordinator.isTappable(b.id, st.presentation.pending)),
         )
@@ -681,7 +681,7 @@ internal class HostDataScenarioDriver(
         out["reverted_keys_logged"] = st.pipeline?.lastRevertedKeys.orEmpty().map { (b, k) -> mapOf("block_id" to b, "key_path" to k) }
         val gate = RequiredFieldGate.evaluateDetailed(st.layered, st.inputValues, st.rawIds)
         out["gate"] = mapOf("can_advance" to gate.canAdvance, "toast_kind" to gate.toastKind)
-        // §5b C10 — `blocks` covers both live steps during a transition; everything else is the current step's.
+        // `blocks` covers both live steps during a transition; everything else is the current step's.
         val blockMap = LinkedHashMap<String, Any?>()
         outgoing?.let { o -> allBlocksOf(o).forEach { b -> blockMap[b.id] = observeBlock(o, b) } }
         blocks.forEach { b -> blockMap[b.id] = observeBlock(st, b) }

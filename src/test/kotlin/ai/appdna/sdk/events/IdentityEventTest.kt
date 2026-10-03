@@ -8,7 +8,7 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 /**
- * SPEC-070-A J.8 — IdentityEventTest.
+ * IdentityEventTest.
  *
  * Mirrors `Tests/AppDNASDKTests/IdentityEventTests.swift`. Validates the
  * shape of the `identify` event payload — the wire schema the platform
@@ -66,7 +66,7 @@ class IdentityEventTest {
 
     @Test
     fun `anon_id is preserved after identify`() {
-        // SPEC-070-A G.* — `identify` MUST NOT change anon_id. The platform
+        // G.* — `identify` MUST NOT change anon_id. The platform
         // joins anon→user behavior; nuking anon_id breaks the join.
         val before = "anon-stable-9"
         val payload = IdentityPayload.build(userId = "u", anonId = before, traits = null)!!

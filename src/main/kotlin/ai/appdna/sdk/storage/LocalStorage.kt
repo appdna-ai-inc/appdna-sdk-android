@@ -9,7 +9,7 @@ import androidx.security.crypto.MasterKey
 /**
  * SharedPreferences wrapper for persistent SDK data.
  *
- * SPEC-070-A G.5: Sensitive items (`anon_id`, `user_id`, `user_traits`,
+ * Sensitive items (`anon_id`, `user_id`, `user_traits`,
  * `push_token`) are stored in [EncryptedSharedPreferences] (AES-256, AndroidX
  * Security Crypto) — iOS parity = Keychain.
  *
@@ -154,7 +154,7 @@ internal class LocalStorage(val context: Context) {
         private const val ENCRYPTED_PREFS_FILE = "ai.appdna.sdk.secure"
 
         /**
-         * SPEC-070-A G.5: Keys that hold PII or auth-bearing data and must live in
+         * Keys that hold PII or auth-bearing data and must live in
          * the encrypted prefs file. Others stay plaintext to avoid the
          * AndroidKeystore overhead on hot-path reads.
          */

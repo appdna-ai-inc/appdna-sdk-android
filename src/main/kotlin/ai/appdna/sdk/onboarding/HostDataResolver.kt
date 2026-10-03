@@ -7,7 +7,7 @@ import java.math.RoundingMode
 import java.util.IdentityHashMap
 
 /*
- * SPEC-496 — the Android implementation of the RAW host-data pass (§A1–§A6, §B0).
+ * The Android implementation of the RAW host-data pass.
  *
  * A line-for-line port of the console's reference resolver `src/lib/onboarding/host-data-resolve.ts`:
  * same rules, same order, same unresolved-token behaviour. One raw content block (plus the step's
@@ -15,7 +15,7 @@ import java.util.IdentityHashMap
  * fixtures run this exact object on all three implementations, so the console, iOS and Android
  * cannot drift.
  *
- * ## The pass, in order (§A4)
+ * ## The pass, in order
  *
  *   deep copy + id stamping → skip rule → bindings (every block depth; allowlist by generated key
  *   class) → strip authored markers → repeat expansion (top-level `input_select` only) → ONE
@@ -24,7 +24,7 @@ import java.util.IdentityHashMap
  *   dedupe → summary-stat placeholder rules → markers (`resolve_state`, `empty_state`,
  *   `sheet_step_paths`) → the block's `block.<id>.*` localizations.
  *
- * ## The one native difference (§A5)
+ * ## The one native difference
  *
  * Tokens whose root is NOT a block root (`device`, `computed`, `remote_config`, `input`, bare names)
  * go through `TemplateEngine`'s existing per-token variable resolver ([HostDataContext.legacyToken]),
@@ -45,7 +45,7 @@ internal typealias StepLocalizations = Map<String, Map<String, String>>
 
 /** Inputs of one resolve. Mirrors the TS `HostDataContext` (strict mode only — natives never preview). */
 internal data class HostDataContext(
-    /** The step id; with [blockIndex] it drives id stamping (§A1 "Stable ids"). */
+    /** The step id; with [blockIndex] it drives id stamping ("Stable ids"). */
     val stepId: String = "fixture_step",
     /** The block's index in the step's top-level block array. */
     val blockIndex: Int = 0,
@@ -57,13 +57,13 @@ internal data class HostDataContext(
     val session: Map<String, Any?>? = null,
     /** `SelectedOptionStore` snapshot (`{{selected.<field_id>.label}}`). */
     val selected: Map<String, Any?>? = null,
-    /** §B0 "Host data pending" — the step's delegate call is still in flight. */
+    /** "Host data pending" — the step's delegate call is still in flight. */
     val pending: Boolean = false,
     val localizations: StepLocalizations? = null,
     /** Device locale. The pass resolves every locale's values; this is carried for callers. */
     val locale: String? = null,
     /**
-     * §A5 — `TemplateEngine`'s per-token variable resolver for non-block roots. Returns null on a
+     * `TemplateEngine`'s per-token variable resolver for non-block roots. Returns null on a
      * miss (the caller then applies the `| fallback`, else ""). Null = no TemplateEngine (tokens stay
      * as authored, the console behaviour).
      */
@@ -75,13 +75,13 @@ internal data class HostDataResolveResult(
     val block: JsonObj,
     /** This block's `block.<id>.*` localization entries after the pass (null when the step has none). */
     val localizations: Map<String, Map<String, String>>?,
-    /** True when the §A1 skip rule applied — the block is the stamped raw block, untouched. */
+    /** True when the skip rule applied — the block is the stamped raw block, untouched. */
     val skipped: Boolean,
     /** Debug log lines. */
     val log: List<String>,
     /**
      * The block right after bindings / marker strip / repeat expansion and BEFORE the structural pass
-     * — what a changed key reverts to when the typed decode rejects a resolved value (§A1 "No
+     * what a changed key reverts to when the typed decode rejects a resolved value ("No
      * whole-block failure"). Null when [skipped].
      */
     val postExpansion: JsonObj? = null,
@@ -93,17 +93,17 @@ internal data class HostDataResolveResult(
 
 internal object HostDataResolver {
 
-    /** §A2 — the roots the block resolver owns. `item` / `index` exist only inside a repeat template. */
+    /** The roots the block resolver owns. `item` / `index` exist only inside a repeat template. */
     val BLOCK_ROOTS: Set<String> = setOf("responses", "hook_data", "step", "selected", "user", "session", "item", "index")
     private val EXCLUDED: Set<String> = BlockKeyTypes.excludedKeys
     private val MARKERS: Set<String> = BlockKeyTypes.internalMarkers
-    /** §A4 — the only key classes a `bindings` entry may target. */
+    /** The only key classes a `bindings` entry may target. */
     private val BINDABLE_CLASSES = setOf("string", "number", "bool", "string_list")
-    /** Option-bearing inputs (§B0 "Select"). */
+    /** Option-bearing inputs ("Select"). */
     val OPTION_BEARING_TYPES: Set<String> = setOf("input_select", "input_chips", "input_segmented")
     /** Keys whose array elements are content blocks (order matters: it is the id-stamping order). */
     private val BLOCK_LIST_KEYS = listOf("children", "stack_children")
-    /** §B0 — the repeat cap. */
+    /** The repeat cap. */
     const val REPEAT_DEFAULT_MAX = 20
     const val REPEAT_HARD_MAX = 50
 
@@ -135,7 +135,7 @@ internal object HostDataResolver {
     @Suppress("UNCHECKED_CAST")
     private fun list(v: Any?): MutableList<Any?>? = v as? MutableList<Any?>
 
-    /** Every JSON key ending `_url` is an image/media URL key (§A6); `gallery_images` elements too. */
+    /** Every JSON key ending `_url` is an image/media URL key; `gallery_images` elements too. */
     fun isUrlKey(key: String): Boolean = key.endsWith("_url")
 
     data class TemplateToken(
@@ -161,7 +161,7 @@ internal object HostDataResolver {
         }.toList()
 
     /**
-     * §A1 "Stringification" — identical on all three implementations. Strings as-is; `true`/`false`;
+     * "Stringification" — identical on all three implementations. Strings as-is; `true`/`false`;
      * integral numbers below 2^53 without a decimal part; every other number in plain decimal notation
      * (never exponent form) with at most 15 significant digits and trailing zeros trimmed. `null`,
      * objects and arrays have no string form → null (= unresolved).
@@ -196,7 +196,7 @@ internal object HostDataResolver {
     }
 
     /**
-     * §A6 — a template-resolved URL must be an absolute `https` URL: scheme `https` (case-insensitive)
+     * A template-resolved URL must be an absolute `https` URL: scheme `https` (case-insensitive)
      * followed by `://`, a non-empty authority, and only RFC 3986 characters anywhere.
      *
      * NO `IGNORE_CASE`: Kotlin/JVM turns it into CASE_INSENSITIVE | UNICODE_CASE, which folds `ſ`
@@ -213,7 +213,7 @@ internal object HostDataResolver {
     private const val QUERY_SAFE = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-._~!$'()*,;:@/?"
 
     /**
-     * §A6 — percent-encode a value substituted INSIDE a longer URL. `path`: RFC 3986 `pchar` with `/`
+     * Percent-encode a value substituted INSIDE a longer URL. `path`: RFC 3986 `pchar` with `/`
      * encoded; `query`: the query component minus `&`, `=`, `+` (and `#`). UTF-8, upper-case hex.
      */
     fun percentEncodeUrlComponent(value: String, query: Boolean): String {
@@ -258,7 +258,7 @@ internal object HostDataResolver {
     )
 
     /**
-     * Resolve a dot path against a scope (§A2): any depth, numeric array index, miss → null. Two or
+     * Resolve a dot path against a scope: any depth, numeric array index, miss → null. Two or
      * more segments are required except for exactly `item` and `index`.
      */
     internal fun resolveScopePath(path: String, scope: Scope): Any? {
@@ -294,7 +294,7 @@ internal object HostDataResolver {
     }
 
     /**
-     * §A4 — convert a bound value into the class of the ContentBlock key it targets (the sheet
+     * Convert a bound value into the class of the ContentBlock key it targets (the sheet
      * renderer's deferred `step` bindings use this too). Null = does not fit / not bindable.
      */
     fun convertBindingValue(prop: String, v: Any?): Any? {
@@ -348,7 +348,7 @@ internal object HostDataResolver {
             }
             val encodeQuery = firstQuery >= 0 && firstQuery < t.index
             if (t.root !in BLOCK_ROOTS) {
-                // §A5 — TemplateEngine's per-token resolver, same semantics as today: fallback, else "".
+                // TemplateEngine's per-token resolver, same semantics as today: fallback, else "".
                 if (legacy == null) { out.append(t.raw); continue }
                 val v = legacy(t.path) ?: t.fallback ?: ""
                 out.append(if (url && !whole) percentEncodeUrlComponent(v, encodeQuery) else v)
@@ -370,8 +370,8 @@ internal object HostDataResolver {
     }
 
     /**
-     * §A4 — `fieldConfigPatches` values are resolved with the same structural walker as a block's
-     * `field_config` before merging. Returns a resolved copy; a `*_url` key the §A6 rule rejects is
+     * `fieldConfigPatches` values are resolved with the same structural walker as a block's
+     * `field_config` before merging. Returns a resolved copy; a `*_url` key the rule rejects is
      * absent from it (so the authored value stays).
      */
     internal fun resolveFieldConfigPatch(patch: Map<String, Any?>, blockType: String, ctx: HostDataContext): Map<String, Any?> {
@@ -385,7 +385,7 @@ internal object HostDataResolver {
         resolveString(text, rootScope(ctx), url = false, deferStep = false, legacy = ctx.legacyToken).value
 
     // ─────────────────────────────────────────────────────────────────────────────────────────────
-    // Id stamping and the skip rule (§A1)
+    // Id stamping and the skip rule
     // ─────────────────────────────────────────────────────────────────────────────────────────────
 
     /** Visit every block object in a block tree (the block, children, stack_children, option sheet_blocks). */
@@ -411,7 +411,7 @@ internal object HostDataResolver {
     }
 
     /**
-     * §A1 "Stable ids" — stamp every id-less block at any depth with `<stepId>/<index path>` (the
+     * "Stable ids" — stamp every id-less block at any depth with `<stepId>/<index path>` (the
      * top-level array key omitted: `step8/2/children/0`, `step8/3/field_options/1/sheet_blocks/0`).
      * Returns a deep copy; the input is untouched.
      */
@@ -423,7 +423,7 @@ internal object HostDataResolver {
 
     /**
      * Strip SDK-internal markers (`resolve_state`, `empty_state`, `sheet_step_paths`) from every block's
-     * `field_config` at any depth, in place. Authored values are never trusted (§A1 "Required gate
+     * `field_config` at any depth, in place. Authored values are never trusted ("Required gate
      * input") — also applied at raw capture so a block that skips the pass never carries one.
      */
     fun stripMarkers(block: JsonObj) {
@@ -463,7 +463,7 @@ internal object HostDataResolver {
     }
 
     /**
-     * §A1 "Skip rule (the only one)" — a block skips the pass only if its raw JSON contains none of
+     * "Skip rule (the only one)" — a block skips the pass only if its raw JSON contains none of
      * `{{`, `data_templates`, `bindings`, `repeat`, and none of its (or a descendant's) `block.<id>.*`
      * localization values contains `{{`.
      */
@@ -530,18 +530,18 @@ internal object HostDataResolver {
 
     private class RawPass(private val ctx: HostDataContext) {
         val log = mutableListOf<String>()
-        /** Keys a binding wrote, per object — the structural pass skips them (§A1 single pass). */
+        /** Keys a binding wrote, per object — the structural pass skips them (single pass). */
         val bound = IdentityHashMap<Any, MutableSet<String>>()
         private val sheetPaths = IdentityHashMap<Any, MutableList<SheetStepPath>>()
         private val optionState = IdentityHashMap<Any, OptionState>()
         private val itemScope = IdentityHashMap<Any, ItemScope>()
         private val unresolvedKeys = IdentityHashMap<Any, MutableSet<String>>()
-        /** Localization keys a `data_templates` result displaced (§A1 "Translations"). */
+        /** Localization keys a `data_templates` result displaced ("Translations"). */
         val displacedLocKeys = mutableSetOf<String>()
-        /** Count of options the §A3 hide rule removed, per block. */
+        /** Count of options the hide rule removed, per block. */
         val hiddenCount = IdentityHashMap<Any, Int>()
 
-        // ── Bindings (§A4) ───────────────────────────────────────────────────────────────────────
+        // ── Bindings ───────────────────────────────────────────────────────────────────────
         fun applyBindings(block: JsonObj, scope: Scope, inSheet: Boolean) {
             val bindings = block["bindings"] as? Map<*, *> ?: return
             for ((p, pathV) in bindings) {
@@ -592,8 +592,8 @@ internal object HostDataResolver {
         }
 
         /**
-         * §B0 "Sheet ids" — deferred `step` paths inside a sheet block's options are recorded as
-         * `field_options.<i>.…` while walking, i.e. BEFORE the §A3 hide rule / dedupe settle the list.
+         * "Sheet ids" — deferred `step` paths inside a sheet block's options are recorded as
+         * `field_options.<i>.…` while walking, i.e. BEFORE the hide rule / dedupe settle the list.
          * Re-point each to its option's settled index (options matched by identity); an option that was
          * removed takes its paths with it. Mirrors the TS `remapOptionSheetPaths`.
          */
@@ -619,7 +619,7 @@ internal object HostDataResolver {
             sheetPaths.getOrPut(block) { mutableListOf() }.add(entry)
         }
 
-        // ── Repeat expansion (§B0) ───────────────────────────────────────────────────────────────
+        // ── Repeat expansion ───────────────────────────────────────────────────────────────
         /** Returns true when the block's options came from a repeat. */
         fun expandRepeat(block: JsonObj, scope: Scope): Boolean {
             if (block["type"] != "input_select") return false
@@ -645,7 +645,7 @@ internal object HostDataResolver {
             if (template is Map<*, *>) {
                 if (arr is List<*>) {
                     if (arr.size > max) {
-                        // SPEC-496 §5b C6 — items past `max` are silently not rendered; say so (once per
+                        // Items past `max` are silently not rendered; say so (once per
                         // raw pass, which runs only when the block's inputs — the source included — change).
                         val line = "repeat ${block["id"]}: source $source has ${arr.size} items, max is $max — items past $max are not rendered"
                         log += line
@@ -674,9 +674,9 @@ internal object HostDataResolver {
         }
 
         /**
-         * §A4 — an ElementInteractionResult `field_config` patch, walked exactly as the block's own
+         * An ElementInteractionResult `field_config` patch, walked exactly as the block's own
          * `field_config` is (FieldConfig owner of [blockType], inside a field): same key classes, same
-         * §A6 URL rule, `data_templates`, single pass. Mutates [patch].
+         * URL rule, `data_templates`, single pass. Mutates [patch].
          */
         fun walkFieldConfigPatch(patch: JsonObj, blockType: String, scope: Scope) {
             val holder: JsonObj = linkedMapOf<String, Any?>("type" to blockType, "field_config" to patch)
@@ -686,7 +686,7 @@ internal object HostDataResolver {
         // ── Structural pass ──────────────────────────────────────────────────────────────────────
         fun walkBlock(block: JsonObj, scope: Scope, inSheet: Boolean) {
             val blockType = block["type"] as? String ?: ""
-            // §A1 carry-over — summary_stats `default` seeds the `step` root under the live values.
+            // Carry-over — summary_stats `default` seeds the `step` root under the live values.
             val stats = ((block["field_config"] as? Map<*, *>)?.get("summary_stats") as? List<*>).orEmpty()
             var blockScope = scope
             val seeds = LinkedHashMap<String, Any?>()
@@ -711,7 +711,7 @@ internal object HostDataResolver {
                 settleOptions(block)
                 remapOptionSheetPaths(block, before)
             }
-            // Summary stats: the SPEC-446 / #660 placeholder rules.
+            // Summary stats: the placeholder rules.
             val fc = obj(block["field_config"])
             val ss = fc?.get("summary_stats") as? List<*>
             if (fc != null && ss != null) {
@@ -780,7 +780,7 @@ internal object HostDataResolver {
                 }
             }
 
-            // data_templates (§A0) — after the plain keys, so a winning template replaces the fallback.
+            // data_templates — after the plain keys, so a winning template replaces the fallback.
             if (templates is Map<*, *>) applyDataTemplates(o, templates, owner, scope, env, boundKeys)
         }
 
@@ -835,8 +835,8 @@ internal object HostDataResolver {
                 }
                 val cls = classOf(owner, key)
                 if (cls != null && cls != "string") { log += "data_templates.$key: $cls key — ignored"; continue }
-                if (boundKeys?.contains(key) == true) continue // the binding wins (§A1)
-                // §B0 — a `step` token in a data_templates entry inside sheet_blocks: the raw pass
+                if (boundKeys?.contains(key) == true) continue // the binding wins
+                // A `step` token in a data_templates entry inside sheet_blocks: the raw pass
                 // cannot see sheet inputs, so the entry counts as unresolved (the sibling stays).
                 if (env.inSheet && extractTemplateTokens(tmpl).any { it.root == "step" }) continue
                 val url = isUrlKey(key)
@@ -872,7 +872,7 @@ internal object HostDataResolver {
             }
         }
 
-        // ── Options after the pass (§A3, §B0) ────────────────────────────────────────────────────
+        // ── Options after the pass ────────────────────────────────────────────────────
         private fun settleOptions(block: JsonObj) {
             val opts = (block["field_options"] as List<*>).mapNotNull { obj(it) }
             val pending = ctx.pending
@@ -926,14 +926,14 @@ internal object HostDataResolver {
     }
 
     // ─────────────────────────────────────────────────────────────────────────────────────────────
-    // Pending / hook_data reference analysis (§B0)
+    // Pending / hook_data reference analysis
     // ─────────────────────────────────────────────────────────────────────────────────────────────
 
     private fun hasRootToken(s: Any?, root: String, requireNoFallback: Boolean = false): Boolean =
         s is String && extractTemplateTokens(s).any { it.root == root && (!requireNoFallback || it.fallback == null) }
 
     /**
-     * §B0 "resolve_state: pending" — an option-bearing input where a `hook_data` reference can change
+     * "resolve_state: pending" — an option-bearing input where a `hook_data` reference can change
      * WHICH options exist or their STORED ANSWER. Media-only references never count.
      */
     fun optionsDependOnHookData(block: Map<*, *>): Boolean {
@@ -953,7 +953,7 @@ internal object HostDataResolver {
     }
 
     /**
-     * §B0 "Applies" — does this step's raw content reference `hook_data` at all (a token inline or in
+     * "Applies" — does this step's raw content reference `hook_data` at all (a token inline or in
      * `data_templates`, a `repeat.source`, a `bindings` value, or a `block.<id>.*` localization value)?
      */
     fun stepReferencesHookData(blocks: List<*>, localizations: StepLocalizations?): Boolean {
@@ -982,7 +982,7 @@ internal object HostDataResolver {
     const val ANY_HOOK_DATA_KEY = "*"
 
     /**
-     * SPEC-496 §5b C3 — the TOP-LEVEL `hook_data` keys a step references: the first path segment after
+     * The TOP-LEVEL `hook_data` keys a step references: the first path segment after
      * `hook_data`, over exactly the reference set [stepReferencesHookData] scans (tokens,
      * `data_templates`, `repeat.source`, `hook_data` bindings, `block.<id>.*` localizations). A bare
      * `hook_data` reference yields [ANY_HOOK_DATA_KEY]. "Cached on arrival" counts a layer VALUE only
@@ -1029,7 +1029,7 @@ internal object HostDataResolver {
     // ─────────────────────────────────────────────────────────────────────────────────────────────
 
     /**
-     * Resolve ONE raw top-level content block (§A1–§A6, §B0). [HostDataContext.blockIndex] is its
+     * Resolve ONE raw top-level content block. [HostDataContext.blockIndex] is its
      * index in the step's `content_blocks`; [HostDataContext.stepId] its step. The input is never
      * mutated.
      */

@@ -43,7 +43,7 @@ import java.text.SimpleDateFormat
 import java.util.*
 
 /**
- * SPEC-090: Interactive chat step Composable.
+ * Interactive chat step Composable.
  * Renders a multi-turn AI chat with webhooks, quick replies, typing indicator, and turn limits.
  */
 @Composable
@@ -52,7 +52,7 @@ fun ChatStepComposable(
     flowId: String,
     onNext: (Map<String, Any>) -> Unit,
     onSkip: () -> Unit,
-    // SPEC-401-A — saved transcript for back-nav restore. Mirrors
+    // Saved transcript for back-nav restore. Mirrors
     // iOS `ChatStepView.savedTranscript`. When the renderer was
     // already completed once, the orchestrator passes the prior
     // `responses[step.id]` map back in so the bubble history is
@@ -65,10 +65,10 @@ fun ChatStepComposable(
     val scope = rememberCoroutineScope()
     val listState = rememberLazyListState()
     val focusManager = LocalFocusManager.current
-    // SPEC-401-A R4 — host View for haptic feedback on sendMessage.
+    // Host View for haptic feedback on sendMessage.
     val hostView = androidx.compose.ui.platform.LocalView.current
 
-    // SPEC-401-A — restore from savedTranscript on first compose.
+    // Restore from savedTranscript on first compose.
     // We seed initial state with the saved values so LaunchedEffect
     // never plays auto-messages when restoring.
     val initialMessages: List<ChatMessage> = remember(savedTranscript) {
@@ -101,7 +101,7 @@ fun ChatStepComposable(
     var userTurnCount by remember { mutableIntStateOf(initialUserTurnCount) }
     var isCompleted by remember { mutableStateOf(didRestore) }
     var currentRating by remember { mutableStateOf<Int?>(null) }
-    // SPEC-401-A R5 — only seed turn-0 quick replies synchronously
+    // Only seed turn-0 quick replies synchronously
     // when there are no auto-messages to play. iOS calls
     // `loadQuickReplies(forTurn: 0)` AFTER `playAutoMessages`
     // completes (or immediately when no auto-messages); Android
@@ -137,13 +137,13 @@ fun ChatStepComposable(
     val qrTextColor = hex(style?.quick_reply_text, "#E2E8F0")
     val typingDotColor = hex(style?.typing_indicator_color, (ai.appdna.sdk.AppDNA.brandAccentHex ?: "#6366F1"))
 
-    // Auto-messages on appear — SPEC-401-A skip when we restored
+    // Auto-messages on appear — skip when we restored
     // a prior transcript so the user does not see the welcome
     // sequence replay over the saved bubbles.
     LaunchedEffect(Unit) {
         if (didRestore) return@LaunchedEffect
         val autoMsgs = chatConfig.auto_messages?.filter { it.turn == 0 } ?: emptyList()
-        // SPEC-401-A R22 — refactor to a SINGLE sequential coroutine
+        // Refactor to a SINGLE sequential coroutine
         // (replacing the parallel-coroutines + AtomicInteger pattern).
         // iOS playAutoMessages at ChatStepView.swift:614-633 schedules
         // independent `DispatchQueue.main.asyncAfter` timers, but each
@@ -174,7 +174,7 @@ fun ChatStepComposable(
             messages = messages + ChatMessage(id = autoMsg.id, role = ChatRole.AI, content = autoMsg.content, media = autoMsg.media)
             elapsedAtLastFire = deadlineMs + 800
         }
-        // SPEC-401-A R5 — load turn-0 quick replies AFTER all auto-messages
+        // Load turn-0 quick replies AFTER all auto-messages
         // have rendered. Now naturally tails the loop body since the for
         // loop runs sequentially.
         dynamicQuickReplies = chatConfig.quick_replies?.filter { (it.show_at_turn ?: 0) == 0 } ?: emptyList()
@@ -182,7 +182,7 @@ fun ChatStepComposable(
     }
 
     // Scroll to bottom on new message OR when the typing indicator appears.
-    // SPEC-401-A R50 (Lens C #2, P1) — also depend on isTyping so the indicator
+    // Also depend on isTyping so the indicator
     // row (appended below the last message at line ~461) scrolls into view.
     // iOS pins to the "typing" anchor whenever the indicator is the last item
     // (ChatStepView.swift:79-83). Without this fix the dots could render
@@ -199,7 +199,7 @@ fun ChatStepComposable(
         val trimmed = text.trim()
         if (trimmed.isEmpty()) return
 
-        // SPEC-401-A R4 — sendMessage haptic feedback. Mirrors iOS
+        // sendMessage haptic feedback. Mirrors iOS
         // HapticEngine.trigger(.light) at ChatStepView.swift:432.
         runCatching {
             ai.appdna.sdk.core.HapticEngine.trigger(
@@ -250,7 +250,7 @@ fun ChatStepComposable(
                     context = webhookData.toMap(),
                 )
                 isTyping = false
-                // SPEC-401-A R16 — match iOS ChatStepView.swift:496-507.
+                // Match iOS ChatStepView.swift:496-507.
                 // Distinguish HTTP non-2xx (preserves http_status +
                 // response_body) from network/transport errors so console
                 // analytics can filter by failure category.
@@ -301,7 +301,7 @@ fun ChatStepComposable(
                             messages = messages + ChatMessage(id = "completion", role = ChatRole.AI, content = completionMsg)
                         }
                         isCompleted = true
-                        // SPEC-401-A R9 — clear stale soft-limit warning when chat
+                        // Clear stale soft-limit warning when chat
                         // completes. iOS does this inside completeChat() at
                         // ChatStepView.swift:580. Without this the warning text
                         // ("You have 1 message remaining") stays visible after
@@ -319,7 +319,7 @@ fun ChatStepComposable(
                             messages = messages + ChatMessage(id = "completion", role = ChatRole.AI, content = it)
                         }
                         isCompleted = true
-                        // SPEC-401-A R9 — see chat completion sites: clear soft-limit warning.
+                        // See chat completion sites: clear soft-limit warning.
                         showSoftLimitWarning = false
                         ai.appdna.sdk.AppDNA.track("chat_completed", mapOf(
                             "flow_id" to flowId, "step_id" to step.id, "user_turn_count" to userTurnCount,
@@ -330,7 +330,7 @@ fun ChatStepComposable(
                 }
             } catch (e: Exception) {
                 isTyping = false
-                // SPEC-401-A R12 — match iOS catch-default at
+                // Match iOS catch-default at
                 // ChatStepView.swift:518 ("Sorry, something went wrong. Please
                 // try again."). Previous Android catch dropped "Please try
                 // again." so the same caught network error rendered shorter
@@ -368,22 +368,22 @@ fun ChatStepComposable(
             .background(hex(style?.background_color, "#0F172A"))
     ) {
         // Header
-        // SPEC-401-A R54 (Lens A R54 #6, P3) — 4dp VStack spacing matching
+        // 4dp VStack spacing matching
         // iOS ChatStepView.swift:138-159 VStack(spacing: 4).
         Column(
             modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.spacedBy(4.dp),
         ) {
-            // SPEC-401-A R52 (Lens A R51 #15, P3) — header title 16→17sp
+            // Header title 16→17sp
             // matching iOS ChatStepView.swift:142 .headline.
-            // SPEC-401-A R57 (Lens A R57 #14, P3) — SwiftUI .headline maps to
+            // SwiftUI .headline maps to
             // SemiBold (600), not Bold (700). Drop weight to match iOS.
             step.config.title?.let { Text(it, color = Color.White, fontWeight = FontWeight.SemiBold, fontSize = 17.sp) }
             if (persona?.name != null && persona.role != null) {
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     val avatarUrl = persona?.avatar_url?.takeIf { it.isNotBlank() }
-                    // SPEC-401-A R54 (Lens A R54 #6, P3) — only render the
+                    // Only render the
                     // avatar Box when avatar_url exists. iOS ChatStepView.swift
                     // :138-159 has NO fallback initial circle in the HEADER;
                     // shows persona name+role as plain text only when no
@@ -391,7 +391,7 @@ fun ChatStepComposable(
                     // fallback at lines 421-432, matching iOS 168-175.)
                     if (avatarUrl != null) {
                         Box(
-                            // SPEC-401-A R52 (Lens A R50 #9, P2) — header avatar
+                            // Header avatar
                             // placeholder bg uses iOS-canonical
                             // `Color.gray.opacity(0.3)`.
                             modifier = Modifier.size(28.dp).clip(CircleShape).background(Color.Gray.copy(alpha = 0.3f)),
@@ -421,7 +421,7 @@ fun ChatStepComposable(
                 when (msg.role) {
                     ChatRole.AI -> {
                         Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
-                            // SPEC-401-A — load persona.avatar_url for AI message
+                            // Load persona.avatar_url for AI message
                             // bubbles, fallback to initial circle.
                             val msgAvatarUrl = persona?.avatar_url?.takeIf { it.isNotBlank() }
                             Box(modifier = Modifier.size(32.dp).clip(CircleShape).background(aiBubbleBg), contentAlignment = Alignment.Center) {
@@ -436,21 +436,21 @@ fun ChatStepComposable(
                                     Text((persona?.name?.take(1) ?: "A"), color = aiBubbleTextColor, fontSize = 12.sp, fontWeight = FontWeight.Bold)
                                 }
                             }
-                            // SPEC-401-A — render text + optional inline image
+                            // Render text + optional inline image
                             // media bubble below it. iOS draws an image
                             // BundledAsyncImage when `media.type == "image"`
                             // and a non-empty url; Android previously dropped
                             // the media field on the floor.
                             Column(
                                 modifier = Modifier.weight(1f, fill = false),
-                                // SPEC-401-A R55 (Lens A R55 #9, P3) — 6→4dp
+                                // 6→4dp
                                 // matching iOS ChatStepView.swift:176
                                 // VStack(spacing: 4).
                                 verticalArrangement = Arrangement.spacedBy(4.dp),
                             ) {
                                 if (msg.content.isNotBlank()) {
                                     Text(
-                                        // SPEC-401-A R52 (Lens A R51 #16, P3) — bubble text 14→15sp
+                                        // Bubble text 14→15sp
                                         // matching iOS .subheadline (~15pt).
                                         msg.content, color = aiBubbleTextColor, fontSize = 15.sp,
                                         modifier = Modifier.background(aiBubbleBg, RoundedCornerShape(16.dp)).padding(12.dp)
@@ -462,7 +462,7 @@ fun ChatStepComposable(
                                         contentDescription = media.alt_text,
                                         modifier = Modifier
                                             .fillMaxWidth()
-                                            // SPEC-401-A R55 (Lens A R55 #8, P2) — 220→150dp
+                                            // 220→150dp
                                             // matching iOS ChatStepView.swift:185-187
                                             // .frame(maxHeight: 150).
                                             .heightIn(max = 150.dp)
@@ -478,7 +478,7 @@ fun ChatStepComposable(
                         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
                             Spacer(Modifier.width(40.dp))
                             Text(
-                                // SPEC-401-A R52 (Lens A R51 #16, P3) — bubble text 14→15sp.
+                                // Bubble text 14→15sp.
                                 msg.content, color = userBubbleTextColor, fontSize = 15.sp,
                                 modifier = Modifier.background(userBubbleBg, RoundedCornerShape(16.dp)).padding(12.dp)
                             )
@@ -493,7 +493,7 @@ fun ChatStepComposable(
             // Typing indicator
             if (isTyping) {
                 item {
-                    // SPEC-401-A — same persona avatar fallback as message bubbles.
+                    // Same persona avatar fallback as message bubbles.
                     val typingAvatarUrl = persona?.avatar_url?.takeIf { it.isNotBlank() }
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         Box(modifier = Modifier.size(32.dp).clip(CircleShape).background(aiBubbleBg), contentAlignment = Alignment.Center) {
@@ -508,7 +508,7 @@ fun ChatStepComposable(
                                 Text((persona?.name?.take(1) ?: "A"), color = aiBubbleTextColor, fontSize = 12.sp, fontWeight = FontWeight.Bold)
                             }
                         }
-                        // SPEC-401-A — animated typing indicator (3 dots
+                        // Animated typing indicator (3 dots
                         // pulsing alpha 0.3 → 1.0 with 0.2s stagger).
                         // Mirrors iOS ChatStepView.swift:223 0.6s easing curve.
                         // Static dots looked broken — pulsing tells the user
@@ -519,7 +519,7 @@ fun ChatStepComposable(
                             modifier = Modifier.background(aiBubbleBg, RoundedCornerShape(16.dp)).padding(12.dp)
                         ) {
                             for (dotIndex in 0..2) {
-                                // SPEC-401-A R54 (Lens C R54 #2, P2) — per-dot
+                                // Per-dot
                                 // delay moved out of `tween(delayMillis)` into
                                 // `initialStartOffset` so it applies ONCE before
                                 // the first iteration, not before every cycle.
@@ -553,19 +553,19 @@ fun ChatStepComposable(
             }
         }
 
-        // SPEC-070-A G.9 — chat rating widget. Shown when a `rating_prompt`
+        // Chat rating widget. Shown when a `rating_prompt`
         // turn-action set `currentRating = 0`. Mirrors iOS ChatStepView.swift:309
         // 5-star row with `sendRatingEvent` emit. The composable uses a
         // simple unicode star (★/☆) instead of Material icons to avoid
         // pulling icon deps inside the chat composable.
-        // SPEC-401-A — rating prompt only visible while currentRating == 0
+        // Rating prompt only visible while currentRating == 0
         // (the "shown but unanswered" sentinel). Once user taps a star,
         // currentRating > 0 → row hides. Mirrors iOS ChatStepView.swift:71.
         currentRating?.takeIf { it == 0 }?.let { ratingState ->
-            // SPEC-401-A — honour style.rating_star_color (was hardcoded
+            // Honour style.rating_star_color (was hardcoded
             // amber #FBBF24). Mirrors iOS ChatStepView.swift:315.
             val starColor = hex(style?.rating_star_color, "#FBBF24")
-            // SPEC-401-A R39 (Lens C #1) — wrap rating widget in
+            // Wrap rating widget in
             // aiBubbleBg-filled rounded card with header label, mirroring
             // iOS ChatStepView.swift:301-323. Was bare unicode stars on
             // page background → no visual affordance distinguishing the
@@ -587,7 +587,7 @@ fun ChatStepComposable(
                 Row(horizontalArrangement = Arrangement.Center) {
                     for (star in 1..5) {
                         val filled = ratingState >= star
-                        // SPEC-401-A R49 (Lens C #4, P2) — empty-star uses
+                        // Empty-star uses
                         // same starColor as filled (iOS ChatStepView.swift
                         // :313-315 only differentiates by glyph). Was
                         // hardcoded slate-gray which produced inconsistent
@@ -595,7 +595,7 @@ fun ChatStepComposable(
                         Text(
                             text = if (filled) "★" else "☆",
                             color = starColor,
-                            // SPEC-401-A R57 (Lens A R57 #10, P2) — 20sp matches
+                            // 20sp matches
                             // iOS .font(.title3) (~20pt) at ChatStepView.swift:314.
                             // Was 24sp — visually 1 pt larger than iOS.
                             fontSize = 20.sp,
@@ -622,11 +622,11 @@ fun ChatStepComposable(
                 contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                // SPEC-401-A — `style.quick_reply_border` config now applied
+                // `style.quick_reply_border` config now applied
                 // to OutlinedButton border. Mirrors iOS ChatStepView.swift:251
                 // 1px stroke with `qrBorder` color. Was using Material3
                 // default border, ignoring the config.
-                // SPEC-401-A R49 (Lens C #2, P2) — fall back to iOS-canonical
+                // Fall back to iOS-canonical
                 // slate-blue `#475569` when style.quick_reply_border is unset.
                 // iOS ChatStepView.swift:40 hardcodes that fallback so unstyled
                 // quick replies always show a visible stroke. Was falling back
@@ -653,19 +653,19 @@ fun ChatStepComposable(
 
         // Soft limit warning
         if (showSoftLimitWarning) {
-            // SPEC-401-A R57 (Lens A R57 #13, P2) — bottom=4dp matches iOS
+            // bottom=4dp matches iOS
             // .padding(.bottom, 4) at ChatStepView.swift:97.
             Text("You have 1 message remaining", color = Color(0xFFF59E0B), fontSize = 12.sp, modifier = Modifier.padding(horizontal = 16.dp).padding(bottom = 4.dp))
         }
 
         // Input or CTA
-        // R5/R6 — show the completion CTA once the turn limit is reached for BOTH
+        // Show the completion CTA once the turn limit is reached for BOTH
         // hard AND soft limits (was `&& isHardLimit`, so soft-limit chats kept the
         // input showing forever → max never honored + CTA never shown). The inner
         // LaunchedEffect still AUTO-completes only on a hard limit; a soft limit
         // shows the CTA and lets the user tap it. Matches the iOS fix.
         if (isCompleted || turnsRemaining <= 0) {
-            // SPEC-401-A R3 — fire chat_completed (reason=max_turns) the
+            // Fire chat_completed (reason=max_turns) the
             // first time the hard-limit branch triggers. iOS does this in
             // ChatStepView.swift:107-109 via `.onAppear { completeChat(...) }`
             // as a safety net when turnsRemaining<=0 && hardLimit but
@@ -675,11 +675,11 @@ fun ChatStepComposable(
             LaunchedEffect(turnsRemaining, chatConfig.isHardLimit, isCompleted) {
                 if (!isCompleted && turnsRemaining <= 0 && chatConfig.isHardLimit) {
                     isCompleted = true
-                    // SPEC-401-A R9 — clear stale soft-limit warning when the
+                    // Clear stale soft-limit warning when the
                     // safety-net hard-limit path takes over (matches the other
                     // completion sites + iOS completeChat).
                     showSoftLimitWarning = false
-                    // SPEC-401-A R9 — match iOS chat_completed schema at
+                    // Match iOS chat_completed schema at
                     // ChatStepView.swift:584-591: completion_reason / user_turn_count /
                     // total_messages keys. Previous keys (reason / turns) silently
                     // diverged from the main path completeChat() emit, so warehouse
@@ -691,7 +691,7 @@ fun ChatStepComposable(
                         "completion_reason" to "max_turns",
                         "user_turn_count" to userTurnCount,
                         "total_messages" to messages.size,
-                        // SPEC-401-A R16 — `.toInt()` to match iOS Int payload
+                        // `.toInt()` to match iOS Int payload
                         // at ChatStepView.swift:589 + the regular completion
                         // paths (lines 303 + 317). Was emitting Long here only
                         // on this safety-net path → schema drift across the
@@ -707,7 +707,7 @@ fun ChatStepComposable(
             val variant = btn?.variant ?: "primary"
             val customBg = btn?.bg_color?.takeIf { it.isNotEmpty() }?.let { runCatching { Color(android.graphics.Color.parseColor(it)) }.getOrNull() }
             val resolvedBg = customBg ?: userBubbleBg
-            // SPEC-401-A R12 — match iOS contrast fallback at
+            // Match iOS contrast fallback at
             // ChatStepView.swift:346-352. When bg_color is authored
             // but text_color is empty, derive black/white from bg
             // luminance instead of the chat theme default — without
@@ -724,7 +724,7 @@ fun ChatStepComposable(
                 else -> userBubbleTextColor
             }
             val radius = (btn?.button_corner_radius ?: 14.0).dp
-            // SPEC-401-A — match iOS height behaviour. iOS uses
+            // Match iOS height behaviour. iOS uses
             // height=nil → natural padding(14×2)≈46pt fallback when
             // button_height is not configured (ChatStepView.swift:354,
             // 374-375). Android previously forced 52.dp default making
@@ -743,7 +743,7 @@ fun ChatStepComposable(
             }
             val label = chatConfig.completion_cta_text ?: step.config.cta_text ?: "Continue"
 
-            // SPEC-401-A R56→R57 (Lens A R56 #10, P3) — match iOS
+            // Match iOS
             // ChatStepView.swift:394 `.padding(.horizontal, 20)` + line 401
             // `.padding(.vertical, 16)`. Was uniform `padding(16)` so the
             // button was 8dp narrower horizontally and the CTA-to-Skip gap
@@ -785,7 +785,7 @@ fun ChatStepComposable(
                     }
                 }
                 if (step.config.skip_enabled == true) {
-                    // SPEC-401-A R59 (Lens C P3 #3) — theme-adaptive secondary
+                    // Theme-adaptive secondary
                     // text matching iOS ChatStepView.swift:398 `.foregroundColor(.gray)`
                     // (UIColor.systemGray adapts to dark mode). Was static
                     // Color.Gray (#888) which gave poor contrast on dark
@@ -802,7 +802,7 @@ fun ChatStepComposable(
             ) {
                 OutlinedTextField(
                     value = inputText,
-                    // SPEC-401-A — enforce input_max_length truncation.
+                    // Enforce input_max_length truncation.
                     // ChatModels declared the field but the UI ignored it.
                     onValueChange = { input ->
                         val maxLen = chatConfig.input_max_length
@@ -825,7 +825,7 @@ fun ChatStepComposable(
                     keyboardOptions = KeyboardOptions(imeAction = ImeAction.Send),
                     keyboardActions = KeyboardActions(onSend = { if (canSendMessage) sendMessage(inputText) })
                 )
-                // SPEC-401-A R39 (Lens C #3) — TalkBack label so the
+                // TalkBack label so the
                 // glyph-only IconButton reads as "Send message" instead of
                 // the literal arrow character. iOS uses Image(systemName:
                 // "arrow.up.circle.fill") which SwiftUI auto-labels.
@@ -834,15 +834,15 @@ fun ChatStepComposable(
                     enabled = canSendMessage,
                     modifier = Modifier.semantics { contentDescription = "Send message" },
                 ) {
-                    // SPEC-401-A R55 (Lens A R55 #13, P2) — bump glyph 24→32sp to
+                    // Bump glyph 24→32sp to
                     // match SwiftUI Image(systemName: "arrow.up.circle.fill") visual
                     // weight at iOS ChatStepView.swift send-button. Was reading as
                     // a small text caret next to a normal-sized text field.
-                    // SPEC-401-A R58 (Lens C P2) — disabled tint = faded BRAND color
+                    // Disabled tint = faded BRAND color
                     // matching iOS ChatStepView.swift:290 `sendBtnColor.opacity(0.3)`.
                     // Was Color.Gray which dropped the brand identity in the disabled
                     // state — same JSON rendered gray on Android, faded indigo on iOS.
-                    // SPEC-401-A R63 (Lens C P2) — Material ArrowCircleUp icon
+                    // Material ArrowCircleUp icon
                     // matching iOS `Image(systemName: "arrow.up.circle.fill")`
                     // at ChatStepView.swift:288-290. Was Unicode arrow "↑"
                     // which only tinted the arrow stroke; iOS fills the whole
@@ -871,7 +871,7 @@ private data class WebhookResponse(
 )
 
 /**
- * SPEC-401-A R16 — sealed result for chat webhook outcomes so callers can
+ * Sealed result for chat webhook outcomes so callers can
  * emit structured telemetry per failure mode (matches iOS ChatStepView.swift
  * :496-507 which preserves `http_status` + `response_body` on non-2xx).
  *
@@ -894,14 +894,14 @@ private data class ChatWebhookMessage(
 )
 
 /**
- * SPEC-070-A A.31 — fire chat webhook off the Main thread.
+ * Fire chat webhook off the Main thread.
  *
  * The body is wrapped in `withContext(Dispatchers.IO)` because callers run on
  * the Compose `rememberCoroutineScope` (Main) and we do blocking
  * `URL.openConnection() + outputStream + bufferedReader().readText()`.
  * Without the wrap, every chat turn produces a `NetworkOnMainThreadException`
  * (or worse, a frozen UI). Mirrors the `executeWebhook` IO wrap in
- * `OnboardingActivity.executeWebhook` (SPEC-083 P1).
+ * `OnboardingActivity.executeWebhook`.
  */
 @Suppress("UNCHECKED_CAST")
 private suspend fun fireWebhook(
@@ -943,7 +943,7 @@ private suspend fun fireWebhook(
             put("max_turns", maxTurns)
             put("remaining_turns", remaining)
         })
-        // SPEC-070-A audit Round 2 finding 2: include `rating`, `context`,
+        // Include `rating`, `context`,
         // and `responses` keys to match iOS `ChatStepView.swift:454-470`
         // ChatWebhookRequest. AI/webhook backends key off these for
         // chat satisfaction surveys + accumulated webhook_data carry-over.
@@ -951,7 +951,7 @@ private suspend fun fireWebhook(
         if (context.isNotEmpty()) {
             put("context", JSONObject(context as Map<*, *>))
         }
-        // SPEC-401-A R29 — REMOVED top-level `responses` field. iOS
+        // REMOVED top-level `responses` field. iOS
         // ChatStepView.swift:467 sends `responses: nil` (Codable emits
         // `"responses": null`); the prior comment claiming "mirrors iOS"
         // was wrong. Android was injecting the entire onboarding-step
@@ -985,7 +985,7 @@ private suspend fun fireWebhook(
             return@withContext WebhookResult.NetworkError(e.message ?: "unknown")
         }
         if (statusCode !in 200..299) {
-            // SPEC-401-A R16 — read errorStream + take 500-char preview to
+            // Read errorStream + take 500-char preview to
             // match iOS bodyPreview semantics at ChatStepView.swift:498-505.
             val bodyPreview = try {
                 conn.errorStream?.bufferedReader()?.use { it.readText() }?.take(500) ?: ""

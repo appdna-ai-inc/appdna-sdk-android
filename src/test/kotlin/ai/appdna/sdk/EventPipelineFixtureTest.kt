@@ -17,7 +17,7 @@ import org.robolectric.annotation.Config
 import java.io.File
 
 /**
- * SPEC-428 — event-pipeline behavioral fixtures (packages/sdk-shared-fixtures/events/).
+ * Event-pipeline behavioral fixtures (packages/sdk-shared-fixtures/events/).
  *
  * The event pipeline (EventDatabase eviction, ClientSeqCounter monotonicity, DroppedEventsCounter,
  * event_id-stable redelivery) is NATIVE-owned per ADR-001, so iOS + Android assert these fixtures in
@@ -165,7 +165,7 @@ class EventPipelineFixtureTest {
     }
 
     /**
-     * SPEC-428 STEP-9/§4.E — a pre-init event stamps its client_seq at track() time and carries it through
+     * A pre-init event stamps its client_seq at track() time and carries it through
      * the drain, used VERBATIM: even though it's BUILT after a later post-configure event, its reserved
      * (earlier-stamped) seq stays lower → the configure-window inversion is fixed.
      */
@@ -183,7 +183,7 @@ class EventPipelineFixtureTest {
         resetCounters()
     }
 
-    /** D6 — client_seq is persistence-backed: it continues from the persisted value across a (re-init'd) restart. */
+    /** client_seq is persistence-backed: it continues from the persisted value across a (re-init'd) restart. */
     @Test
     fun clientSeqPersistsAcrossRestart() {
         ClientSeqCounter.init(ctx)
@@ -193,13 +193,13 @@ class EventPipelineFixtureTest {
         assertEquals(a + 1, b)
         ClientSeqCounter.init(ctx) // simulate a cold restart — re-init resumes from the persisted CEILING
         val c = ClientSeqCounter.next()
-        // Reserve-block (STEP-6): after restart the sequence resumes ABOVE the reserved ceiling — a GAP is
+        // Reserve-block: after restart the sequence resumes ABOVE the reserved ceiling — a GAP is
         // expected (never a reuse/reset), so c is strictly greater than b, not necessarily b+1.
         assertTrue("client_seq resumes monotonically across restart (gap OK, never reuse/reset)", c > b)
         resetCounters()
     }
 
-    /** R14 / §6 — concurrent next() from many threads must NEVER hand out a duplicate client_seq. */
+    /** Concurrent next() from many threads must NEVER hand out a duplicate client_seq. */
     @Test
     fun clientSeqConcurrentEmitUnique() {
         ClientSeqCounter.init(ctx)

@@ -18,7 +18,7 @@ import org.robolectric.annotation.Config
 import org.robolectric.annotation.GraphicsMode
 
 /**
- * SPEC-441 (#541) — Android pixels for the Select's category chip row.
+ * Android pixels for the Select's category chip row.
  *
  * The counterpart to iOS `VisualSnapshotTests.testSelectCategoryChips_firstChipActive`, with the
  * SAME config so the two goldens are directly comparable. This is the screen the reporter sent:

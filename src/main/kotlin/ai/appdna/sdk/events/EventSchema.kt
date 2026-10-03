@@ -10,16 +10,16 @@ import java.util.UUID
 /**
  * SDK event envelope — matches iOS SDKEvent schema exactly.
  *
- * SPEC-070-A A.6: `SDK_VERSION` is the live `AppDNA.sdkVersion` value (not a stale literal).
- * SPEC-070-A A.14: `experiment_exposures` is now part of the envelope `context` object.
- * SPEC-070-A G.10: `environment` ("production" / "sandbox") is included in the envelope so
+ * `SDK_VERSION` is the live `AppDNA.sdkVersion` value (not a stale literal).
+ * `experiment_exposures` is now part of the envelope `context` object.
+ * `environment` ("production" / "sandbox") is included in the envelope so
  *   ingest can route test-key traffic to the sandbox dataset.
- * SPEC-070-A G.15: `device.os` is emitted as a 3-part dotted string (e.g. `"14.0.0"`),
+ * `device.os` is emitted as a 3-part dotted string (e.g. `"14.0.0"`),
  *   matching iOS `UIDevice.current.systemVersion` semantics.
- * SPEC-070-A G.16: `device.locale` is emitted as a BCP-47 language tag
+ * `device.locale` is emitted as a BCP-47 language tag
  *   (`Locale.toLanguageTag()`, e.g. `"zh-Hans-CN"`) — was previously the legacy
  *   `Locale.toString()` which produces `zh_CN_#Hans` style strings.
- * SPEC-070-A G.17: optional `context.screen` field for SPEC-086 zero-code attribution.
+ * Optional `context.screen` field for zero-code attribution.
  */
 internal object EventSchema {
     const val SCHEMA_VERSION = 1
@@ -46,7 +46,7 @@ internal object EventSchema {
         environment: String? = null,
         screen: String? = null,
         pushId: String? = null,
-        // SPEC-428 STEP-9/§4.E: a PRE-STAMPED client_seq for a drained pre-init event — used verbatim,
+        // A PRE-STAMPED client_seq for a drained pre-init event — used verbatim,
         // never re-minted, so the pre-init events keep their reserved (lower) block below post-configure ones.
         clientSeq: Long? = null
     ): JSONObject {
@@ -55,7 +55,7 @@ internal object EventSchema {
             put("event_id", UUID.randomUUID().toString().lowercase())
             put("event_name", eventName)
             put("ts_ms", System.currentTimeMillis())
-            // SPEC-070-A G.10: tag every event with the active SDK environment
+            // Tag every event with the active SDK environment
             // so ingest can fan test-key traffic into the sandbox dataset.
             if (environment != null) {
                 put("environment", environment)
@@ -68,14 +68,14 @@ internal object EventSchema {
 
             put("device", JSONObject().apply {
                 put("platform", "android")
-                // SPEC-070-C D4: SDK-wrapper attribution (native|flutter|react_native).
+                // SDK-wrapper attribution (native|flutter|react_native).
                 put("framework", ai.appdna.sdk.AppDNA.framework)
-                // SPEC-070-B §7 rule 4: the WRAPPER's own version. `sdk_version` below is always the
+                // The WRAPPER's own version. `sdk_version` below is always the
                 // NATIVE core's, so without this the warehouse cannot name the artifact an RN or
                 // Flutter developer actually installed. OMITTED (not null) for a native host, so a
                 // native envelope keeps the exact shape iOS emits.
                 ai.appdna.sdk.AppDNA.frameworkVersion?.let { put("framework_version", it) }
-                // SPEC-070-A G.15: emit `device.os` as a 3-part dotted string so it
+                // Emit `device.os` as a 3-part dotted string so it
                 // matches the iOS shape `"<major>.<minor>.<patch>"`. Android
                 // `Build.VERSION.RELEASE` is just the major (e.g. "14") on most
                 // releases — pad to "<major>.0.0" when the OEM string lacks dots.
@@ -85,7 +85,7 @@ internal object EventSchema {
                 if (ai.appdna.sdk.AppDNA.currentBundleVersion > 0) {
                     put("bundle_version", ai.appdna.sdk.AppDNA.currentBundleVersion)
                 }
-                // SPEC-070-A G.16: emit BCP-47 language tag (e.g. "zh-Hans-CN")
+                // Emit BCP-47 language tag (e.g. "zh-Hans-CN")
                 // instead of the legacy `Locale.toString()` form ("zh_CN_#Hans"),
                 // so the field round-trips with iOS `Locale.identifier` exactly.
                 put("locale", Locale.getDefault().toLanguageTag())
@@ -99,21 +99,21 @@ internal object EventSchema {
 
             put("context", JSONObject().apply {
                 put("session_id", sessionId)
-                // SPEC-428 CL-3/D6: per-device monotonic sequence, drawn at the single buildEnvelope
+                // Per-device monotonic sequence, drawn at the single buildEnvelope
                 // choke point. ts_ms stays but is no longer the ordering key.
                 put("client_seq", clientSeq ?: ClientSeqCounter.next())
-                // SPEC-070-A G.17: optional screen name for zero-code attribution.
+                // Optional screen name for zero-code attribution.
                 if (screen != null) {
                     put("screen", screen)
                 }
-                // SPEC-070-A H.7: most-recently-received push id, propagated
+                // Most-recently-received push id, propagated
                 // for the rolling 30-minute attribution window so subsequent
                 // events can be tied back to the push that triggered them.
                 // Mirrors iOS `EventContext.push_id`.
                 if (pushId != null) {
                     put("push_id", pushId)
                 }
-                // SPEC-070-A A.14: include experiment exposure context so the
+                // Include experiment exposure context so the
                 // BigQuery ETL can attribute events to the assigned variant.
                 // Shape mirrors iOS Events/EventSchema.swift `EventContext.experiment_exposures`:
                 //   [{ exp: <experimentId>, variant: <variantId> }, ...]
@@ -146,7 +146,7 @@ internal object EventSchema {
         java.util.TimeZone.getDefault()?.id?.takeIf { it.isNotEmpty() }
 
     /**
-     * SPEC-070-A G.15: Pad `Build.VERSION.RELEASE` to a 3-part `<major>.<minor>.<patch>`
+     * Pad `Build.VERSION.RELEASE` to a 3-part `<major>.<minor>.<patch>`
      * dotted string so the wire-format matches iOS `UIDevice.current.systemVersion`.
      *
      * Examples:
@@ -168,7 +168,7 @@ internal object EventSchema {
 }
 
 /**
- * SPEC-070-A A.14: Single experiment-exposure tuple emitted in the event envelope's
+ * Single experiment-exposure tuple emitted in the event envelope's
  * `context.experiment_exposures` array.
  *
  * Sourced from [ai.appdna.sdk.config.ExperimentManager.getExposures] when an event is tracked.
@@ -180,13 +180,13 @@ internal data class ExperimentExposure(
 )
 
 /**
- * SPEC-428 CL-3/D6 — device-wide MONOTONIC sequence counter, persisted in a FACADE-available store
+ * Device-wide MONOTONIC sequence counter, persisted in a FACADE-available store
  * (SharedPreferences), never the EventDatabase/EventQueue (which are built inside configure()).
  * Initialized at configure() when the app Context arrives; the single increment site is
  * EventSchema.buildEnvelope. Survives restart, independent of wall-clock.
  */
 internal object ClientSeqCounter {
-    // SPEC-428 CL-3/STEP-6: KEY persists the RESERVED CEILING (>= every seq handed out). We hand out from
+    // KEY persists the RESERVED CEILING (>= every seq handed out). We hand out from
     // an in-memory block and WRITE only when the block is exhausted — persisting the ceiling ABOVE the
     // handed-out values — so a hard kill between the async apply() and its disk flush yields a GAP, never
     // a REUSE. Also O(1) amortized (one write every BLOCK, not per event).
@@ -227,7 +227,7 @@ internal object ClientSeqCounter {
 }
 
 /**
- * SPEC-428 CL-1/D2 — durable counter of events dropped by a cap/quota eviction, persisted in
+ * Durable counter of events dropped by a cap/quota eviction, persisted in
  * SharedPreferences (survives restart). Drained by the tracker into a `_sdk_events_dropped`
  * meta-event so the loss is SERVER-VISIBLE, not a silent Log.warning.
  */
@@ -253,7 +253,7 @@ internal object DroppedEventsCounter {
         }
     }
 
-    /** Atomically read + reset. Test helper; production uses peek()+subtract() (STEP-4). */
+    /** Atomically read + reset. Test helper; production uses peek()+subtract(). */
     fun getAndReset(): Int {
         synchronized(lock) {
             val p = prefs ?: return 0
@@ -264,9 +264,9 @@ internal object DroppedEventsCounter {
     }
 
     /**
-     * SPEC-428 STEP-4: read WITHOUT resetting. The count is removed (subtract) ONLY after the
+     * Read WITHOUT resetting. The count is removed (subtract) ONLY after the
      * `_sdk_events_dropped` meta carrying it is DURABLY persisted, so a hard kill before the meta lands
-     * re-emits it (never an UNDER-count, which STEP-4 forbids). A concurrent peek may double-emit
+     * re-emits it (never an UNDER-count). A concurrent peek may double-emit
      * (over-count, direction-safe — the spec prioritizes never-under-count).
      */
     fun peek(): Int {
@@ -276,7 +276,7 @@ internal object DroppedEventsCounter {
         }
     }
 
-    /** SPEC-428 STEP-4: atomic DECREMENT-by-N (floored at 0), called once the meta carrying N is durable. */
+    /** Atomic DECREMENT-by-N (floored at 0), called once the meta carrying N is durable. */
     fun subtract(n: Int) {
         if (n <= 0) return
         synchronized(lock) {

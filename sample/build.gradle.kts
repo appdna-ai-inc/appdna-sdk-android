@@ -1,4 +1,4 @@
-// SPEC-070-A J.18 — sample/example app for the AppDNA Android SDK.
+// sample/example app for the AppDNA Android SDK.
 //
 // This module is a thin Android Application that exercises the SDK's public
 // surface: configure on launch, identify/track/setSessionData, present
@@ -21,7 +21,7 @@ plugins {
 
 android {
     namespace = "ai.appdna.sample"
-    // SPEC-070-A finalization Phase 1 — compileSdk/targetSdk 34 → 35 (Play 2025 policy).
+    // compileSdk/targetSdk 34 → 35 (Play 2025 policy).
     compileSdk = 35
 
     defaultConfig {

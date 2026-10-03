@@ -5,7 +5,7 @@ import org.junit.Assert.assertNotNull
 import org.junit.Test
 
 /**
- * SPEC-070-A A.22 — verifies that [ExperimentManager] falls back to the
+ * Verifies that [ExperimentManager] falls back to the
  * experimentId as bucketing salt when [ExperimentConfig.salt] is blank,
  * matching iOS `Config/ExperimentManager.swift:33-38`.
  *

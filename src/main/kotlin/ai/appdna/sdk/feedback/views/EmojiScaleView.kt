@@ -24,7 +24,7 @@ fun EmojiScaleView(
     question: SurveyQuestion,
     answer: SurveyAnswer?,
     onAnswer: (SurveyAnswer) -> Unit,
-    // SPEC-084: Gap #20 — question text style token
+    // Gap #20 — question text style token
     questionTextStyle: TextStyle = TextStyle.Default
 ) {
     val emojis = question.emojiConfig?.emojis
@@ -41,7 +41,7 @@ fun EmojiScaleView(
 
         Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
             emojis.forEach { emoji ->
-                // SPEC-401-A R66 (Lens C P2) — `Spring.StiffnessHigh` (~10000)
+                // `Spring.StiffnessHigh` (~10000)
                 // approximates iOS `.spring(response: 0.3)` (≈ stiffness 438
                 // critical, but the iOS critically-damped feel reads as
                 // "snappy" matching `StiffnessHigh`). Compose default

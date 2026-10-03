@@ -1,6 +1,6 @@
 package ai.appdna.sdk.messages
 
-// SPEC-070-A A.9 — instantiated in AppDNA.kt configure(); track() fans out
+// Instantiated in AppDNA.kt configure(); track() fans out
 // to onEvent(); reset() calls resetSession(). The configProvider lambda
 // reads from `AppDNA.activeMessages`, a snapshot Map<String, MessageConfig>
 // updated by the RemoteConfigManager messages handler.
@@ -36,7 +36,7 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
 
 /**
- * SPEC-070-A A.9 — Manages in-app message trigger evaluation, frequency
+ * Manages in-app message trigger evaluation, frequency
  * tracking, and presentation. Mirrors iOS
  * `InAppMessaging/MessageManager.swift:6-267`.
  *
@@ -62,7 +62,7 @@ class MessageManager internal constructor(
     private val context: Context,
     private val configProvider: () -> Map<String, MessageConfig>,
     @Suppress("unused") private val renderer: InAppMessageRenderer = InAppMessageRenderer.shared,
-    // SPEC-036-F §1.2 — consulted per-candidate (inside the present hook) for a
+    // Consulted per-candidate (inside the present hook) for a
     // running in-app-message experiment targeting the message being shown.
     // The constructor is `internal` because it takes the internal
     // ExperimentManager; MessageManager is only ever built by the SDK
@@ -80,7 +80,7 @@ class MessageManager internal constructor(
     var delegate: AppDNAInAppMessageDelegate? = null
 
     /**
-     * SPEC-070-C D10 — OPTIONAL async wrapper-veto. Set by a cross-platform
+     * OPTIONAL async wrapper-veto. Set by a cross-platform
      * wrapper (the Flutter plugin) that can only answer a veto asynchronously
      * (round-trip to Dart). Awaited by [present] in ADDITION to the synchronous
      * [AppDNAInAppMessageDelegate.shouldShowMessage]; both can suppress. Null
@@ -96,7 +96,7 @@ class MessageManager internal constructor(
     private val mainHandler = Handler(Looper.getMainLooper())
 
     /**
-     * SPEC-070-C D10 — main-thread scope for awaiting the async wrapper-veto.
+     * Main-thread scope for awaiting the async wrapper-veto.
      * Only used when [asyncShouldShowMessage] is set; [presentBody] then runs
      * on the main thread after the awaited decision resolves.
      */
@@ -184,7 +184,7 @@ class MessageManager internal constructor(
     /**
      * Clear in-session frequency counters. Called from `AppDNA.reset()`.
      *
-     * SPEC-401-A R86 (Lens B F1) — do NOT reset `isPresenting` here. iOS
+     * Do NOT reset `isPresenting` here. iOS
      * `MessageManager.resetSession()` leaves the gate untouched
      * (InAppMessaging/MessageManager.swift:99-101). If `AppDNA.reset()` is
      * called while a Dialog is actively showing, dropping the gate races
@@ -197,7 +197,7 @@ class MessageManager internal constructor(
     }
 
     /**
-     * SPEC-070-A final audit pass C F2 — release `delay_seconds`-queued
+     * Release `delay_seconds`-queued
      * runnables on SDK shutdown so Dialog presentations don't fire on a
      * stale Activity reference after `AppDNA.shutdown()`. Mirrors the
      * (ARC-driven) iOS DispatchWorkItem cancellation in InAppMessaging.
@@ -211,7 +211,7 @@ class MessageManager internal constructor(
     // MARK: - Presentation
 
     private fun present(messageId: String, activeConfig: MessageConfig, triggerEvent: String) {
-        // SPEC-404 — pause new in-app message presentation while the SDK is
+        // Pause new in-app message presentation while the SDK is
         // backend-locked (per-key suspended day 20+ OR org cancelled).
         // Messages already shown stay visible. No analytics event emitted.
         // Check BEFORE the isPresenting flip so the slot stays available.
@@ -220,7 +220,7 @@ class MessageManager internal constructor(
             return
         }
 
-        // Round-13 F1 — experiment resolution (which records an experiment_exposure as a side effect) is
+        // Experiment resolution (which records an experiment_exposure as a side effect) is
         // deferred into presentBody, so it runs ONLY after EVERY synchronous suppression gate
         // (runtimeLock above + isPresenting + shouldShowMessage veto + async veto below) AND the
         // foreground-activity check. Previously it ran here, above the isPresenting/veto gates, so a
@@ -234,7 +234,7 @@ class MessageManager internal constructor(
             return
         }
 
-        // SPEC-400 — `shouldShowMessage` veto. Run BEFORE any analytics
+        // `shouldShowMessage` veto. Run BEFORE any analytics
         // tracking or view construction so a vetoed message produces no
         // `in_app_message_shown` event.
         val host = delegate
@@ -244,7 +244,7 @@ class MessageManager internal constructor(
             return
         }
 
-        // SPEC-070-C D10 — OPTIONAL async wrapper-veto, awaited in ADDITION to
+        // OPTIONAL async wrapper-veto, awaited in ADDITION to
         // the synchronous veto above. When set (Flutter host), suspend on the
         // main scope; a `false` reply releases the presenting gate and aborts.
         // When null (every native host), fall through to synchronous rendering
@@ -284,9 +284,9 @@ class MessageManager internal constructor(
             return
         }
 
-        // SPEC-036-F §1.2 — experiment-aware presentation. A running in-app-message experiment
+        // Experiment-aware presentation. A running in-app-message experiment
         // targeting this message + a treatment bucket renders the treatment payload; control /
-        // non-bucketed / old-doc → active. Round-13 F1 — resolved HERE (after every suppression gate +
+        // non-bucketed / old-doc → active. Resolved HERE (after every suppression gate +
         // the foreground-activity check) rather than in present(), so `resolveSurfacePresentation`'s
         // experiment_exposure side effect records ONLY for a message actually being shown.
         var config = activeConfig
@@ -312,7 +312,7 @@ class MessageManager internal constructor(
             ),
         )
 
-        // SPEC-400 — fire onMessageShown
+        // Fire onMessageShown
         mainHandler.post { delegate?.onMessageShown(messageId, triggerEvent) }
 
         try {
@@ -329,7 +329,7 @@ class MessageManager internal constructor(
                                 "in_app_message_clicked",
                                 mapOf("message_id" to messageId, "cta_action" to ctaActionType),
                             )
-                            // SPEC-400 — onMessageAction with action type + cta data
+                            // onMessageAction with action type + cta data
                             val ctaData: Map<String, Any>? = config.content.cta_action?.url?.let { mapOf("url" to it) }
                             mainHandler.post { delegate?.onMessageAction(messageId, ctaActionType, ctaData) }
 
@@ -370,7 +370,7 @@ class MessageManager internal constructor(
         when (action.type) {
             "deep_link", "open_url" -> {
                 val url = action.url ?: return
-                // SPEC-070-B PN row 18 (W11): config-driven URL — scheme-checked before the OS sees it.
+                // Config-driven URL — scheme-checked before the OS sees it.
                 val uri = ai.appdna.sdk.core.URLSafety.sanitized(url, activity) ?: return
                 try {
                     activity.startActivity(Intent(Intent.ACTION_VIEW, uri))
@@ -502,4 +502,4 @@ class InAppMessageRenderer private constructor() {
 }
 
 // MessageFrequencyTracker has been extracted to its own file
-// (messages/MessageFrequencyTracker.kt) per SPEC-070-A F.12.
+// (messages/MessageFrequencyTracker.kt).

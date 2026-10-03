@@ -52,7 +52,7 @@ import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-// SPEC-070-A J.11 — accessibility string resources for onboarding chrome
+// Accessibility string resources for onboarding chrome
 // (back / close / dismiss). Hosts can override via their own strings.xml.
 import ai.appdna.sdk.Log
 import ai.appdna.sdk.R
@@ -82,7 +82,7 @@ import java.net.URL
 class OnboardingActivity : ComponentActivity() {
 
     /**
-     * SPEC-070-A J.21 — VM-backed state survives config changes / process
+     * VM-backed state survives config changes / process
      * death without leaking pre-launch lambdas across distinct flow launches.
      * `by viewModels()` scopes the VM to THIS Activity instance (each launch
      * is a new ViewModelStoreOwner), so Activity-A's flow never bleeds into
@@ -93,17 +93,17 @@ class OnboardingActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
-        // SPEC-070-A I.16 — edge-to-edge so Compose `imePadding()`/`safeDrawingPadding()`
+        // Edge-to-edge so Compose `imePadding()`/`safeDrawingPadding()`
         // modifiers in the renderer roots resolve correctly and keyboards don't
         // crop content. The manifest declares `windowSoftInputMode="adjustResize"`
         // so Compose receives IME inset changes.
-        // SPEC-419 — TRUE edge-to-edge so the full-bleed step background paints UNDER the
+        // TRUE edge-to-edge so the full-bleed step background paints UNDER the
         // status + nav bars (matches iOS `.ignoresSafeArea()`). The Activity uses the legacy
         // @android:style/Theme.Translucent.NoTitleBar where `statusBarColor=transparent` alone
         // is NOT enough — the content stays inset and the system-bar regions show black bands
         // (reported top + bottom). `enableEdgeToEdge()` (androidx.activity) lays the window out
         // edge-to-edge; clearing the contrast scrim stops the system re-tinting the bars.
-        // SPEC-419 — pass TRANSPARENT scrims. The no-arg enableEdgeToEdge() installs a default
+        // Pass TRANSPARENT scrims. The no-arg enableEdgeToEdge() installs a default
         // SystemBarStyle.auto scrim on the NAV bar (a translucent dark scrim for contrast); on dark
         // gradient steps that scrim darkened the top of the nav region just below the CTA → a dark
         // band the user read as a "gap below the button" (iOS has no such scrim). Transparent scrims
@@ -135,7 +135,7 @@ class OnboardingActivity : ComponentActivity() {
             window.isNavigationBarContrastEnforced = false
         }
 
-        // SPEC-070-A J.21 — first-launch path: drain the next-launch payload
+        // First-launch path: drain the next-launch payload
         // into the VM. On a config-change recreate the VM is already bound,
         // so we skip rebinding (preserving live currentIndex / responses).
         if (!viewModel.isBound) {
@@ -154,7 +154,7 @@ class OnboardingActivity : ComponentActivity() {
             return
         }
 
-        // SPEC-070-A I.7 — restore (currentStepIndex, responses) from
+        // Restore (currentStepIndex, responses) from
         // `savedInstanceState` so process-death / config-change rotations
         // re-enter the flow on the same step with prior answers intact.
         // Mirrors iOS `OnboardingRenderer` `@SceneStorage` round-trip.
@@ -171,7 +171,7 @@ class OnboardingActivity : ComponentActivity() {
             viewModel.restoredStepIndex = savedIndex.coerceAtLeast(0)
             viewModel.restoredResponses = savedResponsesJson?.let { json ->
                 try {
-                    // SPEC-401-A R33 P1 — deep-convert JSONObject/JSONArray
+                    // Deep-convert JSONObject/JSONArray
                     // → Map/List recursively. iOS Codable round-trip yields
                     // native [String:Any]; Android `obj.opt(k)` returns raw
                     // JSONObject/JSONArray for nested values, which then
@@ -183,7 +183,7 @@ class OnboardingActivity : ComponentActivity() {
                     fromJsonAny(org.json.JSONObject(json)) as? Map<String, Any>
                 } catch (_: Throwable) { null }
             }
-            // SPEC-070-A finalization P0 audit-8 D2 — restore navigationHistory
+            // 8 D2 — restore navigationHistory
             // alongside currentIndex / responses so previous_step_* rules
             // continue to evaluate correctly after process death.
             savedInstanceState.getStringArray(KEY_NAV_HISTORY)?.let { arr ->
@@ -193,10 +193,10 @@ class OnboardingActivity : ComponentActivity() {
         }
 
         setContent {
-            // SPEC-070-A D.5 — system dark-mode pref so onboarding renderers
+            // System dark-mode pref so onboarding renderers
             // can pick `dark` overrides from console content blocks.
             val isDark = isSystemInDarkTheme()
-            // SPEC-401-A R52 (Lens C R52 #5, P1) — actually apply
+            // Actually apply
             // dark-mode color scheme. Was bare `MaterialTheme {}` which
             // always defaulted to lightColorScheme(); muted text labels
             // (alpha 0.5/0.6/0.7 onBackground/onSurface) rendered
@@ -225,7 +225,7 @@ class OnboardingActivity : ComponentActivity() {
                         viewModel.onStepSkipped?.invoke(stepId, stepIndex)
                     },
                     onFlowCompleted = { responses ->
-                        // SPEC-496 §B0 — a step whose onBeforeStepRender is still in flight was
+                        // A step whose onBeforeStepRender is still in flight was
                         // viewed; pay its onStepViewed BEFORE the flow ends (reset() nulls it after).
                         viewModel.hostDataPresentations.current?.fireStepViewedIfOwed()
                         viewModel.onFlowCompleted?.invoke(responses)
@@ -242,7 +242,7 @@ class OnboardingActivity : ComponentActivity() {
     }
 
     private fun cleanup() {
-        // SPEC-070-A J.21 — null out delegate + lambda captures eagerly so a
+        // Null out delegate + lambda captures eagerly so a
         // stray reference to the VM (e.g. held by a still-running coroutine)
         // doesn't keep the host's strategy/view-model graph alive past the
         // flow end. The full VM is also auto-cleared by Android on finish().
@@ -251,7 +251,7 @@ class OnboardingActivity : ComponentActivity() {
     }
 
     override fun onBackPressed() {
-        // SPEC-070-A I.4 — respect `flow.settings.dismiss_allowed` (canDismiss)
+        // Respect `flow.settings.dismiss_allowed` (canDismiss)
         // when handling the system back button. When dismissal is disallowed
         // the flow intercepts back, mirroring iOS force-flow behavior.
         // (allow_back gates step-back navigation, not the global dismiss.)
@@ -261,7 +261,7 @@ class OnboardingActivity : ComponentActivity() {
             // Force-flow: ignore system back to prevent accidental abandonment.
             return
         }
-        // SPEC-401-A R60 (Lens B P2) — invoke dismiss callback BEFORE finishing
+        // Invoke dismiss callback BEFORE finishing
         // the Activity. Was calling `super.onBackPressed()` first, which
         // synchronously calls `finish()` and puts the Activity in
         // `isFinishing = true` before `onOnboardingDismissed` runs. Hosts
@@ -273,7 +273,7 @@ class OnboardingActivity : ComponentActivity() {
         // brings system-back into parity. iOS canonical: callback fires
         // BEFORE `viewController.dismiss()` at OnboardingFlowManager.swift
         // :96-104 + OnboardingRenderer.swift:278-289.
-        // SPEC-401-A R9 — report the currently-visible step (matches iOS
+        // Report the currently-visible step (matches iOS
         // OnboardingRenderer.swift:280-281 which uses `currentStep`/
         // `currentIndex`). Previously reported `steps.first()` + index 0
         // which broke `onOnboardingDismissed(atStep:)` semantics and
@@ -281,7 +281,7 @@ class OnboardingActivity : ComponentActivity() {
         flow?.let { f ->
             val idx = viewModel.currentIndex.intValue.coerceIn(0, (f.steps.size - 1).coerceAtLeast(0))
             val stepId = f.steps.getOrNull(idx)?.id ?: ""
-            // SPEC-496 §B0 — see onFlowDismissed above: the viewed step is reported before the dismiss.
+            // See onFlowDismissed above: the viewed step is reported before the dismiss.
             viewModel.hostDataPresentations.current?.fireStepViewedIfOwed()
             viewModel.onFlowDismissed?.invoke(stepId, idx)
         }
@@ -291,7 +291,7 @@ class OnboardingActivity : ComponentActivity() {
     }
 
     /**
-     * SPEC-070-A I.7 — persist current step + responses across config
+     * Persist current step + responses across config
      * changes / process death so the flow re-enters on the same step.
      */
     override fun onSaveInstanceState(outState: Bundle) {
@@ -308,14 +308,14 @@ class OnboardingActivity : ComponentActivity() {
             }
             outState.putString(KEY_RESPONSES, obj.toString())
         } catch (_: Throwable) { /* best-effort */ }
-        // SPEC-070-A finalization P0 audit-8 D2 — persist navigationHistory
+        // 8 D2 — persist navigationHistory
         // alongside currentIndex / responses. previous_step_* rules need
         // this for correctness after rotation / process death.
         outState.putStringArray(KEY_NAV_HISTORY, viewModel.navigationHistory.toTypedArray())
     }
 
     /**
-     * SPEC-070-A J.21 — typed payload handed off from
+     * Typed payload handed off from
      * [OnboardingFlowManager.present] to the next [OnboardingActivity]
      * `onCreate`. Replaces the previous bag-of-companion-statics. Each
      * Activity instance consumes the slot exactly once on first
@@ -336,12 +336,12 @@ class OnboardingActivity : ComponentActivity() {
     companion object {
         private const val KEY_CURRENT_STEP_INDEX = "appdna_onboarding_current_step_index"
         private const val KEY_RESPONSES = "appdna_onboarding_responses"
-        // SPEC-070-A finalization P0 audit-8 D2 — navigation history for
+        // 8 D2 — navigation history for
         // previous_step_* rule operators (iOS OnboardingRenderer.swift:982-988).
         private const val KEY_NAV_HISTORY = "appdna_onboarding_nav_history"
 
         /**
-         * SPEC-070-A J.21 — single-slot next-launch payload. Set by [launch]
+         * Single-slot next-launch payload. Set by [launch]
          * immediately before `startActivity()` and consumed by `onCreate`
          * via [consumePendingLaunchPayload]. Volatile because [launch]
          * may be called from any thread and `onCreate` runs on Main.
@@ -370,7 +370,7 @@ class OnboardingActivity : ComponentActivity() {
         }
 
         /**
-         * SPEC-401-A R73 (Lens B P1) — drop pending launch payload on SDK
+         * Drop pending launch payload on SDK
          * shutdown so OnboardingFlowConfig + delegate + EventTracker + 5
          * lambda closures don't leak across `AppDNA.shutdown()` →
          * `configure()`. Mirrors PaywallActivity / SurveyActivity /
@@ -416,10 +416,10 @@ class OnboardingActivity : ComponentActivity() {
     }
 }
 
-// EPIC-2 — flow-level continuous progress bar. A custom Box-based bar (replaces Material
+// Flow-level continuous progress bar. A custom Box-based bar (replaces Material
 // LinearProgressIndicator which floored ~4dp) so progress_height honours any thickness, plus an
 // optional multi-color gradient fill (progress_gradient_colors). Extracted as a top-level composable
-// so the SPEC-419 visual-snapshot harness can render it on the JVM.
+// so the visual-snapshot harness can render it on the JVM.
 @Composable
 internal fun ContinuousProgressBar(
     progress: Float,
@@ -451,7 +451,7 @@ internal fun ContinuousProgressBar(
     }
 }
 
-// EPIC-2 — a nav-bar glyph (custom back arrow / close ✕) as a single Text. Extracted so the
+// A nav-bar glyph (custom back arrow / close ✕) as a single Text. Extracted so the
 // custom-glyph + back⇄X switch render is snapshot-testable.
 @Composable
 internal fun NavGlyph(glyph: String, color: Color, size: androidx.compose.ui.unit.TextUnit) {
@@ -466,7 +466,7 @@ internal fun NavGlyph(glyph: String, color: Color, size: androidx.compose.ui.uni
 @Composable
 internal fun OnboardingFlowHost(
     flow: OnboardingFlowConfig,
-    // SPEC-070-A J.21 — VM is the single source of truth for `currentIndex`
+    // VM is the single source of truth for `currentIndex`
     // + `responses`. The composable observes Compose state inside the VM
     // directly so writes survive Activity recreation without a separate
     // mirroring `LaunchedEffect`. Optional for tests / previews that build
@@ -480,11 +480,11 @@ internal fun OnboardingFlowHost(
     onStepSkipped: (String, Int) -> Unit,
     onFlowCompleted: (Map<String, Any>) -> Unit,
     onFlowDismissed: (String, Int) -> Unit,
-    // SPEC-070-A D.5 — propagated to step renderers so block-level `dark`
+    // Propagated to step renderers so block-level `dark`
     // overrides from the console are picked correctly.
     @Suppress("UNUSED_PARAMETER") isDark: Boolean = false,
 ) {
-    // SPEC-070-A J.21 — when running under an Activity, use the VM's state
+    // When running under an Activity, use the VM's state
     // directly so the composable's `currentIndex` / `responses` survive
     // Activity recreation. When the VM is null (test / preview path) fall
     // back to local `remember`-backed state seeded from the legacy
@@ -494,7 +494,7 @@ internal fun OnboardingFlowHost(
     val responses: SnapshotStateMap<String, Any> = viewModel?.responses
         ?: remember { mutableStateMapOf() }
 
-    // SPEC-070-A I.7 — one-shot consume the process-death restore snapshot.
+    // One-shot consume the process-death restore snapshot.
     // The VM holds the snapshot when the Activity rehydrated from
     // `savedInstanceState` and the responses map was empty (cold restore).
     LaunchedEffect(viewModel) {
@@ -511,25 +511,25 @@ internal fun OnboardingFlowHost(
         }
     }
 
-    // SPEC-070-A J.21 — Compose's `MutableIntState` `getValue` / `setValue`
+    // Compose's `MutableIntState` `getValue` / `setValue`
     // operator extensions let us bind a local `var` to the VM-backed state
     // so the rest of the composable body keeps its existing assignment
     // syntax (`currentIndex++`, `currentIndex = targetIndex`) while writes
     // route through `currentIndexState.intValue` and survive recreation.
     var currentIndex by currentIndexState
 
-    // SPEC-070-A J.2 — haptic feedback for step advance / back / dismiss /
+    // Haptic feedback for step advance / back / dismiss /
     // button-tap interactions, gated by `flow.settings.haptic.enabled`.
     val hostView = LocalView.current
     val hapticConfig = flow.settings.haptic
     val coroutineScope = rememberCoroutineScope()
-    // SPEC-070-A finalization OB-5 — hoist Activity context for the
+    // OB-5 — hoist Activity context for the
     // OnboardingPaywallBridge presentation path. AppDNA.paywall.present
     // requires an Activity, and the OnboardingActivity itself is the
     // topmost; this Composable is rendered inside it.
     val activityCtx = androidx.compose.ui.platform.LocalContext.current
 
-    // SPEC-070-A finalization P0 audit-7+8 — navigation history stack for
+    // 7+8 — navigation history stack for
     // `previous_step_equals` / `previous_step_in` rule operators
     // (iOS OnboardingRenderer.swift:982-988, 1065-1088). Push the step
     // id we're LEAVING from before changing currentIndex; rule evaluator
@@ -542,19 +542,19 @@ internal fun OnboardingFlowHost(
     // wouldn't apply there.
     val navigationHistory = viewModel?.navigationHistory ?: remember { mutableStateListOf<String>() }
 
-    // SPEC-083: Hook state
+    // Hook state
     var isProcessing by remember { mutableStateOf(false) }
-    // SPEC-496 §5b C5.3 — the in-flight guard for element interactions moved from here (flow-level) to
+    // The in-flight guard for element interactions moved from here (flow-level) to
     // the step's per-PRESENTATION `InteractionCoordinator`: a slow reply from a step the user left no
     // longer blocks the next step's interactions.
     var loadingText by remember { mutableStateOf("Processing...") }
     var errorMessage by remember { mutableStateOf<String?>(null) }
     var showError by remember { mutableStateOf(false) }
-    // SPEC-070-A C.8 — success banner state (port of iOS v1.0.60 SPEC-083
+    // Success banner state (port of iOS v1.0.60
     // amendment `.stay(message:)`). Mirrors the existing error banner pair.
     var successMessage by remember { mutableStateOf<String?>(null) }
     var showSuccess by remember { mutableStateOf(false) }
-    // SPEC-401-A R57 (Lens B P1) — read from VM so onBeforeStepRender
+    // Read from VM so onBeforeStepRender
     // overrides survive Activity recreation. Was composable-scoped
     // `remember` which reset on rotation/locale/dark-mode toggle while
     // sister state (currentIndex/responses/navHistory) survived,
@@ -562,11 +562,11 @@ internal fun OnboardingFlowHost(
     // onBeforeStepRender. Mirrors iOS @State preservation via SwiftUI
     // view-identity diffing.
     val configOverrides = viewModel?.configOverrides ?: remember { mutableStateMapOf() }
-    // SPEC-496 §B0 — host data pending, per presentation of the step on screen. Created here, in
+    // Host data pending, per presentation of the step on screen. Created here, in
     // composition, BEFORE the step's first resolve: the delegate call itself only starts in the
     // LaunchedEffect below, and without this the first frame would be treated as "after pending".
     val hostDataPresentations = viewModel?.hostDataPresentations ?: remember { HostDataPresentations() }
-    // SPEC-496 §5b C3 — the interaction data layer, its stamps and `callSeq`, beside `configOverrides`
+    // The interaction data layer, its stamps and `callSeq`, beside `configOverrides`
     // with exactly its lifetime; the holder every reader of `hook_data` goes through.
     val hostDataInteractionStore = viewModel?.hostDataInteractionStore ?: remember { HostDataInteractionStore() }
     val hostDataAccess = remember(configOverrides, hostDataInteractionStore, hostDataPresentations) {
@@ -578,7 +578,7 @@ internal fun OnboardingFlowHost(
             step = s,
             stepIndex = currentIndex,
             hasDelegate = delegate != null,
-            // §5b C3 — cached = a base, or a layer VALUE under a key the step references. Sampled only
+            // Cached = a base, or a layer VALUE under a key the step references. Sampled only
             // when the presentation is created (latched).
             // Read WITHOUT observation: it only matters when a presentation is created (a navigation,
             // which recomposes anyway), so a layer write must not recompose the whole flow host.
@@ -602,13 +602,13 @@ internal fun OnboardingFlowHost(
         eventTracker?.track(event, props)
     }
 
-    // SPEC-419 STEP-2 — flow-host half of the element-interaction wiring. Awaits the host delegate's
+    // Flow-host half of the element-interaction wiring. Awaits the host delegate's
     // onElementInteraction, then folds the ElementInteractionResult into an AppliedInteraction the STEP
     // scope applies (inputValues + fieldConfigOverrides + advance). No advance logic here — the flow host
     // can't see the step's blocks to validate; the step scope routes any advance through the required-
     // field-gated handleAction("next"). Mirrors iOS OnboardingFlowHost.performInteraction.
     //
-    // SPEC-496 §5b C5.5 — now the bare host call. The lock, the 8 s refresh deadline, throw → nil, the
+    // Now the bare host call. The lock, the 8 s refresh deadline, throw → nil, the
     // generation token and the "still current?" check live in the step's `InteractionCoordinator`, which
     // also passes its OWN step id (reading `flow.steps[currentIndex]` here sent the INCOMING step's id
     // during an exit transition).
@@ -629,7 +629,7 @@ internal fun OnboardingFlowHost(
     }
     val hasInteractionHandler: () -> Boolean = remember { { latestInteractionDelegate != null } }
 
-    // SPEC-070-A finalization OB-7 — image preload at flow init.
+    // OB-7 — image preload at flow init.
     // iOS `OnboardingRenderer.swift:130-139` walks every step's content_blocks
     // recursively, collects every image_url referenced, and pre-warms
     // NSURLCache + UIImage decode so the first paint of each step doesn't
@@ -637,7 +637,7 @@ internal fun OnboardingFlowHost(
     // blank-image placeholders that snap to loaded mid-scroll.
     //
     // The Android `ImagePreloader` (core/ImagePreloader.kt) was already
-    // shipped at SPEC-070-A G.13 but never CALLED. Wire it here once at
+    // shipped earlier but never CALLED. Wire it here once at
     // flow start; Coil dedupes its own work so a second call (e.g. from
     // a hook-driven config refresh) is safe.
     val preloaderContext = androidx.compose.ui.platform.LocalContext.current
@@ -653,8 +653,8 @@ internal fun OnboardingFlowHost(
         }
     }
 
-    // SPEC-083: Before-render hook + step viewed tracking
-    // SPEC-401-A R58 (Lens B P2) — gate by VM-scoped lastViewedStepIndex so
+    // Before-render hook + step viewed tracking
+    // Gate by VM-scoped lastViewedStepIndex so
     // onBeforeStepRender + onStepViewed only fire on genuine currentIndex
     // changes, NOT on every Activity recreation (rotation, locale change,
     // dark/light toggle, process-death restore). Without this, hosts whose
@@ -665,7 +665,7 @@ internal fun OnboardingFlowHost(
     // (including back-nav re-visits via id swap) but NOT on rotation.
     LaunchedEffect(currentIndex) {
         val presentation = hostDataPresentation
-        // SPEC-496 §B0 — a call cancelled before replying (Activity recreation) is re-fired ONCE,
+        // A call cancelled before replying (Activity recreation) is re-fired ONCE,
         // bypassing the lastViewedStepIndex guard, as the latest generation with a fresh deadline.
         // The decision lives in `beforeStepRenderEffect` so the shared fixture drives the SAME gate.
         beforeStepRenderEffect(
@@ -678,10 +678,10 @@ internal fun OnboardingFlowHost(
             val step = flow.steps[currentIndex]
             val stepIndex = currentIndex
             val d = delegate
-            // 🔴 BOUNDED. SPEC-448 §B asks every host to FETCH DATA here, so a customer awaiting their
+            // 🔴 BOUNDED. Every host is asked to FETCH DATA here, so a customer awaiting their
             // own backend on a bad connection would otherwise hang the step indefinitely. 3s rather
             // than the hook default of 10s: this call stands between the user and a visible screen.
-            // SPEC-496 §B0 — the deadline is a SEPARATE delay(3000) path that ends pending even when
+            // The deadline is a SEPARATE delay(3000) path that ends pending even when
             // the host ignores cancellation (withTimeoutOrNull alone cannot), with generation tokens
             // so only the latest call ends it; `onStepViewed` fires exactly once per step view.
             runBeforeStepRenderHook(
@@ -697,7 +697,7 @@ internal fun OnboardingFlowHost(
                     )
                 },
                 onOverride = {},
-                // §5b C3 — the base is stamped with the `callSeq` this call drew at its START.
+                // The base is stamped with the `callSeq` this call drew at its START.
                 drawSeq = hostDataAccess::nextCallSeq,
                 onStampedOverride = { override, seq ->
                     // Called only for a reply that arrived BEFORE the 3 s deadline — a reply after it
@@ -726,7 +726,7 @@ internal fun OnboardingFlowHost(
         }
     }
 
-    // SPEC-070-A C.8 — auto-dismiss success after 4 seconds (mirrors iOS
+    // Auto-dismiss success after 4 seconds (mirrors iOS
     // `OnboardingRenderer.swift:351-388` 4000ms LaunchedEffect timer).
     LaunchedEffect(showSuccess) {
         if (showSuccess) {
@@ -738,7 +738,7 @@ internal fun OnboardingFlowHost(
 
     // Helper functions
 
-    // SPEC-401-A R56 (Lens B P1) — forward reference to `advanceOrComplete`
+    // Forward reference to `advanceOrComplete`
     // so `presentPaywallTriggerNode.routeOutcome` can re-run next-step
     // rules when a paywall outcome target is unknown / typo'd. Direct
     // forward reference to a local function is illegal in Kotlin (advance
@@ -748,7 +748,7 @@ internal fun OnboardingFlowHost(
     // `advanceOrComplete()` fallthrough at OnboardingRenderer.swift:1236-1238.
     var advanceOrCompleteRef: (() -> Unit)? = null
 
-    // SPEC-070-A finalization OB-5 — present a paywall_trigger node by id.
+    // OB-5 — present a paywall_trigger node by id.
     // Mirrors iOS OnboardingRenderer.swift:1186-1272 (`presentPaywallTrigger`)
     // + `routeOutcome`. Extracted as a local function so it can be invoked
     // from BOTH the rule-evaluation `RuleTarget.PaywallTrigger` branch AND
@@ -780,7 +780,7 @@ internal fun OnboardingFlowHost(
             } as? Map<*, *>
             (match?.get("data") as? Map<String, Any?>)
         }
-        // Resolve paywall id + the SPEC-401/403/404 skip gate. Both now live in the pure
+        // Resolve paywall id + the skip gate. Both now live in the pure
         // [PaywallTriggerResolver] so they can be exercised without an Activity, Play Billing
         // or the event tracker; this closure only performs what the outcome describes.
         val runtimeLocked = AppDNA.runtimeLock != null
@@ -847,7 +847,7 @@ internal fun OnboardingFlowHost(
                             presentPaywallTriggerNode(edgeTarget, depth + 1)
                         } else if (edgeTarget.startsWith("end_") ||
                             ((flow.graph_nodes?.get(edgeTarget) as? Map<*, *>)?.get("type") as? String) == "end") {
-                            // SPEC-401-A R59 (Lens B P1) — match iOS
+                            // Match iOS
                             // navigateToTarget(edge) `end_*` / nodeType=="end"
                             // detection (OnboardingRenderer.swift:1169-1172).
                             // Without this, paywall outcomes whose continue
@@ -869,7 +869,7 @@ internal fun OnboardingFlowHost(
                         } else {
                             val tIdx = flow.steps.indexOfFirst { it.id == edgeTarget }
                             if (tIdx >= 0) {
-                                // SPEC-401-A R3 — DO NOT push history here.
+                                // DO NOT push history here.
                                 // advanceOrComplete already pushed the leaving
                                 // step before invoking presentPaywallTriggerNode
                                 // (line 711). Pushing again caused back-nav to
@@ -878,7 +878,7 @@ internal fun OnboardingFlowHost(
                                 currentIndex = tIdx
                             }
                             else {
-                                // SPEC-401-A R56 (Lens B P1) — re-run
+                                // Re-run
                                 // current step's next_step_rules via the
                                 // forward-ref lambda set up below
                                 // advanceOrComplete. Matches iOS
@@ -922,14 +922,14 @@ internal fun OnboardingFlowHost(
                         // Treat as a step ID — navigate.
                         val tIdx = flow.steps.indexOfFirst { it.id == chosen }
                         if (tIdx >= 0) {
-                            // SPEC-401-A R3 — DO NOT push history here.
+                            // DO NOT push history here.
                             // advanceOrComplete already pushed the leaving
                             // step (line 711) before invoking
                             // presentPaywallTriggerNode. Pushing again
                             // caused double-pop on back-nav.
                             currentIndex = tIdx
                         } else {
-                            // SPEC-401-A R56 (Lens B P1) — re-run current
+                            // Re-run current
                             // step's next_step_rules via the forward-ref
                             // lambda set up below advanceOrComplete.
                             // Matches iOS navigateToTarget(chosen) →
@@ -958,8 +958,8 @@ internal fun OnboardingFlowHost(
             else -> "continue"
         }
 
-        // SPEC-401 Fix 1A (already-subscribed) + SPEC-404 (runtime lock) skip gates. The decision
-        // was taken above by [PaywallTriggerResolver]; both branches auto-skip via the SPEC-403
+        // The already-subscribed and runtime-lock skip gates. The decision
+        // was taken above by [PaywallTriggerResolver]; both branches auto-skip
         // resolver chain (on_subscribed_skip_target → on_success_target → legacy "continue" edge)
         // and are told apart in analytics by `reason`.
         if (decision is PaywallTriggerResolver.PaywallTriggerOutcome.Skip) {
@@ -984,7 +984,7 @@ internal fun OnboardingFlowHost(
         )
         val activity = activityCtx as? android.app.Activity
         if (activity != null) {
-            // SPEC-401-A — 100ms delay before presenting paywall mirrors
+            // 100ms delay before presenting paywall mirrors
             // iOS Task.sleep(100ms) at OnboardingRenderer.swift:1280 so
             // the host fade-out cadence is preserved. Android previously
             // called presentPaywall immediately producing a snappier-but-
@@ -1023,7 +1023,7 @@ internal fun OnboardingFlowHost(
      */
     var pendingStepCompletion: Triple<String, Int, Map<String, Any>?>? = null
 
-    // SPEC-070-B — the advance/skip/merge/hook-result logic moved verbatim into the pure
+    // The advance/skip/merge/hook-result logic moved verbatim into the pure
     // [OnboardingAdvance] state machine (it was unreachable from any test while it lived in
     // these closures). This is the only place that turns its description of what should happen
     // into the Compose-scoped side effects: haptic, history push, analytics, navigation.
@@ -1043,7 +1043,7 @@ internal fun OnboardingFlowHost(
             }
         }
 
-        // SPEC-070-A J.2 — `on_step_advance` haptic fires before any analytics or navigation,
+        // `on_step_advance` haptic fires before any analytics or navigation,
         // and only on a natural advance (mirrors iOS HapticController in advanceStep()).
         if (outcome.hapticOnAdvance) {
             HapticEngine.triggerIfEnabled(hostView, hapticConfig?.triggers?.on_step_advance, hapticConfig)
@@ -1053,7 +1053,7 @@ internal fun OnboardingFlowHost(
             responses.clear()
             responses.putAll(outcome.responses)
         }
-        // SPEC-088: Persist computed data for cross-module access.
+        // Persist computed data for cross-module access.
         outcome.computedData?.let { ai.appdna.sdk.core.SessionDataStore.instance?.mergeComputedData(it) }
         outcome.events.forEach { eventTracker?.track(it.name, it.props) }
         when (val banner = outcome.banner) {
@@ -1086,7 +1086,7 @@ internal fun OnboardingFlowHost(
         )
     }
 
-    // SPEC-401-A R56 (Lens B P1) — bind the forward-ref now that
+    // Bind the forward-ref now that
     // `advanceOrComplete` exists. Read by `presentPaywallTriggerNode
     // .routeOutcome` unknown-target fallback above.
     advanceOrCompleteRef = { advanceOrComplete() }
@@ -1111,7 +1111,7 @@ internal fun OnboardingFlowHost(
 
     val currentStep = if (currentIndex < flow.steps.size) flow.steps[currentIndex] else null
 
-    // SPEC-401-A R19 — adapt status bar icon tint to onboarding background
+    // Adapt status bar icon tint to onboarding background
     // luminance. With edge-to-edge layout, the system status bar paints over
     // our content; without setting `isAppearanceLightStatusBars` based on
     // background luminance, white system icons are invisible on a light
@@ -1127,7 +1127,7 @@ internal fun OnboardingFlowHost(
                 0.0722 * bgColorForStatusBar.blue
             val controller = androidx.core.view.WindowInsetsControllerCompat(window, view)
             controller.isAppearanceLightStatusBars = luminance > 0.5
-            // SPEC-401-A R20 — also adapt the bottom nav-bar icon tint.
+            // Also adapt the bottom nav-bar icon tint.
             // Same edge-to-edge problem as the status bar: without this, the
             // host app's nav-bar tint persists into onboarding and 3-button
             // nav icons are invisible against the onboarding background.
@@ -1147,18 +1147,18 @@ internal fun OnboardingFlowHost(
         // host's `#FFFBFE` surface tint as a white/pink strip above the
         // step's authored dark gradient. The back-arrow IconButton inside
         // that band rendered `#6B7280` grey on white → "invisible back
-        // button" QA report (R2). With the background now full-bleed, the
+        // button" QA report. With the background now full-bleed, the
         // step's gradient extends edge-to-edge and the grey back glyph
         // contrasts against it as it does on iOS.
         StepFullScreenBackground(currentStep = currentStep)
 
-        // SPEC-419 — top status-bar scrim, matching iOS. iOS darkens the status-bar region on
+        // Top status-bar scrim, matching iOS. iOS darkens the status-bar region on
         // dark/photo/gradient steps for legibility; without a matching scrim, Android's full-bleed
         // bg shows a LIGHTER band at the very top (the gradient's #213359 stop, or the photo) — the
         // user-reported "top a different colour than the centre". A dark→transparent vertical
         // gradient over the top ~140dp reproduces it. Painted OVER the bg, UNDER the safe-area
         // content so chrome/text stay legible.
-        // SPEC-419 pass-13 correctness — GATE the scrim to dark/photo/gradient backgrounds. Painting
+        // Correctness — GATE the scrim to dark/photo/gradient backgrounds. Painting
         // it UNCONDITIONALLY smudged a dark band over light `color`-type steps (white/pastel) where
         // iOS shows none. Skip for light solid-color (and light default/theme) backgrounds.
         fun lumaOf(c: Color) = 0.2126 * c.red + 0.7152 * c.green + 0.0722 * c.blue
@@ -1204,13 +1204,13 @@ internal fun OnboardingFlowHost(
             // Progress bar (Gap 9: custom progress_color/progress_track_color)
             // hide_progress per-step: hidden on this step but still counts in total
             if (flow.settings.show_progress && currentStep?.hide_progress != true) {
-                // SPEC-070-A audit Round 2-restart attempt 2 F2: progress
+                // Restart attempt 2 F2: progress
                 // color resolution mirrors iOS OnboardingRenderer.swift:174-186
                 // — step.config.progress_color > step.config.element_style?
                 // .background?.color > flow.settings.progress_color > default.
                 val stepProgressColor = currentStep?.config?.progress_color
                     ?: currentStep?.config?.element_style?.background?.color
-                // SPEC-401-A R53 (Lens C R53 #2, P2) — default to iOS-canonical
+                // Default to iOS-canonical
                 // indigo `#6366F1` (OnboardingRenderer.swift:186) instead of
                 // MaterialTheme.colorScheme.primary which on darkColorScheme()
                 // is M3 default purple (`#D0BCFF`) and on lightColorScheme()
@@ -1222,7 +1222,7 @@ internal fun OnboardingFlowHost(
                 val progressTrackColor = flow.settings.progress_track_color?.let {
                     ai.appdna.sdk.core.StyleEngine.parseColor(it)
                 } ?: Color.Gray.copy(alpha = 0.2f)
-                // EPIC-2 — dynamic color flash on step-advance: briefly animate the fill to flash_color then back.
+                // Dynamic color flash on step-advance: briefly animate the fill to flash_color then back.
                 val progressFlashColor = flow.settings.progress_flash_color?.let { ai.appdna.sdk.core.StyleEngine.parseColor(it) }
                 var prevFlashIndex by remember { mutableStateOf(currentIndex) }
                 var progressFlashing by remember { mutableStateOf(false) }
@@ -1239,7 +1239,7 @@ internal fun OnboardingFlowHost(
                     animationSpec = tween(durationMillis = 350),
                     label = "progressFlash",
                 )
-                // SPEC-070-A finalization Phase B — progress_style branches.
+                // Phase B — progress_style branches.
                 // Mirrors iOS OnboardingRenderer.swift progress style switch:
                 //   "dots" — N circles, filled to currentIndex
                 //   "segmented_bar" — N segments, filled to currentIndex
@@ -1248,7 +1248,7 @@ internal fun OnboardingFlowHost(
                 //   default / "continuous_bar" — LinearProgressIndicator (existing)
                 val totalSteps = flow.steps.size.coerceAtLeast(1)
                 val current = (currentIndex + 1).coerceIn(1, totalSteps)
-                // SPEC-401-A R36 (Lens C #3) — animate progress style transitions
+                // Animate progress style transitions
                 // to mirror iOS .animation(.easeInOut(duration: 0.2-0.3)) on
                 // OnboardingRenderer.swift:199, 211, 235. Was snapping per
                 // step → visible flicker on each `next`.
@@ -1257,11 +1257,11 @@ internal fun OnboardingFlowHost(
                     animationSpec = tween(durationMillis = 300),
                     label = "progressAnim",
                 )
-                // EPIC-2 — thin sizing (custom height) + multiple colors at once (gradient), flow-level progress.
+                // Thin sizing (custom height) + multiple colors at once (gradient), flow-level progress.
                 val progressHeight = (flow.settings.progress_height ?: 4.0).dp
                 val gradientCols = flow.settings.progress_gradient_colors?.takeIf { it.size >= 2 }
                     ?.map { ai.appdna.sdk.core.StyleEngine.parseColor(it) }
-                // EPIC-2 — optional "Skip" link beside the progress. When set the bar shrinks to make
+                // Optional "Skip" link beside the progress. When set the bar shrinks to make
                 // room for the Skip on the trailing side; when null the Box fills the row (no visual change).
                 val progressSkipLabel = flow.settings.progress_skip_label
                 Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
@@ -1270,7 +1270,7 @@ internal fun OnboardingFlowHost(
                     "none" -> { /* explicit suppress */ }
                     "dots" -> {
                         Row(
-                            // SPEC-401-A R55 (Lens A R55 #12, P2) — 8→16dp matching
+                            // 8→16dp matching
                             // iOS OnboardingRenderer.swift:203 .padding(.horizontal)
                             // (system default 16pt).
                             modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp),
@@ -1278,8 +1278,8 @@ internal fun OnboardingFlowHost(
                         ) {
                             for (i in 1..totalSteps) {
                                 val filled = i <= current
-                                // SPEC-401-A R39 — drop dot-size animation added in
-                                // R36. iOS OnboardingRenderer.swift:198 uses fixed
+                                // Drop dot-size animation added in
+                                // iOS OnboardingRenderer.swift:198 uses fixed
                                 // .frame(width: 8, height: 8) for every dot — only
                                 // fill color animates. Was causing visible "pop"
                                 // larger drift from iOS.
@@ -1299,7 +1299,7 @@ internal fun OnboardingFlowHost(
                     }
                     "segmented_bar" -> {
                         Row(
-                            // SPEC-401-A R55 (Lens A R55 #12, P2) — 8→16dp matching
+                            // 8→16dp matching
                             // iOS OnboardingRenderer.swift:215 .padding(.horizontal).
                             modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp),
                             horizontalArrangement = Arrangement.spacedBy(4.dp),
@@ -1322,7 +1322,7 @@ internal fun OnboardingFlowHost(
                         }
                     }
                     "fraction" -> {
-                        // SPEC-401-A R33 — match iOS OnboardingRenderer.swift:218
+                        // Match iOS OnboardingRenderer.swift:218
                         // `"\(current+1)/\(total)"` (no spaces) at
                         // `.font(.caption.monospacedDigit())` ~12pt monospaced.
                         // Android was rendering `"3 / 10"` at 14sp non-mono so
@@ -1335,7 +1335,7 @@ internal fun OnboardingFlowHost(
                             textAlign = TextAlign.Center,
                             fontSize = 12.sp,
                             fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace,
-                            // SPEC-401-A R54 (Lens C R54 #1, P2) — fraction
+                            // Fraction
                             // digits inherit progressColor matching iOS
                             // OnboardingRenderer.swift:217-221
                             // `Text("\(current+1)/\(total)").foregroundColor(fillColor)`.
@@ -1346,11 +1346,11 @@ internal fun OnboardingFlowHost(
                         )
                     }
                     else -> {
-                        // SPEC-401-A R22 — Material3 1.2 deprecated the
+                        // Material3 1.2 deprecated the
                         // `progress: Float` overload in favor of the lambda
                         // form. Pre-emptive switch silences runtime warnings
                         // and unblocks the next BOM bump.
-                        // EPIC-2 — custom continuous bar (honors any height; the Material
+                        // Custom continuous bar (honors any height; the Material
                         // LinearProgressIndicator floored ~4dp so flows couldn't go thinner) +
                         // optional multi-color gradient. Extracted so it's snapshot-testable.
                         ContinuousProgressBar(
@@ -1377,7 +1377,7 @@ internal fun OnboardingFlowHost(
                 } // end progress+skip Row
             }
 
-            // SPEC-401-A — gate entire nav-bar Row when both back +
+            // Gate entire nav-bar Row when both back +
             // dismiss are hidden. iOS doesn't render the empty VStack
             // child in that case (OnboardingRenderer.swift:46-49); on
             // Android the IconButton spacers reserve ~48dp regardless,
@@ -1387,7 +1387,7 @@ internal fun OnboardingFlowHost(
             val navBackVisible = flow.settings.allow_back && navigationHistory.isNotEmpty() &&
                 currentStep?.hide_back != true
             val navDismissAllowed = flow.settings.dismiss_allowed ?: true
-            // EPIC-2 — back-arrow⇄X switch: on the first/no-history step show the dismiss "✕" in the
+            // Back-arrow⇄X switch: on the first/no-history step show the dismiss "✕" in the
             // LEADING slot (leading-back pattern) instead of an empty spacer; the trailing X is then hidden.
             val leadingIsClose = !navBackVisible && navDismissAllowed &&
                 (flow.settings.back_button_style?.close_on_first == true)
@@ -1400,22 +1400,22 @@ internal fun OnboardingFlowHost(
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                // SPEC-070-A finalization B4 P1 — gate the back arrow on
+                // Gate the back arrow on
                 // navigationHistory.isNotEmpty() rather than currentIndex>0.
                 // Mirrors iOS OnboardingRenderer.swift:257. After a skipTo
                 // jump that clears the history, currentIndex can be >0 with
                 // empty history; the old gate showed a back arrow that
                 // popped to a step the user never visited.
-                // SPEC-070-A finalization B4 P1 — wire back_button_style
+                // Wire back_button_style
                 // (icon_size + icon_color) and dismiss_allowed. iOS reads
                 // these from OnboardingRenderer.swift:250-292.
                 val bbStyle = flow.settings.back_button_style
-                // SPEC-401-A — default 16sp matches iOS
+                // Default 16sp matches iOS
                 // OnboardingRenderer.swift:252 (16pt). Android previously
                 // defaulted to 20sp making the back glyph noticeably
                 // larger than iOS for the same flow config.
                 val backIconSize = (bbStyle?.icon_size?.toFloat() ?: 16f).sp
-                // SPEC-401-A R5 — default to iOS gray (#6B7280) instead
+                // Default to iOS gray (#6B7280) instead
                 // of Material onBackground (black in light theme).
                 // Mirrors iOS OnboardingRenderer.swift:253.
                 val backIconColor = bbStyle?.icon_color?.let { ai.appdna.sdk.core.StyleEngine.parseColor(it) }
@@ -1424,10 +1424,10 @@ internal fun OnboardingFlowHost(
                     val backCd = stringResource(R.string.appdna_a11y_onboarding_back)
                     IconButton(
                         onClick = {
-                            // SPEC-070-A J.2 — back navigation reuses
+                            // Back navigation reuses
                             // `on_step_advance` haptic style.
                             HapticEngine.triggerIfEnabled(hostView, hapticConfig?.triggers?.on_step_advance, hapticConfig)
-                            // SPEC-401-A R3 — jump to the popped step's
+                            // Jump to the popped step's
                             // index, NOT currentIndex-1. iOS uses the popped
                             // index (OnboardingRenderer.swift:259-262) so
                             // non-linear flows (rule-skip, paywall continue,
@@ -1453,7 +1453,7 @@ internal fun OnboardingFlowHost(
                             currentIndex = previousIndex
                         },
                         enabled = !isProcessing,
-                        // SPEC-070-A J.11 — back arrow rendered as Text glyph
+                        // Back arrow rendered as Text glyph
                         // (no semantic icon); attach contentDescription so
                         // TalkBack announces purpose.
                         modifier = Modifier.semantics { contentDescription = backCd },
@@ -1461,7 +1461,7 @@ internal fun OnboardingFlowHost(
                         NavGlyph(bbStyle?.icon ?: "\u2190", backIconColor, backIconSize)
                     }
                 } else if (leadingIsClose) {
-                    // EPIC-2 \u2014 back\u21c4X switch: dismiss glyph in the leading slot on the first step.
+                    // \u2014 back\u21c4X switch: dismiss glyph in the leading slot on the first step.
                     val leadCloseCd = stringResource(R.string.appdna_a11y_onboarding_close)
                     IconButton(
                         onClick = {
@@ -1483,7 +1483,7 @@ internal fun OnboardingFlowHost(
                     Spacer(Modifier.size(48.dp))
                 }
 
-                // SPEC-070-A finalization B4 P1 — gate dismiss X on
+                // Gate dismiss X on
                 // `flow.settings.dismiss_allowed`. iOS suppresses dismiss
                 // when set false (e.g. mandatory onboarding flows).
                 if (!navDismissAllowed || leadingIsClose) {
@@ -1492,7 +1492,7 @@ internal fun OnboardingFlowHost(
                 val dismissCd = stringResource(R.string.appdna_a11y_onboarding_close)
                 IconButton(
                     onClick = {
-                        // SPEC-070-A J.2 — dismiss reuses on_button_tap haptic.
+                        // Dismiss reuses on_button_tap haptic.
                         HapticEngine.triggerIfEnabled(hostView, hapticConfig?.triggers?.on_button_tap, hapticConfig)
                         // See leading-close above: clear a hook-pending completion before dismissing.
                         pendingStepCompletion = null
@@ -1502,13 +1502,13 @@ internal fun OnboardingFlowHost(
                         }
                     },
                     enabled = !isProcessing,
-                    // SPEC-070-A J.11 — close X is a Text glyph with no
+                    // Close X is a Text glyph with no
                     // semantic label by default.
                     modifier = Modifier.semantics { contentDescription = dismissCd },
                 ) {
                     Text(
                         text = "\u2715",
-                        // SPEC-401-A R5 \u2014 match iOS dismiss X font.system(size:14).
+                        // \u2014 match iOS dismiss X font.system(size:14).
                         fontSize = 14.sp,
                         fontWeight = FontWeight.SemiBold,
                         color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.6f)
@@ -1516,14 +1516,14 @@ internal fun OnboardingFlowHost(
                 }
                 } // end dismissAllowed
             }
-            } // end SPEC-401-A navBarVisible gate
+            } // end navBarVisible gate
 
             // Step content with animated transitions
             if (currentIndex < flow.steps.size) {
                 AnimatedContent<Int>(
                     targetState = currentIndex,
                     transitionSpec = {
-                        // SPEC-401-A R8 — match iOS step transition: pure
+                        // Match iOS step transition: pure
                         // horizontal slide with `easeInOut(0.25s)` curve.
                         // Previous Compose default added cross-dissolve
                         // (fadeIn/fadeOut) and used a 300ms FastOutSlowIn
@@ -1539,7 +1539,7 @@ internal fun OnboardingFlowHost(
                 val effectiveConfig = configOverrides[step.id]
                     ?.let { step.config.applyingOverride(it) }
                     ?: step.config
-                // SPEC-496 §5b — this composition's OWN presentation (looked up on every recomposition)
+                // This composition's OWN presentation (looked up on every recomposition)
                 // and the flow-level holder, threaded to the step through a local (see StepHostDataWiring).
                 val stepWiring = rememberStepHostDataWiring(
                     hostDataAccess, stepIdx, step.id, elementInteractionCall, hasInteractionHandler,
@@ -1548,9 +1548,9 @@ internal fun OnboardingFlowHost(
                 OnboardingStepView(
                     step = step,
                     effectiveConfig = effectiveConfig,
-                    // SPEC-496 — the UN-merged override (the host-data pipeline merges it after
+                    // The UN-merged override (the host-data pipeline merges it after
                     // resolve) and the pending flag of THIS step's presentation. An outgoing step
-                    // mid-transition keeps the pending flag it had (§B0: no selection is cleared
+                    // mid-transition keeps the pending flag it had (no selection is cleared
                     // while pending — forcing it out of pending would re-resolve it with no hook data
                     // and prune a restored value), and never prunes at all.
                     stepOverride = configOverrides[step.id],
@@ -1563,22 +1563,22 @@ internal fun OnboardingFlowHost(
                     // delegate to `presentOnboarding(...)` gets a veto seam that works and an auth
                     // gate that thinks there is no delegate at all.
                     delegate = delegate,
-                    // SPEC-419 STEP-2 / SPEC-496 §5b — the interaction seam reaches the step through
+                    // The interaction seam reaches the step through
                     // LocalStepHostDataWiring above (the coordinator is per presentation).
-                    // SPEC-401-A R11 — pass accumulated responses (immutable
+                    // Pass accumulated responses (immutable
                     // snapshot of the host's SnapshotStateMap) so block-level
                     // `visibility_condition` operators evaluate against real
                     // user answers, not an empty map.
                     accumulatedResponses = responses.toMap(),
-                    // SPEC-452 — the host's `{{hook_data.…}}` payload for this step. `hookData` has
+                    // The host's `{{hook_data.…}}` payload for this step. `hookData` has
                     // been threaded through OnboardingStepView → BlockBasedStepView →
-                    // ThreeZoneBlockLayout → ContentBlockRendererView since SPEC-401-A R11, but NO
+                    // ThreeZoneBlockLayout → ContentBlockRendererView since an earlier fix, but NO
                     // caller ever supplied it, so it was `null` on every render and every
                     // `hook_data` binding and `{{hook_data.x}}` token resolved to nothing.
-                    // SPEC-496 §5b C3 — the EFFECTIVE map: the base plus the interaction layer. Its
+                    // The EFFECTIVE map: the base plus the interaction layer. Its
                     // top-level values are never null (a null member is a removal), hence the cast.
                     hookData = effectiveHookDataForView(hostDataAccess, step.id),
-                    // SPEC-070-A finalization B4 P1 — when revisiting a step
+                    // When revisiting a step
                     // via back navigation, restore previously-entered field
                     // values. Mirrors iOS OnboardingStepRouter savedResponses
                     // (OnboardingRenderer.swift:1316,1448) which is threaded
@@ -1618,8 +1618,8 @@ internal fun OnboardingFlowHost(
                             // `AuthSecretRedactor` above, and for the same reason.
                             responses.putAll(OnboardingCTAFlag.applyTo(responses, step, safeData))
                         }
-                        // SPEC-087: Persist responses incrementally so TemplateEngine has fresh data for next step.
-                        // SPEC-070-A finalization spec audit-4 — was unsafe
+                        // Persist responses incrementally so TemplateEngine has fresh data for next step.
+                        // Spec audit-4 — was unsafe
                         // `as Map<String, Map<String, Any>>` cast that
                         // throws ClassCastException whenever a step writes
                         // a primitive top-level value (very common). Drop
@@ -1647,10 +1647,10 @@ internal fun OnboardingFlowHost(
                             pendingStepCompletion = Triple(step.id, currentIndex, safeData)
                         }
 
-                        // SPEC-083: Determine hook type — client delegate takes priority
+                        // Determine hook type — client delegate takes priority
                         if (delegate != null) {
                             // Client-side hook
-                            // SPEC-401-A R11 — match iOS 300ms grace window
+                            // Match iOS 300ms grace window
                             // (OnboardingRenderer.swift:483-503). iOS schedules a
                             // DispatchWorkItem to flip isProcessing=true after
                             // 300ms, cancelled if the hook returns first. Without
@@ -1661,7 +1661,7 @@ internal fun OnboardingFlowHost(
                             trackHookEvent("onboarding_hook_started", step, mapOf("hook_type" to "client"))
 
                             // Grace timer — only show spinner if hook hasn't returned within 300ms.
-                            // SPEC-401-A R51 (Lens B #4 P3) — capture the timer Job so
+                            // Capture the timer Job so
                             // the hook completion can cancel it. Without cancellation, a
                             // bursty hook completion right at the 300ms boundary could
                             // race the timer's `if (!hookFinished.get())` check and
@@ -1675,7 +1675,7 @@ internal fun OnboardingFlowHost(
                             }
 
                             coroutineScope.launch {
-                                // SPEC-401-A R78 (Lens B P1) — wrap in
+                                // Wrap in
                                 // NonCancellable so `onboarding_hook_completed`
                                 // still fires (and handleHookResult cleanup
                                 // runs) even when host backgrounds/dismisses
@@ -1719,7 +1719,7 @@ internal fun OnboardingFlowHost(
                             ))
 
                             coroutineScope.launch {
-                                // SPEC-401-A R78 (Lens B P1) — same
+                                // Same
                                 // NonCancellable wrap for server hook;
                                 // ETL hook-duration percentiles depend on
                                 // started/completed event pairing.
@@ -1772,13 +1772,13 @@ internal fun OnboardingFlowHost(
                     currentStepIndex = currentIndex,
                     totalSteps = flow.steps.size,
                 )
-                } // SPEC-496 §5b LocalStepHostDataWiring
+                } // LocalStepHostDataWiring
                 }
             }
         }
 
-        // SPEC-083: Error banner
-        // SPEC-401-A R35 — wrap in AnimatedVisibility to mirror iOS
+        // Error banner
+        // Wrap in AnimatedVisibility to mirror iOS
         // OnboardingRenderer.swift:80-83,318-347 transition + the success
         // banner sibling below. Was popping in/out instantly.
         AnimatedVisibility(
@@ -1792,7 +1792,7 @@ internal fun OnboardingFlowHost(
                     .fillMaxWidth()
                     .padding(horizontal = 16.dp, vertical = 8.dp)
                     .padding(top = if (flow.settings.show_progress && currentStep?.hide_progress != true) 56.dp else 52.dp)
-                    // SPEC-401-A R60 (Lens C P3 #3) — match iOS systemRed
+                    // Match iOS systemRed
                     // (#FF3B30 light) which is what SwiftUI `Color.red`
                     // resolves to at OnboardingRenderer.swift:337. Was
                     // Compose `Color.Red` (#FF0000 saturated red) which
@@ -1808,7 +1808,7 @@ internal fun OnboardingFlowHost(
                     fontSize = 14.sp,
                     modifier = Modifier
                         .weight(1f)
-                        // SPEC-401-A R37 (Lens C #4) — assertive a11y
+                        // Assertive a11y
                         // announce when the error banner mounts. iOS auto-
                         // announces SwiftUI Text inserted into the hierarchy.
                         .semantics { liveRegion = LiveRegionMode.Assertive },
@@ -1816,7 +1816,7 @@ internal fun OnboardingFlowHost(
                 val errorDismissCd = stringResource(R.string.appdna_a11y_onboarding_dismiss_error)
                 IconButton(
                     onClick = { showError = false; errorMessage = null },
-                    // SPEC-070-A J.11 — error-banner close (Text glyph).
+                    // Error-banner close (Text glyph).
                     modifier = Modifier
                         .size(24.dp)
                         .semantics { contentDescription = errorDismissCd },
@@ -1826,7 +1826,7 @@ internal fun OnboardingFlowHost(
             }
         }
 
-        // SPEC-070-A C.8 \u2014 success banner (port of iOS v1.0.60 SPEC-083
+        // \u2014 success banner (port of iOS v1.0.60
         // amendment `OnboardingRenderer.swift:351-388`). Same scaffold slot
         // as the error banner above. Animated entry/exit.
         AnimatedVisibility(
@@ -1857,7 +1857,7 @@ internal fun OnboardingFlowHost(
                     fontSize = 14.sp,
                     modifier = Modifier
                         .weight(1f)
-                        // SPEC-401-A R37 (Lens C #4) — polite a11y announce
+                        // Polite a11y announce
                         // for success banner mount (lower priority than error).
                         .semantics { liveRegion = LiveRegionMode.Polite },
                 )
@@ -1868,7 +1868,7 @@ internal fun OnboardingFlowHost(
                 ) {
                     androidx.compose.material3.Icon(
                         imageVector = Icons.Filled.Close,
-                        // SPEC-070-A J.11 — pull from string resource so RTL
+                        // Pull from string resource so RTL
                         // locales / hosts can override the a11y label.
                         contentDescription = successDismissCd,
                         tint = Color.White.copy(alpha = 0.8f),
@@ -1878,13 +1878,13 @@ internal fun OnboardingFlowHost(
             }
         }
 
-        // SPEC-083: Loading overlay
+        // Loading overlay
         if (isProcessing) {
             Box(
                 modifier = Modifier
                     .fillMaxSize()
                     .background(Color.Black.copy(alpha = 0.5f))
-                    // SPEC-401-A R36 (Lens C #2) — consume pointer events so
+                    // Consume pointer events so
                     // step CTAs underneath stop receiving taps during async
                     // webhook waits. iOS uses `.ignoresSafeArea()` on a
                     // hit-testable Color (OnboardingRenderer.swift:296-313).
@@ -1899,7 +1899,7 @@ internal fun OnboardingFlowHost(
                             }
                         }
                     }
-                    // SPEC-401-A R37 (Lens C #3) — TalkBack announcement
+                    // TalkBack announcement
                     // when overlay appears + traversal trap. iOS SwiftUI
                     // ProgressView is auto-announced by VoiceOver and modal
                     // overlays trap a11y focus. Compose needs explicit
@@ -1921,7 +1921,7 @@ internal fun OnboardingFlowHost(
                     ) {
                         CircularProgressIndicator(
                             color = Color.White,
-                            // SPEC-401-A R84 (Lens C F3) — 32→28dp matches
+                            // 32→28dp matches
                             // iOS `ProgressView().scaleEffect(1.2)` ≈ 24pt × 1.2
                             // ≈ 29pt at OnboardingRenderer.swift:302-303.
                             modifier = Modifier.size(28.dp)
@@ -1940,7 +1940,7 @@ internal fun OnboardingFlowHost(
     }
 }
 
-// MARK: - Server-side webhook execution (SPEC-083 P1)
+// MARK: - Server-side webhook execution
 
 @Suppress("UNCHECKED_CAST")
 private suspend fun executeWebhook(
@@ -1958,7 +1958,7 @@ private suspend fun executeWebhook(
         val url = URL(hookConfig.webhook_url)
         val conn = url.openConnection() as? HttpURLConnection
             ?: return@withContext StepAdvanceResult.Block("Webhook URL must use HTTP(S)")
-        // SPEC-070-A final audit pass C F1 — ensure socket + input stream are
+        // Ensure socket + input stream are
         // released on every exit path. Without this, retry_count up to 3 ×
         // every step → keep-alive sockets accumulate until GC. Mirrors the
         // sibling pattern in ChatStepComposable.fireWebhook.
@@ -2037,7 +2037,7 @@ internal fun parseWebhookResponse(responseBody: String, hookConfig: StepHookConf
         val message = json.optString("message", null as String?)
         val targetStepId = json.optString("target_step_id", null as String?)
 
-        // SPEC-401-A R34 P1 — deep-convert nested JSONObject/JSONArray to
+        // Deep-convert nested JSONObject/JSONArray to
         // native Map/List using the same helper R33 added for process-death
         // restore. Was returning raw JSONObject/JSONArray for nested values
         // → host code reading `responses[stepId]["profile"]` via the
@@ -2059,7 +2059,7 @@ internal fun parseWebhookResponse(responseBody: String, hookConfig: StepHookConf
                 if (targetStepId != null) StepAdvanceResult.SkipTo(targetStepId, responseData)
                 else StepAdvanceResult.Proceed
             }
-            // SPEC-070-A C.8 — `"stay"` webhook action surfaces the success
+            // `"stay"` webhook action surfaces the success
             // banner. Mirrors iOS v1.0.60 `parseWebhookResponse` extension.
             "stay" -> StepAdvanceResult.Stay(message)
             else -> StepAdvanceResult.Proceed
@@ -2070,13 +2070,13 @@ internal fun parseWebhookResponse(responseBody: String, hookConfig: StepHookConf
 }
 
 private fun interpolateVariables(value: String): String {
-    // SPEC-088: Delegate to shared TemplateEngine
+    // Delegate to shared TemplateEngine
     val ctx = ai.appdna.sdk.core.TemplateEngine.buildContext()
     return ai.appdna.sdk.core.TemplateEngine.interpolate(value, ctx)
 }
 
 /**
- * SPEC-401-A R33 P1 — recursively convert JSONObject/JSONArray trees into
+ * Recursively convert JSONObject/JSONArray trees into
  * native Map/List so downstream code (NextStepRuleEvaluator,
  * AppDNAOnboardingDelegate, host code reading `responses[stepId]`) sees
  * the same shape iOS Codable round-trips into Foundation types. Without
@@ -2135,7 +2135,7 @@ private fun StepFullScreenBackground(currentStep: OnboardingStep?) {
                         val brush = when (bg.gradient.type) {
                             "radial" -> Brush.radialGradient(colors)
                             else -> {
-                                // SPEC-419 — span the FULL bounds. The old fixed `*1000f` offset
+                                // Span the FULL bounds. The old fixed `*1000f` offset
                                 // made the gradient COMPLETE at ~1000px (≈42% of a ~2400px screen)
                                 // then show its flat end-colour below — the user-reported "gradient
                                 // ends earlier than the screen". iOS uses relative UnitPoints (0→1)
@@ -2232,28 +2232,28 @@ fun OnboardingStepView(
     currentStepIndex: Int = 0,
     totalSteps: Int = 1,
     /**
-     * SPEC-070-A finalization B4 P1 — previously-entered responses for
+     * Previously-entered responses for
      * THIS step, threaded down so back-nav restores text/selection/toggle
      * state. Mirrors iOS OnboardingStepRouter.savedResponses
      * (OnboardingRenderer.swift:1316,1448).
      */
     savedResponses: Map<String, Any>? = null,
-    // SPEC-401-A R11 — accumulated `responses` (across all prior steps)
+    // Accumulated `responses` (across all prior steps)
     // and per-step `hookData` propagated down to the visibility-condition
     // evaluator. iOS plumbs through OnboardingStepView → ThreeZoneStepLayout.
     accumulatedResponses: Map<String, Any> = emptyMap(),
     hookData: Map<String, Any>? = null,
-    // SPEC-419 STEP-2 — flow-host interaction seam (delegate round-trip + applyInteractionResult),
+    // Flow-host interaction seam (delegate round-trip + applyInteractionResult),
     // threaded into BlockBasedStepView where the step scope owns advance + inputValues + overrides.
     performInteraction: suspend (String, String, String?, Map<String, Any>) -> AppliedInteraction? = NoElementInteraction,
-    /** SPEC-496 — `configOverrides[step.id]`, UN-merged: the host-data pipeline merges it after resolve. */
+    /** `configOverrides[step.id]`, UN-merged: the host-data pipeline merges it after resolve. */
     stepOverride: StepConfigOverride? = null,
-    /** SPEC-496 §B0 — this presentation's host data is still pending. */
+    /** This presentation's host data is still pending. */
     hostDataPending: Boolean = false,
-    /** SPEC-496 §B0 — false for the outgoing step of a transition: it renders, but never prunes. */
+    /** False for the outgoing step of a transition: it renders, but never prunes. */
     hostDataIsCurrent: Boolean = true,
 ) {
-    // SPEC-070-A finalization B4 P1 — pre-populate from savedResponses on
+    // Pre-populate from savedResponses on
     // first composition. `step.id` keying the remember ensures a fresh
     // clear when the user navigates forward to a different step.
     val toggleValues = remember(step.id) {
@@ -2263,7 +2263,7 @@ fun OnboardingStepView(
             }
         }
     }
-    // SPEC-419 STEP-2 — SnapshotStateMap (was mutableMapOf) so the step scope's handleInteract can
+    // SnapshotStateMap (was mutableMapOf) so the step scope's handleInteract can
     // clear()/putAll() host-pushed inputValue patches and have the tree recompose. It's a `val` — never
     // reassign; mutate in place.
     val inputValues = remember(step.id) {
@@ -2276,7 +2276,7 @@ fun OnboardingStepView(
         }
     }
 
-    // SPEC-084: Block-based vs legacy rendering
+    // Block-based vs legacy rendering
     val blocks = effectiveConfig.content_blocks
     if (!blocks.isNullOrEmpty()) {
         // Block-based rendering with layout variants
@@ -2286,7 +2286,7 @@ fun OnboardingStepView(
             toggleValues = toggleValues,
             inputValues = inputValues,
             onNext = onNext,
-            // SPEC-476 (#632) — pass this through UNCONDITIONALLY, as iOS does.
+            // Pass this through UNCONDITIONALLY, as iOS does.
             //
             // This used to read `if (step.config.skip_enabled == true) onSkip else null`, which made a CTA with
             // `action: "skip"` a silent dead button: the dispatch below is `onSkip?.invoke()`, so a null handler
@@ -2302,13 +2302,13 @@ fun OnboardingStepView(
             modifier = modifier,
             currentStepIndex = currentStepIndex,
             totalSteps = totalSteps,
-            // SPEC-401-A R11 — flow visibility-eval data through.
+            // Flow visibility-eval data through.
             responses = accumulatedResponses,
             hookData = hookData,
-            // SPEC-401-A R11 — identity for auth-action analytics emit.
+            // Identity for auth-action analytics emit.
             flowId = flowId,
             stepId = step.id,
-            // SPEC-419 STEP-2 — pass the flow-host interaction seam down to the step scope.
+            // Pass the flow-host interaction seam down to the step scope.
             performInteraction = performInteraction,
             delegate = delegate,
             step = step,
@@ -2318,7 +2318,7 @@ fun OnboardingStepView(
         )
     } else {
         // Legacy rendering
-        // SPEC-401-A R7 P0 — chat step contains a LazyColumn that
+        // Chat step contains a LazyColumn that
         // crashes inside a verticalScroll-wrapping parent
         // ("Vertically scrollable component was measured with an
         // infinity maximum height constraints"). iOS uses a plain
@@ -2329,7 +2329,7 @@ fun OnboardingStepView(
         // LazyColumn measures correctly. Other step types keep the
         // verticalScroll fallback for long-content overflow.
         if (step.type == OnboardingStep.StepType.INTERACTIVE_CHAT) {
-            // SPEC-401-A R53 (Lens A R53 #1, P0) — wrap ChatStepComposable
+            // Wrap ChatStepComposable
             // in Box(weight=1f) so it gets bounded constraints. Was using
             // bare fillMaxSize() inside an unbounded Column which made the
             // chat composable swallow all available vertical space, leaving
@@ -2348,7 +2348,7 @@ fun OnboardingStepView(
                         flowId = flowId,
                         onNext = { data -> onNext(data) },
                         onSkip = { onSkip() },
-                        // SPEC-401-A — pass prior step transcript so back-nav
+                        // Pass prior step transcript so back-nav
                         // restores chat bubbles + completion state. iOS does
                         // the same via `savedTranscript: savedResponses` at
                         // OnboardingRenderer.swift:1480.
@@ -2361,14 +2361,14 @@ fun OnboardingStepView(
                         onClick = onSkip,
                         modifier = Modifier.align(Alignment.CenterHorizontally).padding(bottom = 16.dp),
                     ) {
-                        // SPEC-401-A R52 (Lens A R51 #20, P3) — Skip 15sp matching iOS .subheadline.
+                        // Skip 15sp matching iOS .subheadline.
                         Text("Skip", fontSize = 15.sp, color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.5f))
                     }
                 }
             }
             return
         }
-        // SPEC-401-A R52 (Lens A R50 P0 #1) — bare-VStack wrapper matching
+        // Bare-VStack wrapper matching
         // iOS legacyStepView at OnboardingRenderer.swift:1466-1490: NO outer
         // padding, NO verticalScroll, NO verticalArrangement=Center.
         // Each step composable owns its own padding + scroll + Spacer-based
@@ -2385,7 +2385,7 @@ fun OnboardingStepView(
             modifier = modifier
                 .entryAnimation(effectiveConfig.animation?.entry_animation, effectiveConfig.animation?.entry_duration_ms)
                 .fillMaxSize(),
-            // SPEC-401-A R52 (Lens A R52 #7, P2) — 8dp gap between step body
+            // 8dp gap between step body
             // and Skip mirroring SwiftUI VStack default spacing
             // (OnboardingRenderer.swift:1467 legacyStepView VStack).
             verticalArrangement = Arrangement.spacedBy(8.dp),
@@ -2398,7 +2398,7 @@ fun OnboardingStepView(
                     OnboardingStep.StepType.WELCOME -> WelcomeStep(effectiveConfig, onNext)
                     OnboardingStep.StepType.QUESTION -> QuestionStep(effectiveConfig, onNext)
                     OnboardingStep.StepType.VALUE_PROP -> ValuePropStep(effectiveConfig, onNext)
-                    // SPEC-401-A — `info` + `permission` mirror iOS
+                    // `info` + `permission` mirror iOS
                     // OnboardingRenderer.swift:1497 routing through
                     // CustomStepView. Authored content-blocks render via the
                     // block-based path; this handles the no-blocks fallback so
@@ -2416,12 +2416,12 @@ fun OnboardingStepView(
             if (step.config.skip_enabled == true) {
                 TextButton(
                     onClick = onSkip,
-                    // SPEC-401-A R52 (Lens A R52 #6, P2) — bottom 8→16dp
+                    // Bottom 8→16dp
                     // matching iOS OnboardingRenderer.swift:1487
                     // .padding(.bottom, 16).
                     modifier = Modifier.align(Alignment.CenterHorizontally).padding(bottom = 16.dp),
                 ) {
-                    // SPEC-401-A R52 (Lens A R51 #20, P3) — Skip 15sp matching iOS .subheadline.
+                    // Skip 15sp matching iOS .subheadline.
                     Text("Skip", fontSize = 15.sp, color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.5f))
                 }
             }
@@ -2430,7 +2430,7 @@ fun OnboardingStepView(
 }
 
 /**
- * SPEC-070-A C.1 — Strict-typed auth/account action emitter for
+ * Strict-typed auth/account action emitter for
  * Android. Mirrors iOS `OnboardingRenderer.swift:1559-1583`
  * `emitAuthAction(...)`. Builds a `{action, [recipient?], ...inputValues}`
  * payload and dispatches via `onNext` so the host can route through
@@ -2440,12 +2440,12 @@ fun OnboardingStepView(
  * Merge order matches iOS: inputValues first so SDK-controlled keys
  * (`action`, `recipient`) always win on a field-id collision. We do not
  * resolve OTP channel here (Android does not yet ship OtpChannelResolver
- * parity — SPEC-086 follow-up). The `actionValue` half of the colon-
+ * parity). The `actionValue` half of the colon-
  * encoded action surfaces as `recipient` for OTP flows and
  * `action_value` for everything else, leaving channel resolution to the
  * host.
  */
-// SPEC-070-A finalization OB-4 — actions iOS' AuthActionPolicy says
+// OB-4 — actions iOS' AuthActionPolicy says
 // REQUIRE a host-registered onboarding delegate (`onBeforeStepAdvance`)
 // before they can advance. iOS source-of-truth:
 // `OnboardingRenderer.swift:1605-1618 AuthActionPolicy.delegateRequiredActions`.
@@ -2456,7 +2456,7 @@ fun OnboardingStepView(
 // The set moved to AuthActionPolicy.delegateRequiredActions.
 
 /**
- * SPEC-070-A finalization B4#P0 — pure resolver for the OTP delivery
+ * Pure resolver for the OTP delivery
  * channel used by `request_otp` / `verify_otp` buttons. Mirrors iOS
  * `OtpChannelResolver` at OnboardingRenderer.swift:1625-1674.
  *
@@ -2528,7 +2528,7 @@ internal fun emitAuthAction(
      */
     delegate: AppDNAOnboardingDelegate? = null,
 ) {
-    // SPEC-070-A finalization OB-4 — auth-action delegate gate. If the
+    // OB-4 — auth-action delegate gate. If the
     // host has not registered an AppDNAOnboardingDelegate (which is the
     // contract surface for `onBeforeStepAdvance`), refuse to advance
     // for actions in AuthActionPolicy.delegateRequiredActions. Mirrors iOS
@@ -2561,7 +2561,7 @@ internal fun emitAuthAction(
     data["action"] = action
     when (action) {
         "request_otp", "verify_otp" -> {
-            // SPEC-070-A finalization B4#P0 — emit BOTH `channel` (sms|email|whatsapp|voice)
+            // Emit BOTH `channel` (sms|email|whatsapp|voice)
             // AND `recipient` (resolved from inputValues via OtpChannelResolver),
             // matching iOS OnboardingRenderer.swift:1559-1594. Previously Android
             // only emitted `recipient = actionValue` (which is actually the channel
@@ -2605,7 +2605,7 @@ internal fun emitSocialLoginAction(
         onError("Sign-in isn't available right now. Please try again later.")
         return
     }
-    // SPEC-070-A C.1 — social_login retains its existing data shape
+    // social_login retains its existing data shape
     // (`{provider, action: "social_login"}`) for hosts that switch on
     // `action == "social_login"`. iOS `OnboardingRenderer.swift:1507-1524`.
     // Step inputs FIRST, then the SDK's own keys, so a form field with the id `action` or `provider`
@@ -2618,8 +2618,8 @@ internal fun emitSocialLoginAction(
     onNext(data)
 }
 
-// SPEC-070-A finalization OB-8 — three-zone block layout helper.
-// SPEC-401-A revised — full parity with iOS `ThreeZoneStepLayout.swift`:
+// OB-8 — three-zone block layout helper.
+// Full parity with iOS `ThreeZoneStepLayout.swift`:
 //   - Top + center are scrollable together (iOS line 40: `ScrollView`)
 //   - Bottom is sticky / keyboard-aware (iOS line 80: `.safeAreaInset(edge: .bottom)`
 //     + `.ignoresSafeArea(.keyboard, edges: .bottom)`)
@@ -2656,7 +2656,7 @@ private fun ThreeZoneBlockLayout(
     loc: ((String, String) -> String)?,
     currentStepIndex: Int,
     totalSteps: Int,
-    // SPEC-401-A R11 — `responses` + `hookData` flow into the visibility
+    // `responses` + `hookData` flow into the visibility
     // filter. iOS threads these through ThreeZoneStepLayout
     // (ThreeZoneStepLayout.swift:13-14, 23-26); without them every
     // `visibility_condition` operator (when_equals / when_not_empty /
@@ -2665,36 +2665,36 @@ private fun ThreeZoneBlockLayout(
     responses: Map<String, Any> = emptyMap(),
     hookData: Map<String, Any>? = null,
     modifier: androidx.compose.ui.Modifier = androidx.compose.ui.Modifier,
-    // SPEC-419 STEP-2 — interactive-element fire closure + per-block field_config override read-layer,
+    // Interactive-element fire closure + per-block field_config override read-layer,
     // threaded to every zone's ContentBlockRendererView.
     onInteract: (String, String, String?) -> Unit = { _, _, _ -> },
     fieldConfigOverrides: Map<String, Map<String, Any>> = emptyMap(),
     // #657 — per-block replacement options from a refresh interaction, threaded to the renderer.
     fieldOptionsOverrides: Map<String, List<InputOption>> = emptyMap(),
 ) {
-    // SPEC-401-A R11 — apply `visibility_condition` BEFORE partitioning,
+    // Apply `visibility_condition` BEFORE partitioning,
     // mirroring iOS at ThreeZoneStepLayout.swift:23-26. Previously Android
     // partitioned ALL blocks first (visible + hidden) and the inner
     // ContentBlockRendererView filtered per-zone, so the
     // `onlyCenterContent` decision used the unfiltered top count and
     // took the wrong layout branch when a top block was hidden.
-    // SPEC-496 §B0 — a block the raw pass hid (`hide_when_empty` at 0 options) takes no zone slot.
+    // A block the raw pass hid (`hide_when_empty` at 0 options) takes no zone slot.
     val rawIds = hostDataRawResolvedIds()
     val visibleBlocks = blocks.filter { block ->
         evaluateVisibilityCondition(block.visibility_condition, responses = responses, hookData = hookData) &&
             !block.isHiddenByHostData(rawIds)
     }
-    // SPEC-496 §A4 — the consent-CTA gate judges the WHOLE layered step (lifted maps included), not
+    // The consent-CTA gate judges the WHOLE layered step (lifted maps included), not
     // just the column this layout draws.
     val stepGateBlocks = LocalStepGateBlocks.current ?: blocks
-    // SPEC-401-A R55 (Lens A R54 #2, P1) — drop the `!anyZoned` early
+    // Drop the `!anyZoned` early
     // return so the unzoned case still runs through the partition + zone
     // render path, getting responsive horizontal padding + scroll wrapper
     // + keyboard-dismiss tap + bottom-zone safeArea inset for free.
     // iOS ThreeZoneStepLayout.swift:109-122 always partitions and routes
     // unzoned blocks to top via `default: top.append`. Was bypassing all
     // those wrappers when no block had an explicit zone.
-    // SPEC-401-A — iOS partition (`ThreeZoneStepLayout.swift:113-119`)
+    // iOS partition (`ThreeZoneStepLayout.swift:113-119`)
     // routes UNKNOWN/empty zones to TOP via `default: top.append(block)`,
     // not center. Earlier Android comment was factually wrong about iOS.
     // Fixing makes the same flow render with the same vertical rhythm
@@ -2727,7 +2727,7 @@ private fun ThreeZoneBlockLayout(
     val onlyCenterContent = top.isEmpty() && center.isNotEmpty()
 
     val configuration = androidx.compose.ui.platform.LocalConfiguration.current
-    // SPEC-401-A — iOS uses `max(24, screenWidth * 0.08)` for responsive
+    // iOS uses `max(24, screenWidth * 0.08)` for responsive
     // horizontal margins (`ThreeZoneStepLayout.swift:106`). Mirror the
     // formula in dp so wider screens (foldables, tablets) get proportional
     // breathing room and small phones stay at the 24dp floor.
@@ -2739,7 +2739,7 @@ private fun ThreeZoneBlockLayout(
     androidx.compose.foundation.layout.Box(
         modifier = modifier
             .fillMaxSize()
-            // SPEC-401-A R36 (Lens C #1) — root-level keyboard dismiss to
+            // Root-level keyboard dismiss to
             // match iOS OnboardingRenderer.swift:123-129. Was scoped to the
             // inner scroll Column only, so taps in the bottom-zone gutter,
             // nav-bar gutter, or progress-bar gutter left the keyboard up
@@ -2799,7 +2799,7 @@ private fun ThreeZoneBlockLayout(
             // keyboard; bottom zone leaves room via padding(bottom = 80dp)
             // (iOS uses safeAreaInset with intrinsic height — 80dp covers
             // the typical CTA + small footer).
-            // SPEC-401-A R55 (Lens A R54 #1, P1) — outer
+            // Outer
             // verticalArrangement = spacedBy(12.dp) matching iOS
             // ThreeZoneStepLayout.swift:41 VStack(spacing: 12). Per-zone
             // top-pads (16dp on top, 20dp on center) reapplied via
@@ -2860,7 +2860,7 @@ private fun ThreeZoneBlockLayout(
         }
 
         // ── BOTTOM (sticky, keyboard-aware) ──────────────────────────────
-        // SPEC-401-A — iOS pins the CTA via `safeAreaInset(edge: .bottom)`
+        // iOS pins the CTA via `safeAreaInset(edge: .bottom)`
         // and explicitly calls `ignoresSafeArea(.keyboard, edges: .bottom)`
         // so the IME doesn't push it. Compose's `Modifier.imePadding()`
         // is the standard Android idiom for the same behavior.
@@ -2876,7 +2876,7 @@ private fun ThreeZoneBlockLayout(
                         if (h != measuredBottomHeight) measuredBottomHeight = h
                     }
                     .padding(horizontal = horizontalPadding)
-                    // SPEC-419 — no extra bottom pad: the CTA sits right above the nav/gesture
+                    // No extra bottom pad: the CTA sits right above the nav/gesture
                     // safe-area inset (the parent's safeDrawingPadding already insets it), matching
                     // iOS where the CTA sits right above the home indicator. The old 8dp pushed the
                     // button ~8dp higher → a visible dark gap below it vs iOS (user-reported).
@@ -2902,7 +2902,7 @@ private fun ThreeZoneBlockLayout(
     }
 }
 
-// SPEC-070-A finalization OB-7 — collect every image URL referenced by a
+// OB-7 — collect every image URL referenced by a
 // flow so [ImagePreloader.prefetch] can warm Coil's cache before the first
 // paint. Mirrors iOS `OnboardingRenderer.swift:866-916` `collectImageURLs`
 // recursive walk over content_blocks, step.config fields, and per-block
@@ -2917,7 +2917,7 @@ private fun collectFlowImageURLs(flow: OnboardingFlowConfig): List<String> {
         if (blocks.isNullOrEmpty()) return
         for (b in blocks) {
             pushIfPresent(b.image_url)
-            // SPEC-070-A finalization B4 P1 — also preload `placeholder_image_url`.
+            // Also preload `placeholder_image_url`.
             // iOS collectImageURLs walks every block.placeholder_image_url so the
             // first-frame poster paints immediately while Lottie/video stream.
             // Android previously skipped it even though the field IS in the DTO,
@@ -2942,7 +2942,7 @@ private fun collectFlowImageURLs(flow: OnboardingFlowConfig): List<String> {
     return urls.distinct()
 }
 
-// SPEC-070-A finalization OB-1 — auth-class actions that ALSO require
+// OB-1 — auth-class actions that ALSO require
 // required-field validation (you can't login without an email, etc.).
 // Mirrors the validation policy iOS' OnboardingRenderer applies inside
 // `emitAuthAction` (`OnboardingRenderer.swift:1561-1567`): canAdvance
@@ -2973,12 +2973,12 @@ private val AUTH_ACTIONS_REQUIRING_VALIDATION = setOf(
     "delete_account",
 )
 
-// SPEC-084: Block-based step view with 5 layout variants
+// Block-based step view with 5 layout variants
 /**
  * Whether the built-in "Skip" affordance renders on a step.
  *
  * Two independent things were conflated before #653: `skip_enabled` (the AUTHOR asked for a Skip
- * link) and the presence of a skip handler (the SDK is ABLE to skip). SPEC-476 made the handler
+ * link) and the presence of a skip handler (the SDK is ABLE to skip). A later change made the handler
  * unconditional so a CTA with `action: "skip"` would stop being a dead button; anything gating a
  * RENDER on the handler therefore started drawing itself everywhere.
  *
@@ -3000,19 +3000,19 @@ private fun BlockBasedStepView(
     modifier: Modifier = Modifier,
     currentStepIndex: Int = 0,
     totalSteps: Int = 1,
-    // SPEC-401-A R11 — flow `responses` + `hookData` through to the
+    // Flow `responses` + `hookData` through to the
     // ThreeZoneBlockLayout / ContentBlockRendererView so authored
     // `visibility_condition` operators evaluate against real responses
     // instead of an empty map. Mirrors iOS BlockBasedStepView path
     // (OnboardingRenderer.swift:1452-1460).
     responses: Map<String, Any> = emptyMap(),
     hookData: Map<String, Any>? = null,
-    // SPEC-401-A R11 — flowId/stepId so the auth-action no-delegate
+    // flowId/stepId so the auth-action no-delegate
     // path can fire `onboarding_step_completed` analytics with the
     // correct identity (matches iOS handleStepCompleted pre-gate emit).
     flowId: String = "",
     stepId: String = "",
-    // SPEC-419 STEP-2 — flow-host interaction seam. This is the STEP scope: it owns fieldConfigOverrides
+    // Flow-host interaction seam. This is the STEP scope: it owns fieldConfigOverrides
     // + handleInteract and routes any host-requested advance through the required-field-gated handleAction.
     performInteraction: suspend (String, String, String?, Map<String, Any>) -> AppliedInteraction? = NoElementInteraction,
     /**
@@ -3022,8 +3022,8 @@ private fun BlockBasedStepView(
      */
     delegate: AppDNAOnboardingDelegate? = null,
     /**
-     * SPEC-496 — the presented step (its raw blocks drive the host-data pass), the UN-merged
-     * `configOverrides[step.id]` (merged by the pipeline AFTER resolve, never before) and the §B0
+     * The presented step (its raw blocks drive the host-data pass), the UN-merged
+     * `configOverrides[step.id]` (merged by the pipeline AFTER resolve, never before) and the
      * pending flag of this presentation. A step without raw blocks keeps today's view-level pass.
      */
     step: OnboardingStep? = null,
@@ -3033,19 +3033,19 @@ private fun BlockBasedStepView(
 ) {
     val variant = effectiveConfig.layout_variant ?: "no_image"
 
-    // SPEC-496 §5b — the flow host's holder + THIS composition's presentation (null outside the host).
+    // The flow host's holder + THIS composition's presentation (null outside the host).
     val hostDataWiring = LocalStepHostDataWiring.current
     val myPresentation = hostDataWiring?.presentation
-    // SPEC-419 STEP-2 — per-block field_config overrides pushed by the host delegate (blockId -> key ->
+    // Per-block field_config overrides pushed by the host delegate (blockId -> key ->
     // value). Snapshot-observable so a merged override recomposes the affected block.
-    // SPEC-496 §5b C4 — keyed by PRESENTATION: a composition reused for a new presentation (0→1→0 inside
+    // Keyed by PRESENTATION: a composition reused for a new presentation (0→1→0 inside
     // the exit tween) starts clean, like a normal revisit.
     val fieldConfigOverrides = remember(stepId, myPresentation) { mutableStateMapOf<String, Map<String, Any>>() }
     // #657 — per-block replacement options from a refresh interaction. Same read-time override
     // shape as the config overrides above, and keyed the same way.
     val fieldOptionsOverrides = remember(stepId, myPresentation) { mutableStateMapOf<String, List<InputOption>>() }
 
-    // SPEC-496 §A1/§A4 — ONE layered block list for every reader: raw pass → typed decode (per-key
+    // ONE layered block list for every reader: raw pass → typed decode (per-key
     // revert) → StepConfigOverride merge → interaction layering. Rendering, the required gate, the
     // validation toast and the consent-CTA gate all read `blocks` below. Memoised inside the
     // pipeline, so a recomposition whose inputs did not change re-uses the previous resolve.
@@ -3053,12 +3053,12 @@ private fun BlockBasedStepView(
     @Suppress("UNUSED_VARIABLE")
     val selectedRevision = SelectedOptionStore.revision.intValue // a read subscribes: `selected` root
     // The inputs of one resolve — a function, so an interaction that asks to advance can re-run the
-    // pipeline with the overrides it just wrote (§A4, see handleInteract). The presentation parameters
+    // pipeline with the overrides it just wrote (handleInteract). The presentation parameters
     // are passed in: this composition's for the frame, `liveParamsState.value` for handleInteract's
     // coroutine, which resumes AFTER the host round-trip and must not read tap-time values.
     val liveParams = HostDataLiveParams(stepOverride, responses, hostDataPending, hostDataIsCurrent)
     val liveParamsState = rememberUpdatedState(liveParams)
-    // SPEC-496 §5b C3 — the effective `hook_data` is read from the flow-level owner at CALL time (base +
+    // The effective `hook_data` is read from the flow-level owner at CALL time (base +
     // interaction layer), never from a composition snapshot.
     fun hostDataInputs(p: HostDataLiveParams): HostDataInputs = liveHostDataInputs(
         p.stepOverride, hostDataWiring?.access?.effectiveHookData(stepId) ?: p.stepOverride?.dataContext,
@@ -3068,7 +3068,7 @@ private fun BlockBasedStepView(
     val layeredBlocks: List<ContentBlock> = hostResolved?.blocks ?: blocks
     @Suppress("NAME_SHADOWING")
     val effectiveConfig: StepConfig = hostResolved?.let { effectiveConfig.copy(localizations = it.localizations) } ?: effectiveConfig
-    // §B0 — after host data settles, a value no longer rendered leaves inputValues + the store. Only
+    // After host data settles, a value no longer rendered leaves inputValues + the store. Only
     // the step on screen prunes: an outgoing step mid-transition must not touch the (global)
     // SelectedOptionStore or a restored value.
     LaunchedEffect(hostResolved?.blocks, hostDataIsCurrent) {
@@ -3076,7 +3076,7 @@ private fun BlockBasedStepView(
     }
 
     /**
-     * SPEC-495 §C — the two map placements that are NOT blocks in the column.
+     * The two map placements that are NOT blocks in the column.
      *
      * A `fullscreen` map is the step's BACKGROUND, and a `top`/`bottom` anchored map is pinned to a
      * step edge with the content flowing past it. Neither can be rendered from inside
@@ -3092,16 +3092,16 @@ private fun BlockBasedStepView(
     val backdropMap = layeredBlocks.firstOrNull { it.type == "map" && it.mapPlacement() == MapPlacement.BACKDROP }
     val topMap = layeredBlocks.firstOrNull { it.type == "map" && it.mapPlacement() == MapPlacement.ANCHOR_TOP }
     val bottomMap = layeredBlocks.firstOrNull { it.type == "map" && it.mapPlacement() == MapPlacement.ANCHOR_BOTTOM }
-    // SPEC-496 §A4 — the gate reads the WHOLE layered step, lifted maps included.
+    // The gate reads the WHOLE layered step, lifted maps included.
     val gateBlocks = layeredBlocks
     @Suppress("NAME_SHADOWING")
     val blocks = layeredBlocks.filterNot { it === backdropMap || it === topMap || it === bottomMap }
     val interactionScope = rememberCoroutineScope()
-    // SPEC-496 §5b C5.5 — ONE coordinator per presentation: the lock, the loading block, the 8 s refresh
+    // ONE coordinator per presentation: the lock, the loading block, the 8 s refresh
     // deadline, the generation token and the live "still current?" check.
     val coordinator = rememberInteractionCoordinator(stepId, hostDataWiring, interactionScope, performInteraction)
 
-    // SPEC-401-A R35 — in-app validation pill (Lens C #4). iOS shows a
+    // In-app validation pill. iOS shows a
     // bottom-aligned styled pill `OnboardingRenderer.swift:1383-1402`
     // instead of system Toast. android.widget.Toast inherits OEM theming
     // and looks foreign vs. the rest of the SDK UI.
@@ -3113,10 +3113,10 @@ private fun BlockBasedStepView(
         }
     }
 
-    // SPEC-084: Localization helper for step text
-    // SPEC-087: Also interpolates {{variables}} after localization
+    // Localization helper for step text
+    // Also interpolates {{variables}} after localization
     fun loc(key: String, fallback: String): String {
-        // SPEC-496 §A1 — lookup-only for a step the raw pass resolved: the translations are already
+        // Lookup-only for a step the raw pass resolved: the translations are already
         // resolved, and interpolating again would re-scan host data containing `{{`.
         if (hostResolved != null) {
             return lookupOnlyLoc(key, fallback, effectiveConfig.localizations, effectiveConfig.default_locale)
@@ -3125,7 +3125,7 @@ private fun BlockBasedStepView(
         return localized.interpolated()
     }
 
-    // SPEC-070-A finalization OB-1 — required-field validation gate.
+    // OB-1 — required-field validation gate.
     // Mirrors iOS `OnboardingRenderer.swift:1465-1487` `canAdvance` walk:
     // enumerate every block where `field_required == true`, check whether
     // `inputValues[field_id ?: id]` is non-empty, return false (with the
@@ -3134,11 +3134,11 @@ private fun BlockBasedStepView(
     // equivalent surface. Without this gate, the BlockBasedStepView's
     // "next" branch advanced unconditionally — required fields had a red
     // asterisk in the label but no actual gating.
-    // SPEC-419 STEP-2 — delegates to the pure, unit-testable RequiredFieldGate. The empty-check walk
+    // Delegates to the pure, unit-testable RequiredFieldGate. The empty-check walk
     // (including the QA-R19 `List<*>` empty-multi-select branch) moved there verbatim, so behavior is
     // unchanged; extracting it proves an interaction-driven advance can NOT bypass required-field
     // validation without a live host (see ElementInteractionWiringTest).
-    // SPEC-496 — an interaction-requested advance sets [interactionGate] to the step re-resolved with
+    // An interaction-requested advance sets [interactionGate] to the step re-resolved with
     // the overrides that interaction just wrote; `gateBlocks` above is this composition's list, which
     // predates them (a host that replaces an empty required Select's options and advances in the same
     // reply would otherwise advance past the now-unanswered field).
@@ -3149,7 +3149,7 @@ private fun BlockBasedStepView(
 
     val activityCtx = androidx.compose.ui.platform.LocalContext.current
 
-    // SPEC-421 — runtime permission pipeline plumbing. The ActivityResultLauncher MUST be registered
+    // Runtime permission pipeline plumbing. The ActivityResultLauncher MUST be registered
     // at COMPOSITION (never lazily at button-tap, which throws IllegalStateException when RESUMED).
     // The launcher callback completes the manager's in-flight `request()` deferred, bridging the
     // callback → suspend so the async pipeline can await the OS result. Mirrors the iOS pipeline.
@@ -3186,7 +3186,7 @@ private fun BlockBasedStepView(
     // Opt-in "Open Settings" affordance for a permanently-denied permission.
     var permSettingsFallback by remember(stepId) { mutableStateOf<PermissionSettingsFallback?>(null) }
 
-    // SPEC-421 — analytics props attached to every `permission_*` literal (parity with iOS permissionProps).
+    // Analytics props attached to every `permission_*` literal (parity with iOS permissionProps).
     fun permissionProps(type: String): Map<String, Any> =
         mapOf("permission_type" to type, "flow_id" to flowId, "step_id" to stepId)
 
@@ -3202,7 +3202,7 @@ private fun BlockBasedStepView(
     // Advance via the same collect-and-onNext path the primary CTA uses so the freshly stored
     // `permission_{type}` value rides along in the step response. Mirrors iOS advancePermissionStep.
     //
-    // SPEC-070-B — the payload now also carries the `onAction` pair (`action` = "permission",
+    // The payload now also carries the `onAction` pair (`action` = "permission",
     // `action_value` = the resolved type) via [permissionActionPayload], so a host reading
     // `onBeforeStepAdvance`'s stepData can see WHICH permission this advance came from. Before, a
     // permission step advanced with an anonymous bag of inputs and the host had to guess.
@@ -3224,12 +3224,12 @@ private fun BlockBasedStepView(
         }
     }
 
-    // SPEC-421 — the full async permission pipeline for a `permission` CTA: runs the optional host
+    // The full async permission pipeline for a `permission` CTA: runs the optional host
     // pre-hook, status check, native OS request, analytics + delegate callbacks, stores the result,
     // and advances. Never crashes on an undeclared manifest permission (status returns UNAVAILABLE →
     // emit + advance without launching). Mirrors iOS OnboardingRenderer.runPermissionPipeline.
     //
-    // SPEC-070-B — [type] is now resolved by the pure [resolvePermissionType] seam at the call site
+    // [type] is now resolved by the pure [resolvePermissionType] seam at the call site
     // (config → layout → the button's own `action_value`) instead of being re-read from `layout`
     // inside this closure, so the type + prompt/fallback decision is assertable without Compose.
     fun runPermissionPipeline(type: String) {
@@ -3293,7 +3293,7 @@ private fun BlockBasedStepView(
     }
 
     fun handleAction(action: String) {
-        // SPEC-070-A C.1 — strict-typed auth/account action cases mirror iOS
+        // Strict-typed auth/account action cases mirror iOS
         // `OnboardingRenderer.swift:1531-1545`. Action strings travel as either
         // a bare token ("login", "logout", ...) OR as a colon-encoded pair
         // ("social_login:google", "request_otp:sms", "email_login:email") so
@@ -3306,11 +3306,11 @@ private fun BlockBasedStepView(
         // passthrough test mirrors the dispatch table instead of driving it.
         val (rawAction, actionValue) = OnboardingActionPair.decode(action)
 
-        // SPEC-421 — a permission step whose CTA is authored as plain `action:"next"` runs the
+        // A permission step whose CTA is authored as plain `action:"next"` runs the
         // permission pipeline (prompt) BEFORE the required-field validation gate below, matching
         // iOS (OnboardingRenderer.swift `case "next"` short-circuits before `guard canAdvance`).
         // Permission steps skip required-field validation by design (the pipeline owns advance).
-        // SPEC-070-B — the type + prompt/fallback call is the pure seam's now. A plain `next` on a
+        // The type + prompt/fallback call is the pure seam's now. A plain `next` on a
         // permission step only diverts into the pipeline when the step really does declare a
         // supported permission (RunPipeline); otherwise it falls through to the normal `next`
         // handling below, exactly as before.
@@ -3342,14 +3342,14 @@ private fun BlockBasedStepView(
         if (requiresValidation) {
             val gate = canAdvance()
             if (!gate.canAdvance) {
-                // SPEC-401-A R51 (Lens C #3, P3) — match iOS toast copy at
+                // Match iOS toast copy at
                 // OnboardingRenderer.swift:1393 `"Please fill in <field>"`.
                 // Was Android-bespoke `"<field> is required"` — analytics
                 // filtering on the toast text would split between platforms.
-                // SPEC-496 §A1 — while host data is pending the field is not the user's fault.
+                // While host data is pending the field is not the user's fault.
                 val msg = if (gate.toastKind == "loading") "Loading…"
                     else "Please fill in ${gate.fieldLabel ?: "required fields"}"
-                // SPEC-401-A R35 — surface as in-app pill instead of system
+                // Surface as in-app pill instead of system
                 // Toast (iOS OnboardingRenderer.swift:1383-1402).
                 validationMessage = msg
                 return
@@ -3359,7 +3359,7 @@ private fun BlockBasedStepView(
         when (rawAction) {
             "next" -> {
                 // (permission-step-via-"next" is handled above, before validation)
-                // SPEC-401-A R15 — match iOS OnboardingRenderer.swift:1518-1527.
+                // Match iOS OnboardingRenderer.swift:1518-1527.
                 // iOS prefixes every toggle key with `toggle_` so the namespaces
                 // never collide with form input keys; Android previously merged
                 // raw toggle keys, breaking cross-platform analytics aggregation
@@ -3422,7 +3422,7 @@ private fun BlockBasedStepView(
                 onNext(if (merged.isEmpty()) null else merged)
             }
             "skip" -> onSkip?.invoke()
-            // SPEC-070-A C.1 — social_login retains its existing data shape
+            // social_login retains its existing data shape
             // (`{provider, action: "social_login"}`) for backwards compatibility
             // with hosts that switch on `action == "social_login"`. iOS
             // `OnboardingRenderer.swift:1507-1524`.
@@ -3433,7 +3433,7 @@ private fun BlockBasedStepView(
                     delegate = delegate,
                 )
             }
-            // SPEC-070-A C.1 — strict-typed auth/account actions. Every case
+            // Strict-typed auth/account actions. Every case
             // emits `onNext({action, [recipient?], ...inputValues})` so the
             // host can route via `onBeforeStepAdvance`. Mirrors iOS
             // `OnboardingRenderer.swift:1531-1546` `emitAuthAction(...)`.
@@ -3443,7 +3443,7 @@ private fun BlockBasedStepView(
             "verify_email", "resend_verification", "enable_biometric",
             "email_login",
             // OTP actions — channel/recipient resolved via OtpChannelResolver
-            // (SPEC-070-A finalization B4#P0 parity with iOS):
+            // (parity with iOS):
             "request_otp", "verify_otp",
             // Account lifecycle:
             "logout", "change_password", "set_new_password",
@@ -3455,7 +3455,7 @@ private fun BlockBasedStepView(
                     delegate = delegate,
                 )
             }
-            // SPEC-421 / SPEC-070-B — a `permission` CTA now goes through the [emitPermissionAction]
+            // A `permission` CTA now goes through the [emitPermissionAction]
             // seam. It (a) makes the tap OBSERVABLE to the host — `{action: "permission",
             // action_value: <type>}` on the same `onNext` channel every other CTA uses, which is what
             // the cross-platform fixtures call `onAction` — and (b) decides prompt-vs-safe-fallback
@@ -3489,14 +3489,14 @@ private fun BlockBasedStepView(
         }
     }
 
-    // SPEC-419 STEP-2 — step-scope half of the interaction wiring. An interactive element calls this
+    // Step-scope half of the interaction wiring. An interactive element calls this
     // with (blockId, action, value); we await the flow-host delegate round-trip, then on a non-nil
     // result apply inputValue patches (clear()/putAll() the SnapshotStateMap — it's a val, never
     // reassigned), key-level-merge field_config overrides, and — if the host asked to advance — funnel
     // through the EXISTING handleAction("next"), the ONLY entry that runs canAdvance (RequiredFieldGate)
     // then onNext → onBeforeStepAdvance. Mirrors iOS OnboardingStepRouter.handleInteract.
     //
-    // SPEC-496 §5b — the call goes through this presentation's coordinator (refused when not current /
+    // The call goes through this presentation's coordinator (refused when not current /
     // in flight / a refresh while pending). A reply that passes its arrival check is applied in one
     // snapshot (applyInteractionReply: patches onto the CURRENT answers, dataContext into the layer,
     // options, field_config), then an `advance` is gated on the step re-resolved from the layer as just
@@ -3505,7 +3505,7 @@ private fun BlockBasedStepView(
         coordinator.start(blockId, action, value, inputValues.toMap(), liveParamsState.value.pending) { result, stamp ->
             applyInteractionReply(result, stamp, stepId, inputValues, hostDataWiring?.access, fieldConfigOverrides, fieldOptionsOverrides)
             if (result.advance) {
-                // §A4 + §B0 — gate on the step re-resolved with what was just written, its vanished
+                // Gate on the step re-resolved with what was just written, its vanished
                 // selections pruned first (the LaunchedEffect prune only runs after the next frame).
                 val now = liveParamsState.value
                 interactionGate[0] = hostPipeline?.let { p ->
@@ -3515,7 +3515,7 @@ private fun BlockBasedStepView(
             }
         }
     }
-    // §5b C5.1 — what nested renderers (row, stack, section_background, carousel pages) read.
+    // What nested renderers (row, stack, section_background, carousel pages) read.
     val stepInteraction = rememberStepInteraction(coordinator, ::handleInteract) { liveParamsState.value.pending }
 
     androidx.compose.runtime.CompositionLocalProvider(
@@ -3528,7 +3528,7 @@ private fun BlockBasedStepView(
     Box(modifier = modifier.entryAnimation(effectiveConfig.animation?.entry_animation, effectiveConfig.animation?.entry_duration_ms)) {
         // Step-level background (color, gradient, image)
         effectiveConfig.background?.let { bg ->
-            // SPEC-419 — color + gradient are painted FULL-BLEED by StepFullScreenBackground at the
+            // Color + gradient are painted FULL-BLEED by StepFullScreenBackground at the
             // Activity root (under the system bars). Re-painting them HERE — inside the safe-area
             // content, so `fillMaxSize` is bounded to the CONTENT height, not the screen — made the
             // gradient finish at the safe-area bottom and render darker in the content area than the
@@ -3546,7 +3546,7 @@ private fun BlockBasedStepView(
                         val brush = when (bg.gradient.type) {
                             "radial" -> Brush.radialGradient(colors)
                             else -> {
-                                // SPEC-419 — span the FULL bounds. The old fixed `*1000f` offset
+                                // Span the FULL bounds. The old fixed `*1000f` offset
                                 // made the gradient COMPLETE at ~1000px (≈42% of a ~2400px screen)
                                 // then show its flat end-colour below — the user-reported "gradient
                                 // ends earlier than the screen". iOS uses relative UnitPoints (0→1)
@@ -3577,7 +3577,7 @@ private fun BlockBasedStepView(
                 }
                 "image" -> {
                     Box(Modifier.fillMaxSize()) {
-                        // SPEC-401-A R15 — read `image_fit` from DTO instead
+                        // Read `image_fit` from DTO instead
                         // of hardcoding Crop. Matches iOS imageFit() helper at
                         // StyleEngine.swift:337 — "fit" → letterbox, "fill"/
                         // "cover"/null → fill.
@@ -3590,7 +3590,7 @@ private fun BlockBasedStepView(
                             modifier = Modifier.fillMaxSize(),
                             contentScale = imageScale,
                         )
-                        // SPEC-401-A R15 — overlay opacity per iOS
+                        // Overlay opacity per iOS
                         // StyleEngine.swift:343-358. Pure black/white default
                         // hexes (editor default) get 0.4 opacity so the image
                         // remains visible; explicit overlay_opacity wins.
@@ -3606,7 +3606,7 @@ private fun BlockBasedStepView(
                     }
                 }
                 "lottie" -> {
-                    // SPEC-401-A R15 — full-screen Lottie background
+                    // Full-screen Lottie background
                     // (iOS StyleEngine.swift:361-392). Without this branch
                     // a console-authored Lottie background rendered as a
                     // transparent / theme-default screen on Android.
@@ -3643,7 +3643,7 @@ private fun BlockBasedStepView(
                     }
                 }
                 "rive" -> {
-                    // SPEC-401-A R35 — full-screen Rive background (iOS
+                    // Full-screen Rive background (iOS
                     // StyleEngine.swift:393-425). Mirrors the "lottie" branch.
                     Box(Modifier.fillMaxSize()) {
                         bg.rive_url?.let { url ->
@@ -3676,7 +3676,7 @@ private fun BlockBasedStepView(
             when (variant) {
                 "image_fullscreen" -> {
                     Box(Modifier.fillMaxSize()) {
-                        // SPEC-419 — only render the variant image + its darkening overlay when an image
+                        // Only render the variant image + its darkening overlay when an image
                         // is ACTUALLY authored. Some authored steps use layout_variant=image_fullscreen
                         // but have NO image_url (the bg is a gradient painted full-bleed by
                         // StepFullScreenBackground). The Transparent→Black0.7 overlay was firing anyway,
@@ -3702,7 +3702,7 @@ private fun BlockBasedStepView(
                                     )
                             )
                         }
-                        // SPEC-419 — let ThreeZoneBlockLayout own ALL vertical positioning
+                        // Let ThreeZoneBlockLayout own ALL vertical positioning
                         // (top/center/bottom zones), matching iOS which renders the bg full-screen
                         // and positions the zone layout normally. The old `Arrangement.Bottom` +
                         // 200dp top Spacer shoved a TOP-zone block (e.g. an injected select) ~200dp
@@ -3713,7 +3713,7 @@ private fun BlockBasedStepView(
                         Column(
                             modifier = Modifier
                                 .fillMaxSize()
-                                .padding(vertical = 20.dp), // SPEC-419 — horizontal owned by ThreeZoneBlockLayout (8%) so margins match iOS ~10.4% (was double-padded ~15% → headings wrapped more)
+                                .padding(vertical = 20.dp), // Horizontal owned by ThreeZoneBlockLayout (8%) so margins match iOS ~10.4% (was double-padded ~15% → headings wrapped more)
                         ) {
                             Box(modifier = Modifier.weight(1f).fillMaxWidth()) {
                                 ThreeZoneBlockLayout(blocks = blocks, onAction = ::handleAction, toggleValues = toggleValues, inputValues = inputValues, loc = ::loc, responses = responses, hookData = hookData, currentStepIndex = currentStepIndex, totalSteps = totalSteps, onInteract = ::handleInteract, fieldConfigOverrides = fieldConfigOverrides, fieldOptionsOverrides = fieldOptionsOverrides)
@@ -3745,7 +3745,7 @@ private fun BlockBasedStepView(
                     Column(
                         modifier = Modifier
                             .fillMaxSize()
-                            .padding(vertical = 20.dp), // SPEC-419 — horizontal owned by TZBL (8%) → margins match iOS ~10.4%
+                            .padding(vertical = 20.dp), // Horizontal owned by TZBL (8%) → margins match iOS ~10.4%
                     ) {
                         ThreeZoneBlockLayout(blocks = blocks, onAction = ::handleAction, toggleValues = toggleValues, inputValues = inputValues, loc = ::loc, responses = responses, hookData = hookData, currentStepIndex = currentStepIndex, totalSteps = totalSteps, onInteract = ::handleInteract, fieldConfigOverrides = fieldConfigOverrides, fieldOptionsOverrides = fieldOptionsOverrides)
                         Spacer(Modifier.height(16.dp))
@@ -3761,7 +3761,7 @@ private fun BlockBasedStepView(
                     Column(
                         modifier = Modifier
                             .fillMaxSize()
-                            .padding(vertical = 20.dp), // SPEC-419 — horizontal owned by TZBL (8%) → margins match iOS ~10.4%
+                            .padding(vertical = 20.dp), // Horizontal owned by TZBL (8%) → margins match iOS ~10.4%
                     ) {
                         ai.appdna.sdk.core.NetworkImage(
                             url = effectiveConfig.image_url,
@@ -3777,7 +3777,7 @@ private fun BlockBasedStepView(
                     Column(
                         modifier = Modifier
                             .fillMaxSize()
-                            .padding(vertical = 20.dp), // SPEC-419 — horizontal owned by TZBL (8%) → margins match iOS ~10.4%
+                            .padding(vertical = 20.dp), // Horizontal owned by TZBL (8%) → margins match iOS ~10.4%
                     ) {
                         ThreeZoneBlockLayout(blocks = blocks, onAction = ::handleAction, toggleValues = toggleValues, inputValues = inputValues, loc = ::loc, responses = responses, hookData = hookData, currentStepIndex = currentStepIndex, totalSteps = totalSteps, onInteract = ::handleInteract, fieldConfigOverrides = fieldConfigOverrides, fieldOptionsOverrides = fieldOptionsOverrides)
                     }
@@ -3787,7 +3787,7 @@ private fun BlockBasedStepView(
 
         // Skip button at bottom
         //
-        // 🔴 #653 — this was `if (onSkip != null)`, and SPEC-476 made `onSkip` non-null on EVERY
+        // 🔴 #653 — this was `if (onSkip != null)`, and a later change made `onSkip` non-null on EVERY
         // step (correctly: a CTA with `action: "skip"` was a dead button while the handler was
         // gated). The two consequences were not the same. The dispatch fix was right; this render
         // gate was riding on the handler's nullability as a proxy for "skip is enabled", so the
@@ -3804,12 +3804,12 @@ private fun BlockBasedStepView(
                     .align(Alignment.BottomCenter)
                     .padding(bottom = 16.dp),
             ) {
-                // SPEC-401-A R52 (Lens A R51 #20, P3) — Skip 15sp matching iOS .subheadline.
+                // Skip 15sp matching iOS .subheadline.
                 Text("Skip", fontSize = 15.sp, color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.5f))
             }
         }
 
-        // SPEC-401-A R35 — in-app validation pill (Lens C #4). Mirrors iOS
+        // In-app validation pill. Mirrors iOS
         // bottom-pill at OnboardingRenderer.swift:1383-1402 — `.background(
         // Color.black.opacity(0.8))`, `.cornerRadius(12)`, slide+fade
         // transition. Replaces system Toast which inherited OEM theming.
@@ -3829,19 +3829,19 @@ private fun BlockBasedStepView(
                 Text(
                     text = validationMessage ?: "",
                     color = Color.White,
-                    // SPEC-401-A R54 (Lens A R54 #3, P3) — 14→15sp Medium
+                    // 14→15sp Medium
                     // matching iOS .subheadline.weight(.medium) at
                     // OnboardingRenderer.swift:1393-1394.
                     fontSize = 15.sp,
                     fontWeight = FontWeight.Medium,
-                    // SPEC-401-A R37 (Lens C #4) — assertive announce so
+                    // Assertive announce so
                     // screen-reader users know why Continue didn't advance.
                     modifier = Modifier.semantics { liveRegion = LiveRegionMode.Assertive },
                 )
             }
         }
 
-        // SPEC-421 — settings fallback for a permanently-denied permission (opt-in via
+        // Settings fallback for a permanently-denied permission (opt-in via
         // `show_settings_fallback_on_denied`). Both choices advance, mirroring the iOS alert.
         permSettingsFallback?.let { fallback ->
             AlertDialog(
@@ -3867,15 +3867,15 @@ private fun BlockBasedStepView(
             )
         }
     }
-    } // SPEC-496 CompositionLocalProvider
+    } // CompositionLocalProvider
 }
 
-/** SPEC-421 — identifies a pending "Open Settings" affordance for a denied permission. */
+/** Identifies a pending "Open Settings" affordance for a denied permission. */
 private data class PermissionSettingsFallback(val type: String, val label: String)
 
 @Composable
 private fun WelcomeStep(config: StepConfig, onNext: (Map<String, Any>?) -> Unit) {
-    // SPEC-401-A R55 (Lens A R53 #3, P2) — outer Column uses
+    // Outer Column uses
     // verticalArrangement = spacedBy(24.dp) matching iOS
     // WelcomeStepView.swift VStack(spacing: 24). All explicit
     // Spacer(Modifier.height(...)) drops are folded into the spacing
@@ -3885,15 +3885,15 @@ private fun WelcomeStep(config: StepConfig, onNext: (Map<String, Any>?) -> Unit)
         modifier = Modifier.fillMaxWidth().fillMaxHeight(),
         verticalArrangement = Arrangement.spacedBy(24.dp),
     ) {
-        // SPEC-401-A — flexible top spacer instead of fixed 48dp.
+        // Flexible top spacer instead of fixed 48dp.
         // iOS uses Spacer() top + Spacer() between image-block and
         // CTA so the content vertically centers on tall screens.
         Spacer(Modifier.weight(1f))
-        // SPEC-401-A — legacy step image_url. Mirrors iOS WelcomeStepView
+        // Legacy step image_url. Mirrors iOS WelcomeStepView
         // .swift:13-21 — 280×280dp ContentScale.Fit (matches scaledToFit)
         // with rounded 16dp corners.
         config.image_url?.takeIf { it.isNotBlank() }?.let { url ->
-            // SPEC-401-A R48 (Lens A #3) — match iOS WelcomeStepView.swift:20
+            // Match iOS WelcomeStepView.swift:20
             // `.frame(maxWidth: 280, maxHeight: 280)`. Was fixed 280dp square
             // → non-square images letterboxed.
             ai.appdna.sdk.core.NetworkImage(
@@ -3905,7 +3905,7 @@ private fun WelcomeStep(config: StepConfig, onNext: (Map<String, Any>?) -> Unit)
                 contentScale = androidx.compose.ui.layout.ContentScale.Fit,
             )
         }
-        // SPEC-401-A R59 (Lens A P3 #4) — iOS WelcomeStepView wraps title +
+        // iOS WelcomeStepView wraps title +
         // subtitle in an inner `VStack(spacing: 12)` while the outer is
         // `VStack(spacing: 24)`. Without this nesting the title↔subtitle gap
         // was 24dp on Android vs 12pt on iOS — 2x too wide. Inner Column
@@ -3917,9 +3917,9 @@ private fun WelcomeStep(config: StepConfig, onNext: (Map<String, Any>?) -> Unit)
                 verticalArrangement = Arrangement.spacedBy(12.dp),
             ) {
                 config.title?.let {
-                    // SPEC-401-A R48 (Lens A #2) — iOS .largeTitle ≈ 34pt
-                    // (was 28sp). SPEC-070-A J.11 — step title is the
-                    // screen heading for a11y. Lens A #4 — horizontal
+                    // iOS .largeTitle ≈ 34pt
+                    // (was 28sp). Step title is the
+                    // screen heading for a11y. Horizontal
                     // padding 32dp matching iOS .padding(.horizontal, 32)
                     // (WelcomeStepView.swift:45).
                     Text(
@@ -3933,8 +3933,8 @@ private fun WelcomeStep(config: StepConfig, onNext: (Map<String, Any>?) -> Unit)
                     )
                 }
                 config.subtitle?.let {
-                    // SPEC-401-A R48 (Lens A #4) — horizontal padding 32dp.
-                    // SPEC-401-A R55 (Lens A R55 #7, P2) — 16→17sp matching
+                    // Horizontal padding 32dp.
+                    // 16→17sp matching
                     // iOS WelcomeStepView.swift:39-40 .body (~17pt).
                     Text(
                         text = it.interpolated(),
@@ -3946,11 +3946,11 @@ private fun WelcomeStep(config: StepConfig, onNext: (Map<String, Any>?) -> Unit)
                 }
             }
         }
-        // SPEC-401-A R9 — match iOS WelcomeStepView.swift:10,47 vertical
+        // Match iOS WelcomeStepView.swift:10,47 vertical
         // distribution: `Spacer()` top + `Spacer()` bottom so content
         // vertically centers on tall screens.
         Spacer(Modifier.weight(1f))
-        // SPEC-401-A R48 (Lens A #1+#5) — CTA height 54dp matching iOS
+        // CTA height 54dp matching iOS
         // .frame(height: 54); horizontal/bottom padding matching iOS
         // .padding(.horizontal, 24).padding(.bottom, 32).
         Button(
@@ -3961,7 +3961,7 @@ private fun WelcomeStep(config: StepConfig, onNext: (Map<String, Any>?) -> Unit)
                 .padding(bottom = 32.dp)
                 .height(54.dp),
             shape = RoundedCornerShape(14.dp),
-            // SPEC-401-A R10 — match iOS WelcomeStepView.swift:55 fixed
+            // Match iOS WelcomeStepView.swift:55 fixed
             // indigo `#6366F1` so the same flow renders the same CTA
             // color on both natives, regardless of host's Material theme
             // primary override.
@@ -3977,7 +3977,7 @@ private fun QuestionStep(config: StepConfig, onNext: (Map<String, Any>?) -> Unit
     val selectedOptions = remember { mutableStateListOf<String>() }
     val isMulti = config.selection_mode == SelectionMode.MULTI
 
-    // SPEC-401-A R52 (Lens A R52 #1+#5 P0/P1) — split into title (top
+    // Split into title (top
     // pinned) + scrollable options (Box weight=1f) + CTA (bottom pinned)
     // mirroring iOS QuestionStepView.swift:53-103. Was wrapping the whole
     // step in verticalScroll which made user scroll past option list to
@@ -3991,8 +3991,8 @@ private fun QuestionStep(config: StepConfig, onNext: (Map<String, Any>?) -> Unit
             .padding(top = 24.dp),
     ) {
         config.title?.let {
-            // SPEC-070-A J.11 — question step title is the screen heading.
-            // SPEC-401-A R49 (Lens A #7) — title 24→22sp matching iOS
+            // Question step title is the screen heading.
+            // Title 24→22sp matching iOS
             // QuestionStepView.swift:57 `.font(.title2.bold())` (~22pt).
             Text(
                 text = it.interpolated(),
@@ -4002,20 +4002,20 @@ private fun QuestionStep(config: StepConfig, onNext: (Map<String, Any>?) -> Unit
                 modifier = Modifier.semantics { heading() },
             )
         }
-        // SPEC-401-A R55 (Lens A R55 #2, P2) — DROP config.subtitle from
+        // DROP config.subtitle from
         // QuestionStep. iOS QuestionStepView.swift:53-103 renders only
         // title + options + CTA — no subtitle. Was an Android-only extra
         // line that diverged from iOS canon.
         Spacer(Modifier.height(24.dp))
 
-        // SPEC-401-A R49 (Lens A #6) — 2-column grid mirrors iOS
+        // 2-column grid mirrors iOS
         // QuestionStepView.swift:63-78 manual grid (`rowCount =
         // (count + 1) / 2`, 12pt spacing). Was a single-column vertical
         // list — same JSON rendered visually different layouts on
         // each platform. When a row has a lone option, the second slot
         // is filled with a transparent weight Spacer so the populated
         // card keeps half-width.
-        // SPEC-401-A R49 (Lens C #6, P1) — element_style passthrough.
+        // element_style passthrough.
         // iOS QuestionStepView.swift:147-154 derives accent + container
         // colors from element_style. Without this Android renders every
         // brand-overridden question step in default Material primary.
@@ -4024,7 +4024,7 @@ private fun QuestionStep(config: StepConfig, onNext: (Map<String, Any>?) -> Unit
             ?: config.element_style?.background?.color
                 ?.let { ai.appdna.sdk.core.StyleEngine.parseColor(it) }
             ?: ai.appdna.sdk.AppDNA.brandAccentColor()
-        // SPEC-401-A R51 (Lens A #12, P2) — iOS QuestionStepView.swift:24-27
+        // iOS QuestionStepView.swift:24-27
         // piggy-backs `element_style.shadow.color` as the selected_bg override
         // before falling back to accent×0.15. Authored payloads with that key
         // were dropped on Android.
@@ -4036,18 +4036,18 @@ private fun QuestionStep(config: StepConfig, onNext: (Map<String, Any>?) -> Unit
             ?: config.element_style?.background?.color
                 ?.let { ai.appdna.sdk.core.StyleEngine.parseColor(it).copy(alpha = 0.1f) }
             ?: MaterialTheme.colorScheme.surface
-        // SPEC-401-A R51 (Lens A #11, P2) — element_style.text_style.color
+        // element_style.text_style.color
         // resolves the option label color. iOS QuestionStepView.swift:48-51,
         // 132, 139. Brand-themed payloads with text_style.color set kept
         // showing default Material on Android.
         val optionTextColor = config.element_style?.text_style?.color
             ?.let { ai.appdna.sdk.core.StyleEngine.parseColor(it) }
             ?: Color.Unspecified
-        // SPEC-401-A R51 (Lens A #13, P2) — option corner_radius from
+        // Option corner_radius from
         // element_style.corner_radius. iOS QuestionStepView.swift:111
         // defaults to 12pt. Was hardcoded 12dp.
         val optionCornerRadius = (config.element_style?.corner_radius ?: 12.0).dp
-        // SPEC-401-A R55 (Lens A R55 #5, P3) — unselected border color iOS
+        // Unselected border color iOS
         // chain at QuestionStepView.swift:42-45: when border.color set,
         // use that × 0.3; else `Color.white.opacity(0.15)`. Was deriving
         // from accentColor which incorrectly substituted background.color
@@ -4055,7 +4055,7 @@ private fun QuestionStep(config: StepConfig, onNext: (Map<String, Any>?) -> Unit
         val unselectedBorderColor = config.element_style?.border?.color
             ?.let { ai.appdna.sdk.core.StyleEngine.parseColor(it).copy(alpha = 0.3f) }
             ?: Color.White.copy(alpha = 0.15f)
-        // SPEC-401-A R52 (Lens A R52 #1 P0) — wrap option grid in
+        // Wrap option grid in
         // Box(weight=1f).verticalScroll so the title stays pinned top and
         // the CTA pinned bottom (mirrors iOS QuestionStepView.swift:65-78
         // ScrollView around only the option list).
@@ -4093,7 +4093,7 @@ private fun QuestionStep(config: StepConfig, onNext: (Map<String, Any>?) -> Unit
                             containerColor = if (isSelected) selectedBgColor else optionBgColor,
                         ),
                     ) {
-                        // SPEC-401-A R50 (Lens A #3, P0) — VStack stacked layout.
+                        // VStack stacked layout.
                         // iOS QuestionStepView.swift:124-143 places icon on TOP
                         // (32pt), label center, optional subtitle below. Min
                         // height 80. Was Row(icon-left, 20sp) — same JSON
@@ -4104,7 +4104,7 @@ private fun QuestionStep(config: StepConfig, onNext: (Map<String, Any>?) -> Unit
                             verticalArrangement = Arrangement.spacedBy(8.dp),
                         ) {
                             option.icon?.let { Text(text = it, fontSize = 32.sp) }
-                            // SPEC-401-A R51 (Lens A #10, P2 + #11) — 15sp medium
+                            // 15sp medium
                             // matches iOS .subheadline.weight(.medium); pass through
                             // optionTextColor from element_style.text_style.color.
                             Text(
@@ -4117,7 +4117,7 @@ private fun QuestionStep(config: StepConfig, onNext: (Map<String, Any>?) -> Unit
                             option.subtitle?.takeIf { it.isNotEmpty() }?.let { sub ->
                                 Text(
                                     text = sub.interpolated(),
-                                    // SPEC-401-A R55 (Lens A R55 #3, P3) — 13→12sp
+                                    // 13→12sp
                                     // matching iOS QuestionStepView.swift:138 .caption.
                                     fontSize = 12.sp,
                                     color = if (optionTextColor != Color.Unspecified)
@@ -4137,7 +4137,7 @@ private fun QuestionStep(config: StepConfig, onNext: (Map<String, Any>?) -> Unit
         // CTA pinned bottom outside the scroll, mirrors iOS Spacer() +
         // Button at QuestionStepView.swift:81,98-103.
         Button(
-            // SPEC-070-A finalization B4 P2 — include `selection_mode` in the
+            // Include `selection_mode` in the
             // CTA payload (iOS QuestionStepView.swift:86-90 emits
             // {"selected": [...], "selection_mode": "single"|"multi"}). Hosts
             // that branch on the mode (e.g. multi-select rendering vs radio)
@@ -4151,11 +4151,11 @@ private fun QuestionStep(config: StepConfig, onNext: (Map<String, Any>?) -> Unit
                 )
             },
             enabled = selectedOptions.isNotEmpty(),
-            // SPEC-401-A R48 (Lens C #1) — CTA height 52→54dp matching iOS.
-            // SPEC-401-A R52 (Lens A R52 #5, P1) — top spacer 16dp instead
+            // CTA height 52→54dp matching iOS.
+            // Top spacer 16dp instead
             // of 24dp wrapper-padding. Bottom 32dp matches iOS.
             modifier = Modifier.fillMaxWidth().padding(top = 16.dp, bottom = 32.dp).height(54.dp),
-            // SPEC-401-A R58 (Lens A P1 #1) — read element_style.corner_radius
+            // Read element_style.corner_radius
             // matching iOS QuestionStepView.swift:98
             // `.cornerRadius(CGFloat(config.element_style?.corner_radius ?? 14))`.
             // Sibling option cards already honor it via `optionCornerRadius`
@@ -4163,14 +4163,14 @@ private fun QuestionStep(config: StepConfig, onNext: (Map<String, Any>?) -> Unit
             // element_style.corner_radius=24 got 24dp option cards next to
             // a 14dp CTA on Android, fully matched 24dp on iOS.
             shape = RoundedCornerShape((config.element_style?.corner_radius ?: 14.0).dp),
-            // SPEC-401-A R55 (Lens A R55 #4, P1) — use accentColor (already
+            // Use accentColor (already
             // computed at line 2945-2949) so element_style.border.color or
             // element_style.background.color overrides reach the CTA.
             // iOS QuestionStepView.swift:97 uses the same accent chain.
             // Was hardcoded #6366F1 — brand-themed flows lost their CTA color.
             colors = ButtonDefaults.buttonColors(
                 containerColor = accentColor,
-                // SPEC-401-A R64 (Lens A P3 #4) — match iOS QuestionStepView
+                // Match iOS QuestionStepView
                 // .swift:97 `selectedIds.isEmpty ? Color.gray : accentColor`.
                 // R59 wrongly applied FormStepView's accent×0.4 pattern here;
                 // QuestionStep uses iOS Color.gray (system grey adaptive),
@@ -4183,14 +4183,14 @@ private fun QuestionStep(config: StepConfig, onNext: (Map<String, Any>?) -> Unit
         ) {
             Text(text = (config.cta_text ?: "Continue").interpolated(), fontWeight = FontWeight.SemiBold, fontSize = 17.sp)
         }
-        // SPEC-401-A R52 — Spacer.height(32) dropped; CTA modifier already
+        // Spacer.height(32) dropped; CTA modifier already
         // pads bottom=32dp and is now outside the verticalScroll.
     }
 }
 
 @Composable
 private fun ValuePropStep(config: StepConfig, onNext: (Map<String, Any>?) -> Unit) {
-    // SPEC-401-A R52 — own fillMaxSize + 24dp horizontal padding mirroring
+    // Own fillMaxSize + 24dp horizontal padding mirroring
     // iOS ValuePropStepView.swift:9-56. Title gets top=24dp padding directly
     // since the Column already pads horizontal.
     Column(
@@ -4200,8 +4200,8 @@ private fun ValuePropStep(config: StepConfig, onNext: (Map<String, Any>?) -> Uni
             .padding(horizontal = 24.dp),
     ) {
         config.title?.let {
-            // SPEC-401-A R48 (Lens A #2 polish) — iOS .title2.bold() ≈ 22pt.
-            // SPEC-401-A R50 (Lens A #5, P1) — iOS .padding(.top, 24)
+            // iOS .title2.bold() ≈ 22pt.
+            // iOS .padding(.top, 24)
             // (horizontal already supplied by Column).
             Text(
                 text = it.interpolated(),
@@ -4213,13 +4213,13 @@ private fun ValuePropStep(config: StepConfig, onNext: (Map<String, Any>?) -> Uni
                     .semantics { heading() },
             )
         }
-        // SPEC-401-A R59 (Lens A P2 #3) — title↔items 24dp gap matching iOS
+        // title↔items 24dp gap matching iOS
         // ValuePropStepView.swift:9 outer `VStack(spacing: 24)`. Outer Column
         // has no verticalArrangement (defaults to 0); inserting a Spacer
         // here preserves the existing CTA spacing (Button already pads
         // top=32dp) instead of adding spacedBy on the outer column.
         Spacer(Modifier.height(24.dp))
-        // SPEC-401-A R48 (Lens A #6) — wrap items in scrollable Column so
+        // Wrap items in scrollable Column so
         // long bullet lists don't clip on small screens. iOS uses ScrollView
         // (ValuePropStepView.swift:19-41).
         Column(
@@ -4230,11 +4230,11 @@ private fun ValuePropStep(config: StepConfig, onNext: (Map<String, Any>?) -> Uni
             verticalArrangement = Arrangement.spacedBy(20.dp),
         ) {
             config.items?.forEach { item ->
-                // SPEC-401-A R48 (Lens A #9) — horizontal padding 24dp matching
-                // iOS .padding(.horizontal, 24). Lens A #7 — icon 36sp inside
+                // Horizontal padding 24dp matching
+                // iOS .padding(.horizontal, 24). Icon 36sp inside
                 // 48dp Box for stable column alignment regardless of emoji
                 // intrinsic width.
-                // SPEC-401-A R52 (Lens A R52 #2, P1) — drop the per-item
+                // Drop the per-item
                 // horizontal=24dp padding. Outer Column already pads
                 // horizontal=24 (line 3091) so the duplicate stacked
                 // 48dp horizontal-pad on items vs iOS 24pt.
@@ -4249,9 +4249,9 @@ private fun ValuePropStep(config: StepConfig, onNext: (Map<String, Any>?) -> Uni
                         Text(text = item.icon, fontSize = 36.sp)
                     }
                     Spacer(Modifier.width(16.dp))
-                    // SPEC-401-A R48 (Lens A #8) — title↔subtitle 4dp gap
+                    // title↔subtitle 4dp gap
                     // matching iOS VStack(spacing: 4).
-                    // SPEC-401-A R54 (Lens A R54 #5, P2) — title 16→17sp
+                    // Title 16→17sp
                     // (.headline), subtitle 14→15sp (.subheadline) per
                     // iOS ValuePropStepView.swift:29,32. weight(1f) so
                     // multi-line text wraps to remaining row width
@@ -4268,13 +4268,13 @@ private fun ValuePropStep(config: StepConfig, onNext: (Map<String, Any>?) -> Uni
         }
         Button(
             onClick = { onNext(null) },
-            // SPEC-401-A R48 (Lens C #1) — CTA height 52→54dp matching iOS.
-            // SPEC-401-A R52 (Lens A R52 #4, P1) — top=32dp + bottom=32dp
+            // CTA height 52→54dp matching iOS.
+            // top=32dp + bottom=32dp
             // padding mirroring iOS ValuePropStepView.swift:55
             // .padding(.bottom, 32). Was Spacer(32) only above CTA.
             modifier = Modifier.fillMaxWidth().padding(top = 32.dp, bottom = 32.dp).height(54.dp),
             shape = RoundedCornerShape(14.dp),
-            // SPEC-401-A R12 — match iOS ValuePropStepView.swift:51 fixed
+            // Match iOS ValuePropStepView.swift:51 fixed
             // indigo `#6366F1` so flows render the same CTA color on both
             // natives regardless of host's MaterialTheme primary override.
             colors = ButtonDefaults.buttonColors(containerColor = ai.appdna.sdk.AppDNA.brandAccentColor())
@@ -4286,10 +4286,10 @@ private fun ValuePropStep(config: StepConfig, onNext: (Map<String, Any>?) -> Uni
 
 @Composable
 private fun CustomStep(config: StepConfig, onNext: (Map<String, Any>?) -> Unit) {
-    // SPEC-401-A R52 — own fillMaxSize + Spacer.weight top/bottom for
+    // Own fillMaxSize + Spacer.weight top/bottom for
     // vertical centering (iOS CustomStepView.swift:9-11,43 VStack(spacing:24)
     // { Spacer(); title; subtitle; image; Spacer(); button }).
-    // SPEC-401-A R55 (Lens A R53 #3, P2) — outer spacedBy(24) matching
+    // Outer spacedBy(24) matching
     // iOS VStack(spacing: 24); drops explicit Spacer(24)s.
     Column(
         horizontalAlignment = Alignment.CenterHorizontally,
@@ -4298,8 +4298,8 @@ private fun CustomStep(config: StepConfig, onNext: (Map<String, Any>?) -> Unit) 
     ) {
         Spacer(Modifier.weight(1f))
         config.title?.let {
-            // SPEC-070-A J.11 — custom step title is the screen heading.
-            // SPEC-401-A R50 (Lens A #4, P1) — title 24→22sp matching iOS
+            // Custom step title is the screen heading.
+            // Title 24→22sp matching iOS
             // CustomStepView.swift:9-56 .title2.bold() (~22pt) + horizontal
             // padding 24.
             Text(
@@ -4314,8 +4314,8 @@ private fun CustomStep(config: StepConfig, onNext: (Map<String, Any>?) -> Unit) 
         }
         config.subtitle?.let {
             // Title→subtitle 24dp gap supplied by outer spacedBy(24).
-            // SPEC-401-A R50 (Lens A #4) — subtitle horizontal padding 32 per iOS.
-            // SPEC-401-A R51 (Lens A #8, P2) — 15→17sp matching iOS .body.
+            // Subtitle horizontal padding 32 per iOS.
+            // 15→17sp matching iOS .body.
             Text(
                 text = it.interpolated(),
                 fontSize = 17.sp,
@@ -4324,16 +4324,16 @@ private fun CustomStep(config: StepConfig, onNext: (Map<String, Any>?) -> Unit) 
                 modifier = Modifier.padding(horizontal = 32.dp),
             )
         }
-        // SPEC-401-A — legacy step image_url. Mirrors iOS CustomStepView
+        // Legacy step image_url. Mirrors iOS CustomStepView
         // .swift:29-41 — image renders AFTER title+subtitle, ContentScale
         // .Fit (matches scaledToFit so non-square assets are letterboxed
         // not cropped), and NO rounded corners (iOS uses no clip-shape).
         // Affects custom/info/permission step types.
-        // SPEC-401-A R50 (Lens A #4) — sizeIn(maxWidth=280, maxHeight=280)
+        // sizeIn(maxWidth=280, maxHeight=280)
         // matches iOS .frame(maxWidth: 280, maxHeight: 280) so non-square
         // assets aren't square-cropped.
         config.image_url?.takeIf { it.isNotBlank() }?.let { url ->
-            // SPEC-401-A R64 (Lens A P2 #2) — drop redundant Spacer(24).
+            // Drop redundant Spacer(24).
             // Outer Column already has Arrangement.spacedBy(24.dp); the
             // extra Spacer stacks 3×24=72dp gap between subtitle and
             // image vs iOS 24pt (CustomStepView.swift:9-41 outer
@@ -4347,14 +4347,14 @@ private fun CustomStep(config: StepConfig, onNext: (Map<String, Any>?) -> Unit) 
                 contentScale = androidx.compose.ui.layout.ContentScale.Fit,
             )
         }
-        // SPEC-401-A R52 — Spacer.weight before CTA so the title+subtitle+
+        // Spacer.weight before CTA so the title+subtitle+
         // image group vertically centers between top safe area and CTA on
         // tall screens (iOS VStack puts a Spacer() between image + button).
         Spacer(Modifier.weight(1f))
         Button(
             onClick = { onNext(null) },
-            // SPEC-401-A R48 (Lens C #1) — CTA height 52→54dp matching iOS.
-            // SPEC-401-A R50 (Lens A #4, P1) — horizontal padding 24 + bottom
+            // CTA height 52→54dp matching iOS.
+            // Horizontal padding 24 + bottom
             // padding 32 matching iOS CustomStepView.swift:51-52.
             modifier = Modifier
                 .fillMaxWidth()
@@ -4362,7 +4362,7 @@ private fun CustomStep(config: StepConfig, onNext: (Map<String, Any>?) -> Unit) 
                 .padding(bottom = 32.dp)
                 .height(54.dp),
             shape = RoundedCornerShape(14.dp),
-            // SPEC-401-A R12 — match iOS CustomStepView.swift:51 fixed
+            // Match iOS CustomStepView.swift:51 fixed
             // indigo `#6366F1`. Affects custom/info/permission steps.
             colors = ButtonDefaults.buttonColors(containerColor = ai.appdna.sdk.AppDNA.brandAccentColor())
         ) {

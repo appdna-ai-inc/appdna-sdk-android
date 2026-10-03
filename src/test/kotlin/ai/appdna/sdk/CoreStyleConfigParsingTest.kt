@@ -477,7 +477,7 @@ class CoreStyleConfigParsingTest {
 
     @Test
     fun particleEffect_defaults() {
-        // SPEC-402 A.1 — ConfettiOverlay.kt:20 data class default is 2000
+        // ConfettiOverlay.kt:20 data class default is 2000
         // (R71 changed from 2500 to match iOS ConfettiOverlay.swift:89,101
         // `effect.duration_ms ?? 2000`). iOS-emitted unstyled effects
         // animated 500ms shorter on iOS pre-R71.

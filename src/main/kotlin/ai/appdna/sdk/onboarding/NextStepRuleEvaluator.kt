@@ -1,7 +1,7 @@
 package ai.appdna.sdk.onboarding
 
 /**
- * SPEC-070-A A.21 — Onboarding next-step rule evaluator.
+ * Onboarding next-step rule evaluator.
  *
  * Ports iOS `OnboardingRenderer.swift:920-1100` `evaluateRule` +
  * `evaluateCondition` so console-authored conditional navigation
@@ -12,7 +12,7 @@ package ai.appdna.sdk.onboarding
  * no Activity dependency) so it is unit-testable on the JVM without
  * Robolectric — see `src/test/kotlin/.../NextStepRuleEvaluatorTest.kt`.
  *
- * iOS reference (per SPEC-070-A §3.1 P0-21):
+ * iOS reference:
  *   packages/appdna-sdk-ios/Sources/AppDNASDK/Onboarding/OnboardingRenderer.swift
  *     :920 evaluateRule(_:stepId:)
  *     :994 evaluateCondition(_:responses:step:)
@@ -199,7 +199,7 @@ internal object NextStepRuleEvaluator {
             }
 
             "not_empty" -> {
-                // SPEC-401-A R8 — match iOS OnboardingRenderer.swift:1057-1064
+                // Match iOS OnboardingRenderer.swift:1057-1064
                 // exactly: only String and nil are checked; any other
                 // value (List, Map, scalar) returns true. Previous Android
                 // impl explicitly checked List emptiness, so a multi-select
@@ -215,7 +215,7 @@ internal object NextStepRuleEvaluator {
             }
 
             "empty" -> {
-                // SPEC-401-A R8 — same iOS-parity correction as `not_empty`
+                // Same iOS-parity correction as `not_empty`
                 // above: only String + nil are inspected; any other type
                 // is treated as non-empty (returns false here).
                 val actual = responses[field]
@@ -227,7 +227,7 @@ internal object NextStepRuleEvaluator {
             }
 
             "previous_step_equals" -> {
-                // SPEC-070-A finalization P0 audit-7 — ports iOS
+                // 7 — ports iOS
                 // OnboardingRenderer.swift:1065-1070. Match if the step the
                 // user came FROM equals the given step ID. Used for
                 // conditional paywall routing ("if came from 12a → paywall_a").
@@ -237,7 +237,7 @@ internal object NextStepRuleEvaluator {
             }
 
             "previous_step_in" -> {
-                // SPEC-070-A finalization P0 audit-7 — ports iOS
+                // 7 — ports iOS
                 // OnboardingRenderer.swift:1071-1088. Match if the previous
                 // step ID is one of the listed IDs. Console saves as
                 // `previous_step_ids` array; legacy fallback accepts
@@ -289,7 +289,7 @@ internal object NextStepRuleEvaluator {
             b.field_id == field && b.type.startsWith("input_")
         } ?: return emptyMap<String, String>() to emptyMap()
         val options = block.field_options ?: return emptyMap<String, String>() to emptyMap()
-        // SPEC-401-A R10 — read both `opt.id` and `opt.value` to build a
+        // Read both `opt.id` and `opt.value` to build a
         // real bidirectional alias map. iOS at OnboardingRenderer.swift:
         // 961-980 maps `option.id ↔ option.value`. Previous Android impl
         // collapsed to identity (v→v), so a console rule keyed on the
@@ -314,7 +314,7 @@ internal object NextStepRuleEvaluator {
     }
 }
 
-// -- Target-prefix routing helpers (SPEC-070-A A.21) -----------------------
+// -- Target-prefix routing helpers -----------------------
 
 /**
  * Classification of a `target_step_id` for the activity-level dispatcher
@@ -333,7 +333,7 @@ internal sealed class RuleTarget {
     data class Screen(val screenId: String) : RuleTarget()
     data class SubFlow(val flowId: String) : RuleTarget()
     /**
-     * SPEC-070-A finalization Phase D — `analytics_event_*` graph node.
+     * Phase D — `analytics_event_*` graph node.
      * iOS routes these targets to fire a custom analytics event then
      * follow `next_target` (or fall through to natural advancement).
      *
@@ -352,7 +352,7 @@ internal sealed class RuleTarget {
  * rather than via natural sequential end. ETL uses this to distinguish
  * authored-flow completions from misconfigured-flow completions.
  *
- * SPEC-070-A A.21 — see `OnboardingActivity.advanceOrComplete`.
+ * See `OnboardingActivity.advanceOrComplete`.
  */
 internal const val FLOW_COMPLETED_VIA_FALLBACK_EVENT = "flow_completed_via_fallback"
 
@@ -364,7 +364,7 @@ internal fun classifyRuleTarget(target: String?): RuleTarget {
         target.startsWith("permission_") -> RuleTarget.Permission(target.removePrefix("permission_"))
         target.startsWith("screen_") -> RuleTarget.Screen(target.removePrefix("screen_"))
         target.startsWith("flow_") -> RuleTarget.SubFlow(target.removePrefix("flow_"))
-        // SPEC-070-A finalization Phase D — analytics_event_* graph node.
+        // Phase D — analytics_event_* graph node.
         // Carry the FULL target (the graph_node id) so the consumer can
         // resolve event_name + next_target via flow.graph_nodes lookup.
         target.startsWith("analytics_event_") -> RuleTarget.AnalyticsEvent(target)
@@ -373,7 +373,7 @@ internal fun classifyRuleTarget(target: String?): RuleTarget {
 }
 
 /**
- * SPEC-070-A finalization Phase D — short-id analytics_event detector.
+ * Phase D — short-id analytics_event detector.
  * Console editor emits short ids like `analytics2` instead of the legacy
  * `analytics_event_<timestamp>`. iOS at OnboardingRenderer.swift:789 routes
  * via `target.hasPrefix("analytics_event_") || nodeType == "analytics_event"`;
@@ -394,7 +394,7 @@ internal fun upgradeToAnalyticsEventIfShortId(
 }
 
 /**
- * SPEC-401-A R10 — short-id detector for paywall_trigger + end graph
+ * Short-id detector for paywall_trigger + end graph
  * nodes. Console editor emits `paywall1` / `end1` instead of legacy
  * `paywall_trigger_<ts>` / `end_<ts>`. iOS routes via dual prefix-or-
  * nodeType detection at `OnboardingRenderer.swift:808,814`; Android

@@ -12,7 +12,7 @@ import org.robolectric.annotation.Config
 import java.io.File
 
 /**
- * SPEC-070-A A.3 — [AppDNAImageLoader], the Coil loader behind [NetworkImage].
+ * [AppDNAImageLoader], the Coil loader behind [NetworkImage].
  *
  * ## What this file used to be
  *

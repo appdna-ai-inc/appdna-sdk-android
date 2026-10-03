@@ -11,7 +11,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.tooling.preview.Preview
 
 /**
- * SPEC-070-A J.17 — Compose `@Preview` functions for the in-app message
+ * Compose `@Preview` functions for the in-app message
  * renderer. Designers can iterate on banner / modal / fullscreen layouts
  * inside Android Studio without running the SDK on a device.
  *

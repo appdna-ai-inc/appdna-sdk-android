@@ -40,7 +40,6 @@ data class DeferredDeepLink(
  * Checks for and resolves deferred deep links on first app launch.
  * Path: /orgs/{orgId}/apps/{appId}/config/deferred_deep_links/{visitorId}
  *
- * SPEC-070-A H.11:
  *   (a) Install Referrer call moved off the main thread into a coroutine — was
  *       previously blocking with `CountDownLatch.await(2s)`.
  *   (b) When the resolved doc carries `screen_id`, [AppDNA.showScreen] is
@@ -60,7 +59,7 @@ internal class DeferredDeepLinkManager(
         private const val FIRST_LAUNCH_KEY = "ai.appdna.sdk.first_launch_completed"
         private const val EXPIRY_HOURS = 72L
         private const val INSTALL_REFERRER_TIMEOUT_MS = 2_000L
-        // SPEC-070-A H.11(b): delay before auto-routing to a screen so the
+        // Delay before auto-routing to a screen so the
         // host's first Activity is fully resumed and ScreenManager has a
         // surface to attach to.
         private const val AUTO_SHOW_DELAY_MS = 500L
@@ -74,7 +73,7 @@ internal class DeferredDeepLinkManager(
             return
         }
 
-        // SPEC-070-A H.11(a): visitor-id resolution may block on the Install
+        // Visitor-id resolution may block on the Install
         // Referrer service for up to 2 seconds — run on Dispatchers.IO and
         // hand the result back on the main thread.
         scope.launch {
@@ -136,7 +135,7 @@ internal class DeferredDeepLinkManager(
                         "visitor_id" to visitorId
                     ))
 
-                    // SPEC-070-A H.11(b) / Round-32 parity — auto-route ONLY when the doc
+                    // Parity — auto-route ONLY when the doc
                     // carries an explicit `screen_id` (a server-driven screen), matching iOS
                     // (DeferredDeepLinkManager.swift). The legacy `screen` field is a host ROUTE
                     // PATH (e.g. "/workout/123"), NOT a screen id — feeding it to showScreen pushed
@@ -193,7 +192,7 @@ internal class DeferredDeepLinkManager(
             return referrerVisitorId
         }
 
-        // SPEC-070-A H.11(c): ANDROID_ID fingerprint fallback. Salted SHA-256
+        // ANDROID_ID fingerprint fallback. Salted SHA-256
         // hash so the value is opaque and stable across launches without
         // exposing the raw device id. iOS uses IDFV here; Android's closest
         // equivalent is `Settings.Secure.ANDROID_ID`.
@@ -201,7 +200,7 @@ internal class DeferredDeepLinkManager(
     }
 
     /**
-     * SPEC-070-A H.11(a): non-blocking Install Referrer probe. Wraps the
+     * Non-blocking Install Referrer probe. Wraps the
      * callback-based [InstallReferrerClient] in a suspend coroutine that
      * times out after 2 seconds without holding a thread.
      */
@@ -250,7 +249,7 @@ internal class DeferredDeepLinkManager(
     }
 
     /**
-     * SPEC-070-A H.11(c): salted SHA-256 of `Settings.Secure.ANDROID_ID`. We
+     * Salted SHA-256 of `Settings.Secure.ANDROID_ID`. We
      * don't return the raw `ANDROID_ID` because (a) the backend deferred-link
      * lookup expects a visitor-id-shaped opaque string and (b) raw ANDROID_ID
      * may be considered a "device identifier" by Google Play policy in some
@@ -283,7 +282,7 @@ internal class DeferredDeepLinkManager(
     }
 
     /**
-     * SPEC-070-A audit Round 2 finding 6 — cancel the private scope so
+     * Cancel the private scope so
      * pending Install-Referrer reads and Firestore deferred-deep-link
      * listeners don't outlive [AppDNA.shutdown].
      */

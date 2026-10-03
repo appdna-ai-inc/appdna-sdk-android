@@ -14,7 +14,7 @@ import androidx.compose.ui.graphics.toArgb
 data class ParticleEffect(
     val type: String = "confetti",       // "confetti", "sparkle", "fireworks", "snow", "hearts"
     val trigger: String = "on_appear",   // "on_appear", "on_step_complete", "on_purchase", "on_flow_complete"
-    // SPEC-401-A R71 (Lens A P2) — default 2000ms matches iOS
+    // Default 2000ms matches iOS
     // ConfettiOverlay.swift:89,101 `effect.duration_ms ?? 2000`. Was 2500 —
     // iOS-emitted unstyled effects animated 500ms shorter on iOS.
     val duration_ms: Int = 2000,
@@ -22,7 +22,7 @@ data class ParticleEffect(
     val colors: List<String>? = null,
 )
 
-// R88 — emoji glyph per particle type matches iOS ConfettiOverlay.swift:39-42.
+// Emoji glyph per particle type matches iOS ConfettiOverlay.swift:39-42.
 // hearts ❤️, snow ❄️, sparkle ✨, fireworks 🎆. confetti falls back to a
 // colored rectangle (drawn as a circle here for round-trip consistency with
 // iOS's small geometric confetti pieces). NOTE: empty string means "no glyph
@@ -50,7 +50,7 @@ fun ConfettiOverlay(
     val effectColors = if (!effect.colors.isNullOrEmpty()) {
         effect.colors.map { StyleEngine.parseColor(it) }
     } else {
-        // SPEC-401-A R80 (Lens C P2) — palette VALUES match iOS Apple HIG
+        // Palette VALUES match iOS Apple HIG
         // semantic colors mapping to sRGB. Previously used Tailwind hex
         // (purple-600 0x9333EA, orange-500 0xF97316, pink-500 0xEC4899)
         // which renders as bluer-violet, vermillion, and pure magenta —
@@ -90,7 +90,7 @@ fun ConfettiOverlay(
                     color = effectColors[i % effectColors.size],
                     size = (4f + Math.random().toFloat() * 8f),
                     speedX = (-50f + Math.random().toFloat() * 100f),
-                    // SPEC-401-A R82 (Lens C P1) — speedY is now a fraction
+                    // speedY is now a fraction
                     // of canvas height (0.6..1.0) so particles always reach
                     // bottom of tall devices.
                     speedY = (0.6f + Math.random().toFloat() * 0.4f),
@@ -101,7 +101,7 @@ fun ConfettiOverlay(
 
         Canvas(modifier = Modifier.fillMaxSize()) {
             val t = progress.value
-            // SPEC-401-A R82 (Lens C P1) — fall distance is the actual canvas
+            // Fall distance is the actual canvas
             // height (+50 buffer), matching iOS ConfettiOverlay.swift:91-95
             // which animates to `UIScreen.main.bounds.height + 50`. Was
             // hardcoded `200..600 px` — particles never reached the bottom
@@ -109,12 +109,12 @@ fun ConfettiOverlay(
             // confetti looked stunted vs iOS full-screen rain.
             val fallDistance = size.height + 50f
 
-            // R88 — when the effect type has a glyph (hearts/snow/sparkle/
+            // When the effect type has a glyph (hearts/snow/sparkle/
             // fireworks), draw the emoji via NativeCanvas.drawText for parity
             // with iOS ConfettiOverlay.swift:67-75 which composes a `Text(...)`
             // per particle. Plain "confetti" stays drawCircle (matches iOS
             // Rectangle()). drawIntoCanvas + NativeCanvas is available since
-            // Compose 1.0 — no BoM upgrade required (R71 deferral resolved).
+            // Compose 1.0 — no BoM upgrade required (deferral resolved).
             if (glyph.isNotEmpty()) {
                 drawIntoCanvas { canvas ->
                     val paint = android.graphics.Paint().apply {
