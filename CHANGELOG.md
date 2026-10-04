@@ -4,7 +4,26 @@ All notable changes to the AppDNA Android SDK are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and
 the project uses [Semantic Versioning](https://semver.org/).
 
-## [1.0.54] — unreleased
+## [1.0.55] — unreleased
+
+Wraps iOS 1.0.83. Adds host-reported paying users.
+
+### Added
+
+- **`AppDNA.reportPayingUser(productId:priceCents:currency:)`** — tell AppDNA that the current user
+  is in a paid state for a subscription the SDK never sold: billing run by your own server, a web
+  checkout, a seat sold by a salesperson. Emits `paying_user_reported` with `source: "host"`.
+  - Every argument is optional, and the price is analytics only — the paying-user meter counts
+    distinct users, not money.
+  - **Safe to call on every launch.** The meter counts distinct users, so repeating it in a month
+    costs nothing and misses nothing; reporting the current state is reliable where trying to catch
+    the upgrade transition is not.
+  - **Call `identify()` first.** The SDK attaches the identity it already holds — there is no
+    user-id argument, so an app can only ever report its own users.
+  - Before `configure()` it logs at debug and returns, like every other method: an assertion that
+    cannot be attributed to an app must not be queued as one.
+
+## [1.0.54]
 
 Wraps iOS 1.0.82. Ships maps and host data (including "Show more").
 

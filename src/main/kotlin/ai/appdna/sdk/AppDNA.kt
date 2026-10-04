@@ -37,7 +37,7 @@ import androidx.compose.runtime.Composable
 object AppDNA {
 
     /** SDK version string. */
-    const val sdkVersion = "1.0.54"
+    const val sdkVersion = "1.0.55"
 
     /**
      * Brand-threading — the app's brand accent hex (from `/settings/brand`,
@@ -1269,7 +1269,7 @@ object AppDNA {
     /**
      * Report that the current user is a paying user this month.
      *
-     * SPEC-500 — the meter can only see what the SDK sells. A host that bills outside our paywall
+     * The paying-user meter can only see what the SDK sells. A host that bills outside our paywall
      * (a server-side subscription, a web checkout, a seat sold by a salesperson) meters at zero
      * without this, however much the customer actually pays.
      *

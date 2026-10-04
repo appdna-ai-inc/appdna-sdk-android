@@ -224,6 +224,7 @@ class SharedFixtureTest(
             "show_screen" -> runShowScreen(action, spy)
             "track_event" -> runTrackEvent(action, spy)
             "identify" -> runIdentify(action, spy)
+            "report_paying_user" -> runReportPayingUser(action, spy)
             "evaluate_audience" -> runEvaluateAudience(spy)
             "show_paywall" -> runShowPaywall(action, spy)
             "purchase" -> runPurchase(action, spy)
@@ -706,6 +707,28 @@ class SharedFixtureTest(
             java.util.TimeZone.setDefault(savedZone)
         }
         spy.state["current_screen"] = screen
+    }
+
+    // ---------------------------------------------------------------------------------------------
+    // report_paying_user — the PUBLIC AppDNA.reportPayingUser, through the real
+    // `track` path (which strips host-forgeable markers), with the capturing tracker installed.
+    //
+    // What this pins is the PROPERTY SHAPE the billing pipeline depends on: `source: "host"`
+    // always, `price` in MAJOR units converted from the cents the API takes, and the optional
+    // fields present only when supplied. There is deliberately no user id to pass — the SDK
+    // attaches the identity it already holds, because an API accepting an arbitrary id would let a
+    // host inflate or deflate its own bill.
+    // ---------------------------------------------------------------------------------------------
+
+    private fun runReportPayingUser(action: JSONObject, spy: Spy) {
+        val p = Pipeline(fixtureName).also { pipeline = it }
+        AppDNA.installEventTrackerForTest(p.tracker)
+        AppDNA.reportPayingUser(
+            productId = action.optString("productId").takeIf { it.isNotEmpty() },
+            priceCents = if (action.has("priceCents")) action.getInt("priceCents") else null,
+            currency = action.optString("currency").takeIf { it.isNotEmpty() },
+        )
+        spy.events += p.envelopes().map { it.toEventPair() }
     }
 
     private fun runIdentify(action: JSONObject, spy: Spy) {
