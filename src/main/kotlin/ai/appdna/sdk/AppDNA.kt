@@ -1267,6 +1267,42 @@ object AppDNA {
     }
 
     /**
+     * Report that the current user is a paying user this month.
+     *
+     * SPEC-500 — the meter can only see what the SDK sells. A host that bills outside our paywall
+     * (a server-side subscription, a web checkout, a seat sold by a salesperson) meters at zero
+     * without this, however much the customer actually pays.
+     *
+     * 🔴 NO USER-ID PARAMETER. The identity attached is the one the SDK already holds, from
+     * `identify()` or the anonymous id. An API accepting an arbitrary id would let a host inflate
+     * or deflate its own bill, and nothing downstream could tell an honest assertion from an
+     * invented one.
+     *
+     * **Call it whenever the user is in a paid state — do not try to track the transition.** The
+     * meter counts distinct users per month, so calling this on every launch costs nothing and
+     * misses nothing, whereas detecting "became paid" is a thing hosts get wrong.
+     *
+     * `productId`, `priceCents` and `currency` are analytics only. MTPU is a COUNT; they never
+     * affect the bill.
+     *
+     * A no-op before `configure()`: an assertion made before the SDK knows which app it belongs to
+     * cannot be attributed to one, and a silently buffered bill is worse than a missed one.
+     */
+    @JvmStatic
+    @JvmOverloads
+    fun reportPayingUser(productId: String? = null, priceCents: Int? = null, currency: String? = null) {
+        if (eventTracker == null) {
+            Log.debug("reportPayingUser ignored: SDK not configured yet")
+            return
+        }
+        val props = mutableMapOf<String, Any>("source" to "host")
+        productId?.let { props["product_id"] = it }
+        priceCents?.let { props["price"] = it / 100.0 }
+        currency?.let { props["currency"] = it }
+        track("paying_user_reported", props)
+    }
+
+    /**
      * Every INTERNAL billing emit (NativeBillingManager, the RevenueCat / Adapty
      * bridges, BillingModule). Adds `emitted_by: "sdk"` so the analytics dedupe can tell an SDK device
      * row from a host-tracked one; the public [track] strips that marker from host events.
