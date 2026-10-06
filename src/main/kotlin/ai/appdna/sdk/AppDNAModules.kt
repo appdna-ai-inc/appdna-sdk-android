@@ -754,6 +754,25 @@ class BillingModule internal constructor() {
         scope.cancel()
         assignBillingDelegate(null, delivers = false)
         ownershipPolicy = ai.appdna.sdk.billing.BillingOwnershipPolicy.NotConfigured
+        /*
+         * 🔴 AND THE PRE-INIT QUEUE, WHICH OUTLIVED SHUTDOWN. The listeners that were ATTACHED go
+         * with the entitlement cache — `AppDNA.shutdown` destroys the manager and a later `configure()`
+         * builds a brand-new `EntitlementCache` — but anything still waiting in this queue did not,
+         * so it was flushed into that new cache and delivered entitlement changes to a host that had
+         * shut the SDK down.
+         *
+         * iOS settles the contract and says why: `removeAllEntitlementsChangedHandlers()` is called
+         * from `shutdown()` so that "once `shutdown()` returns, the pre-shutdown handlers are gone and
+         * anything registered afterwards is the caller's and survives" — written there because a
+         * wrapper that re-registers on `configure()` otherwise ends up with TWO live handlers and
+         * delivers every purchase twice. Android honoured half of that rule and this is the half it
+         * missed.
+         *
+         * Both wrappers re-register through a stored reference and remove before adding
+         * (`AppdnaPlugin.attachBillingEntitlementListener`, `AppdnaModule.startEntitlementObserver`),
+         * so nothing legitimate is lost here: what they re-add after `configure()` is theirs and stays.
+         */
+        pendingEntitlementListeners.clear()
     }
 }
 

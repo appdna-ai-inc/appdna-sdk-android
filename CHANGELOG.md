@@ -23,6 +23,19 @@ Wraps iOS 1.0.83. Adds host-reported paying users.
   - Before `configure()` it logs at debug and returns, like every other method: an assertion that
     cannot be attributed to an app must not be queued as one.
 
+### Fixed
+
+- **`shutdown()` now clears the pre-init entitlement listener queue.** A listener registered through
+  `onEntitlementsChanged` before billing had finished starting was queued, and the queue outlived
+  `shutdown()` — so a later `configure()` flushed it into the new entitlement cache and delivered
+  entitlement changes to a host that had shut the SDK down. Listeners that had already been attached
+  were never affected: they go with the cache that `shutdown()` destroys.
+
+  This brings Android in line with the contract iOS already states in
+  `removeAllEntitlementsChangedHandlers()` — once `shutdown()` returns, the pre-shutdown handlers are
+  gone, and anything registered afterwards belongs to the caller and survives. Registering during or
+  after `shutdown()` is unchanged and still works.
+
 ## [1.0.54]
 
 Wraps iOS 1.0.82. Ships maps and host data (including "Show more").

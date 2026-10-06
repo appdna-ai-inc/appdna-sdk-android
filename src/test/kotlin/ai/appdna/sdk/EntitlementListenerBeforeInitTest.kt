@@ -86,4 +86,57 @@ class EntitlementListenerBeforeInitTest {
 
         assertEquals("a listener removed before init was re-attached by the flush", 0, calls)
     }
+
+    @Test
+    fun `shutdown empties the pre-init queue, so a later configure does not resurrect it`() {
+        /*
+         * 🔴 THE QUEUE OUTLIVED SHUTDOWN. Listeners that were ATTACHED go with the entitlement
+         * cache — `AppDNA.shutdown` destroys the manager and the next `configure()` builds a new
+         * `EntitlementCache` — but a listener still waiting in the pre-init queue did not, so it was
+         * flushed into that new cache and delivered entitlement changes to a host that had shut the
+         * SDK down.
+         *
+         * iOS states the contract in `removeAllEntitlementsChangedHandlers()`: once `shutdown()`
+         * returns, the pre-shutdown handlers are gone. Android honoured half of it.
+         */
+        AppDNA.billing.manager = null
+
+        var calls = 0
+        val listener: (List<Entitlement>) -> Unit = { calls++ }
+        AppDNA.billing.onEntitlementsChanged(listener)   // queued: billing is not up
+
+        AppDNA.billing.shutdown()
+
+        val manager = newManager()
+        AppDNA.billing.manager = manager
+        manager.entitlementCache.notifyChangeListenersForTesting(emptyList())
+
+        assertEquals("a listener queued before shutdown was flushed in by a later configure", 0, calls)
+    }
+
+    @Test
+    fun `a listener registered AFTER shutdown is the caller's and survives`() {
+        /*
+         * The other half of the same contract, and the reason this clears on shutdown rather than on
+         * configure: `shutdown(); onEntitlementsChanged(cb); configure()` is an ordinary sequence
+         * (a sign-out then sign-in, a React Native reload). Clearing later would eat that
+         * registration and the host would silently receive nothing.
+         */
+        AppDNA.billing.manager = null
+        AppDNA.billing.shutdown()
+
+        var seen: List<Entitlement>? = null
+        val listener: (List<Entitlement>) -> Unit = { seen = it }
+        AppDNA.billing.onEntitlementsChanged(listener)
+
+        val manager = newManager()
+        AppDNA.billing.manager = manager
+        manager.entitlementCache.notifyChangeListenersForTesting(emptyList())
+
+        assertEquals(
+            "a listener registered after shutdown was dropped — the host would never learn about a purchase",
+            emptyList<Entitlement>(),
+            seen,
+        )
+    }
 }
