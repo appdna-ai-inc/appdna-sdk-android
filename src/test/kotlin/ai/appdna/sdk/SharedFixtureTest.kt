@@ -257,6 +257,8 @@ class SharedFixtureTest(
             "decode_polyline" -> runDecodePolyline(action, spy)
             // An in-app message's start_date / end_date, through the REAL MessageManager reader.
             "parse_window_date" -> runParseWindowDate(action, spy)
+            // #772 — WHICH copy of content_blocks the real parser resolves, per step shape.
+            "resolve_content_blocks" -> runResolveContentBlocks(action, spy)
             "countdown_initial_seconds" -> runCountdownInitialSeconds(action, spy)
             "form_date_bounds" -> runFormDateBounds(action, spy)
             "map_interactive_plan" -> runMapInteractivePlan(action, spy)
@@ -1865,6 +1867,29 @@ class SharedFixtureTest(
             }
         } finally {
             java.util.TimeZone.setDefault(saved)
+        }
+    }
+
+    /**
+     * #772 — which copy of `content_blocks` the REAL step parser resolves, per step shape.
+     *
+     * 🔴 The `layout_empty_falls_through_to_root` case is the one that diverged. iOS has always
+     * fallen back on EMPTY (`if (decoded.content_blocks ?? []).isEmpty`); Android used an elvis that
+     * only fires on null, so an empty array was taken as the answer and the root was never read —
+     * a blank step on Android and a correct one on iOS, from ONE published document. It is a live
+     * risk the moment the console consolidates onto the root copy and leaves `[]` behind.
+     */
+    private fun runResolveContentBlocks(action: JSONObject, spy: Spy) {
+        val cases = action.optJSONArray("cases") ?: unsupported("resolve_content_blocks without cases")
+        spy.state["resolved"] = (0 until cases.length()).map { i ->
+            val c = cases.getJSONObject(i)
+            val step = (c.optJSONObject("step") ?: unsupported("resolve_content_blocks case without step")).asMap()
+            @Suppress("UNCHECKED_CAST")
+            val parsed = OnboardingConfigParser.parseStepForTest(step.filterValues { it != null } as Map<String, Any>)
+            mapOf(
+                "name" to c.optString("name"),
+                "ids" to (parsed?.config?.content_blocks?.map { it.id } ?: emptyList<String>()),
+            )
         }
     }
 

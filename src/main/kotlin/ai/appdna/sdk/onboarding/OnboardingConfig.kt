@@ -1279,9 +1279,22 @@ internal object OnboardingConfigParser {
             } else null
         }?.toImmutableList()
 
-        // Parse content blocks (fallback to step-level content_blocks if not in configMap)
+        /*
+         * Parse content blocks: the `config`/`layout` copy first, then the step ROOT.
+         *
+         * 🔴 The fallback is on EMPTY, not just absent — which is what iOS has always done
+         * (`OnboardingConfig.swift`: `if (decoded.content_blocks ?? []).isEmpty { … step root }`)
+         * and what this did not. `?:` only fires on null, so an EMPTY `layout.content_blocks` was
+         * taken as the answer and the root was never read: the step renders blank on Android and
+         * correctly on iOS, from one published document.
+         *
+         * It matters now because the console is consolidating onto the root copy (#772). A writer
+         * that leaves `content_blocks: []` behind instead of deleting the key would have blanked
+         * every graph-authored step on Android only — the exact divergence a shared fixture exists
+         * to catch, and the reason this is fixed BEFORE the console stops writing the duplicate.
+         */
         @Suppress("UNCHECKED_CAST")
-        val publishedContentBlocks = (configMap["content_blocks"] as? List<*>)
+        val publishedContentBlocks = (configMap["content_blocks"] as? List<*>)?.takeIf { it.isNotEmpty() }
             ?: (map["content_blocks"] as? List<*>)
         // Capture the raw ladder ONCE: a deep copy (the maps are shared with the
         // config cache), every id-less block at any depth stamped `<stepId>/<index path>`, authored
