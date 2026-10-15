@@ -46,8 +46,30 @@ internal class ApiClient(
         .readTimeout(30, TimeUnit.SECONDS)
         .writeTimeout(30, TimeUnit.SECONDS)
         .callTimeout(60, TimeUnit.SECONDS)
-        // Add Accept-Encoding: gzip for response decompression (OkHttp handles this automatically)
-        .addInterceptor(AcceptEncodingInterceptor())
+        /*
+         * 🔴 NO `Accept-Encoding` INTERCEPTOR HERE, AND THAT IS THE POINT.
+         *
+         * There used to be one, setting `Accept-Encoding: gzip, deflate` on every request, with a
+         * comment saying "OkHttp handles this automatically". That is exactly backwards. OkHttp's
+         * `BridgeInterceptor` adds `Accept-Encoding: gzip` itself and transparently decompresses the
+         * response — but ONLY when the application has not set the header. Set it by hand and OkHttp
+         * assumes the caller will decode, and hands back the raw bytes.
+         *
+         * So every gzip-encoded answer reached the JSON parser as compressed bytes and failed:
+         *
+         *     [AppDNA][ERROR] GET unreadable answer: Value <0x1f> ...
+         *     [AppDNA][WARN]  Bootstrap failed - using cached config
+         *
+         * `0x1f` is the first byte of the gzip magic number. It had never fired against our own
+         * backend because these payloads are small (a bootstrap answer is ~450 bytes) and nothing in
+         * front of them compressed. Measured through a compressing CDN it fails every time, and the
+         * failure is SILENT — the SDK degrades to cached config and the host is told nothing useful.
+         *
+         * `deflate` was worse than useless: OkHttp cannot decode raw deflate at all, so advertising
+         * it invited an encoding the SDK could never read.
+         *
+         * Leave this to OkHttp.
+         */
         // Stamp every outgoing request with a stable
         // User-Agent + x-sdk-version header so the backend can attribute
         // traffic and roll out version gates without parsing User-Agent.
@@ -551,21 +573,6 @@ internal class ApiClient(
             DeflaterOutputStream(baos, deflater).use { it.write(data) }
             deflater.end()
             return baos.toByteArray()
-        }
-    }
-
-    /**
-     * OkHttp interceptor that adds Accept-Encoding: gzip, deflate to all requests
-     * (matching iOS APIClient.swift:195). OkHttp automatically decompresses gzip responses
-     * when this header is present; deflate response bodies (rare on AppDNA backend) fall
-     * through to caller decoding.
-     */
-    private class AcceptEncodingInterceptor : Interceptor {
-        override fun intercept(chain: Interceptor.Chain): Response {
-            val request = chain.request().newBuilder()
-                .header("Accept-Encoding", "gzip, deflate")
-                .build()
-            return chain.proceed(request)
         }
     }
 

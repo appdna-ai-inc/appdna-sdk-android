@@ -25,11 +25,20 @@ import kotlinx.coroutines.launch
 internal class TestHttpServer(
     /** Extra headers written on every answer, e.g. `Cache-Control` to see whether a client caches. */
     private val responseHeaders: Map<String, String> = emptyMap(),
+    /**
+     * #857 — gzip every answer and label it `Content-Encoding: gzip`, the way a CDN in front of the
+     * backend does. A client that advertises `Accept-Encoding` by hand gets the raw bytes back from
+     * OkHttp and chokes; one that leaves the header to OkHttp gets a decompressed body. Nothing but
+     * a real compressed round trip can tell those two apart.
+     */
+    private val gzipResponses: Boolean = false,
     private val respond: (path: String, body: String) -> Pair<Int, String>?,
 ) : AutoCloseable {
     private val server = ServerSocket(0, 50, InetAddress.getLoopbackAddress())
     val baseUrl: String = "http://127.0.0.1:${server.localPort}"
     val requests: MutableList<Pair<String, String>> = Collections.synchronizedList(mutableListOf())
+    /** #857 — every request's headers, lower-cased, so a test can assert what the client advertised. */
+    val requestHeaders: MutableList<Map<String, String>> = Collections.synchronizedList(mutableListOf())
     /** Every request's body as sent (`requests` decodes it as UTF-8, which a deflated body does not survive). */
     val rawBodies: MutableList<Pair<String, ByteArray>> = Collections.synchronizedList(mutableListOf())
     val requestSeen = CountDownLatch(1)
@@ -54,14 +63,18 @@ internal class TestHttpServer(
                 val requestLine = readLine(input) ?: return
                 if (requestLine.isEmpty()) continue
                 var length = 0
+                val headers = mutableMapOf<String, String>()
                 while (true) {
                     val h = readLine(input) ?: return
                     if (h.isEmpty()) break
                     val i = h.indexOf(':')
-                    if (i > 0 && h.substring(0, i).trim().equals("content-length", ignoreCase = true)) {
-                        length = h.substring(i + 1).trim().toInt()
+                    if (i > 0) {
+                        val name = h.substring(0, i).trim().lowercase()
+                        headers[name] = h.substring(i + 1).trim()
+                        if (name == "content-length") length = headers[name]!!.toInt()
                     }
                 }
+                requestHeaders += headers
                 val bodyBytes = ByteArray(length)
                 var read = 0
                 while (read < length) {
@@ -86,10 +99,12 @@ internal class TestHttpServer(
                     }
                     return
                 }
-                val payload = answer.second.toByteArray(Charsets.UTF_8)
+                val raw = answer.second.toByteArray(Charsets.UTF_8)
+                val payload = if (gzipResponses) gzip(raw) else raw
                 val out = s.getOutputStream()
                 out.write(
                     ("HTTP/1.1 ${answer.first} X\r\nContent-Type: application/json\r\n" +
+                        (if (gzipResponses) "Content-Encoding: gzip\r\n" else "") +
                         responseHeaders.entries.joinToString("") { "${it.key}: ${it.value}\r\n" } +
                         "Content-Length: ${payload.size}\r\n\r\n").toByteArray(Charsets.UTF_8),
                 )
@@ -101,6 +116,12 @@ internal class TestHttpServer(
         } finally {
             runCatching { s.close() }
         }
+    }
+
+    private fun gzip(bytes: ByteArray): ByteArray {
+        val out = ByteArrayOutputStream()
+        java.util.zip.GZIPOutputStream(out).use { it.write(bytes) }
+        return out.toByteArray()
     }
 
     private fun readLine(input: InputStream): String? {
