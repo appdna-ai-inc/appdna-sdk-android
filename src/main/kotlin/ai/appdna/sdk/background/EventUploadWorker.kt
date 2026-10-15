@@ -167,7 +167,25 @@ internal class EventUploadWorker(
                     .header("x-api-key", apiKey)
                     .header("Content-Type", "application/json")
                     .header("Content-Encoding", "deflate")
-                    .header("Accept-Encoding", "gzip, deflate")
+                    /*
+                     * #857 — NO `Accept-Encoding` HERE, for the same reason it left `ApiClient`.
+                     *
+                     * OkHttp's `BridgeInterceptor` adds `Accept-Encoding: gzip` itself and
+                     * transparently decompresses the response — but ONLY when the application has
+                     * not set that header. Setting it by hand makes OkHttp assume the caller will
+                     * decode, and it hands back the body untouched. `deflate` was worse than
+                     * useless: OkHttp cannot decode raw deflate at all, so this advertised an
+                     * encoding it could never read.
+                     *
+                     * 🔴 The first fix for #857 removed the interceptor from `ApiClient` and MISSED
+                     * this second request, which builds its own `okhttp3.Request`. Found by
+                     * grepping the shipped APK's dex for the header STRING rather than the
+                     * interceptor class — the class was gone and the string was still there, three
+                     * times.
+                     *
+                     * `Content-Encoding: deflate` above is a different thing and stays: that is
+                     * the REQUEST body, which this worker compresses itself.
+                     */
                     .post(compressed.toRequestBody("application/json".toMediaType()))
                     .build()
                 client.newCall(request).execute().use { response ->
