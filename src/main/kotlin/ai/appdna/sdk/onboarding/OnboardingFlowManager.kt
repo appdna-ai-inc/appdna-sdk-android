@@ -35,7 +35,24 @@ internal class OnboardingFlowManager(
         // matches. Mirrors iOS OnboardingFlowManager.swift:121-137.
         val activeFlow = resolveFlow(flowId)
         if (activeFlow == null) {
-            Log.warning("Onboarding flow not found -- flowId: ${flowId ?: "active"}")
+            /*
+             * #855 — DO NOT ASSERT A FACT THIS HAS NOT CHECKED.
+             *
+             * "Onboarding flow not found" while the SDK is still configuring is wrong: at that
+             * moment nothing has been looked up, because no config has loaded. The old line sent
+             * integrators to their flow id and their console — the one place the problem is not.
+             * Both answers returned `false`, so a host could not tell them apart either; see
+             * `AppDNA.isReady`, which is the question to ask before retrying.
+             */
+            if (!AppDNA.isReady) {
+                Log.warning(
+                    "Onboarding flow ${flowId ?: "active"} was NOT looked up: the SDK is still " +
+                        "configuring. This is not a missing flow — wait for AppDNA.onReady() (or " +
+                        "check AppDNA.isReady) and present again.",
+                )
+            } else {
+                Log.warning("Onboarding flow not found -- flowId: ${flowId ?: "active"}")
+            }
             return false
         }
 

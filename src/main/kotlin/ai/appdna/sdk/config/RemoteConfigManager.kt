@@ -804,7 +804,41 @@ internal class RemoteConfigManager(
      * Only populates empty caches — remote and cached data take priority.
      */
     @Suppress("UNCHECKED_CAST")
+    /** #856 — the sections [loadBundledConfig] actually reads; a bundle with none of them is inert. */
+    private val RECOGNISED_BUNDLE_KEYS = listOf(
+        "paywalls",
+        "onboarding",
+        "experiments",
+        "surveys",
+        "messages",
+        "remote_config",
+        "feature_flags",
+        "screen_index",
+        "brand",
+    )
+
     fun loadBundledConfig(json: Map<String, Any>) {
+        /*
+         * #856 — SAY SO WHEN A BUNDLE CONTAINS NOTHING WE RECOGNISE.
+         *
+         * Every section below is optional, so a bundle with none of them parsed silently and the
+         * SDK carried on with no config at all: valid JSON, right size, right place, and it does
+         * nothing. That silence is what turned a wrong console snippet into a day of guessing —
+         * the snippet saved the RAW API response, whose keys sit under `.data.content`, so every
+         * key this looks for was one level too deep and not one line was logged.
+         *
+         * A single warning naming the likely cause is the whole fix. It cannot false-positive on a
+         * legitimately empty bundle in any way that matters: an empty bundle is also useless.
+         */
+        if (RECOGNISED_BUNDLE_KEYS.none { json[it] != null }) {
+            Log.warning(
+                "Bundled config has none of the sections the SDK reads " +
+                    "(${RECOGNISED_BUNDLE_KEYS.joinToString(", ")}). Top-level keys present: " +
+                    "${json.keys.sorted().joinToString(", ").ifEmpty { "(none)" }}. " +
+                    "If this came from /api/v1/sdk/config-bundle, the response is an envelope — " +
+                    "save `.data.content + {bundle_version}`, not the raw body.",
+            )
+        }
         if (paywalls.isEmpty()) {
             (json["paywalls"] as? Map<String, Any>)?.let { data ->
                 if (data.isNotEmpty()) { parsePaywalls(data); Log.debug("Loaded paywalls from bundled config") }

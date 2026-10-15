@@ -596,6 +596,30 @@ object AppDNA {
     private val bootstrapsDropped = java.util.concurrent.atomic.AtomicInteger(0)
     internal fun bootstrapOutcomesForTest(): Pair<Int, Int> = bootstrapsApplied.get() to bootstrapsDropped.get()
     internal fun isReadyForTest(): Boolean = synchronized(this) { isConfigured }
+
+    /**
+     * Whether the SDK has finished configuring — the same condition [onReady] fires on, readable
+     * synchronously.
+     *
+     * ⚠️ This is "the bootstrap has settled and the managers are wired", NOT "the remote config has
+     * arrived". The remote fetch is STARTED by configure and not awaited, so a flow that exists
+     * only server-side can still be absent just after this turns true; `remoteConfig.onChanged` is
+     * what fires for fetched values. What it does guarantee is that any BUNDLED config has been
+     * loaded, because that happens before this flips.
+     *
+     * 🔴 #855 — this exists because a host could not tell two very different answers apart.
+     * `present()` returns `false` both when a flow does not exist and when the SDK simply has not
+     * loaded its config yet, and on a COLD FIRST LAUNCH that second window is long: measured at
+     * ~20-25s on a Pixel-class emulator, because `configure` reaches `loadConfigBundle()` only
+     * after a cold Firebase init and a bootstrap round trip (plus up to three retries on a bad
+     * network). On every later launch the cached config is already on disk and the window closes
+     * before a user can reach a button, which is why this only ever looks like a first-launch bug.
+     *
+     * A host with a button a user can press during that window should check this and retry, rather
+     * than treat `false` as "that flow is gone".
+     */
+    @JvmStatic
+    val isReady: Boolean get() = synchronized(this) { isConfigured }
     internal fun bootstrapOrgIdForTest(): String? = synchronized(this) { bootstrapOrgId }
 
     private fun dropStaleBootstrap(epoch: Int) {
