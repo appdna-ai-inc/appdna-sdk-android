@@ -1655,7 +1655,15 @@ object AppDNA {
             flowId = flowId,
             listener = listener
         ) ?: run {
-            Log.warning("Cannot present onboarding — SDK not configured")
+            // #855 — name the remedy, not just the state. This fires when the manager does not
+            // exist yet (very early in configure); `OnboardingFlowManager.present` covers the
+            // later window where the manager IS wired but no config has loaded. iOS was SILENT on
+            // this branch until a device run caught it — 17 of 20 calls logging nothing at all.
+            Log.warning(
+                "Onboarding flow ${flowId ?: "active"} was NOT looked up: the SDK is still " +
+                    "configuring. This is not a missing flow — wait for AppDNA.onReady() (or " +
+                    "check AppDNA.isReady) and present again.",
+            )
             false
         }
     }
