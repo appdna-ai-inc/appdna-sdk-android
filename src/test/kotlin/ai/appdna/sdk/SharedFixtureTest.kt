@@ -260,6 +260,7 @@ class SharedFixtureTest(
             // An in-app message's start_date / end_date, through the REAL MessageManager reader.
             "parse_window_date" -> runParseWindowDate(action, spy)
             "parse_colour" -> runParseColour(action, spy)
+            "unfold_blockquotes" -> runUnfoldBlockquotes(action, spy)
             // #772 — WHICH copy of content_blocks the real parser resolves, per step shape.
             "resolve_content_blocks" -> runResolveContentBlocks(action, spy)
             "countdown_initial_seconds" -> runCountdownInitialSeconds(action, spy)
@@ -1868,6 +1869,19 @@ class SharedFixtureTest(
      * `scripts/__tests__/sdk-one-colour-parser.test.ts` keeps a fourth copy from appearing; this
      * pins what the one copy must return.
      */
+    /**
+     * #893 — a blockquote becomes the italic syntax both parsers already render.
+     *
+     * Drives the REAL `unfoldBlockquotes` the rich_text renderer calls, so the two platforms are
+     * held to one answer for a chevron that used to reach the screen verbatim.
+     */
+    private fun runUnfoldBlockquotes(action: JSONObject, spy: Spy) {
+        val cases = action.optJSONArray("cases") ?: unsupported("unfold_blockquotes without cases")
+        spy.state["results"] = (0 until cases.length()).map { i ->
+            ai.appdna.sdk.onboarding.unfoldBlockquotes(cases.getJSONObject(i).optString("value", ""))
+        }
+    }
+
     private fun runParseColour(action: JSONObject, spy: Spy) {
         val cases = action.optJSONArray("cases") ?: unsupported("parse_colour without cases")
         spy.state["results"] = (0 until cases.length()).map { i ->

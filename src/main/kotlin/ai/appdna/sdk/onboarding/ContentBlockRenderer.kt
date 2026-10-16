@@ -5180,6 +5180,33 @@ private fun RatingBlock(
  * Parses **bold**, *italic*, and [link](url) patterns.
  * Uses ClickableText for link tap handling.
  */
+/**
+ * Turn a markdown blockquote into the italic syntax the parser already renders.
+ *
+ * #893 — both platforms parse the same documented subset (`**bold**`, `*italic*`, `[link](url)`,
+ * `++underline++`) and NEITHER knows a blockquote, so a `>` reached the screen verbatim: a
+ * generated testimonial rendered as `> "I always quit after missing a day…"`, chevron and all,
+ * on a social-proof screen. Seen on a device.
+ *
+ * 🔴 Converting rather than teaching the parsers a new rule, and that is the point: `*…*` is
+ * already supported on both, already styled the same on both, and already covered by whatever
+ * tests those paths have. A second blockquote implementation in two languages is two things that
+ * can drift — which is the shape of #885 and #891, and the thing worth not repeating for a
+ * chevron.
+ *
+ * A line already containing `*` is left exactly as it is: wrapping it would nest emphasis markers
+ * and the parser would make a worse mess than the one being fixed.
+ */
+internal fun unfoldBlockquotes(markdown: String): String {
+    if (!markdown.contains('>')) return markdown // fast path — most content has none
+    return markdown.split("\n").joinToString("\n") { line ->
+        val trimmed = line.trimStart()
+        if (!trimmed.startsWith(">")) return@joinToString line
+        val body = trimmed.removePrefix(">").trimStart()
+        if (body.isEmpty() || body.contains('*')) body else "*$body*"
+    }
+}
+
 @Composable
 private fun RichTextBlock(block: ContentBlock, loc: ((String, String) -> String)? = null) {
     // iOS canonical `markdown_content` first, then
@@ -5189,7 +5216,8 @@ private fun RichTextBlock(block: ContentBlock, loc: ((String, String) -> String)
     // block.text`. iOS DTO has no `content` field; payloads using only
     // `block.content` rendered on Android, empty on iOS. Aligning to iOS.
     val rawContent = block.markdown_content ?: block.text ?: ""
-    val content = loc?.invoke("block.${block.id}.content", rawContent) ?: rawContent
+    val localised = loc?.invoke("block.${block.id}.content", rawContent) ?: rawContent
+    val content = unfoldBlockquotes(localised)
     val linkColor = StyleEngine.parseColor(block.link_color ?: (ai.appdna.sdk.AppDNA.brandAccentHex ?: "#6366F1"))
     val context = LocalContext.current
 
