@@ -50,8 +50,10 @@ import ai.appdna.sdk.onboarding.summaryStatFieldId
 import ai.appdna.sdk.onboarding.resolveTemplateString
 import ai.appdna.sdk.core.AudienceRuleEvaluator
 import ai.appdna.sdk.core.AudienceRuleSet
+import ai.appdna.sdk.core.StyleEngine
 import ai.appdna.sdk.core.TemplateContext
 import ai.appdna.sdk.core.TemplateEngine
+import kotlin.math.roundToInt
 import ai.appdna.sdk.events.ClientSeqCounter
 import ai.appdna.sdk.events.DroppedEventsCounter
 import ai.appdna.sdk.events.EventQueue
@@ -257,6 +259,7 @@ class SharedFixtureTest(
             "decode_polyline" -> runDecodePolyline(action, spy)
             // An in-app message's start_date / end_date, through the REAL MessageManager reader.
             "parse_window_date" -> runParseWindowDate(action, spy)
+            "parse_colour" -> runParseColour(action, spy)
             // #772 — WHICH copy of content_blocks the real parser resolves, per step shape.
             "resolve_content_blocks" -> runResolveContentBlocks(action, spy)
             "countdown_initial_seconds" -> runCountdownInitialSeconds(action, spy)
@@ -1853,6 +1856,32 @@ class SharedFixtureTest(
     private fun points(l: List<Pair<Double, Double>>?): List<List<Double>>? = l?.map { listOf(it.first, it.second) }
 
     /** The REAL `MessageManager.parseWindowDate`, with the device time zone set to `action.device_timezone`. */
+    /**
+     * #885 — ONE answer per colour string, and it has to be the same answer as iOS gives.
+     *
+     * This drives [StyleEngine.parseColor], which is now the SDK's only colour parser:
+     * `PaywallActivity.parseHexColor` and `SurveyActivity.parseColor` delegate to it. Before that
+     * they each carried a copy, and the copies disagreed with the engine, with iOS and with each
+     * other — 8-char hex read as ARGB instead of RGBA, and an unreadable string answered black in
+     * the paywall, white in the survey and transparent everywhere else.
+     *
+     * `scripts/__tests__/sdk-one-colour-parser.test.ts` keeps a fourth copy from appearing; this
+     * pins what the one copy must return.
+     */
+    private fun runParseColour(action: JSONObject, spy: Spy) {
+        val cases = action.optJSONArray("cases") ?: unsupported("parse_colour without cases")
+        spy.state["results"] = (0 until cases.length()).map { i ->
+            val value = cases.getJSONObject(i).optString("value", "")
+            val c = StyleEngine.parseColor(value)
+            listOf(
+                (c.red * 255f).roundToInt(),
+                (c.green * 255f).roundToInt(),
+                (c.blue * 255f).roundToInt(),
+                (c.alpha * 255f).roundToInt(),
+            )
+        }
+    }
+
     private fun runParseWindowDate(action: JSONObject, spy: Spy) {
         val cases = action.optJSONArray("cases") ?: unsupported("parse_window_date without cases")
         val saved = java.util.TimeZone.getDefault()

@@ -737,19 +737,13 @@ fun SurveyScreen(
     } // MaterialTheme
 }
 
-private fun parseColor(hex: String): Color {
-    return try {
-        val cleaned = hex.removePrefix("#")
-        val colorInt = cleaned.toLong(16)
-        when (cleaned.length) {
-            6 -> Color(0xFF000000 or colorInt)
-            8 -> Color(colorInt)
-            else -> Color.White
-        }
-    } catch (_: Exception) {
-        Color.White
-    }
-}
+/**
+ * The ONE colour parser. Delegates to [StyleEngine.parseColor] — see the note on
+ * `PaywallActivity.parseHexColor`. This copy read 8-char hex as ARGB (iOS reads RGBA) and fell
+ * back to `Color.White` on a string it could not read, which was a THIRD answer to the same
+ * question: the paywall copy said black, the core engine says transparent, iOS says transparent.
+ */
+private fun parseColor(hex: String): Color = StyleEngine.parseColor(hex)
 
 @Composable
 fun BottomSheetSurveyWrapper(

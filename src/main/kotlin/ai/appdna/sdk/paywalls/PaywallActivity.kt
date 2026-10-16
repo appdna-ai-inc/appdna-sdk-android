@@ -4828,19 +4828,25 @@ private fun PaywallStickyFooter(
     }
 }
 
-private fun parseHexColor(hex: String): Color {
-    return try {
-        val cleaned = hex.removePrefix("#")
-        val colorLong = cleaned.toLong(16)
-        when (cleaned.length) {
-            6 -> Color(0xFF000000 or colorLong)
-            8 -> Color(colorLong)
-            else -> Color.Black
-        }
-    } catch (_: Exception) {
-        Color.Black
-    }
-}
+/**
+ * The ONE colour parser. Delegates to [StyleEngine.parseColor].
+ *
+ * This file used to carry its own copy, and the copy was wrong in two ways that only showed up
+ * when a payload reached a device:
+ *
+ *  - 8-char hex went through `Color(colorLong)`, which Compose reads as **ARGB**, so `#1122334F`
+ *    became (A=0x11, R=0x22, G=0x33, B=0x4F) — every channel rotated, and near-transparent.
+ *    iOS reads the same string as **RGBA** (`PaywallHelperViews.swift` `Color(hex:)`). The same
+ *    bug was found and fixed in `StyleEngine.parseColor`; this copy never got the fix.
+ *  - an unparseable string fell back to `Color.Black`, where `StyleEngine` and iOS both fall back
+ *    to transparent. A page background the SDK could not read therefore rendered an opaque black
+ *    screen on Android and a see-through one on iOS, from one value — which is what one production
+ *    paywall carrying `rgba(255,255,255,0.15)` does today.
+ *
+ * Keeping the signature means the 77 call sites in this file stay as they are; what changes is
+ * that they now agree with the rest of the SDK, and with iOS.
+ */
+private fun parseHexColor(hex: String): Color = StyleEngine.parseColor(hex)
 
 /**
  * Review avatar emoji resolver.
