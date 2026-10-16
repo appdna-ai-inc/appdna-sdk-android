@@ -1702,9 +1702,12 @@ internal fun PaywallSectionView(
                     // `style.elements["title"].text_style` matching iOS
                     // HeaderSection.swift:10-15 precedence.
                     val titleStyle = StyleEngine.applyTextStyle(
-                        // Theme-adaptive default matching iOS HeaderSection `.primary` (black on light,
-                        // white on dark) — was hardcoded white, invisible on light paywalls.
-                        TextStyle(color = MaterialTheme.colorScheme.onSurface, fontWeight = FontWeight.Bold, fontSize = 28.sp, textAlign = TextAlign.Center),
+                        // #891 — read off the PAGE, not off the theme. `onSurface` is the device's
+                        // night-mode answer and iOS's `.primary` was the same mistake in the other
+                        // direction: a paywall with a dark authored background drew a dark title on
+                        // a light-appearance phone, and the words were gone. The author cannot see
+                        // the setting that decided it, so the background decides instead.
+                        TextStyle(color = PaywallTextDefaults.readable(config.pageBackgroundHex()), fontWeight = FontWeight.Bold, fontSize = 28.sp, textAlign = TextAlign.Center),
                         section.data.title_style ?: section.style?.elements?.get("title")?.text_style
                     )
                     Text(
@@ -1875,6 +1878,20 @@ internal fun PaywallSectionView(
             }
 
             // Text styles
+            /*
+             * #891 — white, and deliberately, because THIS platform's unselected tile is dark.
+             *
+             * The first attempt resolved this from the authored page the way iOS does, and a
+             * device frame refused it: with no authored colours the plan NAME disappeared. The
+             * tile here is `Color.White.copy(alpha = 0.1f)` over the paywall's own Material
+             * surface, which this activity themes DARK regardless of the page — so it comes out
+             * dark navy even on a white paywall, and white text is the readable choice.
+             *
+             * iOS composites the same 10% white over the PAGE instead, so its tile follows the
+             * authored background and its text has to be derived. Two tiles, two answers, one
+             * authored document — tracked as its own divergence rather than papered over by
+             * guessing a backdrop here.
+             */
             val planNameStyle = StyleEngine.applyTextStyle(
                 TextStyle(fontWeight = FontWeight.SemiBold, color = Color.White, fontSize = 16.sp),
                 // Mirror iOS PlanCard.swift:22 (elements["plan_name"] ?? elements["label"]) — the

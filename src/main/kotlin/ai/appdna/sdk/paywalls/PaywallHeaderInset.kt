@@ -28,3 +28,15 @@ object PaywallHeaderInset {
         return 16 + glyphSize * 2
     }
 }
+
+/**
+ * #891 — the page's own background hex, when it is a flat colour.
+ *
+ * A gradient or an image yields null and the defaults fall back to light-on-dark, which is what
+ * this surface has always assumed for those.
+ */
+internal fun PaywallConfig.pageBackgroundHex(): String? {
+    val bg = layout.background ?: return null
+    if (bg.type != "color") return null
+    return bg.value ?: bg.color
+}
