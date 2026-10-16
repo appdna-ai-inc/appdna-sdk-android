@@ -400,7 +400,7 @@ internal class SurveyManager(
                 addView(input)
             }
 
-            AlertDialog.Builder(activity)
+            val dialog = AlertDialog.Builder(activity)
                 .setTitle(message ?: "We'd love your feedback")
                 .setMessage("What could we do better?")
                 .setView(container)
@@ -422,7 +422,34 @@ internal class SurveyManager(
                     eventTracker.track("feedback_form_dismissed")
                 }
                 .create()
-                .show()
+
+            /*
+             * #898 — the dialog goes when its activity goes.
+             *
+             * Skipping a finishing activity above stops the common case; this stops the race that
+             * remains. An activity can finish between `show()` and the user's next tap — the host
+             * navigating away, a deep link, the system reclaiming it — and a dialog still attached
+             * then leaks the whole Activity, its views and whatever the survey captured.
+             *
+             * The callback unregisters itself, so nothing accumulates across surveys.
+             */
+            val app = activity.application
+            val lifecycle = object : android.app.Application.ActivityLifecycleCallbacks {
+                override fun onActivityDestroyed(destroyed: Activity) {
+                    if (destroyed !== activity) return
+                    if (dialog.isShowing) dialog.dismiss()
+                    app.unregisterActivityLifecycleCallbacks(this)
+                }
+                override fun onActivityCreated(a: Activity, b: android.os.Bundle?) {}
+                override fun onActivityStarted(a: Activity) {}
+                override fun onActivityResumed(a: Activity) {}
+                override fun onActivityPaused(a: Activity) {}
+                override fun onActivityStopped(a: Activity) {}
+                override fun onActivitySaveInstanceState(a: Activity, b: android.os.Bundle) {}
+            }
+            app.registerActivityLifecycleCallbacks(lifecycle)
+            dialog.setOnDismissListener { app.unregisterActivityLifecycleCallbacks(lifecycle) }
+            dialog.show()
         }
     }
 
@@ -437,15 +464,37 @@ internal class SurveyManager(
             activitiesField.isAccessible = true
             @Suppress("UNCHECKED_CAST")
             val activities = activitiesField.get(thread) as? android.util.ArrayMap<Any, Any>
-            activities?.values?.firstNotNullOfOrNull { record ->
+            /*
+             * #898 — PICK THE BEST ACTIVITY, in two passes. `paused` alone is not enough, and
+             * neither is simply rejecting a finishing one.
+             *
+             * A follow-up runs as the SurveyActivity is going away, and its pause had TIMED OUT
+             * rather than completed ("Activity pause timeout for … SurveyActivity" in logcat), so
+             * the record still read un-paused and the feedback dialog was built on an activity
+             * already finishing. Its window then outlived it: `android.view.WindowLeaked …
+             * DecorView[SurveyActivity]`.
+             *
+             * 🔴 Rejecting a finishing activity and stopping there is WORSE, and the device said
+             * so within the minute: at that moment the only un-paused record IS the dying survey
+             * activity — the host underneath is paused because the survey was in front — so the
+             * filter left nothing and the log read "No activity available for feedback form
+             * presentation". The leak was gone because the feature was gone.
+             *
+             * So: prefer un-paused AND alive; fall back to any ALIVE activity, which is the
+             * paused host about to be resumed. A dialog shown on it is correct — that is where a
+             * post-survey form belongs. Only a process with no live activity at all gets null.
+             */
+            val live = mutableListOf<Pair<Boolean, Activity>>() // (isPaused, activity)
+            activities?.values?.forEach { record ->
                 val pausedField = record.javaClass.getDeclaredField("paused")
                 pausedField.isAccessible = true
-                if (!pausedField.getBoolean(record)) {
-                    val activityField = record.javaClass.getDeclaredField("activity")
-                    activityField.isAccessible = true
-                    activityField.get(record) as? Activity
-                } else null
+                val activityField = record.javaClass.getDeclaredField("activity")
+                activityField.isAccessible = true
+                val activity = activityField.get(record) as? Activity ?: return@forEach
+                if (activity.isFinishing || activity.isDestroyed) return@forEach
+                live += pausedField.getBoolean(record) to activity
             }
+            live.firstOrNull { !it.first }?.second ?: live.firstOrNull()?.second
         } catch (e: Exception) {
             Log.warning("Failed to get current activity: ${e.message}")
             null
