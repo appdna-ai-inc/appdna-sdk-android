@@ -106,33 +106,20 @@ object ReviewPromptManager {
         }
     }
 
-    /**
-     * Two-step review prompt: show dialog first, then trigger native review on positive response.
-     * Respects rate limits and records prompt display.
+    /*
+     * #897 — `triggerTwoStepReview` WAS HERE, AND IT IS NOT COMING BACK.
+     *
+     * It showed an AlertDialog titled "Enjoying <app>?" with "Yes! 😊" / "Not really", and
+     * launched the native Play review flow only on "Yes". That is review gating, and Google's
+     * In-App Review design guidelines forbid it in as many words: "Don't ask the user any
+     * questions before presenting the rating button or card, including questions about their
+     * opinion (such as 'Do you like the app?')." Apple's ratings rules say the same thing about
+     * SKStoreReviewController.
+     *
+     * Nothing called it — which is exactly why it survived: dead code that is a policy violation
+     * waiting for a caller, in a manager a host could reach. `triggerReview` is the only way in,
+     * it prompts everyone it is asked to prompt, and the OS quota decides the rest.
+     *
+     * `scripts/__tests__/sdk-review-prompt-is-not-gated.test.ts` keeps it deleted.
      */
-    fun triggerTwoStepReview(activity: Activity, appName: String? = null) {
-        if (!canShowReviewPrompt(activity)) {
-            Log.info("Two-step review prompt suppressed due to rate limiting")
-            return
-        }
-
-        val name = appName ?: activity.applicationInfo.loadLabel(activity.packageManager).toString()
-
-        val dialog = android.app.AlertDialog.Builder(activity)
-            .setTitle("Enjoying $name?")
-            .setMessage("We'd love to hear your feedback!")
-            .setPositiveButton("Yes! \uD83D\uDE0A") { _, _ ->
-                AppDNA.track("review_prompt_accepted")
-                // Launch WITHOUT re-emitting review_prompt_shown \u2014 the `{two_step}` event already fired
-                // when this dialog appeared (matches iOS's private requestNativeReview path).
-                launchNativeReview(activity, emitDirectShown = false)
-            }
-            .setNegativeButton("Not really") { _, _ ->
-                AppDNA.track("review_prompt_declined")
-            }
-            .create()
-
-        dialog.show()
-        AppDNA.track("review_prompt_shown", mapOf("prompt_type" to "two_step"))
-    }
 }
