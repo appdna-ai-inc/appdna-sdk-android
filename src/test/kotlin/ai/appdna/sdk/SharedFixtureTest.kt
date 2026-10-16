@@ -262,6 +262,7 @@ class SharedFixtureTest(
             "parse_colour" -> runParseColour(action, spy)
             "unfold_blockquotes" -> runUnfoldBlockquotes(action, spy)
             "resolve_shadow" -> runResolveShadow(action, spy)
+            "paywall_header_close_inset" -> runHeaderCloseInset(action, spy)
             // #772 — WHICH copy of content_blocks the real parser resolves, per step shape.
             "resolve_content_blocks" -> runResolveContentBlocks(action, spy)
             "countdown_initial_seconds" -> runCountdownInitialSeconds(action, spy)
@@ -1876,6 +1877,32 @@ class SharedFixtureTest(
      * Drives the REAL `unfoldBlockquotes` the rich_text renderer calls, so the two platforms are
      * held to one answer for a chevron that used to reach the screen verbatim.
      */
+    /**
+     * #895 — the header's reserved footprint, through the REAL `PaywallHeaderInset.resolve`.
+     *
+     * A `null` case means no `dismiss` object at all, which is the common authored shape and the
+     * one that must still reserve: absent means dismissable.
+     */
+    private fun runHeaderCloseInset(action: JSONObject, spy: Spy) {
+        val cases = action.optJSONArray("cases") ?: unsupported("paywall_header_close_inset without cases")
+        spy.state["results"] = (0 until cases.length()).map { i ->
+            val v = cases.getJSONObject(i).opt("value")
+            if (v == null || v == JSONObject.NULL) {
+                ai.appdna.sdk.paywalls.PaywallHeaderInset.resolve(null)
+            } else {
+                val o = v as JSONObject
+                val dismiss = ai.appdna.sdk.paywalls.PaywallDismiss(
+                    type = if (o.has("type")) o.getString("type") else "x_button",
+                    style = if (o.has("style")) o.getString("style") else null,
+                    allowed = if (o.has("allowed")) o.getBoolean("allowed") else true,
+                    delay_seconds = if (o.has("delay_seconds")) o.getInt("delay_seconds") else null,
+                    size = if (o.has("size")) o.getDouble("size").toFloat() else null,
+                )
+                ai.appdna.sdk.paywalls.PaywallHeaderInset.resolve(dismiss)
+            }
+        }
+    }
+
     /**
      * #886 — the four values a shadow draws with, through the REAL `StyleEngine.resolveShadow`.
      *

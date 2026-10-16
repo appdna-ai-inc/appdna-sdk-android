@@ -844,11 +844,11 @@ fun PaywallScreen(
              *
              * The arithmetic matches the control: `.padding(16.dp).size((glyphSize * 2).dp)`.
              */
-            val headerDismissStyle = config.dismiss?.style ?: config.dismiss?.type ?: "x_button"
-            val headerNeverDismissable = config.dismiss?.allowed == false && (config.dismiss?.delay_seconds ?: 0) <= 0
-            val headerReservesCorner = !headerNeverDismissable
-                && headerDismissStyle != "text_link" && headerDismissStyle != "swipe" && headerDismissStyle != "swipe_down"
-            val headerCloseInset = if (headerReservesCorner) (16 + (config.dismiss?.size ?: 16f) * 2).dp else 0.dp
+            // #895 — through `PaywallHeaderInset`, the one function the shared fixture drives on
+            // both platforms. It was inline on each side and pinned by a source gate, which cannot
+            // tell you the two agree: they did not, because iOS reserved space for a `swipe`
+            // dismiss and this side did not.
+            val headerCloseInset = PaywallHeaderInset.resolve(config.dismiss).dp
             // collapse_on_scroll wiring.
             // Mirrors iOS PaywallScrollOffsetPrefKey-driven collapse: as user
             // scrolls, sections marked collapse_on_scroll==true fade their
