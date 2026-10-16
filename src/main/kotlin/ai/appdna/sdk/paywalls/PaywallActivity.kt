@@ -1574,6 +1574,37 @@ internal fun PaywallSectionView(
 ) {
     when (section.type) {
         "header" -> {
+            /*
+             * #881 — RESERVE THE CLOSE BUTTON'S WIDTH, on both sides.
+             *
+             * The dismiss control is a floating overlay in the top corner and the header title is
+             * centred across the FULL width, so a title whose first line reaches the edge runs
+             * straight under it. On a device, two different generated paywalls both put the ✕ on
+             * the word "going".
+             *
+             * It is a generated-content problem meeting a hand-authored default: the prompt asks
+             * for an outcome-led headline, so a generated title is a full sentence (31-38 chars on
+             * dev) where a hand-authored one is a few words. Same family as #880, different
+             * mechanism.
+             *
+             * BOTH sides, so centred text stays centred — insetting only the ✕'s side would shift
+             * every title off-centre to buy clearance it mostly does not need. The number matches
+             * the control: `.padding(16.dp).size((glyphSize * 2).dp)` at the overlay, glyph 16 by
+             * default (PaywallActivity.kt:1261-1273).
+             *
+             * Only when a control is actually drawn up there: `text_link` sits at the bottom and
+             * `swipe_down` draws nothing, so neither steals any width.
+             */
+            // The SAME resolution the overlay uses (PaywallActivity.kt:1220), so the inset and the
+            // control can never disagree about whether there is a button up there. The gate mirrors
+            // `neverDismissable` (PaywallActivity.kt:685): a delayed reveal still needs the space
+            // reserved from the start, or the title reflows the moment the button appears.
+            val dismissStyle = config.dismiss?.style ?: config.dismiss?.type ?: "x_button"
+            val neverDismissable = config.dismiss?.allowed == false && (config.dismiss?.delay_seconds ?: 0) <= 0
+            val dismissInTopRow = !neverDismissable
+                && dismissStyle != "text_link" && dismissStyle != "swipe" && dismissStyle != "swipe_down"
+            val closeInset = if (dismissInTopRow) (16 + (config.dismiss?.size ?: 16f) * 2).dp else 0.dp
+
             // Mirror iOS HeaderSection.swift:54 — `.padding(.top, 40)` gives
             // the title breathing room from the safe-area / nav bar.
             // applyContainerStyle runs after so author overrides still win.
@@ -1582,6 +1613,7 @@ internal fun PaywallSectionView(
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(top = 40.dp)
+                    .padding(horizontal = closeInset)
                     .run { with(StyleEngine) { applyContainerStyle(section.style?.container) } }
             ) {
                 // Render header section image
