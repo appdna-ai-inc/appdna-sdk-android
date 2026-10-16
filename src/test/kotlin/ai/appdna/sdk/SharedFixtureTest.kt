@@ -261,6 +261,7 @@ class SharedFixtureTest(
             "parse_window_date" -> runParseWindowDate(action, spy)
             "parse_colour" -> runParseColour(action, spy)
             "unfold_blockquotes" -> runUnfoldBlockquotes(action, spy)
+            "resolve_shadow" -> runResolveShadow(action, spy)
             // #772 — WHICH copy of content_blocks the real parser resolves, per step shape.
             "resolve_content_blocks" -> runResolveContentBlocks(action, spy)
             "countdown_initial_seconds" -> runCountdownInitialSeconds(action, spy)
@@ -1875,6 +1876,30 @@ class SharedFixtureTest(
      * Drives the REAL `unfoldBlockquotes` the rich_text renderer calls, so the two platforms are
      * held to one answer for a chevron that used to reach the screen verbatim.
      */
+    /**
+     * #886 — the four values a shadow draws with, through the REAL `StyleEngine.resolveShadow`.
+     *
+     * `[colorArgbHex, radiusDp, dxDp, dyDp]`, or null when the shadow does not draw at all —
+     * which is the case Android used to get wrong in the other direction, drawing a shadow for a
+     * colour authored at zero alpha.
+     */
+    private fun runResolveShadow(action: JSONObject, spy: Spy) {
+        val cases = action.optJSONArray("cases") ?: unsupported("resolve_shadow without cases")
+        spy.state["results"] = (0 until cases.length()).map { i ->
+            val v = cases.getJSONObject(i).getJSONObject("value")
+            val cfg = ai.appdna.sdk.core.ShadowStyleConfig(
+                x = if (v.has("x")) v.getDouble("x") else null,
+                y = if (v.has("y")) v.getDouble("y") else null,
+                blur = if (v.has("blur")) v.getDouble("blur") else null,
+                spread = if (v.has("spread")) v.getDouble("spread") else null,
+                color = if (v.has("color")) v.getString("color") else null,
+            )
+            StyleEngine.resolveShadow(cfg)?.let { r ->
+                listOf(String.format("#%08X", r.colorArgb), r.radiusDp, r.dxDp, r.dyDp)
+            }
+        }
+    }
+
     private fun runUnfoldBlockquotes(action: JSONObject, spy: Spy) {
         val cases = action.optJSONArray("cases") ?: unsupported("unfold_blockquotes without cases")
         spy.state["results"] = (0 until cases.length()).map { i ->

@@ -38,6 +38,7 @@ import android.net.Uri
 import ai.appdna.sdk.Log
 import ai.appdna.sdk.LogLevel
 import ai.appdna.sdk.core.StyleEngine
+import ai.appdna.sdk.core.ShadowStyleConfig
 import ai.appdna.sdk.core.interpolated
 import ai.appdna.sdk.core.TextStyleConfig
 import ai.appdna.sdk.core.applyTransform
@@ -221,17 +222,21 @@ fun Modifier.applyBlockStyle(style: BlockStyle?, clipContent: Boolean = true): M
     if (style.opacity != null) mod = mod.then(Modifier.alpha(style.opacity.toFloat()))
 
     // Shadow (must come before clip/background to be visible)
+    //
+    // #886 — through `StyleEngine.resolveShadow`, the same seam `applyContainerStyle` uses and the
+    // same seam the shared fixture drives, so a block and a paywall section cannot disagree about
+    // what an authored shadow means. `Modifier.shadow` was wrong twice here: it has no offset, so
+    // an authored x / y was dropped, and its ambient / spot colours only tint Compose's elevation
+    // curve rather than drawing the authored colour at the authored alpha. iOS has always honoured
+    // all four (ContentBlockTypes.swift `BlockStyleModifier`). 508 occurrences across 30 production
+    // flows were authored on this path — it is the one the console's own shadow control writes.
     if (style.shadow != null) {
         val s = style.shadow
         val shape = RoundedCornerShape((style.border_radius ?: 0.0).dp)
-        mod = mod.then(
-            Modifier.shadow(
-                elevation = (s.blur / 2).dp,
-                shape = shape,
-                ambientColor = StyleEngine.parseColor(s.color),
-                spotColor = StyleEngine.parseColor(s.color),
-            )
+        val resolved = StyleEngine.resolveShadow(
+            ShadowStyleConfig(x = s.x, y = s.y, blur = s.blur, spread = s.spread, color = s.color),
         )
+        mod = mod.then(with(StyleEngine) { Modifier.appdnaShadow(resolved, shape) })
     }
 
     // Clip shape. `pulsing_avatar` / `star_background` draw pulse rings / stars that intentionally

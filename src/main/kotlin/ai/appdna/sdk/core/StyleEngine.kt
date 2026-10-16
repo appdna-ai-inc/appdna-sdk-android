@@ -9,6 +9,14 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.graphics.Outline
+import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.Shape
+import androidx.compose.ui.graphics.asAndroidPath
+import androidx.compose.ui.graphics.drawscope.drawIntoCanvas
+import androidx.compose.ui.graphics.nativeCanvas
+import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.LinearGradientShader
@@ -230,6 +238,10 @@ object StyleEngine {
                 bottom = (p.bottom ?: 0.0).dp,
             )
         }
+        // Shadow — #886. BEFORE the clip below, because a clip earlier in the chain cuts away
+        // everything a later draw puts outside the shape, which is exactly where an offset,
+        // blurred shadow lives. `applyBlockStyle` has always ordered it this way.
+        mod = mod.appdnaShadow(resolveShadow(style.shadow), shape)
         // Background
         style.background?.let { bg ->
             mod = when (bg.type) {
@@ -286,13 +298,6 @@ object StyleEngine {
                     shape,
                 )
             }
-        }
-        // Shadow
-        style.shadow?.let { s ->
-            mod = mod.shadow(
-                elevation = ((s.blur ?: 0.0) / 2).dp,
-                shape = shape,
-            )
         }
         // Opacity
         style.opacity?.let { alpha ->
@@ -388,6 +393,79 @@ object StyleEngine {
         } else {
             RoundedCornerShape((style.corner_radius ?: 0.0).dp)
         }
+    }
+
+    /**
+     * #886 — draw an authored shadow: colour, blur AND offset, following `shape` exactly.
+     *
+     * `Modifier.shadow` takes an ELEVATION and draws Compose's own ambient/spot shadow. It has no
+     * offset at all, and its colour arguments only tint an elevation curve — so an authored soft
+     * grey shadow and an authored hard black one came out identical, an authored offset was
+     * dropped, and a shadow authored at zero alpha still drew. iOS honours all four values through
+     * `.shadow(color:radius:x:y:)`: one authored style, two different screens, 508 occurrences
+     * across 30 production flows.
+     *
+     * `setShadowLayer` on a transparent paint reproduces SwiftUI's four parameters exactly. The
+     * outline comes from the SAME `shape` the background is clipped to, so a per-corner radius
+     * casts a per-corner shadow instead of the single-radius approximation a corner value would
+     * give. ONE implementation, called by both `applyContainerStyle` and `applyBlockStyle`.
+     *
+     * `spread` is accepted and IGNORED, deliberately: SwiftUI has no spread, so honouring it here
+     * would re-create the divergence this removes.
+     */
+    fun Modifier.appdnaShadow(resolved: ResolvedShadow?, shape: Shape): Modifier {
+        if (resolved == null) return this
+        return this.drawBehind {
+            val blurPx = resolved.radiusDp.dp.toPx()
+            // A zero-radius shadow layer draws nothing on some devices; the smallest positive
+            // radius keeps a hard-edged shadow visible rather than silently absent.
+            val safeBlur = if (blurPx <= 0f) 0.01f else blurPx
+            val paint = android.graphics.Paint().apply {
+                isAntiAlias = true
+                color = android.graphics.Color.TRANSPARENT
+                setShadowLayer(safeBlur, resolved.dxDp.dp.toPx(), resolved.dyDp.dp.toPx(), resolved.colorArgb)
+            }
+            val path = Path()
+            when (val outline = shape.createOutline(size, layoutDirection, this)) {
+                is Outline.Rectangle -> path.addRect(outline.rect)
+                is Outline.Rounded -> path.addRoundRect(outline.roundRect)
+                is Outline.Generic -> path.addPath(outline.path)
+            }
+            drawIntoCanvas { canvas -> canvas.nativeCanvas.drawPath(path.asAndroidPath(), paint) }
+        }
+    }
+
+    /**
+     * #886 — the four values a shadow really draws with, or null when it draws nothing.
+     *
+     * A SEAM rather than inline arithmetic, so a shared fixture can drive the REAL resolution on
+     * both platforms. Android used to pass only `blur` to `Modifier.shadow` as an elevation — no
+     * colour, no offset — so an authored soft grey shadow and a hard black one came out identical
+     * and a zero-alpha shadow still drew, while iOS honoured all four. 508 occurrences across 30
+     * production flows were affected.
+     *
+     * `spread` is accepted and IGNORED on both platforms, deliberately: SwiftUI has no spread, and
+     * honouring it on one side would re-create the divergence this removes.
+     *
+     * The radius is `blur / 2`, matching iOS's `CGFloat(s.shadow?.blur ?? 0) / 2`.
+     */
+    data class ResolvedShadow(
+        val colorArgb: Int,
+        val radiusDp: Double,
+        val dxDp: Double,
+        val dyDp: Double,
+    )
+
+    fun resolveShadow(shadow: ShadowStyleConfig?): ResolvedShadow? {
+        val s = shadow ?: return null
+        val c = parseColor(s.color ?: "transparent")
+        if (c.alpha <= 0f) return null
+        return ResolvedShadow(
+            colorArgb = c.toArgb(),
+            radiusDp = (s.blur ?: 0.0) / 2,
+            dxDp = s.x ?: 0.0,
+            dyDp = s.y ?: 0.0,
+        )
     }
 
     /**
