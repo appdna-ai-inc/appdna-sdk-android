@@ -805,8 +805,31 @@ fun PaywallScreen(
             // can be PINNED to the bottom zone (iOS safeAreaInset(.bottom),
             // PaywallRenderer.swift:141-230) instead of floating mid-screen.
             val ctaSection = if (ctaIndex >= 0) config.sections[ctaIndex] else null
+
+            /*
+             * #884 — ANY section can be pinned to the bottom zone, not only the CTA.
+             *
+             * > Owner, 2026-10-16: "don't you think this whole section should be tied to low zone
+             * > not to top to look better in therms of UI/UX?" — about the plan tiles.
+             *
+             * Before this, the plans scrolled while the button that buys them stayed put, so a
+             * generated paywall left a gap where they had been and pushed the choice off screen
+             * on a short device. A section authored `zone: "bottom"` now joins the pinned group,
+             * in the order it was authored, ABOVE the CTA — which is the reading order a user
+             * expects: choose, then confirm.
+             *
+             * 🔴 CAPPED, because pinning everything is the same bug the other way round. A pinned
+             * group taller than PINNED_ZONE_MAX_FRACTION of the screen would leave a sliver to
+             * scroll in, so past that only the CTA (and the legal beneath it) stay pinned and the
+             * rest goes back to the body. The CTA is never unpinned: reaching it is the whole
+             * point of the zone.
+             */
+            val bottomZoneSections = config.sections.filter {
+                it.zone == "bottom" && it.type != "cta" && it !in pinnedLegalSet && it.type != "sticky_footer"
+            }
             val scrollableSections = config.sections.filter {
-                it.type != "sticky_footer" && it.type != "cta" && it !in pinnedLegalSet
+                it.type != "sticky_footer" && it.type != "cta" && it !in pinnedLegalSet &&
+                    it !in bottomZoneSections
             }
 
             /*
@@ -947,6 +970,31 @@ fun PaywallScreen(
             // body (weight(1f)), above the pinned legal + sticky footer. Same
             // horizontal inset as the scrolled content. Mirrors iOS
             // safeAreaInset(.bottom) ordering (PaywallRenderer.swift:141-230).
+            // #884 — the authored bottom-zone sections, above the CTA, in authored order.
+            bottomZoneSections.forEach { pinned ->
+                Column(modifier = Modifier.fillMaxWidth().padding(horizontal = (config.layout.padding ?: 20f).dp)) {
+                    PaywallSectionView(
+                        section = pinned,
+                        config = config,
+                        selectedPlanId = selectedPlanId,
+                        isPurchasing = isPurchasing,
+                        onPlanSelect = { planId ->
+                            selectedPlanId = planId
+                            HapticEngine.triggerIfEnabled(currentView, config.haptic?.triggers?.on_plan_select, config.haptic)
+                        },
+                        onCTATap = {},
+                        onRestore = {},
+                        onDismiss = { triggerDismiss() },
+                        loc = ::loc,
+                        toggleStates = toggleStates,
+                        promoCode = promoCode,
+                        promoState = promoState,
+                        onPromoCodeChange = { promoCode = it },
+                        onPromoStateChange = { promoState = it },
+                    )
+                }
+                Spacer(modifier = Modifier.height((config.layout.spacing ?: 16f).dp))
+            }
             ctaSection?.let { cta ->
                 Column(modifier = Modifier.fillMaxWidth().padding(horizontal = (config.layout.padding ?: 20f).dp)) {
                     PaywallSectionView(

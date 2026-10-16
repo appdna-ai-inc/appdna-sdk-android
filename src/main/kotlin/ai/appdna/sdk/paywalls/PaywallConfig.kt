@@ -86,6 +86,16 @@ data class PaywallSection(
     // Per-section id + scroll-collapse parity with iOS
     val id: String? = null,
     val collapse_on_scroll: Boolean? = null,
+    /**
+     * #884 — which zone this section lives in: "body" (scrolls) or "bottom" (pinned with the CTA).
+     *
+     * Until now only the `cta` section, and a `legal` placed after it, could be pinned — so a
+     * paywall's plan tiles scrolled away while the button that buys them stayed. On a short screen
+     * that leaves the user choosing between options they cannot see.
+     *
+     * Absent means "body", so every paywall written before this renders exactly as it did.
+     */
+    val zone: String? = null,
 )
 
 // @Stable rather than @Immutable: the legacy `style: Any?`
@@ -1393,6 +1403,7 @@ internal object PaywallConfigParser {
             // Section id + scroll-collapse parity
             id = map["id"] as? String,
             collapse_on_scroll = map["collapse_on_scroll"] as? Boolean,
+            zone = map["zone"] as? String,
         )
     }
 
