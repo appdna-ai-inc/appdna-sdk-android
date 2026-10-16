@@ -2,11 +2,10 @@ package ai.appdna.sdk.feedback
 
 import android.app.Activity
 import android.content.Context
-import android.content.Intent
 import android.content.SharedPreferences
-import android.net.Uri
 import ai.appdna.sdk.AppDNA
 import ai.appdna.sdk.Log
+import ai.appdna.sdk.core.URLSafety
 import com.google.android.play.core.review.ReviewManagerFactory
 
 /**
@@ -41,21 +40,20 @@ object ReviewPromptManager {
      */
     fun openStoreListing(context: Context) {
         val pkg = context.packageName
-        val market = Intent(Intent.ACTION_VIEW, Uri.parse("market://details?id=$pkg"))
-            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-        try {
-            context.startActivity(market)
-        } catch (_: android.content.ActivityNotFoundException) {
-            val web = Intent(
-                Intent.ACTION_VIEW,
-                Uri.parse("https://play.google.com/store/apps/details?id=$pkg"),
-            ).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-            try {
-                context.startActivity(web)
-            } catch (e: Exception) {
-                Log.warning("Could not open the store listing for $pkg: ${e.message}")
-                return
-            }
+        // Through `URLSafety.open`, not a hand-built `Intent(ACTION_VIEW, Uri.parse(…))`. The URL
+        // here is the host's OWN package rather than a config string, so the allowlist cannot
+        // refuse it (`market` and `https` are both on it) — but `UrlAllowlistCallSitesTest` asks a
+        // structural question rather than a provenance one, and it is right to: the two shapes are
+        // indistinguishable to a reader, and the next store URL may well come from config. ONE way
+        // to open a URL in this SDK.
+        //
+        // `market://` first; `open` returns false when no activity handles it — a device with no
+        // Play app, which is not theoretical, it is every emulator — and the https listing follows.
+        val opened = URLSafety.open(context, "market://details?id=$pkg", newTask = true)
+            || URLSafety.open(context, "https://play.google.com/store/apps/details?id=$pkg", newTask = true)
+        if (!opened) {
+            Log.warning("Could not open the store listing for $pkg")
+            return
         }
         AppDNA.track("store_listing_opened", mapOf("package" to pkg))
     }
