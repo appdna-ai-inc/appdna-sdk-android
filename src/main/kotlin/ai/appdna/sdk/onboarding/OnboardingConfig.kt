@@ -143,6 +143,18 @@ data class OnboardingStep(
     val hide_progress: Boolean? = null,
     /** When true, the back button is hidden on this step (the step still counts toward total progress). */
     val hide_back: Boolean? = null,
+    /**
+     * #896 — when true, the SDK asks Play for an in-app review as this step APPEARS.
+     *
+     * 🔴 On the step, not on a button. Apple's rule is to not call the review prompt in response
+     * to a user action and Google's design guidelines forbid putting a prompt in front of theirs;
+     * arriving at a step is a moment in a flow, a tap is a request. A button that takes the user
+     * to the store listing is the other half and is allowed — `action: "rate_app"`.
+     *
+     * The OS decides whether anything appears and reports nothing about the outcome, deliberately,
+     * so an app cannot condition on it. Nothing of ours is drawn.
+     */
+    val request_store_review: Boolean? = null,
     val next_step_rules: ImmutableList<NextStepRule>? = null,
     /**
      * The step's authored name ("Screen path 1").
@@ -1459,6 +1471,9 @@ internal object OnboardingConfigParser {
             // (mirrors iOS OnboardingConfig.swift LayoutFlagKeys decode).
             hide_progress = map["hide_progress"] as? Boolean ?: configMap["hide_progress"] as? Boolean,
             hide_back = map["hide_back"] as? Boolean ?: configMap["hide_back"] as? Boolean,
+            // Same root-then-layout ladder as the two flags above (#896).
+            request_store_review = map["request_store_review"] as? Boolean
+                ?: configMap["request_store_review"] as? Boolean,
             next_step_rules = nextStepRules,
             name = map["name"] as? String,
             rawContentBlocks = stampedRaw,

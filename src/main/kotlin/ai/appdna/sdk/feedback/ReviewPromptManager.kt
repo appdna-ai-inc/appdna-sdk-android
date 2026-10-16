@@ -2,7 +2,9 @@ package ai.appdna.sdk.feedback
 
 import android.app.Activity
 import android.content.Context
+import android.content.Intent
 import android.content.SharedPreferences
+import android.net.Uri
 import ai.appdna.sdk.AppDNA
 import ai.appdna.sdk.Log
 import com.google.android.play.core.review.ReviewManagerFactory
@@ -19,6 +21,44 @@ object ReviewPromptManager {
     private const val KEY_LAST_DATE = "review_prompt_last_date"
     private const val MAX_PROMPTS_PER_YEAR = 3
     private const val MIN_DAYS_BETWEEN_PROMPTS = 90
+
+    /**
+     * Open the app's Play listing, where the user can leave a review themselves.
+     *
+     * #896 — this is the OTHER half of asking for a review, and the halves are not
+     * interchangeable. [triggerReview] asks the OS for the in-place sheet and MUST NOT be called
+     * in response to a tap: Apple names that rule explicitly and Google's design guidelines say
+     * the same about putting a prompt in front of theirs. Opening the store listing from a button
+     * the user chose is allowed on both, because no system prompt is invoked — the user asked to
+     * go to the store, and they go.
+     *
+     * Play has no write-review deep link, so the listing is as close as Android gets; the review
+     * control is on it. `market://` hands off to the Play app when it is installed and the https
+     * form is the fallback for a device without it (and for an emulator, which is why the
+     * fallback is not theoretical).
+     *
+     * Nothing is recorded about what the user does next. Neither store reports it, by design.
+     */
+    fun openStoreListing(context: Context) {
+        val pkg = context.packageName
+        val market = Intent(Intent.ACTION_VIEW, Uri.parse("market://details?id=$pkg"))
+            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        try {
+            context.startActivity(market)
+        } catch (_: android.content.ActivityNotFoundException) {
+            val web = Intent(
+                Intent.ACTION_VIEW,
+                Uri.parse("https://play.google.com/store/apps/details?id=$pkg"),
+            ).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            try {
+                context.startActivity(web)
+            } catch (e: Exception) {
+                Log.warning("Could not open the store listing for $pkg: ${e.message}")
+                return
+            }
+        }
+        AppDNA.track("store_listing_opened", mapOf("package" to pkg))
+    }
 
     private fun getPrefs(context: Context): SharedPreferences {
         return context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)

@@ -678,6 +678,17 @@ internal fun OnboardingFlowHost(
             val step = flow.steps[currentIndex]
             val stepIndex = currentIndex
             val d = delegate
+
+            /*
+             * #896 — ask the OS for a review as the step APPEARS, never from a tap.
+             *
+             * Inside the per-step effect, so it fires once per arrival and not on recomposition.
+             * `triggerReview` is itself rate-limited (3 a year, 90 days apart) on top of the OS
+             * quota, and reports nothing about the outcome — neither store will say.
+             */
+            if (step.request_store_review == true) {
+                ai.appdna.sdk.feedback.ReviewPromptManager.triggerReview(activityCtx)
+            }
             // 🔴 BOUNDED. Every host is asked to FETCH DATA here, so a customer awaiting their
             // own backend on a bad connection would otherwise hang the step indefinitely. 3s rather
             // than the hook default of 10s: this call stands between the user and a visible screen.
@@ -3485,6 +3496,21 @@ private fun BlockBasedStepView(
                     }
                 }
             }
+            /*
+             * #896 — a button that takes the user to the store to leave a review.
+             *
+             * 🔴 It opens the LISTING; it does not ask the OS for the in-place sheet. Apple's rule
+             * is explicit — don't call the review prompt in response to a user action — and a tap
+             * is exactly that. The sheet is asked for when a step APPEARS
+             * (`step.request_store_review`), which is a moment in a flow rather than a request.
+             * #897 is why the distinction is drawn this carefully.
+             *
+             * No auto-advance, for the same reason `link` does not: the user leaves the app, and
+             * advancing behind their back means they come back to a screen they never saw.
+             * `action_value` carries the numeric App Store ID on iOS; Android derives its own
+             * package name and ignores it.
+             */
+            "rate_app" -> ai.appdna.sdk.feedback.ReviewPromptManager.openStoreListing(activityCtx)
             else -> onNext(null)
         }
     }
