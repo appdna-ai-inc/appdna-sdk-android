@@ -262,8 +262,8 @@ class SharedFixtureTest(
             "parse_colour" -> runParseColour(action, spy)
             "unfold_blockquotes" -> runUnfoldBlockquotes(action, spy)
             "resolve_shadow" -> runResolveShadow(action, spy)
-            "paywall_header_close_inset" -> runHeaderCloseInset(action, spy)
-            "paywall_default_text_colour" -> runDefaultTextColour(action, spy)
+            "resolve_header_inset" -> runHeaderCloseInset(action, spy)
+            "resolve_default_text_colour" -> runDefaultTextColour(action, spy)
             // #772 — WHICH copy of content_blocks the real parser resolves, per step shape.
             "resolve_content_blocks" -> runResolveContentBlocks(action, spy)
             "countdown_initial_seconds" -> runCountdownInitialSeconds(action, spy)
@@ -1883,7 +1883,7 @@ class SharedFixtureTest(
      * `PaywallTextDefaults.readableHex`.
      */
     private fun runDefaultTextColour(action: JSONObject, spy: Spy) {
-        val cases = action.optJSONArray("cases") ?: unsupported("paywall_default_text_colour without cases")
+        val cases = action.optJSONArray("cases") ?: unsupported("resolve_default_text_colour without cases")
         spy.state["results"] = (0 until cases.length()).map { i ->
             val v = cases.getJSONObject(i).opt("value")
             val bg = if (v == null || v == JSONObject.NULL) null else v as String
@@ -1898,7 +1898,7 @@ class SharedFixtureTest(
      * one that must still reserve: absent means dismissable.
      */
     private fun runHeaderCloseInset(action: JSONObject, spy: Spy) {
-        val cases = action.optJSONArray("cases") ?: unsupported("paywall_header_close_inset without cases")
+        val cases = action.optJSONArray("cases") ?: unsupported("resolve_header_inset without cases")
         spy.state["results"] = (0 until cases.length()).map { i ->
             val v = cases.getJSONObject(i).opt("value")
             if (v == null || v == JSONObject.NULL) {
