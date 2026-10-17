@@ -8,6 +8,7 @@ import ai.appdna.sdk.PurchaseFailedException
 import ai.appdna.sdk.PurchasePendingException
 import ai.appdna.sdk.config.RemoteConfigManager
 import ai.appdna.sdk.events.EventTracker
+import kotlinx.collections.immutable.toImmutableList
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -212,7 +213,13 @@ internal class PaywallManager(
                 viewProps[key] = value
             }
         }
-        eventTracker.track("paywall_view", viewProps)
+        /*
+         #923 — the view event fires AFTER the store lookup (below), not here, so it describes the
+         screen the user actually saw. It carries `price_source` per plan: `store`, or one of
+         `authored_opt_out` / `authored_no_product` / `authored_lookup_failed`. That is what
+         answers "why is my paywall showing the old price" — without it the question has no answer
+         in the data, and the three authored reasons are indistinguishable from outside.
+        */
 
         // Prefetch all paywall image URLs
         // before launching Activity, mirroring iOS PaywallManager.swift
@@ -229,7 +236,60 @@ internal class PaywallManager(
             }
         } catch (_: Throwable) { /* never block presentation on prefetch */ }
 
-        // Launch the PaywallActivity
+        /*
+         #923 — ASK PLAY WHAT THESE PRODUCTS COST, before the Activity starts.
+
+         Until this, `price_display` was a free-text field and the only thing a user ever saw: a
+         price change in Play Console did not reach the paywall, so Play charged the new price
+         while the screen showed the old one, in the author's currency whatever the user's own was.
+         `PriceResolver` could do the lookup all along; its callers were both post-purchase
+         analytics.
+
+         🔴 BOUNDED, AND IT ALWAYS LAUNCHES. The lookup gets 1.5s — the same budget iOS gives it —
+         and a failure, an empty answer or a deadline all leave the map empty, which falls every
+         plan back to its authored price. The resolver's in-memory cache answers a second
+         presentation for free, so the wait is paid once per session at most.
+
+         The launch moved INSIDE a coroutine, which is the one behavioural cost: this presentation
+         is no longer synchronous with the call. Everything after it already was — the Activity
+         starts asynchronously regardless — and `scope` is the manager's own, cancelled by
+         `shutdown()`, so a paywall cannot start after the SDK has gone.
+        */
+        // A snapshot, because `config` above is a captured `var` and Kotlin will not smart-cast one.
+        val presented = config
+        scope.launch {
+            val prices = ai.appdna.sdk.billing.StorePriceLookup.prices(
+                resolver = ai.appdna.sdk.AppDNA.billing.manager?.priceResolver,
+                productIds = (presented.plans ?: emptyList()).map { it.product_id },
+            )
+            val withPrices = if (prices.isEmpty() || presented.plans == null) presented else {
+                presented.copy(
+                    plans = presented.plans!!
+                        .map { plan -> plan.copy(resolvedStorePrice = prices[plan.product_id]) }
+                        .toImmutableList(),
+                )
+            }
+            val sources = (withPrices.plans ?: emptyList()).map { it.priceSource }
+            if (sources.isNotEmpty()) {
+                viewProps["price_source"] = sources.joinToString(",")
+                viewProps["store_prices_resolved"] = sources.count { it == "store" }
+            }
+            eventTracker.track("paywall_view", viewProps)
+            launchPaywallActivity(activity, id, withPrices, context, listener)
+        }
+    }
+
+    /**
+     * The Activity launch, lifted out of [present] so the store-price lookup above can await
+     * before it without burying the whole call in one coroutine body (#923).
+     */
+    private fun launchPaywallActivity(
+        activity: Activity,
+        id: String,
+        config: PaywallConfig,
+        context: PaywallContext?,
+        listener: AppDNAPaywallDelegate?,
+    ) {
         PaywallActivity.launch(
             context = activity,
             paywallId = id,

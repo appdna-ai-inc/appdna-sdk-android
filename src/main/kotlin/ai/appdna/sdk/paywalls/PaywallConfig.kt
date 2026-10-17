@@ -476,6 +476,21 @@ data class PaywallPlan(
     val is_default: Boolean? = null,
     val label: String = "",
     val price_display: String = "",
+    /**
+     * #923 — whether this plan's price comes from the STORE or from [price_display].
+     *
+     * 🔴 The DEFAULT IS THE STORE, so this is an opt-OUT and `null` means "ask". It exists for a
+     * plan that deliberately shows a marketing price — a struck-through "was $19.99", a price the
+     * app subsidises, a plan with no store product behind it — and `false` wins even over a store
+     * that answered.
+     */
+    val use_store_price: Boolean? = null,
+    /**
+     * #923 — Play's localized price for this plan's product, filled in by the PRESENTER just
+     before the screen is composed, or null when the lookup failed, timed out, or did not know the
+     * product. Never parsed from a document.
+     */
+    val resolvedStorePrice: String? = null,
     val sort_order: Int = 0,
     // Rich plan metadata (iOS parity)
     val trial: PaywallPlanTrial? = null,
@@ -521,7 +536,30 @@ data class PaywallPlan(
     // over the raw fields when set. iOS source: PaywallConfig.swift via
     // computed Codable accessors.
     val displayName: String get() = label.ifBlank { name }
-    val displayPrice: String get() = price_display.ifBlank { price }
+    /**
+     * Display price — the STORE's, falling back to what the author typed (#923).
+     *
+     * Every layout reads this one property, which is why the substitution lives here rather than
+     * at each render site that would have had to remember it.
+     */
+    val displayPrice: String get() = ai.appdna.sdk.billing.StorePriceSubstitution.resolve(
+        authoredPrice = price_display.ifBlank { price },
+        productId = product_id,
+        useStorePrice = use_store_price,
+        storePrice = resolvedStorePrice,
+    ).priceDisplay
+
+    /**
+     * Where [displayPrice] came from — `store`, or one of the three authored reasons (#923).
+     * Reported with `paywall_view` so a customer asking why their paywall shows the old price has
+     * an answer in the data rather than a guess.
+     */
+    val priceSource: String get() = ai.appdna.sdk.billing.StorePriceSubstitution.resolve(
+        authoredPrice = price_display.ifBlank { price },
+        productId = product_id,
+        useStorePrice = use_store_price,
+        storePrice = resolvedStorePrice,
+    ).source
     // An authored trial.label wins verbatim; a bare trial_duration
     // ("7-day") is enriched to "7-day free trial" to match iOS PaywallConfig.swift
     // (the suffix used to be appended only at the iOS grid render site, so Android
@@ -1546,6 +1584,8 @@ internal object PaywallConfigParser {
             is_default = map["is_default"] as? Boolean,
             label = map["label"] as? String ?: "",
             price_display = map["price_display"] as? String ?: "",
+            // #923 — absent means "ask the store", so only an explicit `false` opts out.
+            use_store_price = map["use_store_price"] as? Boolean,
             sort_order = (map["sort_order"] as? Number)?.toInt() ?: 0,
             //
             trial = trial,

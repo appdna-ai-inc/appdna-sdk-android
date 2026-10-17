@@ -269,6 +269,7 @@ class SharedFixtureTest(
             "resolve_element_container" -> runElementContainer(action, spy)
             "resolve_plan_period" -> runPlanPeriod(action, spy)
             "resolve_step_auto_advance" -> runStepAutoAdvance(action, spy)
+            "resolve_store_price" -> runStorePrice(action, spy)
             // #772 — WHICH copy of content_blocks the real parser resolves, per step shape.
             "resolve_content_blocks" -> runResolveContentBlocks(action, spy)
             "countdown_initial_seconds" -> runCountdownInitialSeconds(action, spy)
@@ -1931,6 +1932,28 @@ class SharedFixtureTest(
             val raw = cases.getJSONObject(i).getJSONObject("value")
             val plan = ai.appdna.sdk.paywalls.PaywallConfigParser.parsePlanForTest(jsonToMap(raw))
             plan.period?.takeIf { it.isNotEmpty() }
+        }
+    }
+
+    /**
+     * #923 — whether a plan shows the STORE's price or the one an author typed, through the REAL
+     * policy both renderers call.
+     *
+     * The authored string is the FALLBACK on every failure path, so most cases here are failures:
+     * an absent `store_price` stands for a lookup that threw, timed out, or returned no such
+     * product, and the renderer cannot tell those apart — nor should it, since the answer is the same.
+     */
+    private fun runStorePrice(action: JSONObject, spy: Spy) {
+        val cases = action.optJSONArray("cases") ?: unsupported("resolve_store_price without cases")
+        spy.state["results"] = (0 until cases.length()).map { i ->
+            val v = cases.getJSONObject(i).getJSONObject("value")
+            val out = ai.appdna.sdk.billing.StorePriceSubstitution.resolve(
+                authoredPrice = if (v.has("authored_price")) v.getString("authored_price") else null,
+                productId = if (v.has("product_id")) v.getString("product_id") else null,
+                useStorePrice = if (v.has("use_store_price")) v.getBoolean("use_store_price") else null,
+                storePrice = if (v.has("store_price")) v.getString("store_price") else null,
+            )
+            listOf(out.priceDisplay, out.source)
         }
     }
 
