@@ -1102,6 +1102,31 @@ internal fun OnboardingFlowHost(
     // .routeOutcome` unknown-target fallback above.
     advanceOrCompleteRef = { advanceOrComplete() }
 
+    /*
+     * #921 — a step that advances by itself.
+     *
+     * A `LaunchedEffect` keyed on `currentIndex`, which is cancellation for free and the reason
+     * this is simpler than iOS's explicit timer: Compose cancels the coroutine when the index
+     * changes (a tap, a rule, the host advancing the step) and when the composable leaves (the
+     * flow being dismissed), so a stale timer cannot advance a screen nobody is looking at.
+     *
+     * Placed after the forward-ref binding above because the effect calls `advanceOrComplete`,
+     * which is declared just above it.
+     *
+     * 🔴 The guard after the delay re-reads `currentIndex` and compares the step ID. A rule can
+     * route BACK to an earlier step, so an index can repeat; without the identity check a timer
+     * armed on the first visit could fire against the second.
+     */
+    LaunchedEffect(currentIndex) {
+        if (currentIndex >= flow.steps.size) return@LaunchedEffect
+        val step = flow.steps[currentIndex]
+        val millis = StepAutoAdvance.delayMillis(step) ?: return@LaunchedEffect
+        kotlinx.coroutines.delay(millis)
+        if (currentIndex < flow.steps.size && flow.steps[currentIndex].id == step.id) {
+            advanceOrComplete()
+        }
+    }
+
     fun handleHookResult(result: StepAdvanceResult, step: OnboardingStep) {
         applyOutcome(
             OnboardingAdvance.apply(

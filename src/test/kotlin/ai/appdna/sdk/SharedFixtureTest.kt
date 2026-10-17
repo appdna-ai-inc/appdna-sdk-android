@@ -268,6 +268,7 @@ class SharedFixtureTest(
             "bottom_zone_overflows" -> runBottomZoneOverflows(action, spy)
             "resolve_element_container" -> runElementContainer(action, spy)
             "resolve_plan_period" -> runPlanPeriod(action, spy)
+            "resolve_step_auto_advance" -> runStepAutoAdvance(action, spy)
             // #772 — WHICH copy of content_blocks the real parser resolves, per step shape.
             "resolve_content_blocks" -> runResolveContentBlocks(action, spy)
             "countdown_initial_seconds" -> runCountdownInitialSeconds(action, spy)
@@ -1930,6 +1931,26 @@ class SharedFixtureTest(
             val raw = cases.getJSONObject(i).getJSONObject("value")
             val plan = ai.appdna.sdk.paywalls.PaywallConfigParser.parsePlanForTest(jsonToMap(raw))
             plan.period?.takeIf { it.isNotEmpty() }
+        }
+    }
+
+    /**
+     * #921 — whether a step advances by itself, through the REAL step PARSER and the real policy.
+     *
+     * Parsing the step is the load-bearing half: the console writes these two fields inside the
+     * step's `layout`, so a reader handed a constructed `OnboardingStep` would pass while every
+     * authored splash screen sat there forever. It also pins the number cast — Firestore hands an
+     * integral JSON number back as a Long, and `as? Double` on `3` is null.
+     */
+    private fun runStepAutoAdvance(action: JSONObject, spy: Spy) {
+        val cases = action.optJSONArray("cases") ?: unsupported("resolve_step_auto_advance without cases")
+        spy.state["results"] = (0 until cases.length()).map { i ->
+            val raw = jsonToMap(cases.getJSONObject(i).getJSONObject("value")).toMutableMap()
+            raw.putIfAbsent("id", "fixture_step")
+            raw.putIfAbsent("type", "splash")
+            val step = ai.appdna.sdk.onboarding.OnboardingConfigParser.parseStepForTest(raw)
+                ?: error("a step did not parse")
+            ai.appdna.sdk.onboarding.StepAutoAdvance.delaySeconds(step)
         }
     }
 

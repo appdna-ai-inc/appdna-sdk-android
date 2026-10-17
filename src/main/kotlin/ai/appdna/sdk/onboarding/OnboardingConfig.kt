@@ -155,6 +155,24 @@ data class OnboardingStep(
      * so an app cannot condition on it. Nothing of ours is drawn.
      */
     val request_store_review: Boolean? = null,
+    /**
+     * #921 — the step advances by itself after this many seconds.
+     *
+     * A splash screen and a step with a forgotten button are the same shape on the wire; this is
+     * one of the two fields that tell them apart. [StepAutoAdvance] holds the precedence
+     * ([wait_for_host] wins over this) and the bounds. `Double`, not `Int`: the console accepts
+     * 0.5s and a JSON number does not say which it is.
+     */
+    val auto_advance_seconds: Double? = null,
+    /**
+     * #921 — the step is DECLARED host-driven: it holds until the app calls
+     * `AppDNA.advanceOnboardingStep()`, and never times out.
+     *
+     * Carries no rendering of its own. What it buys is that the console's publish warning and the
+     * platform's dead-end probe can skip the step honestly instead of being told to ignore two step
+     * ids, and that a leftover [auto_advance_seconds] cannot cut the app's loading short.
+     */
+    val wait_for_host: Boolean? = null,
     val next_step_rules: ImmutableList<NextStepRule>? = null,
     /**
      * The step's authored name ("Screen path 1").
@@ -1474,6 +1492,20 @@ internal object OnboardingConfigParser {
             // Same root-then-layout ladder as the two flags above (#896).
             request_store_review = map["request_store_review"] as? Boolean
                 ?: configMap["request_store_review"] as? Boolean,
+            /*
+             * #921 — the SAME root-then-layout ladder, and here it is the ONLY path that works for
+             * a graph-authored step: `updateNodeData` writes every Logic-panel flag into
+             * `data.stepConfig`, which the console ships as the step's `layout` (= `configMap`).
+             * The builder also hoists these two to the step root on save, so both are live.
+             *
+             * `as? Number`, not `as? Double`: Firestore hands an integral JSON number back as a
+             * Long, so `3` (not `3.0`) would have cast to null and the timer would never start —
+             * the same class of miss as the `priceCents` Int/Double cast in the paywall DTO.
+             */
+            auto_advance_seconds = (map["auto_advance_seconds"] as? Number)?.toDouble()
+                ?: (configMap["auto_advance_seconds"] as? Number)?.toDouble(),
+            wait_for_host = map["wait_for_host"] as? Boolean
+                ?: configMap["wait_for_host"] as? Boolean,
             next_step_rules = nextStepRules,
             name = map["name"] as? String,
             rawContentBlocks = stampedRaw,
