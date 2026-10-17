@@ -77,6 +77,32 @@ data class PaywallLayout(
     val global_style: Map<String, Any>? = null,
 )
 
+/**
+ * #923 — a copy of this paywall with the STORE's price on every plan, wherever that plan lives.
+ *
+ * 🔴 The root `plans` array and `sections[type=="plans"].data.plans` are two places a paywall's
+ * plans can be written, and the renderer reads whichever is present
+ * (`PaywallActivity.kt:3757`). Applying to one of them is the same as applying to none on a
+ * document that used the other — which is what the first version of the substitution did on BOTH
+ * platforms, and what iOS's `StorePriceRenderTests` caught by rendering the view and comparing
+ * pixels. The fixture and the live-StoreKit test both passed throughout, because neither draws.
+ *
+ * An empty map returns the receiver untouched: a failed or timed-out lookup must change nothing.
+ */
+internal fun PaywallConfig.applyingStorePrices(prices: Map<String, String>): PaywallConfig {
+    if (prices.isEmpty()) return this
+    fun priced(list: List<PaywallPlan>?): ImmutableList<PaywallPlan>? =
+        list?.map { it.copy(resolvedStorePrice = prices[it.product_id]) }?.toImmutableList()
+    return copy(
+        plans = priced(plans),
+        sections = sections.map { section ->
+            val sectionPlans = section.data?.plans
+            if (section.type != "plans" || sectionPlans == null) section
+            else section.copy(data = section.data.copy(plans = priced(sectionPlans)))
+        }.toImmutableList(),
+    )
+}
+
 @Immutable
 data class PaywallSection(
     val type: String, // "header", "features", "plans", "cta", "social_proof", "guarantee", "image", "spacer", "testimonial", "lottie", "video", "rive", "countdown", "legal", "divider", "sticky_footer", "card", "carousel", "timeline", "icon_grid", "comparison_table", "promo_input", "toggle", "reviews_carousel"

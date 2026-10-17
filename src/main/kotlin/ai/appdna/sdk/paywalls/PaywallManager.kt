@@ -262,13 +262,8 @@ internal class PaywallManager(
                 resolver = ai.appdna.sdk.AppDNA.billing.manager?.priceResolver,
                 productIds = (presented.plans ?: emptyList()).map { it.product_id },
             )
-            val withPrices = if (prices.isEmpty() || presented.plans == null) presented else {
-                presented.copy(
-                    plans = presented.plans!!
-                        .map { plan -> plan.copy(resolvedStorePrice = prices[plan.product_id]) }
-                        .toImmutableList(),
-                )
-            }
+            // Every place plans live, not only the root array — see `applyingStorePrices`.
+            val withPrices = presented.applyingStorePrices(prices)
             val sources = (withPrices.plans ?: emptyList()).map { it.priceSource }
             if (sources.isNotEmpty()) {
                 viewProps["price_source"] = sources.joinToString(",")
