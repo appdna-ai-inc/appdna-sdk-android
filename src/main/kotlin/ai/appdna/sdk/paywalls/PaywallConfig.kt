@@ -1517,6 +1517,15 @@ internal object PaywallConfigParser {
         if (id.isBlank()) copy(id = "plan_$index") else this
 
     @Suppress("UNCHECKED_CAST")
+    /**
+     * #913 — the same plan parser the renderer uses, reachable from the shared fixture.
+     *
+     * Same reasoning as `parseElementStyleForTest`: a fixture that re-implemented the decode would
+     * assert its own arithmetic, and the point of the seam is that the value the test compares is
+     * the value the screen gets.
+     */
+    internal fun parsePlanForTest(map: Map<String, Any>): PaywallPlan = parsePlanFromMap(map)
+
     private fun parsePlanFromMap(map: Map<String, Any>): PaywallPlan {
         // Parse structured trial object (legacy `trial_duration` string still supported)
         val trialMap = map["trial"] as? Map<String, Any>

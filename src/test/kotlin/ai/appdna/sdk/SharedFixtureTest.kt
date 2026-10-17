@@ -267,6 +267,7 @@ class SharedFixtureTest(
             "resolve_default_text_colour" -> runDefaultTextColour(action, spy)
             "bottom_zone_overflows" -> runBottomZoneOverflows(action, spy)
             "resolve_element_container" -> runElementContainer(action, spy)
+            "resolve_plan_period" -> runPlanPeriod(action, spy)
             // #772 — WHICH copy of content_blocks the real parser resolves, per step shape.
             "resolve_content_blocks" -> runResolveContentBlocks(action, spy)
             "countdown_initial_seconds" -> runCountdownInitialSeconds(action, spy)
@@ -1913,6 +1914,22 @@ class SharedFixtureTest(
                 c.opacity,
                 c.padding?.top,
             )
+        }
+    }
+
+    /**
+     * #913 — a plan's billing period, through the REAL plan parser.
+     *
+     * This side has rendered `plan.period` at five sites all along; iOS declared a style for it and
+     * drew nothing, and NOTHING could author one. An empty string resolves to null, because both
+     * renderers treat it as absent rather than drawing a blank label against the price.
+     */
+    private fun runPlanPeriod(action: JSONObject, spy: Spy) {
+        val cases = action.optJSONArray("cases") ?: unsupported("resolve_plan_period without cases")
+        spy.state["results"] = (0 until cases.length()).map { i ->
+            val raw = cases.getJSONObject(i).getJSONObject("value")
+            val plan = ai.appdna.sdk.paywalls.PaywallConfigParser.parsePlanForTest(jsonToMap(raw))
+            plan.period?.takeIf { it.isNotEmpty() }
         }
     }
 

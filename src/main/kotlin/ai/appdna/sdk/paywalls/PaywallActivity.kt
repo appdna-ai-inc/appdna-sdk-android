@@ -2031,6 +2031,13 @@ internal fun PaywallSectionView(
                 with(StyleEngine) { applyContainerStyle(elementStyle("feature")) }
             }
             val planFeatureTextStyle = section.style?.elements?.get("feature")?.text_style
+            // #913 — the `period` element's container. Android has rendered the period's TEXT at
+            // five sites all along; what it never had is the container half, and what NOTHING had
+            // was a way to author `plan.period` at all (no schema field, no console control, 0 of
+            // 81 production plans). Both are real now, and iOS draws the period too.
+            val periodElementModifier = Modifier.run {
+                with(StyleEngine) { applyContainerStyle(elementStyle("period")) }
+            }
             val planNameStyle = StyleEngine.applyTextStyle(
                 TextStyle(fontWeight = FontWeight.SemiBold, color = Color.White, fontSize = 16.sp),
                 // Mirror iOS PlanCard.swift:22 (elements["plan_name"] ?? elements["label"]) — the
@@ -2351,12 +2358,35 @@ internal fun PaywallSectionView(
 
                             if ((section.data?.price_layout ?: "inline") == "headline_stacked") {
                                 Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                                    Text(
-                                        text = loc("plan.$planIdx.price", plan.displayPrice),
-                                        style = priceStyle,
-                                        color = planPriceColor,
-                                        modifier = priceElementModifier,
-                                    )
+                                    Row(verticalAlignment = Alignment.Bottom) {
+                                        Text(
+                                            text = loc("plan.$planIdx.price", plan.displayPrice),
+                                            style = priceStyle,
+                                            color = planPriceColor,
+                                            modifier = priceElementModifier,
+                                        )
+                                        Spacer(Modifier.width(2.dp))
+                                    // #913 — the period, small beside the price. See the note
+                                    // below the branch.
+                                    plan.period?.takeIf { it.isNotBlank() }?.let {
+                                        Text(
+                                            text = loc("plan.$planIdx.period", it),
+                                            // #913 — the period follows the TILE, like the price does.
+                                            // `periodStyle`'s own default is white at 70%, which assumes a
+                                            // dark tile; on the selected tile — light, once #909 aligned it —
+                                            // that is white-on-white. Measured on a device: the period was
+                                            // absent from the selected tile while rendering fine on the
+                                            // unselected one beside it. Mirrors iOS `.opacity(0.7)`.
+                                            color = if (resolvedTextColor != Color.Unspecified) {
+                                                resolvedTextColor.copy(alpha = 0.7f)
+                                            } else {
+                                                Color.Unspecified
+                                            },
+                                            style = periodStyle,
+                                            modifier = periodElementModifier,
+                                        )
+                                    }
+                                    }
                                     if (struck != null || chargedTotal != null) {
                                         Row(
                                             verticalAlignment = Alignment.CenterVertically,
@@ -2397,9 +2427,45 @@ internal fun PaywallSectionView(
                                         modifier = priceElementModifier,
                                         color = planPriceColor,
                                     )
+                                    // #913 — the period, small beside the price. See the note
+                                    // below the branch.
+                                    plan.period?.takeIf { it.isNotBlank() }?.let {
+                                        Text(
+                                            text = loc("plan.$planIdx.period", it),
+                                            // #913 — the period follows the TILE, like the price does.
+                                            // `periodStyle`'s own default is white at 70%, which assumes a
+                                            // dark tile; on the selected tile — light, once #909 aligned it —
+                                            // that is white-on-white. Measured on a device: the period was
+                                            // absent from the selected tile while rendering fine on the
+                                            // unselected one beside it. Mirrors iOS `.opacity(0.7)`.
+                                            color = if (resolvedTextColor != Color.Unspecified) {
+                                                resolvedTextColor.copy(alpha = 0.7f)
+                                            } else {
+                                                Color.Unspecified
+                                            },
+                                            style = periodStyle,
+                                            modifier = periodElementModifier,
+                                        )
+                                    }
                                 }
                             }
-                            // Audit pass-8 — drop the standalone `plan.period` line to match
+                            /*
+                             * 🔴 #913 — the standalone `plan.period` line is BACK, because all
+                             * three reasons for dropping it have stopped being true.
+                             *
+                             * Audit pass-8 removed it "to match iOS PlanCard, which never renders
+                             * plan.period", because "the console preview omits it", and because
+                             * "`period` isn't authored via the console (not in PlanSchema)". Each
+                             * was accurate at the time. As of #913 iOS renders it beside the price,
+                             * `PaywallPreview.tsx` draws it, and `PlanSchema` carries the field
+                             * with a control in the paywall editor.
+                             *
+                             * Deleting a renderer to match the platform that had the gap is how a
+                             * field ends up dead on all four surfaces: the removal was correct
+                             * parity work and the wrong direction. Production carries 0 periods
+                             * across 81 plans, so nothing authored changes today.
+                             */
+                            // The note that used to live here read: drop the standalone line to match
                             // iOS PlanCard, which never renders plan.period (PlanCard.swift:27-29
                             // defines only an unused periodTextStyle) and the console preview,
                             // which omits it. `period` isn't authored via the console (not in
@@ -2743,7 +2809,13 @@ internal fun PaywallSectionView(
                                 Spacer(Modifier.width(8.dp))
                                 Column(modifier = Modifier.weight(1f)) {
                                     Text(text = loc("plan.$planIdx.name", plan.displayName), style = planNameStyle, modifier = planNameElementModifier)
-                                    plan.period?.let { Text(text = loc("plan.$planIdx.period", it), style = periodStyle) }
+                                    plan.period?.let {
+                                        Text(
+                                            text = loc("plan.$planIdx.period", it),
+                                            style = periodStyle,
+                                            modifier = periodElementModifier,
+                                        )
+                                    }
                                 }
                                 Column(horizontalAlignment = Alignment.End) {
                                     Text(text = loc("plan.$planIdx.price", plan.displayPrice), style = priceStyle, modifier = priceElementModifier)
@@ -2791,7 +2863,13 @@ internal fun PaywallSectionView(
                                     }
                                     if (isSelected) {
                                         Spacer(Modifier.height(8.dp))
-                                        plan.period?.let { Text(text = loc("plan.$planIdx.period", it), style = periodStyle) }
+                                        plan.period?.let {
+                                        Text(
+                                            text = loc("plan.$planIdx.period", it),
+                                            style = periodStyle,
+                                            modifier = periodElementModifier,
+                                        )
+                                    }
                                         plan.badge?.let {
                                             Spacer(Modifier.height(4.dp))
                                             BadgeView(loc("plan.$planIdx.badge", it))
@@ -3153,12 +3231,39 @@ internal fun PaywallSectionView(
                                             val vsTotal = plan.price_total_display?.takeIf { it.isNotBlank() }
                                             if ((section.data?.price_layout ?: "inline") == "headline_stacked") {
                                                 Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                                                    Text(
-                                                        text = loc("plan.$planIdx.price", plan.displayPrice),
-                                                        style = priceStyle,
-                                                        color = planTextColor,
-                                                        modifier = priceElementModifier,
-                                                    )
+                                                    Row(verticalAlignment = Alignment.Bottom) {
+                                                        Text(
+                                                            text = loc("plan.$planIdx.price", plan.displayPrice),
+                                                            style = priceStyle,
+                                                            color = planTextColor,
+                                                            modifier = priceElementModifier,
+                                                        )
+                                                        Spacer(Modifier.width(2.dp))
+                                                    // #913 — the period, beside the price. This
+                                                    // `else` arm is the DEFAULT vertical_stack
+                                                    // layout and a separate implementation from
+                                                    // `fun PlanCard`; wiring only the latter is how
+                                                    // #905 and #910 each reached a device with a
+                                                    // field that drew nowhere.
+                                                    plan.period?.takeIf { it.isNotBlank() }?.let {
+                                                        Text(
+                                                            text = loc("plan.$planIdx.period", it),
+                                                            // #913 — the period follows the TILE, like the price does.
+                                                            // `periodStyle`'s own default is white at 70%, which assumes a
+                                                            // dark tile; on the selected tile — light, once #909 aligned it —
+                                                            // that is white-on-white. Measured on a device: the period was
+                                                            // absent from the selected tile while rendering fine on the
+                                                            // unselected one beside it. Mirrors iOS `.opacity(0.7)`.
+                                                            color = if (planTextColor != Color.Unspecified) {
+                                                                planTextColor.copy(alpha = 0.7f)
+                                                            } else {
+                                                                Color.Unspecified
+                                                            },
+                                                            style = periodStyle,
+                                                            modifier = periodElementModifier,
+                                                        )
+                                                    }
+                                                    }
                                                     if (vsStruck != null || vsTotal != null) {
                                                         Row(
                                                             verticalAlignment = Alignment.CenterVertically,
@@ -3197,6 +3302,30 @@ internal fun PaywallSectionView(
                                                         color = planTextColor,
                                                         modifier = priceElementModifier,
                                                     )
+                                                    // #913 — the period, beside the price. This
+                                                    // `else` arm is the DEFAULT vertical_stack
+                                                    // layout and a separate implementation from
+                                                    // `fun PlanCard`; wiring only the latter is how
+                                                    // #905 and #910 each reached a device with a
+                                                    // field that drew nowhere.
+                                                    plan.period?.takeIf { it.isNotBlank() }?.let {
+                                                        Text(
+                                                            text = loc("plan.$planIdx.period", it),
+                                                            // #913 — the period follows the TILE, like the price does.
+                                                            // `periodStyle`'s own default is white at 70%, which assumes a
+                                                            // dark tile; on the selected tile — light, once #909 aligned it —
+                                                            // that is white-on-white. Measured on a device: the period was
+                                                            // absent from the selected tile while rendering fine on the
+                                                            // unselected one beside it. Mirrors iOS `.opacity(0.7)`.
+                                                            color = if (planTextColor != Color.Unspecified) {
+                                                                planTextColor.copy(alpha = 0.7f)
+                                                            } else {
+                                                                Color.Unspecified
+                                                            },
+                                                            style = periodStyle,
+                                                            modifier = periodElementModifier,
+                                                        )
+                                                    }
                                                 }
                                             }
                                             // PARITY FIX: the default vertical_stack path
