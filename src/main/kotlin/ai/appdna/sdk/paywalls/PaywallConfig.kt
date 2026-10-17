@@ -1419,6 +1419,15 @@ internal object PaywallConfigParser {
     }
 
     @Suppress("UNCHECKED_CAST")
+    /**
+     * #905 — the same parser the renderer uses, reachable from the shared fixture.
+     *
+     * A fixture that re-implemented this would assert its own arithmetic; the point of the seam is
+     * that the value the test compares is the value the screen gets.
+     */
+    internal fun parseElementStyleForTest(map: Map<String, Any>): ai.appdna.sdk.core.ElementStyleConfig =
+        parseElementStyle(map)
+
     private fun parseElementStyle(map: Map<String, Any>): ai.appdna.sdk.core.ElementStyleConfig {
         val bgMap = map["background"] as? Map<String, Any>
         val bg = bgMap?.let {
@@ -1466,11 +1475,15 @@ internal object PaywallConfigParser {
         }
         val tsMap = map["text_style"] as? Map<String, Any>
         val textStyle = parseDataTextStyle(tsMap)
+        @Suppress("UNCHECKED_CAST")
+        val nested = (map["element_style"] as? Map<String, Any>)?.let { parseElementStyle(it) }
         return ai.appdna.sdk.core.ElementStyleConfig(
             background = bg, border = border, shadow = shadow, padding = padding,
             corner_radius = (map["corner_radius"] as? Number)?.toDouble(),
             opacity = (map["opacity"] as? Number)?.toDouble(),
             text_style = textStyle,
+            // #905 — the console's own spelling for a per-element container style.
+            element_style = nested,
         )
     }
 

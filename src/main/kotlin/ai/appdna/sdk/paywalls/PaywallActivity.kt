@@ -1929,6 +1929,29 @@ internal fun PaywallSectionView(
              * authored document — tracked as its own divergence rather than papered over by
              * guessing a backdrop here.
              */
+            /*
+             * #905 — the CONTAINER style an element asks for, which the console has always offered
+             * and neither platform read. Its editor gives every element a TextStylePanel and an
+             * ElementStylePanel; the second writes `element_style`, and the DTO had nowhere to put
+             * it. `applyContainerStyle` is the same function a SECTION container uses, so an
+             * element and its section are styled by one implementation.
+             */
+            fun elementStyle(key: String) = section.style?.elements?.get(key)?.elementContainer
+
+            /*
+             * The two per-element containers this section can carry, resolved ONCE. Twelve plan
+             * display styles draw a name and a price, each in its own composable; repeating the
+             * expression at each site is how one of them ends up missing it — which is exactly
+             * what happened on the first pass, where the default `vertical_stack` branch was a
+             * separate implementation from the `PlanCard` composable and only the latter was wired.
+             * A device frame caught it: the borders were authored, served, and absent.
+             */
+            val planNameElementModifier = Modifier.run {
+                with(StyleEngine) { applyContainerStyle(elementStyle("plan_name") ?: elementStyle("label")) }
+            }
+            val priceElementModifier = Modifier.run {
+                with(StyleEngine) { applyContainerStyle(elementStyle("price")) }
+            }
             val planNameStyle = StyleEngine.applyTextStyle(
                 TextStyle(fontWeight = FontWeight.SemiBold, color = Color.White, fontSize = 16.sp),
                 // Mirror iOS PlanCard.swift:22 (elements["plan_name"] ?? elements["label"]) — the
@@ -2018,7 +2041,11 @@ internal fun PaywallSectionView(
                                 Modifier.border(badgeBorderWidth.dp, badgeBorderColor, badgeCorner)
                             else Modifier,
                         )
-                        .padding(horizontal = 8.dp, vertical = 2.dp),
+                        .padding(horizontal = 8.dp, vertical = 2.dp)
+                        // #905 — the badge's authored container style, applied OUTSIDE its own
+                        // chrome so an authored border or padding surrounds it rather than
+                        // replacing it.
+                        .run { with(StyleEngine) { applyContainerStyle(elementStyle("badge")) } },
                     horizontalArrangement = Arrangement.spacedBy(4.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
@@ -2176,6 +2203,7 @@ internal fun PaywallSectionView(
                                 text = loc("plan.$planIdx.name", plan.displayName),
                                 style = planNameStyle,
                                 color = resolvedTextColor,
+                                modifier = planNameElementModifier,
                             )
 
                             // PW-9: subtitle above price if `subtitle_position == "above_price"`.
@@ -2248,6 +2276,7 @@ internal fun PaywallSectionView(
                                         text = loc("plan.$planIdx.price", plan.displayPrice),
                                         style = priceStyle,
                                         color = planPriceColor,
+                                        modifier = priceElementModifier,
                                     )
                                     if (struck != null || chargedTotal != null) {
                                         Row(
@@ -2286,6 +2315,7 @@ internal fun PaywallSectionView(
                                     Text(
                                         text = loc("plan.$planIdx.price", plan.displayPrice),
                                         style = priceStyle,
+                                        modifier = priceElementModifier,
                                         color = planPriceColor,
                                     )
                                 }
@@ -2575,6 +2605,7 @@ internal fun PaywallSectionView(
                                         Text(
                                             text = loc("plan.$planIdx.name", plan.displayName),
                                             style = planNameStyle.copy(fontSize = 14.sp),
+                                            modifier = planNameElementModifier,
                                             textAlign = TextAlign.Center,
                                             maxLines = 1,
                                             overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
@@ -2582,6 +2613,7 @@ internal fun PaywallSectionView(
                                         Text(
                                             text = loc("plan.$planIdx.price", plan.displayPrice),
                                             style = priceStyle.copy(fontSize = 14.sp),
+                                            modifier = priceElementModifier,
                                             textAlign = TextAlign.Center,
                                             maxLines = 1,
                                             overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
@@ -2627,11 +2659,11 @@ internal fun PaywallSectionView(
                                 )
                                 Spacer(Modifier.width(8.dp))
                                 Column(modifier = Modifier.weight(1f)) {
-                                    Text(text = loc("plan.$planIdx.name", plan.displayName), style = planNameStyle)
+                                    Text(text = loc("plan.$planIdx.name", plan.displayName), style = planNameStyle, modifier = planNameElementModifier)
                                     plan.period?.let { Text(text = loc("plan.$planIdx.period", it), style = periodStyle) }
                                 }
                                 Column(horizontalAlignment = Alignment.End) {
-                                    Text(text = loc("plan.$planIdx.price", plan.displayPrice), style = priceStyle)
+                                    Text(text = loc("plan.$planIdx.price", plan.displayPrice), style = priceStyle, modifier = priceElementModifier)
                                     plan.badge?.let {
                                         Spacer(Modifier.height(4.dp))
                                         BadgeView(loc("plan.$planIdx.badge", it))
@@ -2671,8 +2703,8 @@ internal fun PaywallSectionView(
                                         horizontalArrangement = Arrangement.SpaceBetween,
                                         verticalAlignment = Alignment.CenterVertically,
                                     ) {
-                                        Text(text = loc("plan.$planIdx.name", plan.displayName), style = planNameStyle)
-                                        Text(text = loc("plan.$planIdx.price", plan.displayPrice), style = priceStyle)
+                                        Text(text = loc("plan.$planIdx.name", plan.displayName), style = planNameStyle, modifier = planNameElementModifier)
+                                        Text(text = loc("plan.$planIdx.price", plan.displayPrice), style = priceStyle, modifier = priceElementModifier)
                                     }
                                     if (isSelected) {
                                         Spacer(Modifier.height(8.dp))
@@ -2858,10 +2890,12 @@ internal fun PaywallSectionView(
                                     Text(
                                         text = loc("plan.$planIdx.name", plan.displayName),
                                         style = planNameStyle,
+                                        modifier = planNameElementModifier,
                                     )
                                     Text(
                                         text = loc("plan.$planIdx.price", plan.displayPrice),
                                         style = priceStyle.copy(fontSize = 18.sp),
+                                        modifier = priceElementModifier,
                                     )
                                 }
                             }
@@ -2987,7 +3021,12 @@ internal fun PaywallSectionView(
                                             // muted grey (iOS PlanCard.swift secondary); accent for trial.
                                             val subtitleColor = planTextColor.takeIf { it != Color.Unspecified } ?: Color.Gray
                                             val trialColor = planTextColor.takeIf { it != Color.Unspecified } ?: ai.appdna.sdk.AppDNA.brandAccentColor()
-                                            Text(text = loc("plan.$planIdx.name", plan.displayName), style = planNameStyle, color = planTextColor)
+                                            Text(
+                                                text = loc("plan.$planIdx.name", plan.displayName),
+                                                style = planNameStyle,
+                                                color = planTextColor,
+                                                modifier = planNameElementModifier,
+                                            )
                                             Spacer(Modifier.height(2.dp))
                                             // Subtitle ABOVE price (iOS PlanCard.swift:105).
                                             if (showPlanSubtitles && subtitlePosition == "above_price" && !plan.description.isNullOrBlank()) {
@@ -3030,7 +3069,12 @@ internal fun PaywallSectionView(
                                             val vsTotal = plan.price_total_display?.takeIf { it.isNotBlank() }
                                             if ((section.data?.price_layout ?: "inline") == "headline_stacked") {
                                                 Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                                                    Text(text = loc("plan.$planIdx.price", plan.displayPrice), style = priceStyle, color = planTextColor)
+                                                    Text(
+                                                        text = loc("plan.$planIdx.price", plan.displayPrice),
+                                                        style = priceStyle,
+                                                        color = planTextColor,
+                                                        modifier = priceElementModifier,
+                                                    )
                                                     if (vsStruck != null || vsTotal != null) {
                                                         Row(
                                                             verticalAlignment = Alignment.CenterVertically,
@@ -3063,7 +3107,12 @@ internal fun PaywallSectionView(
                                                             color = vsStrikeColor,
                                                         )
                                                     }
-                                                    Text(text = loc("plan.$planIdx.price", plan.displayPrice), style = priceStyle, color = planTextColor)
+                                                    Text(
+                                                        text = loc("plan.$planIdx.price", plan.displayPrice),
+                                                        style = priceStyle,
+                                                        color = planTextColor,
+                                                        modifier = priceElementModifier,
+                                                    )
                                                 }
                                             }
                                             // PARITY FIX: the default vertical_stack path

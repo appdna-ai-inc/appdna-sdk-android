@@ -266,6 +266,7 @@ class SharedFixtureTest(
             "resolve_header_inset" -> runHeaderCloseInset(action, spy)
             "resolve_default_text_colour" -> runDefaultTextColour(action, spy)
             "bottom_zone_overflows" -> runBottomZoneOverflows(action, spy)
+            "resolve_element_container" -> runElementContainer(action, spy)
             // #772 — WHICH copy of content_blocks the real parser resolves, per step shape.
             "resolve_content_blocks" -> runResolveContentBlocks(action, spy)
             "countdown_initial_seconds" -> runCountdownInitialSeconds(action, spy)
@@ -1880,6 +1881,41 @@ class SharedFixtureTest(
      * Drives the REAL `normaliseMarkdown` the rich_text renderer calls, so the two platforms are
      * held to one answer for a chevron that used to reach the screen verbatim.
      */
+    /** A JSONObject as the nested Map the config parsers take. */
+    private fun jsonToMap(o: JSONObject): Map<String, Any> {
+        val out = HashMap<String, Any>()
+        for (k in o.keys()) {
+            when (val v = o.get(k)) {
+                is JSONObject -> out[k] = jsonToMap(v)
+                JSONObject.NULL -> Unit
+                else -> out[k] = v
+            }
+        }
+        return out
+    }
+
+    /**
+     * #905 — the per-element container style, through the REAL parser and accessor: the entry is
+     * parsed by `PaywallConfigParser.parseElementStyle` and resolved by `elementContainer`, which
+     * is what the renderer reads.
+     */
+    private fun runElementContainer(action: JSONObject, spy: Spy) {
+        val cases = action.optJSONArray("cases") ?: unsupported("resolve_element_container without cases")
+        spy.state["results"] = (0 until cases.length()).map { i ->
+            val raw = cases.getJSONObject(i).getJSONObject("value")
+            val parsed = ai.appdna.sdk.paywalls.PaywallConfigParser.parseElementStyleForTest(jsonToMap(raw))
+            val c = parsed.elementContainer ?: return@map null
+            listOf(
+                c.border?.color,
+                c.border?.width,
+                c.border?.radius,
+                c.corner_radius,
+                c.opacity,
+                c.padding?.top,
+            )
+        }
+    }
+
     /**
      * #903 — whether a pinned bottom zone is too tall to stay pinned, through the REAL
      * `PaywallBottomZone.overflows`. Values are `[pinnedPx, viewportPx]`.

@@ -136,7 +136,28 @@ data class ElementStyleConfig(
     val corner_radius: Double? = null,
     val opacity: Double? = null,
     val text_style: TextStyleConfig? = null,
-)
+    /**
+     * #905 — the container style the CONSOLE writes for a per-element entry.
+     *
+     * Its editor offers a TextStylePanel and an ElementStylePanel per element, and writes
+     * `{ text_style: {…}, element_style: {…} }`. The SDK modelled an element entry AS the style,
+     * with `text_style` nested inside it, so the whole container half — border, radius, padding,
+     * opacity, shadow — landed on a key neither platform had and was dropped silently, while the
+     * console kept offering the controls.
+     */
+    val element_style: ElementStyleConfig? = null,
+) {
+    /**
+     * The container style this entry asks for, from either spelling: `element_style` as the console
+     * writes it, or the fields flattened onto the entry itself.
+     */
+    val elementContainer: ElementStyleConfig?
+        get() = element_style ?: run {
+            if (background == null && border == null && shadow == null && padding == null
+                && corner_radius == null && opacity == null
+            ) null else this
+        }
+}
 
 data class SectionStyleConfig(
     val container: ElementStyleConfig? = null,
