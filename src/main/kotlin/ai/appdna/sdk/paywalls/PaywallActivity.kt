@@ -2209,7 +2209,27 @@ internal fun PaywallSectionView(
                 val selectedBorderColor = customSelectedBorder ?: ai.appdna.sdk.AppDNA.brandAccentColor()
                 val unselectedBorder = unselectedBorderColor
                 val selectedBg = customSelectedBg ?: ai.appdna.sdk.AppDNA.brandAccentColor().copy(alpha = 0.1f)
-                val unselectedBg = unselectedBgColor ?: Color.White.copy(alpha = 0.1f)
+                /*
+                 * #926 — COMPOSITED OVER THE PAGE, the way iOS does it and the way the contrast
+                 * repair already reasons about it.
+                 *
+                 * `Color.White.copy(alpha = 0.1f)` is a TRANSLUCENT wash, and what it washes over
+                 * here is this activity's Material surface — which is themed DARK whatever the
+                 * page says. So one published document gave a near-white tile on iOS and a dark
+                 * navy one on Android, and #891's text colour had to be hardcoded white to stay
+                 * readable against a backdrop nobody authored.
+                 *
+                 * Compositing the same 10% white over the authored page yields an OPAQUE colour
+                 * that follows the document, so both platforms now draw the same tile from the
+                 * same JSON and the text colour can be derived rather than assumed.
+                 *
+                 * An authored `unselected_bg_color` still wins outright: 15 of 36 active plans
+                 * sections on dev author one, and none of them changes.
+                 */
+                val unselectedBg = unselectedBgColor
+                    ?: PaywallTextDefaults.composite("#FFFFFF", config.pageBackgroundHex(), 0.1)
+                        ?.let { StyleEngine.parseColor(it) }
+                    ?: Color.White.copy(alpha = 0.1f)
                 // PW-9: text color flips when selected if author provided one.
                 val resolvedTextColor = if (isSelected) {
                     selectedTextColor ?: Color.Unspecified
@@ -3117,9 +3137,36 @@ internal fun PaywallSectionView(
                             val isSelected = selectedPlanId == plan.id
                             // iOS PlanCard.swift:39,51-56 — authored colors win.
                             val selBorder = customSelectedBorder ?: ai.appdna.sdk.AppDNA.brandAccentColor()
-                            val unselBorder = unselectedBorderColor ?: Color.White.copy(alpha = 0.3f)
+                            /*
+                             * #926 — GRAY, not white, and iOS fixed this same line already: its
+                             * comment reads "(was white.opacity(0.15) — invisible on light paywall
+                             * backgrounds)". White at 30% over a white page is nothing, and once
+                             * the tile composites over that page there is no fill to see either —
+                             * the first device frame after this change showed the Monthly plan as
+                             * bare text with no card at all. Gray at 30% reads on both.
+                             */
+                            val unselBorder = unselectedBorderColor ?: Color.Gray.copy(alpha = 0.3f)
                             val radioColor = if (isSelected) (selectedTextColor ?: selBorder) else unselBorder
-                            val planTextColor = if (isSelected) (selectedTextColor ?: Color.Unspecified) else Color.Unspecified
+                            /*
+                             * #926 — THE TILE AND ITS TEXT MOVE TOGETHER, or one of them is wrong.
+                             *
+                             * This arm is the `vertical_stack` default and a SEPARATE implementation
+                             * from `fun PlanCard` — the same split that hid #905's borders and
+                             * #913's period. Its unselected tile was `Color(0xFF1B2540)`, a navy
+                             * constant, and its text was `Color.Unspecified`, which inherits the
+                             * activity's DARK-themed `onSurface` and so came out light. Both
+                             * assumptions were about a backdrop nobody authored.
+                             *
+                             * Composited over the page, the tile follows the document — which means
+                             * the text can no longer be left to the theme: on a white page a white
+                             * label on a near-white tile is exactly the 1:1 defect #909 fixed for
+                             * the selected tile. So the colour is DERIVED from the tile the user
+                             * will actually see, authored or composited.
+                             */
+                            val unselectedTileHex = section.data?.unselected_bg_color
+                                ?: PaywallTextDefaults.composite("#FFFFFF", config.pageBackgroundHex(), 0.1)
+                            val planTextColor = if (isSelected) (selectedTextColor ?: Color.Unspecified)
+                                else (unselectedTileHex?.let { PaywallTextDefaults.readable(it) } ?: Color.Unspecified)
                             // iOS PlanCard.swift:245-247 — reserve overhang so the
                             // straddling badge isn't clipped and doesn't cover content.
                             val badgeTopReserve = if (!plan.badge.isNullOrBlank() && badgePosition != "inline")
@@ -3157,6 +3204,9 @@ internal fun PaywallSectionView(
                                         // so it stays theme-aware + distinct; fall back to a subtle navy.
                                         containerColor = if (isSelected) (customSelectedBg ?: Color.White.copy(alpha = 0.16f))
                                             else (unselectedBgColor
+                                                // #926 — the page's own 10% wash, opaque, so this
+                                                // tile matches iOS instead of a navy constant.
+                                                ?: unselectedTileHex?.let { StyleEngine.parseColor(it) }
                                                 ?: customSelectedBg?.let { androidx.compose.ui.graphics.lerp(it, Color.Black, 0.40f) }
                                                 ?: Color(0xFF1B2540))
                                     )
