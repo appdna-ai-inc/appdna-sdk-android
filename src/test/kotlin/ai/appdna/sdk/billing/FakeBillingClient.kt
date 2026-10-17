@@ -87,7 +87,12 @@ internal class FakeBillingClient(private val listener: PurchasesUpdatedListener)
     @Volatile var holdSetup: Boolean = false
     @Volatile var heldSetupListener: BillingClientStateListener? = null
 
+    /** #902 — how many times a connection was attempted, so a backoff can be counted. */
+    @Volatile var setupAttempts: Int = 0
+        private set
+
     override fun startConnection(listener: BillingClientStateListener) {
+        setupAttempts++
         if (holdSetup) { heldSetupListener = listener; return }
         connected = setupCode == BillingResponseCode.OK
         listener.onBillingSetupFinished(result(setupCode))
