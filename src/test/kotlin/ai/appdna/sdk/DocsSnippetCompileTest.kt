@@ -7,7 +7,7 @@ import org.junit.Assert.assertEquals
 import org.junit.Test
 
 /**
- * SPEC-452 — the docs snippet for host-supplied data, compiled.
+ * The published docs snippet for host-supplied data, compiled.
  *
  * RN has `check:rn-docs-types`, which compiles every documented TypeScript block against the
  * shipped `.d.ts` — "the errors a developer gets when they paste the docs into their app". Kotlin

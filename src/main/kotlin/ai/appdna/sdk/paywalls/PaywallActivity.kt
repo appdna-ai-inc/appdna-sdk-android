@@ -2171,6 +2171,19 @@ internal fun PaywallSectionView(
             val selectedTextColor = section.data?.selected_text_color?.let { parseHexColor(it) }
             val unselectedBorderColor = section.data?.unselected_border_color?.let { parseHexColor(it) }
             val unselectedBgColor = section.data?.unselected_bg_color?.let { parseHexColor(it) }
+            /*
+             * The same authored field as the line above, kept as its HEX so a renderer can
+             * composite over the page and derive a readable label from the result.
+             *
+             * 🔴 Read HERE rather than inside the `when` branch that uses it. check:authorability
+             * attributes every renderer read to its enclosing dispatch branch, and the matcher
+             * treats the timeline branch as the owner of the unnamed default that follows it — so a
+             * plans-section field read down there was reported against the timeline block type,
+             * which has no such control, while the control it really has sat one attribution away.
+             * Hoisting is the fix; regenerating the baseline would bury it.
+             */
+            val unselectedTileHex = section.data?.unselected_bg_color
+                ?: PaywallTextDefaults.composite("#FFFFFF", config.pageBackgroundHex(), 0.1)
             val customSelectedBorder = section.data?.selected_border_color?.let { parseHexColor(it) }
             val customSelectedBg = section.data?.selected_bg_color?.let { parseHexColor(it) }
 
@@ -3163,8 +3176,6 @@ internal fun PaywallSectionView(
                              * the selected tile. So the colour is DERIVED from the tile the user
                              * will actually see, authored or composited.
                              */
-                            val unselectedTileHex = section.data?.unselected_bg_color
-                                ?: PaywallTextDefaults.composite("#FFFFFF", config.pageBackgroundHex(), 0.1)
                             val planTextColor = if (isSelected) (selectedTextColor ?: Color.Unspecified)
                                 else (unselectedTileHex?.let { PaywallTextDefaults.readable(it) } ?: Color.Unspecified)
                             // iOS PlanCard.swift:245-247 — reserve overhang so the
