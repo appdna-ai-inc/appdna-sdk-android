@@ -265,6 +265,7 @@ class SharedFixtureTest(
             "resolve_shadow" -> runResolveShadow(action, spy)
             "resolve_header_inset" -> runHeaderCloseInset(action, spy)
             "resolve_default_text_colour" -> runDefaultTextColour(action, spy)
+            "bottom_zone_overflows" -> runBottomZoneOverflows(action, spy)
             // #772 — WHICH copy of content_blocks the real parser resolves, per step shape.
             "resolve_content_blocks" -> runResolveContentBlocks(action, spy)
             "countdown_initial_seconds" -> runCountdownInitialSeconds(action, spy)
@@ -1879,6 +1880,18 @@ class SharedFixtureTest(
      * Drives the REAL `normaliseMarkdown` the rich_text renderer calls, so the two platforms are
      * held to one answer for a chevron that used to reach the screen verbatim.
      */
+    /**
+     * #903 — whether a pinned bottom zone is too tall to stay pinned, through the REAL
+     * `PaywallBottomZone.overflows`. Values are `[pinnedPx, viewportPx]`.
+     */
+    private fun runBottomZoneOverflows(action: JSONObject, spy: Spy) {
+        val cases = action.optJSONArray("cases") ?: unsupported("bottom_zone_overflows without cases")
+        spy.state["results"] = (0 until cases.length()).map { i ->
+            val v = cases.getJSONObject(i).getJSONArray("value")
+            ai.appdna.sdk.paywalls.PaywallBottomZone.overflows(v.getDouble(0), v.getDouble(1))
+        }
+    }
+
     /**
      * #891 — the colour a paywall gives text nobody authored, through the REAL
      * `PaywallTextDefaults.readableHex`.

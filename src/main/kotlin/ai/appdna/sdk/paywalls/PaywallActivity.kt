@@ -24,6 +24,7 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
@@ -771,8 +772,21 @@ fun PaywallScreen(
         // @Composable scope from PaywallScreen. The helper that previously
         // lived here was dead code.
 
+        // #903 — the pinned-zone cap's state, declared HERE because the viewport is measured on
+        // the Column below and Kotlin cannot see a variable declared after the lambda that reads it.
+        var pinnedHeightPx by remember { mutableStateOf(0) }
+        var viewportHeightPx by remember { mutableStateOf(0) }
+        var bottomZoneOverflowed by remember { mutableStateOf(false) }
+
         // Content in a Column with scrollable area + sticky footer
-        Column(modifier = Modifier.fillMaxSize()) {
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                // #903 — the viewport the pinned-zone cap is measured against. It has to be
+                // measured in THIS scope: the state the cap reads lives here, and the root Box
+                // further down the file is a different composable that cannot see it.
+                .onSizeChanged { viewportHeightPx = it.height },
+        ) {
             // Convert eager `Column.verticalScroll` to
             // `LazyColumn` with stable keys so the recompose-window only
             // touches sections that scrolled into view + plan/feature
@@ -824,9 +838,26 @@ fun PaywallScreen(
              * rest goes back to the body. The CTA is never unpinned: reaching it is the whole
              * point of the zone.
              */
-            val bottomZoneSections = config.sections.filter {
+            val authoredBottomZone = config.sections.filter {
                 it.zone == "bottom" && it.type != "cta" && it !in pinnedLegalSet && it.type != "sticky_footer"
             }
+
+            /*
+             * #903 — the cap this comment has been describing. `PINNED_ZONE_MAX_FRACTION` was named
+             * here and existed in no file; `PaywallBottomZone` is it, measured rather than guessed.
+             *
+             * 🔴 LATCHED, because the decision feeds back into what it measures. Unpinning shrinks
+             * the pinned group below the threshold, which would re-pin it, which would exceed the
+             * threshold again — a paywall oscillating once per frame. The first full measurement
+             * decides, and the decision holds for this presentation.
+             */
+            if (!bottomZoneOverflowed &&
+                PaywallBottomZone.overflows(pinnedHeightPx.toDouble(), viewportHeightPx.toDouble())
+            ) {
+                bottomZoneOverflowed = true
+            }
+            // Everything except the CTA goes back to the body, in its authored position.
+            val bottomZoneSections = if (bottomZoneOverflowed) emptyList() else authoredBottomZone
             val scrollableSections = config.sections.filter {
                 it.type != "sticky_footer" && it.type != "cta" && it !in pinnedLegalSet &&
                     it !in bottomZoneSections
@@ -965,7 +996,13 @@ fun PaywallScreen(
             // CTA + legal + sticky-footer group so the configured gap sits below the
             // whole group, composing with each block's own navigationBarsPadding and
             // without touching the weighted scroll body above.
-            Column(modifier = Modifier.fillMaxWidth().padding(bottom = (config.layout.footer_padding ?: 8f).dp)) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(bottom = (config.layout.footer_padding ?: 8f).dp)
+                    // #903 — the pinned group's own height, which is what the cap is measured on.
+                    .onSizeChanged { pinnedHeightPx = it.height },
+            ) {
             // CTA pinned to the bottom zone: below the scroll
             // body (weight(1f)), above the pinned legal + sticky footer. Same
             // horizontal inset as the scrolled content. Mirrors iOS
