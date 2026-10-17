@@ -1508,10 +1508,26 @@ private fun PaywallBackground(background: PaywallBackground?) {
             // falls through to Color.Black, so console-authored
             // bg.color="transparent" rendered BLACK on Android and CLEAR on iOS.
             // Special-case those literals here before parseHexColor is called.
+            //
+            // 🔴 #909 — an UNSET colour is WHITE, not black.
+            //
+            // iOS has always resolved this to white (`PaywallRenderer.swift`:
+            // `bg?.color ?? bg?.value ?? "#FFFFFF"`) and this side resolved it to BLACK, so one
+            // published document painted opposite pages on the two platforms.
+            //
+            // Worse than a cosmetic split: the server's contrast repair computes every default
+            // text colour against #FFFFFF for an unset background — its own log says
+            // `header.title #FFFFFF->#111827 on #FFFFFF`. So a repaired paywall carries text
+            // chosen to read on WHITE and Android painted it on BLACK. Measured on a Pixel API 34
+            // emulator with a paywall whose colours were stripped from the published document:
+            // page (0,0,0), title #111827, and the selected plan tile's brightest text pixel
+            // IDENTICAL to its background — a contrast ratio of 1:1, text that is simply not there.
+            //
+            // Two ACTIVE production paywalls publish `background: {"type":"color"}` with no value.
             val color = when (background.value?.lowercase()?.trim()) {
-                null, "" -> Color.Black
+                null, "" -> Color.White
                 "transparent", "clear" -> Color.Transparent
-                else -> background.value?.let { parseHexColor(it) } ?: Color.Black
+                else -> background.value?.let { parseHexColor(it) } ?: Color.White
             }
             Box(modifier = Modifier.fillMaxSize().background(color))
         }
