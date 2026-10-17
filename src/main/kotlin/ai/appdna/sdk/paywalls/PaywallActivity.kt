@@ -3793,7 +3793,16 @@ internal fun PaywallSectionView(
                             TextStyle(fontSize = 15.sp, fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.onSurface),
                             section.style?.elements?.get("title")?.text_style
                         )
-                        Text(text = loc("guarantee.title", title), style = titleStyle)
+                        // #913 — the guarantee section's own `title` container.
+                        Text(
+                            text = loc("guarantee.title", title),
+                            style = titleStyle,
+                            modifier = Modifier.run {
+                                with(StyleEngine) {
+                                    applyContainerStyle(section.style?.elements?.get("title")?.elementContainer)
+                                }
+                            },
+                        )
                     }
                     // Description (mirrors iOS fallback chain)
                     val desc = section.data?.description
@@ -3806,7 +3815,20 @@ internal fun PaywallSectionView(
                             section.style?.elements?.get("text")?.text_style
                                 ?: section.style?.elements?.get("description")?.text_style
                         )
-                        Text(text = loc("guarantee.description", it), style = descStyle)
+                        // The same `text` ?: `description` chain the style above uses, so the two
+                        // halves of one element resolve from the same key.
+                        Text(
+                            text = loc("guarantee.description", it),
+                            style = descStyle,
+                            modifier = Modifier.run {
+                                with(StyleEngine) {
+                                    applyContainerStyle(
+                                        section.style?.elements?.get("text")?.elementContainer
+                                            ?: section.style?.elements?.get("description")?.elementContainer,
+                                    )
+                                }
+                            },
+                        )
                     }
                 }
             }
@@ -3896,6 +3918,19 @@ internal fun PaywallSectionView(
                 TextStyle(color = Color.White.copy(alpha = 0.7f), fontSize = 12.sp),
                 section.style?.elements?.get("author_role")?.text_style
             )
+            // #913 — the three testimonial elements' containers, from the ElementStylePanel the
+            // console shows beside each TextStylePanel. Resolved once; the quote is drawn at TWO
+            // sites below (the `minimal` layout has its own), and wiring only one is how #905 and
+            // #910 each reached a device with a border that drew nowhere.
+            val quoteElementModifier = Modifier.run {
+                with(StyleEngine) { applyContainerStyle(section.style?.elements?.get("quote")?.elementContainer) }
+            }
+            val authorNameElementModifier = Modifier.run {
+                with(StyleEngine) { applyContainerStyle(section.style?.elements?.get("author_name")?.elementContainer) }
+            }
+            val authorRoleElementModifier = Modifier.run {
+                with(StyleEngine) { applyContainerStyle(section.style?.elements?.get("author_role")?.elementContainer) }
+            }
             val cardModifier = if (testimonialLayout == "card") {
                 Modifier
                     .background(Color(0xFFF9FAFB), RoundedCornerShape(12.dp))
@@ -3925,11 +3960,13 @@ internal fun PaywallSectionView(
                     Text(
                         text = loc("testimonial.quote", section.data?.quote ?: section.data?.testimonial ?: "") + author,
                         style = quoteStyle,
+                        modifier = quoteElementModifier,
                     )
                 } else {
                     Text(
                         text = loc("testimonial.quote", section.data?.quote ?: section.data?.testimonial ?: ""),
                         style = quoteStyle,
+                        modifier = quoteElementModifier,
                     )
                     Spacer(Modifier.height(12.dp))
                     Row(
@@ -3957,10 +3994,18 @@ internal fun PaywallSectionView(
                         }
                         Column {
                             section.data?.author_name?.let {
-                                Text(loc("testimonial.author_name", it), style = authorNameStyle)
+                                Text(
+                                    loc("testimonial.author_name", it),
+                                    style = authorNameStyle,
+                                    modifier = authorNameElementModifier,
+                                )
                             }
                             section.data?.author_role?.let {
-                                Text(loc("testimonial.author_role", it), style = authorRoleStyle)
+                                Text(
+                                    loc("testimonial.author_role", it),
+                                    style = authorRoleStyle,
+                                    modifier = authorRoleElementModifier,
+                                )
                             }
                         }
                     }
@@ -4528,6 +4573,13 @@ private fun PaywallIconGridSection(
 
     val titleStyle = section.style?.elements?.get("title")?.text_style
     val descStyle = section.style?.elements?.get("description")?.text_style
+    // #913 — and their containers, from the ElementStylePanel beside each TextStylePanel.
+    val titleElementModifier = Modifier.run {
+        with(StyleEngine) { applyContainerStyle(section.style?.elements?.get("title")?.elementContainer) }
+    }
+    val descElementModifier = Modifier.run {
+        with(StyleEngine) { applyContainerStyle(section.style?.elements?.get("description")?.elementContainer) }
+    }
 
     // Manual grid since LazyVerticalGrid can't be nested in scrollable Column
     val chunked = items.chunked(columnCount)
@@ -4563,7 +4615,7 @@ private fun PaywallIconGridSection(
                                 TextStyle(fontWeight = FontWeight.Medium, color = Color.White, fontSize = 12.sp, textAlign = TextAlign.Center),
                                 titleStyle,
                             ) else TextStyle(fontWeight = FontWeight.Medium, color = Color.White, fontSize = 12.sp, textAlign = TextAlign.Center)
-                            Text(text = it, style = ts, textAlign = TextAlign.Center)
+                            Text(text = it, style = ts, textAlign = TextAlign.Center, modifier = titleElementModifier)
                         }
                         val itemDesc = item.description ?: item.subtitle
                         itemDesc?.let {
@@ -4571,7 +4623,7 @@ private fun PaywallIconGridSection(
                                 TextStyle(color = Color.White.copy(alpha = 0.6f), fontSize = 10.sp, textAlign = TextAlign.Center),
                                 descStyle,
                             ) else TextStyle(color = Color.White.copy(alpha = 0.6f), fontSize = 10.sp, textAlign = TextAlign.Center)
-                            Text(text = it, style = ds, textAlign = TextAlign.Center)
+                            Text(text = it, style = ds, textAlign = TextAlign.Center, modifier = descElementModifier)
                         }
                     }
                 }
