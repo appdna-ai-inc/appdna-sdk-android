@@ -270,6 +270,7 @@ class SharedFixtureTest(
             "resolve_plan_period" -> runPlanPeriod(action, spy)
             "resolve_step_auto_advance" -> runStepAutoAdvance(action, spy)
             "resolve_store_price" -> runStorePrice(action, spy)
+            "parse_blocks_leniently" -> runLenientBlocks(action, spy)
             // #772 — WHICH copy of content_blocks the real parser resolves, per step shape.
             "resolve_content_blocks" -> runResolveContentBlocks(action, spy)
             "countdown_initial_seconds" -> runCountdownInitialSeconds(action, spy)
@@ -1932,6 +1933,32 @@ class SharedFixtureTest(
             val raw = cases.getJSONObject(i).getJSONObject("value")
             val plan = ai.appdna.sdk.paywalls.PaywallConfigParser.parsePlanForTest(jsonToMap(raw))
             plan.period?.takeIf { it.isNotEmpty() }
+        }
+    }
+
+    /**
+     * #919 — a wrongly-typed field must not delete its block, and an undecodable element must not
+     * truncate the ones after it. Through the REAL step parse, so the path is production's.
+     *
+     * This platform has always been lenient — every scalar is read as `as? Number` / `as? String`,
+     * so a `"md"` gives null and the default applies. iOS threw and dropped the whole DOCUMENT.
+     * The fixture is here to keep the two agreeing now that iOS matches.
+     */
+    private fun runLenientBlocks(action: JSONObject, spy: Spy) {
+        val cases = action.optJSONArray("cases") ?: unsupported("parse_blocks_leniently without cases")
+        spy.state["results"] = (0 until cases.length()).map { i ->
+            val raw = cases.getJSONObject(i).getJSONArray("value")
+            val blocks = (0 until raw.length()).map { j ->
+                if (raw.isNull(j)) null else jsonToMap(raw.getJSONObject(j))
+            }
+            val step = mapOf(
+                "id" to "fixture_step",
+                "type" to "custom",
+                "content_blocks" to blocks,
+            )
+            val parsed = ai.appdna.sdk.onboarding.OnboardingConfigParser.parseStepForTest(step)
+                ?: error("the step did not parse — which is the defect itself")
+            (parsed.config.content_blocks ?: emptyList()).map { it.id }
         }
     }
 
