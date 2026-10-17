@@ -261,6 +261,7 @@ class SharedFixtureTest(
             "parse_window_date" -> runParseWindowDate(action, spy)
             "parse_colour" -> runParseColour(action, spy)
             "unfold_blockquotes" -> runUnfoldBlockquotes(action, spy)
+            "normalise_markdown" -> runUnfoldBlockquotes(action, spy)
             "resolve_shadow" -> runResolveShadow(action, spy)
             "resolve_header_inset" -> runHeaderCloseInset(action, spy)
             "resolve_default_text_colour" -> runDefaultTextColour(action, spy)
@@ -1875,7 +1876,7 @@ class SharedFixtureTest(
     /**
      * #893 — a blockquote becomes the italic syntax both parsers already render.
      *
-     * Drives the REAL `unfoldBlockquotes` the rich_text renderer calls, so the two platforms are
+     * Drives the REAL `normaliseMarkdown` the rich_text renderer calls, so the two platforms are
      * held to one answer for a chevron that used to reach the screen verbatim.
      */
     /**
@@ -1944,7 +1945,7 @@ class SharedFixtureTest(
     private fun runUnfoldBlockquotes(action: JSONObject, spy: Spy) {
         val cases = action.optJSONArray("cases") ?: unsupported("unfold_blockquotes without cases")
         spy.state["results"] = (0 until cases.length()).map { i ->
-            ai.appdna.sdk.onboarding.unfoldBlockquotes(cases.getJSONObject(i).optString("value", ""))
+            ai.appdna.sdk.onboarding.normaliseMarkdown(cases.getJSONObject(i).optString("value", ""))
         }
     }
 

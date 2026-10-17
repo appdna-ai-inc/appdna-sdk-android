@@ -5186,30 +5186,63 @@ private fun RatingBlock(
  * Uses ClickableText for link tap handling.
  */
 /**
- * Turn a markdown blockquote into the italic syntax the parser already renders.
+ * Fold markdown the parsers do NOT know into the subset they do.
  *
- * #893 — both platforms parse the same documented subset (`**bold**`, `*italic*`, `[link](url)`,
- * `++underline++`) and NEITHER knows a blockquote, so a `>` reached the screen verbatim: a
- * generated testimonial rendered as `> "I always quit after missing a day…"`, chevron and all,
- * on a social-proof screen. Seen on a device.
+ * #893 / #900 — both platforms parse `**bold**`, `*italic*`, `[link](url)` and `++underline++`,
+ * and nothing else. Everything outside that reached the screen as characters: a generated
+ * testimonial rendered as `> "I always quit after missing a day…"`, chevron and all, and a model
+ * reaching for a heading or a list inside a `rich_text` block is a question of when rather than
+ * whether — the generator is told to use `rich_text` for formatted copy.
  *
- * 🔴 Converting rather than teaching the parsers a new rule, and that is the point: `*…*` is
- * already supported on both, already styled the same on both, and already covered by whatever
- * tests those paths have. A second blockquote implementation in two languages is two things that
- * can drift — which is the shape of #885 and #891, and the thing worth not repeating for a
- * chevron.
+ * 🔴 CONVERT, never teach the parsers new rules. `*…*` and `**…**` are already supported on both,
+ * already styled the same on both, and already covered by whatever tests those paths have. A
+ * second markdown implementation in two languages is two things that can drift — the shape of
+ * #885 and #891, and not worth repeating for a chevron or a hash.
  *
- * A line already containing `*` is left exactly as it is: wrapping it would nest emphasis markers
- * and the parser would make a worse mess than the one being fixed.
+ *   `> quote`        -> `*quote*`          a quote reads as emphasis
+ *   `# Heading`      -> `**Heading**`      1-6 hashes, the only weight the subset has
+ *   `- item`         -> `\u2022 item`           and `*`/`+` bullets with it
+ *   `` `code` ``     -> `code`             the word survives, the backticks do not
+ *   `| a | b |`      -> `a \u00b7 b`            and the `|---|` separator row disappears
+ *
+ * Left alone, deliberately: an ORDERED list (`1. item` already reads as a numbered list in plain
+ * text, and renumbering is not this pass's job), and anything already containing `*`, because
+ * wrapping it would nest emphasis markers and the parser would make a worse mess than the one
+ * being fixed.
  */
-internal fun unfoldBlockquotes(markdown: String): String {
-    if (!markdown.contains('>')) return markdown // fast path — most content has none
-    return markdown.split("\n").joinToString("\n") { line ->
+internal fun normaliseMarkdown(markdown: String): String {
+    val needsWork = markdown.any { it == '>' || it == '#' || it == '-' || it == '*' || it == '+' || it == '`' || it == '|' }
+    if (!needsWork) return markdown // fast path — most content is plain
+
+    val lines = markdown.split("\n")
+    val out = ArrayList<String>(lines.size)
+    for (line in lines) {
         val trimmed = line.trimStart()
-        if (!trimmed.startsWith(">")) return@joinToString line
-        val body = trimmed.removePrefix(">").trimStart()
-        if (body.isEmpty() || body.contains('*')) body else "*$body*"
+
+        // A table's separator row carries no words at all.
+        if (trimmed.startsWith("|") && trimmed.replace(Regex("[|\\-: ]"), "").isEmpty() && trimmed.contains("-")) continue
+
+        var body: String = when {
+            trimmed.startsWith(">") -> {
+                val q = trimmed.removePrefix(">").trimStart()
+                if (q.isEmpty() || q.contains('*')) q else "*$q*"
+            }
+            Regex("^#{1,6}\\s+").containsMatchIn(trimmed) -> {
+                val h = trimmed.replaceFirst(Regex("^#{1,6}\\s+"), "")
+                if (h.isEmpty() || h.contains('*')) h else "**$h**"
+            }
+            Regex("^[-*+]\\s+").containsMatchIn(trimmed) ->
+                "\u2022 " + trimmed.replaceFirst(Regex("^[-*+]\\s+"), "")
+            trimmed.startsWith("|") ->
+                trimmed.trim('|').split("|").joinToString(" \u00b7 ") { it.trim() }
+            else -> line
+        }
+
+        // Inline code anywhere on the line: keep the word, drop the ticks.
+        if (body.contains('`')) body = body.replace(Regex("`([^`]*)`"), "$1")
+        out.add(body)
     }
+    return out.joinToString("\n")
 }
 
 @Composable
@@ -5222,7 +5255,7 @@ private fun RichTextBlock(block: ContentBlock, loc: ((String, String) -> String)
     // `block.content` rendered on Android, empty on iOS. Aligning to iOS.
     val rawContent = block.markdown_content ?: block.text ?: ""
     val localised = loc?.invoke("block.${block.id}.content", rawContent) ?: rawContent
-    val content = unfoldBlockquotes(localised)
+    val content = normaliseMarkdown(localised)
     val linkColor = StyleEngine.parseColor(block.link_color ?: (ai.appdna.sdk.AppDNA.brandAccentHex ?: "#6366F1"))
     val context = LocalContext.current
 
