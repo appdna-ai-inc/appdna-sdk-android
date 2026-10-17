@@ -1753,7 +1753,15 @@ internal fun PaywallSectionView(
                         // Paywall hero/header title is the
                         // accessibility heading for the screen, mirroring iOS
                         // `accessibilityAddTraits(.isHeader)`.
-                        modifier = Modifier.semantics { heading() },
+                        // #910 — and its authored container style, which the console has always
+                        // offered and this platform ignored until #905 made the key decode.
+                        modifier = Modifier
+                            .semantics { heading() }
+                            .run {
+                                with(StyleEngine) {
+                                    applyContainerStyle(section.style?.elements?.get("title")?.elementContainer)
+                                }
+                            },
                     )
                 }
                 section.data?.subtitle?.let {
@@ -1767,6 +1775,12 @@ internal fun PaywallSectionView(
                     Text(
                         text = loc("section-header.subtitle", it),
                         style = subtitleStyle,
+                        // #910 — the subtitle's authored container, as the title has.
+                        modifier = Modifier.run {
+                            with(StyleEngine) {
+                                applyContainerStyle(section.style?.elements?.get("subtitle")?.elementContainer)
+                            }
+                        },
                     )
                 }
             }
@@ -1776,6 +1790,33 @@ internal fun PaywallSectionView(
                 TextStyle(color = Color.White, fontSize = 16.sp),
                 section.style?.elements?.get("item")?.text_style
             )
+            // #910 — the item's authored container, from `item_text` or its `item` alias, resolved
+            // ONCE and applied at BOTH text sites below.
+            //
+            // 🔴 This section renders the same item text TWICE, from two different data keys: the
+            // legacy `data.features` list of strings and the rich `data.items` list of objects
+            // (see the RICH ITEMS note below). Wiring only the first one is exactly the defect
+            // #905 shipped on the plans section — the border was authored, served and absent from
+            // the screen, because the branch production actually uses was the other one. The
+            // device frame is what caught it both times. iOS does not have this hazard: its
+            // `itemText(_:)` is one function that both loops call.
+            val featureItemModifier = Modifier.run {
+                with(StyleEngine) {
+                    applyContainerStyle(
+                        section.style?.elements?.get("item_text")?.elementContainer
+                            ?: section.style?.elements?.get("item")?.elementContainer,
+                    )
+                }
+            }
+            // #910 — and the `icon` element's container, which the console offers beside the icon
+            // colour it already honoured. Applied per branch rather than by wrapping the `when` in
+            // a Box: a Box is a layout node whether or not the author set anything, and the five
+            // icon shapes below are already aligned by their Row.
+            val featureIconModifier = Modifier.run {
+                with(StyleEngine) {
+                    applyContainerStyle(section.style?.elements?.get("icon")?.elementContainer)
+                }
+            }
             // \u2014 iOS FeatureList is a content-sized VStack(.leading)
             // CENTERED in its parent (no maxWidth). Mirror that: outer column
             // centers the block; inner wrapContentWidth keeps rows left-aligned
@@ -1791,9 +1832,18 @@ internal fun PaywallSectionView(
                             verticalAlignment = Alignment.CenterVertically,
                             modifier = Modifier.padding(vertical = 6.dp)
                         ) {
-                            Text(text = "\u2713", color = ai.appdna.sdk.AppDNA.brandAccentColor(), fontSize = 18.sp)
+                            Text(
+                                text = "\u2713",
+                                color = ai.appdna.sdk.AppDNA.brandAccentColor(),
+                                fontSize = 18.sp,
+                                modifier = featureIconModifier,
+                            )
                             Spacer(Modifier.width(12.dp))
-                            Text(text = loc("feature.$index", feature), style = featureItemStyle)
+                            Text(
+                                text = loc("feature.$index", feature),
+                                style = featureItemStyle,
+                                modifier = featureItemModifier,
+                            )
                         }
                     }
 
@@ -1831,19 +1881,20 @@ internal fun PaywallSectionView(
                         ) {
                             when {
                                 !item.emoji.isNullOrEmpty() ->
-                                    Text(text = item.emoji, fontSize = 18.sp)
+                                    Text(text = item.emoji, fontSize = 18.sp, modifier = featureIconModifier)
                                 !item.image_url.isNullOrEmpty() ->
                                     ai.appdna.sdk.core.NetworkImage(
                                         url = item.image_url,
-                                        modifier = Modifier.size(20.dp).clip(imageShape),
+                                        modifier = featureIconModifier.size(20.dp).clip(imageShape),
                                         contentScale = androidx.compose.ui.layout.ContentScale.Crop,
                                     )
                                 !item.icon.isNullOrEmpty() ->
-                                    Text(text = item.icon, fontSize = 18.sp)
+                                    Text(text = item.icon, fontSize = 18.sp, modifier = featureIconModifier)
                                 // The excluded cross is AUTHORABLE, not a hardcoded red. A colour
                                 // a person sees is a colour a person should be able to set — and a
                                 // fixed red is unreadable on the red-toned paywalls it would land on.
                                 else -> Text(
+                                    modifier = featureIconModifier,
                                     text = if (included) "\u2713" else "\u2717",
                                     color = if (included) {
                                         ai.appdna.sdk.AppDNA.brandAccentColor()
@@ -1859,6 +1910,7 @@ internal fun PaywallSectionView(
                                 Text(
                                     text = loc("${'$'}{section.id}.items.$index", item.text ?: item.title ?: item.label ?: ""),
                                     style = featureItemStyle,
+                                    modifier = featureItemModifier,
                                 )
                                 // #591 — the second line, when the author wrote one.
                                 item.subtitle?.takeIf { it.isNotBlank() }?.let { sub ->
@@ -1952,6 +2004,17 @@ internal fun PaywallSectionView(
             val priceElementModifier = Modifier.run {
                 with(StyleEngine) { applyContainerStyle(elementStyle("price")) }
             }
+            // #910 — the other two plan elements the console styles. `trial_label` already had its
+            // text style honoured and nothing else; `feature` had NEITHER — the per-plan feature
+            // rows drew a hardcoded 13sp on all three layouts that render them, so the Style tab's
+            // feature controls did nothing on either platform.
+            val trialElementModifier = Modifier.run {
+                with(StyleEngine) { applyContainerStyle(elementStyle("trial_label")) }
+            }
+            val planFeatureElementModifier = Modifier.run {
+                with(StyleEngine) { applyContainerStyle(elementStyle("feature")) }
+            }
+            val planFeatureTextStyle = section.style?.elements?.get("feature")?.text_style
             val planNameStyle = StyleEngine.applyTextStyle(
                 TextStyle(fontWeight = FontWeight.SemiBold, color = Color.White, fontSize = 16.sp),
                 // Mirror iOS PlanCard.swift:22 (elements["plan_name"] ?? elements["label"]) — the
@@ -2339,6 +2402,7 @@ internal fun PaywallSectionView(
                                 Text(
                                     text = loc("plan.$planIdx.trial", trialText),
                                     style = trialStyle,
+                                    modifier = trialElementModifier,
                                     // When selected the trial matches name/price (authored selected_text_color,
                                     // else default primary). When unselected, defer to trialStyle.color —
                                     // which is the authored trial_label color, or the brand-accent base —
@@ -2441,8 +2505,11 @@ internal fun PaywallSectionView(
                                         Text(text = "✓ ", color = featureCheckColor, fontSize = 13.sp)
                                         Text(
                                             text = loc("plan.$planIdx.feature.$fIdx", feature),
-                                            fontSize = 13.sp,
-                                            color = resolvedTextColor,
+                                            style = StyleEngine.applyTextStyle(
+                                                TextStyle(fontSize = 13.sp, color = resolvedTextColor),
+                                                planFeatureTextStyle,
+                                            ),
+                                            modifier = planFeatureElementModifier,
                                         )
                                     }
                                     Spacer(Modifier.height(2.dp))
@@ -2756,6 +2823,7 @@ internal fun PaywallSectionView(
                                                         Text(
                                                             text = loc("plan.$planIdx.feature.$fIdx", feature),
                                                             style = periodStyle,
+                                                            modifier = planFeatureElementModifier,
                                                         )
                                                     }
                                                 }
@@ -3168,7 +3236,14 @@ internal fun PaywallSectionView(
                                                 plan.features.forEachIndexed { fIdx, feature ->
                                                     Row(verticalAlignment = Alignment.CenterVertically) {
                                                         Text(text = "✓ ", color = featureCheckColor, fontSize = 13.sp)
-                                                        Text(text = loc("plan.$planIdx.feature.$fIdx", feature), fontSize = 13.sp, color = planTextColor)
+                                                        Text(
+                                                            text = loc("plan.$planIdx.feature.$fIdx", feature),
+                                                            style = StyleEngine.applyTextStyle(
+                                                                TextStyle(fontSize = 13.sp, color = planTextColor),
+                                                                planFeatureTextStyle,
+                                                            ),
+                                                            modifier = planFeatureElementModifier,
+                                                        )
                                                     }
                                                     Spacer(Modifier.height(2.dp))
                                                 }
@@ -3333,8 +3408,17 @@ internal fun PaywallSectionView(
             val showRestoreLink = section.data?.show_restore == true
             val restorePosition = section.data?.restore_position ?: "below"
             val restoreText = section.data?.restore_text ?: "Restore Purchases"
+            // #910 — the restore link's DEFAULT colour was `Color.White.copy(alpha = 0.6f)`, a
+            // colour that assumes a dark paywall. On the light one this walk published it drew
+            // white-on-white: the link was in the view tree, had its authored border, and could be
+            // tapped — and was invisible. iOS has always used `.secondary`, which is grey in light
+            // appearance, so one published document gave two different screens.
+            //
+            // Exactly #891's defect in a different control, so it takes #891's answer: the shared
+            // WCAG ladder, which the console and both SDKs agree on. 0.6 alpha is kept so an
+            // authored-colour-free restore link still reads as secondary to the CTA.
             val restoreColor = section.data?.restore_text_color?.let { parseHexColor(it) }
-                ?: Color.White.copy(alpha = 0.6f)
+                ?: PaywallTextDefaults.readable(config.pageBackgroundHex()).copy(alpha = 0.6f)
             val restoreFontSize = (section.data?.restore_font_size ?: 13f).sp
             // The CTA↔Restore gap. Unset keeps the previous hardcoded 8.dp.
             val restoreGap = (section.data?.restore_gap ?: 8f).dp
@@ -3369,13 +3453,25 @@ internal fun PaywallSectionView(
                 val restoreBg = section.data?.restore_bg_color
                     ?.takeIf { it.isNotEmpty() }?.let { parseHexColor(it) }
                 val restoreRadius = (section.data?.restore_corner_radius ?: 0f).dp
+                // #910 — the `restore_text` element, both halves. iOS has honoured its text style
+                // since the element existed and Android read NEITHER half, so a restore link
+                // styled in the console looked right on one platform and plain on the other.
+                val restoreElementStyle = section.style?.elements?.get("restore_text")
                 Text(
                     text = loc("cta.restore_text", restoreText),
-                    color = restoreColor,
-                    fontSize = restoreFontSize,
-                    textAlign = TextAlign.Center,
+                    style = StyleEngine.applyTextStyle(
+                        TextStyle(
+                            color = restoreColor,
+                            fontSize = restoreFontSize,
+                            textAlign = TextAlign.Center,
+                        ),
+                        restoreElementStyle?.text_style,
+                    ),
                     modifier = Modifier
                         .fillMaxWidth()
+                        .run {
+                            with(StyleEngine) { applyContainerStyle(restoreElementStyle?.elementContainer) }
+                        }
                         .then(
                             if (restoreBg != null) {
                                 Modifier.clip(RoundedCornerShape(restoreRadius)).background(restoreBg)
@@ -3445,6 +3541,26 @@ internal fun PaywallSectionView(
                             ).dp),
                         )
                         .alpha(if (ctaEnabled) 1f else 0.5f)
+                        // #910 — the `button` ELEMENT's own container, which is a different thing
+                        // from the section's.
+                        //
+                        // 🔴 AFTER `.background(…)`, not before it. Compose draws modifiers in
+                        // chain order, so a `.border()` placed earlier is painted OVER by the
+                        // button's own background and vanishes — and the device frame showed worse
+                        // than that: the whole button went white-on-white, because the `.clip()`
+                        // this helper applies landed between the Box's size and its fill. One
+                        // authored CTA border, one blank button. Placed here the button paints
+                        // itself first and the authored border draws on top, which is also what
+                        // iOS does (`CTAButton`: `.applyElementStyle` sits outside the `Button`).
+                        //
+                        // `withoutBackground`: the fill is already resolved into `buttonBgColor`
+                        // above, so re-applying it here would paint it a second time at a
+                        // different radius.
+                        .run {
+                            with(StyleEngine) {
+                                applyContainerStyle(section.style?.elements?.get("button")?.withoutBackground)
+                            }
+                        }
                         .clickable(
                             enabled = ctaEnabled,
                             interactionSource = ctaInteraction,
@@ -3570,6 +3686,13 @@ internal fun PaywallSectionView(
                             TextStyle(color = Color.White.copy(alpha = 0.7f), fontSize = 13.sp),
                             section.style?.elements?.get("value")?.text_style
                         )
+                        // #910 — the `value` element's container, beside the text style it
+                        // already honoured (iOS SocialProof.swift).
+                        val socialValueModifier = Modifier.run {
+                            with(StyleEngine) {
+                                applyContainerStyle(section.style?.elements?.get("value")?.elementContainer)
+                            }
+                        }
                         section.data?.rating?.let { rating ->
                             // \u2014 render 5 fixed stars
                             // with filled/half/outline based on rating instead
@@ -3602,6 +3725,7 @@ internal fun PaywallSectionView(
                                 Text(
                                     text = loc("social_proof.review_text", "($compact)"),
                                     style = socialValueStyle,
+                                    modifier = socialValueModifier,
                                 )
                             }
                         }
@@ -3974,9 +4098,19 @@ private fun PaywallLegalSection(
             // console's Link Color now maps onto at the sync boundary).
             val legalLinkColor = section.data?.accent_color?.let { parseHexColor(it) }
             val annotated = buildAnnotatedStringWithLinks(text, legalLinkColor)
+            // #910 — the `text` element, which the console's Style tab offers for this section and
+            // NEITHER half of which was read on either platform: not the text style, not the
+            // container. An author styling the legal paragraph got nothing at all.
+            val legalTextElement = section.style?.elements?.get("text")
             androidx.compose.foundation.text.ClickableText(
                 text = annotated,
-                style = TextStyle(color = textColor, fontSize = fontSize.sp, textAlign = textAlignment),
+                style = StyleEngine.applyTextStyle(
+                    TextStyle(color = textColor, fontSize = fontSize.sp, textAlign = textAlignment),
+                    legalTextElement?.text_style,
+                ),
+                modifier = Modifier.run {
+                    with(StyleEngine) { applyContainerStyle(legalTextElement?.elementContainer) }
+                },
                 onClick = { offset ->
                     annotated.getStringAnnotations(tag = "URL", start = offset, end = offset)
                         .firstOrNull()?.let { annotation ->
@@ -4738,6 +4872,14 @@ private fun PaywallReviewsCarouselSection(
     val starClr = section.data.star_color?.let { parseHexColor(it) } ?: Color(0xFFFBBF24)
     val textStyleConfig = section.style?.elements?.get("text")?.text_style
     val authorStyleConfig = section.style?.elements?.get("author")?.text_style
+    // #910 — the container halves of the same two elements. `card` already had one; the console's
+    // ElementStylePanel writes one for `text` and `author` too, and neither was read.
+    val quoteElementModifier = Modifier.run {
+        with(StyleEngine) { applyContainerStyle(section.style?.elements?.get("text")?.elementContainer) }
+    }
+    val authorElementModifier = Modifier.run {
+        with(StyleEngine) { applyContainerStyle(section.style?.elements?.get("author")?.elementContainer) }
+    }
 
     Column(
         horizontalAlignment = Alignment.CenterHorizontally,
@@ -4751,7 +4893,18 @@ private fun PaywallReviewsCarouselSection(
             Column(
                 horizontalAlignment = Alignment.CenterHorizontally,
                 verticalArrangement = Arrangement.Center,
-                modifier = Modifier.fillMaxSize().padding(16.dp),
+                // #910 — the `card` element's container, which iOS has applied to this very view
+                // since #905 (`cardStyle: elements["card"].container`) and Android never read.
+                // An authored review card drew a border on one platform and nothing on the other;
+                // the cross-platform half of the element gate is what found it.
+                modifier = Modifier
+                    .fillMaxSize()
+                    .run {
+                        with(StyleEngine) {
+                            applyContainerStyle(section.style?.elements?.get("card")?.elementContainer)
+                        }
+                    }
+                    .padding(16.dp),
             ) {
                 // Star rating
                 if (showStars && review.rating != null) {
@@ -4780,6 +4933,7 @@ private fun PaywallReviewsCarouselSection(
                     text = "\u201C${review.text}\u201D",
                     style = quoteTextStyle,
                     textAlign = TextAlign.Center,
+                    modifier = quoteElementModifier,
                 )
                 Spacer(Modifier.height(12.dp))
 
@@ -4839,7 +4993,7 @@ private fun PaywallReviewsCarouselSection(
                     } else {
                         TextStyle(fontWeight = FontWeight.Medium, color = Color.White.copy(alpha = 0.7f), fontSize = 12.sp)
                     }
-                    Text(text = review.author, style = authorStyle)
+                    Text(text = review.author, style = authorStyle, modifier = authorElementModifier)
                     review.date?.let {
                         Text(text = it, fontSize = 10.sp, color = Color.White.copy(alpha = 0.4f))
                     }

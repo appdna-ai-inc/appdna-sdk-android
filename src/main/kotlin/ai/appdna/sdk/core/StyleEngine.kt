@@ -157,6 +157,25 @@ data class ElementStyleConfig(
                 && corner_radius == null && opacity == null
             ) null else this
         }
+
+    /**
+     * #910 — the same container minus its background, for a site that has ALREADY drawn it.
+     *
+     * The CTA button resolves its fill from the authored chain and paints it itself, with its own
+     * corner radius. Handing the whole container to `applyContainerStyle` as well would paint that
+     * colour a second time, behind the button, clipped to a DIFFERENT radius — a halo round every
+     * authored CTA. So the background is dropped and the rest is applied.
+     *
+     * Null when the background was all the author asked for: an empty container still pads and
+     * clips, and doing that to a view that asked for nothing moves layout. Mirrors iOS
+     * `ElementStyleConfig.withoutBackground`.
+     */
+    val withoutBackground: ElementStyleConfig?
+        get() = elementContainer?.let { c ->
+            if (c.border == null && c.shadow == null && c.padding == null
+                && c.corner_radius == null && c.opacity == null
+            ) null else c.copy(background = null)
+        }
 }
 
 data class SectionStyleConfig(
