@@ -109,6 +109,28 @@ data class PaywallLayout(
  * substitution mapped ONLY the root array, so the whole feature reached nothing on every real
  * paywall. Repeating that here would repeat that bug.
  */
+/**
+ * #933 slice 3 — a copy with the STORE's free-trial period on every ELIGIBLE plan.
+ *
+ * The same three places as `applyingStorePrices` and `applyingStorePeriods`, for the reason
+ * recorded on those: #923's first substitution walked only the root `plans` array and reached no
+ * real paywall.
+ */
+internal fun PaywallConfig.applyingStoreTrials(trials: Map<String, String>): PaywallConfig {
+    if (trials.isEmpty()) return this
+    fun withTrial(list: List<PaywallPlan>?): ImmutableList<PaywallPlan>? =
+        list?.map { it.copy(resolvedStoreTrial = trials[it.product_id]) }?.toImmutableList()
+    return copy(
+        plans = withTrial(plans),
+        sections = sections.map { section ->
+            val d = section.data
+            val sectionPlans = d?.plans
+            if (section.type != "plans" || d == null || sectionPlans == null) section
+            else section.copy(data = d.copy(plans = withTrial(sectionPlans)))
+        }.toImmutableList(),
+    )
+}
+
 internal fun PaywallConfig.applyingStorePeriods(periods: Map<String, String>): PaywallConfig {
     if (periods.isEmpty()) return this
     fun withPeriod(list: List<PaywallPlan>?): ImmutableList<PaywallPlan>? =
@@ -562,6 +584,20 @@ data class PaywallPlan(
      * for.
      */
     val resolvedStorePeriod: String? = null,
+
+    /**
+     * #933 slice 3 — the store's own free-trial period, as an ISO duration, filled by the presenter
+     * ONLY when the store says THIS user is eligible for it.
+     *
+     * 🔴 PROMISE ONLY ON A POSITIVE SIGNAL. A trial sentence is a promise, and showing "7 days
+     * free" to a user who already used the trial on that account is worse than showing nothing.
+     * Google answers eligibility STRUCTURALLY: `getSubscriptionOfferDetails` returns only the
+     * offers a user may buy, so a zero-price pricing phase among them IS Play saying this user can
+     * have that trial. (iOS answers it explicitly with `isEligibleForIntroOffer`.) Both can be
+     * stale in the same direction, so a positive is acted on and a negative never suppresses an
+     * authored label.
+     */
+    val resolvedStoreTrial: String? = null,
     val sort_order: Int = 0,
     // Rich plan metadata (iOS parity)
     val trial: PaywallPlanTrial? = null,
@@ -659,13 +695,29 @@ data class PaywallPlan(
      * as **"P7D free trial"**. [BillingPeriodPhrase] turns that into "7 days free trial"; anything
      * it cannot parse is printed exactly as authored, so "7-day" is untouched.
      */
-    val trialLabel: String? get() = trial?.label ?: trial_duration?.let { d ->
-        val phrased = ai.appdna.sdk.billing.BillingPeriodPhrase.duration(
-            d,
-            java.util.Locale.getDefault().language,
-        ) ?: d
-        "$phrased free trial"
-    }
+    val trialLabel: String? get() = trial?.label
+        ?: trial_duration?.let { d ->
+            val phrased = ai.appdna.sdk.billing.BillingPeriodPhrase.duration(
+                d,
+                java.util.Locale.getDefault().language,
+            ) ?: d
+            "$phrased free trial"
+        }
+        /*
+         * #933 slice 3 — nothing authored, so the STORE's trial, phrased.
+         *
+         * Last rung on purpose: an authored label and an authored duration both win, so no
+         * published paywall changes wording. Only a plan that said nothing gains a sentence, and
+         * only when `resolvedStoreTrial` is set — which the presenter does solely for a user Play
+         * says is eligible. A duration the phrase table cannot parse yields null rather than
+         * "P1W free trial".
+         */
+        ?: resolvedStoreTrial?.let { iso ->
+            ai.appdna.sdk.billing.BillingPeriodPhrase.duration(
+                iso,
+                java.util.Locale.getDefault().language,
+            )?.let { "$it free trial" }
+        }
 }
 
 data class PaywallCTA(

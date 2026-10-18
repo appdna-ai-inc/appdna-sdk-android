@@ -174,6 +174,55 @@ internal class PriceResolver(
         return out
     }
 
+    /**
+     * #933 slice 3 — the FREE-TRIAL period per product, for products this user is eligible for.
+     *
+     * 🔴 THE ELIGIBILITY ANSWER IS STRUCTURAL, which is why there is no flag to read. Play returns
+     * only "all base plans and offers the user is **eligible to purchase**"
+     * (`getSubscriptionOfferDetails`), and its own migration guide tells apps to use exactly this
+     * instead of purchase history for trial eligibility. So a zero-price pricing phase AMONG THE
+     * RETURNED OFFERS is Play saying this user can have that trial. A user who has already used it
+     * simply gets no such offer back.
+     *
+     * One batched query, like `getSubscriptionPeriods` and for the same reason: the per-product
+     * `getOffers` would be one round trip per plan.
+     */
+    suspend fun getSubscriptionTrials(productIds: List<String>): Map<String, String> {
+        if (productIds.isEmpty()) return emptyMap()
+        val client = connectionManager.awaitConnectedClient() ?: return emptyMap()
+        val params = QueryProductDetailsParams.newBuilder()
+            .setProductList(
+                productIds.map { id ->
+                    QueryProductDetailsParams.Product.newBuilder()
+                        .setProductId(id)
+                        .setProductType(BillingClient.ProductType.SUBS)
+                        .build()
+                },
+            )
+            .build()
+        val result = client.queryProductDetails(params)
+        if (result.billingResult.responseCode != BillingClient.BillingResponseCode.OK) {
+            Log.warning("PriceResolver: trial query failed with code ${result.billingResult.responseCode}")
+            return emptyMap()
+        }
+        val out = mutableMapOf<String, String>()
+        result.productDetailsList?.forEach { details ->
+            /*
+             * Across ALL eligible offers, not just the first: a product can carry several, and a
+             * trial on any of them is a trial this user can take. A zero `priceAmountMicros` is
+             * what makes a phase a free trial — an introductory PRICE is non-zero and is a
+             * different promise, so it is deliberately not treated as one here.
+             */
+            val trial = details.subscriptionOfferDetails
+                ?.asSequence()
+                ?.flatMap { it.pricingPhases.pricingPhaseList.asSequence() }
+                ?.firstOrNull { it.priceAmountMicros == 0L }
+                ?.billingPeriod
+            if (!trial.isNullOrBlank()) out[details.productId] = trial
+        }
+        return out
+    }
+
     suspend fun getOffers(productId: String): List<OfferDetails> {
         val client = connectionManager.awaitConnectedClient() ?: return emptyList()
 

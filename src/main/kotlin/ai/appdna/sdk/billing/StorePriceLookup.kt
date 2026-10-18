@@ -39,7 +39,7 @@ internal object StorePriceLookup {
      * They are still resolved together rather than separately, because a paywall showing this
      * month's price against last month's cadence is worse than showing neither.
      */
-    data class StoreFacts(val price: String?, val periodIso: String?)
+    data class StoreFacts(val price: String?, val periodIso: String?, val trialIso: String? = null)
 
     /**
      * Price AND period by product id, in one store round-trip. A product Play does not know is
@@ -69,10 +69,25 @@ internal object StorePriceLookup {
             emptyMap()
         }
 
+        /*
+         * #933 slice 3 — the trial half, same shape as the period half. Play filters
+         * `subscriptionOfferDetails` to the offers THIS USER may buy, so a zero-price phase among
+         * them is an eligibility answer rather than a product fact. A user who already used the
+         * trial gets no such offer back and therefore no sentence.
+         */
+        val trialMap = withTimeoutOrNull(timeoutMs) {
+            runCatching { resolver.getSubscriptionTrials(ids) }.getOrDefault(emptyMap())
+        } ?: run {
+            Log.info("[Paywall] store trial lookup exceeded ${timeoutMs}ms — authored trials stand")
+            emptyMap()
+        }
+
         return ids.mapNotNull { id ->
             val price = priceMap[id]
             val period = periodMap[id]
-            if (price == null && period == null) null else id to StoreFacts(price, period)
+            val trial = trialMap[id]
+            if (price == null && period == null && trial == null) null
+            else id to StoreFacts(price, period, trial)
         }.toMap()
     }
 

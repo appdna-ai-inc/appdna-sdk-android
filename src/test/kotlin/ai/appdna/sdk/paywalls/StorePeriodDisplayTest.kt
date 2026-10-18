@@ -120,4 +120,75 @@ class StorePeriodDisplayTest {
         assertEquals(config, config.applyingStorePeriods(emptyMap()))
         assertEquals("mo", config.applyingStorePeriods(emptyMap()).plans?.first()?.displayPeriod)
     }
+
+    // ── #933 slice 3 — the STORE's free trial, and the promise rule ─────────────────────────────
+
+    private fun trialPlan(authoredLabel: String?, authoredDuration: String?, storeTrial: String?) =
+        PaywallPlan(
+            id = "p", product_id = "app.premium.monthly", name = "Monthly", price = "",
+            trial = authoredLabel?.let { PaywallPlanTrial(label = it) },
+            trial_duration = authoredDuration,
+            resolvedStoreTrial = storeTrial,
+        )
+
+    @Test
+    fun `an authored trial label wins over the store`() {
+        // The behaviour that must NOT change for any published paywall.
+        assertEquals("Free week", trialPlan("Free week", null, "P1M").trialLabel)
+        assertEquals("7-day free trial", trialPlan(null, "7-day", "P1M").trialLabel)
+    }
+
+    @Test
+    fun `an unauthored trial reads the STORE, phrased`() {
+        assertEquals("7 days free trial", trialPlan(null, null, "P7D").trialLabel)
+        assertEquals("1 week free trial", trialPlan(null, null, "P1W").trialLabel)
+        assertEquals("1 month free trial", trialPlan(null, null, "P1M").trialLabel)
+    }
+
+    @Test
+    fun `no store trial means NO SENTENCE, never an invented one`() {
+        /*
+         * 🔴 THE PROMISE RULE. `resolvedStoreTrial` is null when Play returned no free-trial offer
+         * for this user — which is Play saying they are not eligible, because it filters the offer
+         * list. Rendering "7 days free" there would promise a trial the purchase sheet refuses.
+         */
+        assertNull(trialPlan(null, null, null).trialLabel)
+    }
+
+    @Test
+    fun `a store trial we cannot parse draws nothing rather than a guess`() {
+        assertNull(trialPlan(null, null, "WEEKLY").trialLabel)
+        assertNull(trialPlan(null, null, "PT1H").trialLabel)
+    }
+
+    @Test
+    fun `applyingStoreTrials reaches the SECTION's plans, not only the root array`() {
+        // The #923 bug, not repeated: every real paywall keeps its plans in the section.
+        val map = mapOf(
+            "id" to "pw_t", "name" to "Trials",
+            "plans" to listOf(mapOf("id" to "root", "product_id" to "app.premium.annual", "name" to "Annual")),
+            "sections" to listOf(
+                mapOf("id" to "s", "type" to "plans", "data" to mapOf(
+                    "plans" to listOf(mapOf("id" to "sec", "product_id" to "app.premium.monthly", "name" to "Monthly")),
+                )),
+            ),
+        )
+        val config = PaywallConfigParser.parseSinglePaywall("pw_t", map)!!
+        val applied = config.applyingStoreTrials(
+            mapOf("app.premium.annual" to "P1M", "app.premium.monthly" to "P7D"),
+        )
+        assertEquals("1 month free trial", applied.plans?.first()?.trialLabel)
+        assertEquals(
+            "7 days free trial",
+            applied.sections.first { it.type == "plans" }.data?.plans?.first()?.trialLabel,
+        )
+    }
+
+    @Test
+    fun `an empty trial map is a no-op`() {
+        val map = mapOf("id" to "pw_n", "name" to "N",
+            "plans" to listOf(mapOf("id" to "p", "product_id" to "x", "name" to "P", "trial_duration" to "7-day")))
+        val config = PaywallConfigParser.parseSinglePaywall("pw_n", map)!!
+        assertEquals(config, config.applyingStoreTrials(emptyMap()))
+    }
 }
