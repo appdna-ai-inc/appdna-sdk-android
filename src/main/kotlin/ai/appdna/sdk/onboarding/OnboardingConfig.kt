@@ -8,6 +8,13 @@ import ai.appdna.sdk.core.HapticTriggers
 import ai.appdna.sdk.core.ParticleEffect
 import kotlinx.collections.immutable.ImmutableList
 import kotlinx.collections.immutable.toImmutableList
+import ai.appdna.sdk.core.TypedRead
+import ai.appdna.sdk.core.bool
+import ai.appdna.sdk.core.num
+import ai.appdna.sdk.core.str
+
+/** #958 — what a mis-typed field in this document is reported against. */
+private const val SURFACE = TypedRead.ONBOARDING
 
 /**
  * Firestore schema types for onboarding flows (Android).
@@ -1581,14 +1588,14 @@ internal object OnboardingConfigParser {
     @Suppress("UNCHECKED_CAST")
     internal fun parseTextStyleConfig(map: Map<String, Any>): TextStyleConfig {
         return TextStyleConfig(
-            font_family = map["font_family"] as? String,
-            font_size = (map["font_size"] as? Number)?.toDouble(),
-            font_weight = (map["font_weight"] as? Number)?.toInt(),
-            color = map["color"] as? String,
-            alignment = map["alignment"] as? String,
-            line_height = (map["line_height"] as? Number)?.toDouble(),
-            letter_spacing = (map["letter_spacing"] as? Number)?.toDouble(),
-            opacity = (map["opacity"] as? Number)?.toDouble(),
+            font_family = map.str(SURFACE, "style.text_style", "font_family"),
+            font_size = (map.num(SURFACE, "style.text_style", "font_size"))?.toDouble(),
+            font_weight = (map.num(SURFACE, "style.text_style", "font_weight"))?.toInt(),
+            color = map.str(SURFACE, "style.text_style", "color"),
+            alignment = map.str(SURFACE, "style.text_style", "alignment"),
+            line_height = (map.num(SURFACE, "style.text_style", "line_height"))?.toDouble(),
+            letter_spacing = (map.num(SURFACE, "style.text_style", "letter_spacing"))?.toDouble(),
+            opacity = (map.num(SURFACE, "style.text_style", "opacity"))?.toDouble(),
         )
     }
 
@@ -1604,50 +1611,50 @@ internal object OnboardingConfigParser {
             val grad = gradMap?.let { g ->
                 val stops = (g["stops"] as? List<Map<String, Any>>)?.map { s ->
                     ai.appdna.sdk.core.GradientStopConfig(
-                        color = s["color"] as? String ?: "#000000",
-                        position = (s["position"] as? Number)?.toDouble() ?: 0.0,
+                        color = s.str(SURFACE, "style.elements", "color") ?: "#000000",
+                        position = (s.num(SURFACE, "style.elements", "position"))?.toDouble() ?: 0.0,
                     )
                 }
-                ai.appdna.sdk.core.GradientConfig(type = g["type"] as? String, angle = (g["angle"] as? Number)?.toDouble(), stops = stops)
+                ai.appdna.sdk.core.GradientConfig(type = g.str(SURFACE, "style.elements", "type"), angle = (g.num(SURFACE, "style.elements", "angle"))?.toDouble(), stops = stops)
             }
             ai.appdna.sdk.core.BackgroundStyleConfig(
-                type = it["type"] as? String, color = it["color"] as? String,
-                gradient = grad, image_url = it["image_url"] as? String,
-                image_fit = it["image_fit"] as? String, overlay = it["overlay"] as? String,
+                type = it.str(SURFACE, "style.elements", "type"), color = it.str(SURFACE, "style.elements", "color"),
+                gradient = grad, image_url = it.str(SURFACE, "style.elements", "image_url"),
+                image_fit = it.str(SURFACE, "style.elements", "image_fit"), overlay = it.str(SURFACE, "style.elements", "overlay"),
             )
         }
         val borderMap = map["border"] as? Map<String, Any>
         val border = borderMap?.let {
             ai.appdna.sdk.core.BorderStyleConfig(
-                width = (it["width"] as? Number)?.toDouble(), color = it["color"] as? String,
-                style = it["style"] as? String, radius = (it["radius"] as? Number)?.toDouble(),
-                radius_top_left = (it["radius_top_left"] as? Number)?.toDouble(),
-                radius_top_right = (it["radius_top_right"] as? Number)?.toDouble(),
-                radius_bottom_left = (it["radius_bottom_left"] as? Number)?.toDouble(),
-                radius_bottom_right = (it["radius_bottom_right"] as? Number)?.toDouble(),
+                width = (it.num(SURFACE, "style.elements", "width"))?.toDouble(), color = it.str(SURFACE, "style.elements", "color"),
+                style = it.str(SURFACE, "style.elements", "style"), radius = (it.num(SURFACE, "style.elements", "radius"))?.toDouble(),
+                radius_top_left = (it.num(SURFACE, "style.elements", "radius_top_left"))?.toDouble(),
+                radius_top_right = (it.num(SURFACE, "style.elements", "radius_top_right"))?.toDouble(),
+                radius_bottom_left = (it.num(SURFACE, "style.elements", "radius_bottom_left"))?.toDouble(),
+                radius_bottom_right = (it.num(SURFACE, "style.elements", "radius_bottom_right"))?.toDouble(),
             )
         }
         val shadowMap = map["shadow"] as? Map<String, Any>
         val shadow = shadowMap?.let {
             ai.appdna.sdk.core.ShadowStyleConfig(
-                x = (it["x"] as? Number)?.toDouble(), y = (it["y"] as? Number)?.toDouble(),
-                blur = (it["blur"] as? Number)?.toDouble(), spread = (it["spread"] as? Number)?.toDouble(),
-                color = it["color"] as? String,
+                x = (it.num(SURFACE, "style.elements", "x"))?.toDouble(), y = (it.num(SURFACE, "style.elements", "y"))?.toDouble(),
+                blur = (it.num(SURFACE, "style.elements", "blur"))?.toDouble(), spread = (it.num(SURFACE, "style.elements", "spread"))?.toDouble(),
+                color = it.str(SURFACE, "style.elements", "color"),
             )
         }
         val paddingMap = map["padding"] as? Map<String, Any>
         val padding = paddingMap?.let {
             ai.appdna.sdk.core.SpacingConfig(
-                top = (it["top"] as? Number)?.toDouble(), right = (it["right"] as? Number)?.toDouble(),
-                bottom = (it["bottom"] as? Number)?.toDouble(), left = (it["left"] as? Number)?.toDouble(),
+                top = (it.num(SURFACE, "style.elements", "top"))?.toDouble(), right = (it.num(SURFACE, "style.elements", "right"))?.toDouble(),
+                bottom = (it.num(SURFACE, "style.elements", "bottom"))?.toDouble(), left = (it.num(SURFACE, "style.elements", "left"))?.toDouble(),
             )
         }
         val tsMap = map["text_style"] as? Map<String, Any>
         val textStyle = tsMap?.let { parseTextStyleConfig(it) }
         return ai.appdna.sdk.core.ElementStyleConfig(
             background = bg, border = border, shadow = shadow, padding = padding,
-            corner_radius = (map["corner_radius"] as? Number)?.toDouble(),
-            opacity = (map["opacity"] as? Number)?.toDouble(),
+            corner_radius = (map.num(SURFACE, "style.elements", "corner_radius"))?.toDouble(),
+            opacity = (map.num(SURFACE, "style.elements", "opacity"))?.toDouble(),
             text_style = textStyle,
         )
     }
@@ -1669,11 +1676,11 @@ internal object OnboardingConfigParser {
         // payload, two different shadows.
         val shadow = shadowMap?.let { s ->
             BlockShadowStyle(
-                x = (s["x"] as? Number)?.toDouble() ?: 0.0,
-                y = (s["y"] as? Number)?.toDouble() ?: 0.0,
-                blur = (s["blur"] as? Number)?.toDouble() ?: 0.0,
-                spread = (s["spread"] as? Number)?.toDouble() ?: 0.0,
-                color = s["color"] as? String ?: "transparent",
+                x = (s.num(SURFACE, "block_style", "x"))?.toDouble() ?: 0.0,
+                y = (s.num(SURFACE, "block_style", "y"))?.toDouble() ?: 0.0,
+                blur = (s.num(SURFACE, "block_style", "blur"))?.toDouble() ?: 0.0,
+                spread = (s.num(SURFACE, "block_style", "spread"))?.toDouble() ?: 0.0,
+                color = s.str(SURFACE, "block_style", "color") ?: "transparent",
             )
         }
         val gradientMap = map["background_gradient"] as? Map<String, Any>
@@ -1685,28 +1692,28 @@ internal object OnboardingConfigParser {
         // diagonal on Android.
         val gradient = gradientMap?.let { g ->
             BlockGradientStyle(
-                angle = (g["angle"] as? Number)?.toDouble() ?: 0.0,
-                start = g["start"] as? String ?: "#000000",
-                end = g["end"] as? String ?: "#FFFFFF",
+                angle = (g.num(SURFACE, "block_style", "angle"))?.toDouble() ?: 0.0,
+                start = g.str(SURFACE, "block_style", "start") ?: "#000000",
+                end = g.str(SURFACE, "block_style", "end") ?: "#FFFFFF",
             )
         }
         return BlockStyle(
-            background_color = map["background_color"] as? String,
+            background_color = map.str(SURFACE, "block_style", "background_color"),
             background_gradient = gradient,
-            border_color = map["border_color"] as? String,
-            border_width = (map["border_width"] as? Number)?.toDouble(),
-            border_style = map["border_style"] as? String,
-            border_radius = (map["border_radius"] as? Number)?.toDouble(),
+            border_color = map.str(SURFACE, "block_style", "border_color"),
+            border_width = (map.num(SURFACE, "block_style", "border_width"))?.toDouble(),
+            border_style = map.str(SURFACE, "block_style", "border_style"),
+            border_radius = (map.num(SURFACE, "block_style", "border_radius"))?.toDouble(),
             shadow = shadow,
-            padding_top = (map["padding_top"] as? Number)?.toDouble(),
-            padding_right = (map["padding_right"] as? Number)?.toDouble(),
-            padding_bottom = (map["padding_bottom"] as? Number)?.toDouble(),
-            padding_left = (map["padding_left"] as? Number)?.toDouble(),
-            margin_top = (map["margin_top"] as? Number)?.toDouble(),
-            margin_bottom = (map["margin_bottom"] as? Number)?.toDouble(),
-            margin_left = (map["margin_left"] as? Number)?.toDouble(),
-            margin_right = (map["margin_right"] as? Number)?.toDouble(),
-            opacity = (map["opacity"] as? Number)?.toDouble(),
+            padding_top = (map.num(SURFACE, "block_style", "padding_top"))?.toDouble(),
+            padding_right = (map.num(SURFACE, "block_style", "padding_right"))?.toDouble(),
+            padding_bottom = (map.num(SURFACE, "block_style", "padding_bottom"))?.toDouble(),
+            padding_left = (map.num(SURFACE, "block_style", "padding_left"))?.toDouble(),
+            margin_top = (map.num(SURFACE, "block_style", "margin_top"))?.toDouble(),
+            margin_bottom = (map.num(SURFACE, "block_style", "margin_bottom"))?.toDouble(),
+            margin_left = (map.num(SURFACE, "block_style", "margin_left"))?.toDouble(),
+            margin_right = (map.num(SURFACE, "block_style", "margin_right"))?.toDouble(),
+            opacity = (map.num(SURFACE, "block_style", "opacity"))?.toDouble(),
         )
     }
 

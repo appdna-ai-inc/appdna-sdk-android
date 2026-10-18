@@ -1798,6 +1798,10 @@ class SharedFixtureTest(
                 spy.state["parsed_plan0_price_display"] = p0?.displayPrice
                 spy.state["parsed_plan0_original_price_display"] = p0?.original_price_display
                 spy.state["parsed_plan0_price_total_display"] = p0?.price_total_display
+                // The five fields iOS coerces from a number (`looseString`). Exposed so a fixture
+                // can assert the two platforms agree to the digit, which they did not.
+                spy.state["parsed_plan0_trial_label"] = p0?.trialLabel
+                spy.state["parsed_plan1_price_display"] = p1?.displayPrice
                 spy.state["parsed_plan0_badge_enabled"] = p0?.description_badge?.enabled
                 spy.state["parsed_plan0_badge_bg_color"] = p0?.description_badge?.bg_color
                 spy.state["parsed_plan0_badge_text_color"] = p0?.description_badge?.text_color

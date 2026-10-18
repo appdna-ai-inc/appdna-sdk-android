@@ -4,6 +4,18 @@ import androidx.compose.runtime.Immutable
 import androidx.compose.runtime.Stable
 import kotlinx.collections.immutable.ImmutableList
 import kotlinx.collections.immutable.toImmutableList
+import ai.appdna.sdk.core.TypedRead
+import ai.appdna.sdk.core.bool
+import ai.appdna.sdk.core.looseStr
+import ai.appdna.sdk.core.num
+import ai.appdna.sdk.core.str
+import ai.appdna.sdk.core.list
+import ai.appdna.sdk.core.listOfMaps
+import ai.appdna.sdk.core.obj
+import ai.appdna.sdk.core.objMap
+
+/** #957 — what a mis-typed field in this document is reported against. */
+private const val SURFACE = TypedRead.PAYWALL
 
 /**
  * Codable structs matching Firestore PaywallConfig schema (Android).
@@ -850,7 +862,7 @@ internal object PaywallConfigParser {
     fun parsePaywalls(data: Map<String, Any>): Map<String, PaywallConfig> {
         // Firestore doc structure: { "paywalls": { "uuid1": {...}, "uuid2": {...} } }
         // Unwrap the "paywalls" wrapper if present, otherwise treat data as flat map
-        val paywallMap = (data["paywalls"] as? Map<String, Any>) ?: data
+        val paywallMap = data.objMap(SURFACE, "root", "paywalls") ?: data
         val parsed = mutableMapOf<String, PaywallConfig>()
         for ((key, value) in paywallMap) {
             if (value is Map<*, *>) {
@@ -875,70 +887,74 @@ internal object PaywallConfigParser {
 
     @Suppress("UNCHECKED_CAST")
     private fun parsePaywallConfig(id: String, map: Map<String, Any>): PaywallConfig {
-        val layoutMap = map["layout"] as? Map<String, Any> ?: emptyMap()
+        // #958 — what a mis-typed field on the DOCUMENT itself is reported against. Each nested
+        // object below names its own sub-path instead ("dismiss.back", "haptic.triggers"), because
+        // "a boolean where a string belongs" is unactionable without knowing which object.
+        val docPath = "paywalls[$id]"
+        val layoutMap = map.objMap(SURFACE, docPath, "layout") ?: emptyMap()
 
         // Sections live at `layout.sections`
         // (Firestore canonical) per the server validator + sync service. Top-
         // level `sections` is iOS' legacy fallback. Resolve in iOS' priority:
         // top-level wins, layout.sections fills in.
-        val sectionsRaw = (map["sections"] as? List<Map<String, Any>>)
-            ?: (layoutMap["sections"] as? List<Map<String, Any>>)
+        val sectionsRaw = (map.listOfMaps(SURFACE, docPath, "sections"))
+            ?: (layoutMap.listOfMaps(SURFACE, docPath, "sections"))
             ?: emptyList()
         // Wrap as ImmutableList for Compose stability.
         val sections = sectionsRaw.map { parseSectionFromMap(it) }.toImmutableList()
 
         // Same fallback chain for `background`.
         // The PaywallBackground branch below now resolves either map.
-        val bgMap = (map["background"] as? Map<String, Any>)
-            ?: (layoutMap["background"] as? Map<String, Any>)
+        val bgMap = (map.objMap(SURFACE, docPath, "background"))
+            ?: (layoutMap.objMap(SURFACE, docPath, "background"))
 
         // Parse layout-level sections + background +
         // global_style passthrough. Section parsing already happened above so
         // the layout's `sections` field carries the SAME ImmutableList for any
         // consumer that walks `config.layout.sections` directly.
         val layout = PaywallLayout(
-            type = layoutMap["type"] as? String ?: "stack",
-            spacing = (layoutMap["spacing"] as? Number)?.toFloat(),
-            padding = (layoutMap["padding"] as? Number)?.toFloat(),
+            type = layoutMap.str(SURFACE, "layout", "type") ?: "stack",
+            spacing = (layoutMap.num(SURFACE, "layout", "spacing"))?.toFloat(),
+            padding = (layoutMap.num(SURFACE, "layout", "padding"))?.toFloat(),
             //
-            footer_padding = (layoutMap["footer_padding"] as? Number)?.toFloat(),
-            plan_display_style = layoutMap["plan_display_style"] as? String,
+            footer_padding = (layoutMap.num(SURFACE, "layout", "footer_padding"))?.toFloat(),
+            plan_display_style = layoutMap.str(SURFACE, "layout", "plan_display_style"),
             sections = sections,
             // background built below — re-assigned via copy() after we have it
             background = null,
-            global_style = layoutMap["global_style"] as? Map<String, Any>,
+            global_style = layoutMap.objMap(SURFACE, docPath, "global_style"),
         )
 
-        val dismissMap = map["dismiss"] as? Map<String, Any>
+        val dismissMap = map.objMap(SURFACE, docPath, "dismiss")
         val dismiss = dismissMap?.let {
             // iOS Codable keys read `style` first
             // and fall back to `type` (`PaywallConfig.swift:567-573`). Server
             // writes `style` per validator (`paywall.schema.ts:206`). Android
             // previously read only `type` so EVERY paywall rendered `x_button`
             // regardless of the console choice (text_link / swipe_down).
-            val rawStyle = it["style"] as? String
-            val rawType = it["type"] as? String
+            val rawStyle = it.str(SURFACE, "dismiss", "style")
+            val rawType = it.str(SURFACE, "dismiss", "type")
             val resolved = rawStyle ?: rawType ?: "x_button"
             PaywallDismiss(
                 type = resolved,
                 style = rawStyle,
-                allowed = it["allowed"] as? Boolean ?: true,
-                delay_seconds = (it["delay_seconds"] as? Number)?.toInt(),
-                text = it["text"] as? String,
+                allowed = it.bool(SURFACE, "dismiss", "allowed") ?: true,
+                delay_seconds = (it.num(SURFACE, "dismiss", "delay_seconds"))?.toInt(),
+                text = it.str(SURFACE, "dismiss", "text"),
                 // Placement, colour and size for the X / back chevron.
-                position = it["position"] as? String,
-                color = it["color"] as? String,
-                size = (it["size"] as? Number)?.toFloat(),
+                position = it.str(SURFACE, "dismiss", "position"),
+                color = it.str(SURFACE, "dismiss", "color"),
+                size = (it.num(SURFACE, "dismiss", "size"))?.toFloat(),
                 // #652 — the Back button's own config.
-                back = (it["back"] as? Map<*, *>)?.let { b ->
+                back = (it.objMap(SURFACE, docPath, "back"))?.let { b ->
                     PaywallBackButton(
-                        enabled = b["enabled"] as? Boolean,
-                        style = b["style"] as? String,
-                        position = b["position"] as? String,
-                        color = b["color"] as? String,
-                        size = (b["size"] as? Number)?.toFloat(),
-                        delay_seconds = (b["delay_seconds"] as? Number)?.toInt(),
-                        text = b["text"] as? String,
+                        enabled = b.bool(SURFACE, "dismiss.back", "enabled"),
+                        style = b.str(SURFACE, "dismiss.back", "style"),
+                        position = b.str(SURFACE, "dismiss.back", "position"),
+                        color = b.str(SURFACE, "dismiss.back", "color"),
+                        size = (b.num(SURFACE, "dismiss.back", "size"))?.toFloat(),
+                        delay_seconds = (b.num(SURFACE, "dismiss.back", "delay_seconds"))?.toInt(),
+                        text = b.str(SURFACE, "dismiss.back", "text"),
                     )
                 }
             )
@@ -947,40 +963,40 @@ internal object PaywallConfigParser {
         val background = bgMap?.let {
             // Full PaywallBackground parity (color/gradient/image/overlay/video)
             @Suppress("UNCHECKED_CAST")
-            val gradMap = it["gradient"] as? Map<String, Any>
+            val gradMap = it.objMap(SURFACE, docPath, "gradient")
             val gradient = gradMap?.let { g ->
-                val stops = (g["stops"] as? List<*>)?.mapNotNull { s ->
+                val stops = (g.list(SURFACE, docPath, "stops"))?.mapNotNull { s ->
                     @Suppress("UNCHECKED_CAST")
                     val sm = s as? Map<String, Any> ?: return@mapNotNull null
                     PaywallGradientStop(
-                        color = sm["color"] as? String,
-                        position = (sm["position"] as? Number)?.toDouble(),
+                        color = sm.str(SURFACE, "background.gradient.stops", "color"),
+                        position = (sm.num(SURFACE, "background.gradient.stops", "position"))?.toDouble(),
                     )
                 }
                 PaywallGradient(
-                    type = g["type"] as? String,
-                    angle = (g["angle"] as? Number)?.toDouble(),
+                    type = g.str(SURFACE, "background.gradient", "type"),
+                    angle = (g.num(SURFACE, "background.gradient", "angle"))?.toDouble(),
                     stops = stops,
                 )
             }
             PaywallBackground(
-                type = it["type"] as? String ?: "color",
+                type = it.str(SURFACE, "background", "type") ?: "color",
                 // iOS reads `bg.color` first,
                 // falls back to `bg.value` (`PaywallRenderer.swift` color
                 // resolution). Android previously read only `value` so
                 // type=color backgrounds with a `color` field rendered as
                 // theme-default (often white).
-                value = (it["color"] as? String) ?: (it["value"] as? String),
-                colors = (it["colors"] as? List<*>)?.filterIsInstance<String>(),
-                color = it["color"] as? String,
+                value = (it.str(SURFACE, "background", "color")) ?: (it.str(SURFACE, "background", "value")),
+                colors = (it.list(SURFACE, docPath, "colors"))?.filterIsInstance<String>(),
+                color = it.str(SURFACE, "background", "color"),
                 gradient = gradient,
-                image_url = it["image_url"] as? String,
-                image_fit = it["image_fit"] as? String,
-                overlay = it["overlay"] as? String,
-                video_url = it["video_url"] as? String,
-                video_poster_url = it["video_poster_url"] as? String,
-                video_muted = it["video_muted"] as? Boolean,
-                video_loop = it["video_loop"] as? Boolean,
+                image_url = it.str(SURFACE, "background", "image_url"),
+                image_fit = it.str(SURFACE, "background", "image_fit"),
+                overlay = it.str(SURFACE, "background", "overlay"),
+                video_url = it.str(SURFACE, "background", "video_url"),
+                video_poster_url = it.str(SURFACE, "background", "video_poster_url"),
+                video_muted = it.bool(SURFACE, "background", "video_muted"),
+                video_loop = it.bool(SURFACE, "background", "video_loop"),
             )
         }
 
@@ -990,22 +1006,22 @@ internal object PaywallConfigParser {
         // entry/dismiss/section_stagger/CTA/plan_selection animation was
         // silently no-op. Accept both keys: prefer canonical, fall back to
         // legacy short key for back-compat with any older client payloads.
-        val animMap = (map["animation_config"] as? Map<String, Any>)
-            ?: (map["animation"] as? Map<String, Any>)
+        val animMap = (map.objMap(SURFACE, docPath, "animation_config"))
+            ?: (map.objMap(SURFACE, docPath, "animation"))
         val animation = animMap?.let {
             ai.appdna.sdk.core.AnimationConfig(
-                entry_animation = it["entry_animation"] as? String,
-                entry_duration_ms = (it["entry_duration_ms"] as? Number)?.toInt(),
-                section_stagger = it["section_stagger"] as? String,
-                section_stagger_delay_ms = (it["section_stagger_delay_ms"] as? Number)?.toInt(),
-                cta_animation = it["cta_animation"] as? String,
-                plan_selection_animation = it["plan_selection_animation"] as? String,
-                dismiss_animation = it["dismiss_animation"] as? String,
+                entry_animation = it.str(SURFACE, "animation_config", "entry_animation"),
+                entry_duration_ms = (it.num(SURFACE, "animation_config", "entry_duration_ms"))?.toInt(),
+                section_stagger = it.str(SURFACE, "animation_config", "section_stagger"),
+                section_stagger_delay_ms = (it.num(SURFACE, "animation_config", "section_stagger_delay_ms"))?.toInt(),
+                cta_animation = it.str(SURFACE, "animation_config", "cta_animation"),
+                plan_selection_animation = it.str(SURFACE, "animation_config", "plan_selection_animation"),
+                dismiss_animation = it.str(SURFACE, "animation_config", "dismiss_animation"),
             )
         }
 
         // Parse localizations
-        val locMap = map["localizations"] as? Map<String, Any>
+        val locMap = map.objMap(SURFACE, docPath, "localizations")
         val localizations = locMap?.mapValues { (_, v) ->
             (v as? Map<*, *>)?.entries?.associate { (k, val2) ->
                 (k as? String ?: "") to (val2 as? String ?: "")
@@ -1013,64 +1029,64 @@ internal object PaywallConfigParser {
         }
 
         // Parse haptic config
-        val hapticMap = map["haptic"] as? Map<String, Any>
+        val hapticMap = map.objMap(SURFACE, docPath, "haptic")
         val haptic = hapticMap?.let { h ->
-            val triggersMap = h["triggers"] as? Map<String, Any>
+            val triggersMap = h.objMap(SURFACE, docPath, "triggers")
             ai.appdna.sdk.core.HapticConfig(
-                enabled = h["enabled"] as? Boolean ?: false,
+                enabled = h.bool(SURFACE, "haptic", "enabled") ?: false,
                 triggers = triggersMap?.let { t ->
                     // Read all 8 fields, not just 3.
                     // Without the missing 5, console-saved haptic configs
                     // for step_advance/option_select/toggle/form_submit/
                     // error events silently no-op on Android paywalls.
                     ai.appdna.sdk.core.HapticTriggers(
-                        on_step_advance = t["on_step_advance"] as? String,
-                        on_button_tap = t["on_button_tap"] as? String,
-                        on_plan_select = t["on_plan_select"] as? String,
-                        on_option_select = t["on_option_select"] as? String,
-                        on_toggle = t["on_toggle"] as? String,
-                        on_form_submit = t["on_form_submit"] as? String,
-                        on_error = t["on_error"] as? String,
-                        on_success = t["on_success"] as? String,
+                        on_step_advance = t.str(SURFACE, "haptic.triggers", "on_step_advance"),
+                        on_button_tap = t.str(SURFACE, "haptic.triggers", "on_button_tap"),
+                        on_plan_select = t.str(SURFACE, "haptic.triggers", "on_plan_select"),
+                        on_option_select = t.str(SURFACE, "haptic.triggers", "on_option_select"),
+                        on_toggle = t.str(SURFACE, "haptic.triggers", "on_toggle"),
+                        on_form_submit = t.str(SURFACE, "haptic.triggers", "on_form_submit"),
+                        on_error = t.str(SURFACE, "haptic.triggers", "on_error"),
+                        on_success = t.str(SURFACE, "haptic.triggers", "on_success"),
                     )
                 } ?: ai.appdna.sdk.core.HapticTriggers(),
             )
         }
 
         // Parse particle effect
-        val particleMap = map["particle_effect"] as? Map<String, Any>
+        val particleMap = map.objMap(SURFACE, docPath, "particle_effect")
         val particleEffect = particleMap?.let { p ->
             ai.appdna.sdk.core.ParticleEffect(
-                type = p["type"] as? String ?: "confetti",
-                trigger = p["trigger"] as? String ?: "on_purchase",
-                duration_ms = (p["duration_ms"] as? Number)?.toInt() ?: 2500,
-                intensity = p["intensity"] as? String ?: "medium",
-                colors = (p["colors"] as? List<*>)?.filterIsInstance<String>(),
+                type = p.str(SURFACE, "particle_effect", "type") ?: "confetti",
+                trigger = p.str(SURFACE, "particle_effect", "trigger") ?: "on_purchase",
+                duration_ms = (p.num(SURFACE, "particle_effect", "duration_ms"))?.toInt() ?: 2500,
+                intensity = p.str(SURFACE, "particle_effect", "intensity") ?: "medium",
+                colors = (p.list(SURFACE, docPath, "colors"))?.filterIsInstance<String>(),
             )
         }
 
         // Parse post-purchase config
         @Suppress("UNCHECKED_CAST")
-        val postPurchaseMap = map["post_purchase"] as? Map<String, Any>
+        val postPurchaseMap = map.objMap(SURFACE, docPath, "post_purchase")
         val postPurchase = postPurchaseMap?.let { pp ->
             @Suppress("UNCHECKED_CAST")
-            val onSuccess = (pp["on_success"] as? Map<String, Any>)?.let { s ->
+            val onSuccess = (pp.objMap(SURFACE, docPath, "on_success"))?.let { s ->
                 PostPurchaseSuccessConfig(
-                    action = s["action"] as? String ?: "dismiss",
-                    message = s["message"] as? String,
-                    delay_ms = (s["delay_ms"] as? Number)?.toInt(),
-                    deep_link_url = s["deep_link_url"] as? String,
-                    confetti = s["confetti"] as? Boolean,
-                    lottie_url = s["lottie_url"] as? String,
+                    action = s.str(SURFACE, "post_purchase.on_success", "action") ?: "dismiss",
+                    message = s.str(SURFACE, "post_purchase.on_success", "message"),
+                    delay_ms = (s.num(SURFACE, "post_purchase.on_success", "delay_ms"))?.toInt(),
+                    deep_link_url = s.str(SURFACE, "post_purchase.on_success", "deep_link_url"),
+                    confetti = s.bool(SURFACE, "post_purchase.on_success", "confetti"),
+                    lottie_url = s.str(SURFACE, "post_purchase.on_success", "lottie_url"),
                 )
             }
             @Suppress("UNCHECKED_CAST")
-            val onFailure = (pp["on_failure"] as? Map<String, Any>)?.let { f ->
+            val onFailure = (pp.objMap(SURFACE, docPath, "on_failure"))?.let { f ->
                 PostPurchaseFailureConfig(
-                    action = f["action"] as? String ?: "show_error",
-                    message = f["message"] as? String,
-                    retry_text = f["retry_text"] as? String,
-                    allow_dismiss = f["allow_dismiss"] as? Boolean,
+                    action = f.str(SURFACE, "post_purchase.on_failure", "action") ?: "show_error",
+                    message = f.str(SURFACE, "post_purchase.on_failure", "message"),
+                    retry_text = f.str(SURFACE, "post_purchase.on_failure", "retry_text"),
+                    allow_dismiss = f.bool(SURFACE, "post_purchase.on_failure", "allow_dismiss"),
                 )
             }
             PostPurchaseConfig(on_success = onSuccess, on_failure = onFailure)
@@ -1078,7 +1094,7 @@ internal object PaywallConfigParser {
 
         // Parse top-level `plans` (iOS fallback
         // path when no `plans`-type section exists). Reuse `parsePlanFromMap`.
-        val topLevelPlans = (map["plans"] as? List<*>)
+        val topLevelPlans = (map.list(SURFACE, docPath, "plans"))
             ?.mapIndexedNotNull { idx, p ->
                 @Suppress("UNCHECKED_CAST")
                 (p as? Map<String, Any>)?.let { parsePlanFromMap(it).withFallbackId(idx) }
@@ -1087,24 +1103,24 @@ internal object PaywallConfigParser {
 
         // Parse top-level `cta`. Reuses the
         // same shape iOS reads via `config.cta?.text`.
-        val topLevelCtaMap = map["cta"] as? Map<String, Any>
+        val topLevelCtaMap = map.objMap(SURFACE, docPath, "cta")
         val topLevelCta = topLevelCtaMap?.let { ctaMap ->
             val rawStyle = ctaMap["style"]
             val styleMap = rawStyle as? Map<*, *>
             PaywallCTA(
-                text = ctaMap["text"] as? String ?: "",
+                text = ctaMap.str(SURFACE, "cta", "text") ?: "",
                 style = rawStyle,
-                bg_color = ctaMap["bg_color"] as? String
+                bg_color = ctaMap.str(SURFACE, "cta", "bg_color")
                     ?: (styleMap?.get("bg_color") as? String),
-                text_color = ctaMap["text_color"] as? String
+                text_color = ctaMap.str(SURFACE, "cta", "text_color")
                     ?: (styleMap?.get("text_color") as? String),
-                corner_radius = (ctaMap["corner_radius"] as? Number)?.toDouble()
+                corner_radius = (ctaMap.num(SURFACE, "cta", "corner_radius"))?.toDouble()
                     ?: (styleMap?.get("corner_radius") as? Number)?.toDouble(),
-                height = (ctaMap["height"] as? Number)?.toDouble()
+                height = (ctaMap.num(SURFACE, "cta", "height"))?.toDouble()
                     ?: (styleMap?.get("height") as? Number)?.toDouble(),
-                font_size = (ctaMap["font_size"] as? Number)?.toDouble()
+                font_size = (ctaMap.num(SURFACE, "cta", "font_size"))?.toDouble()
                     ?: (styleMap?.get("font_size") as? Number)?.toDouble(),
-                padding_vertical = (ctaMap["padding_vertical"] as? Number)?.toDouble()
+                padding_vertical = (ctaMap.num(SURFACE, "cta", "padding_vertical"))?.toDouble()
                     ?: (styleMap?.get("padding_vertical") as? Number)?.toDouble(),
             )
         }
@@ -1115,22 +1131,22 @@ internal object PaywallConfigParser {
         val layoutWithBackground = layout.copy(background = background)
 
         return PaywallConfig(
-            id = map["id"] as? String ?: id,
-            name = map["name"] as? String ?: "",
+            id = map.str(SURFACE, docPath, "id") ?: id,
+            name = map.str(SURFACE, docPath, "name") ?: "",
             layout = layoutWithBackground,
             sections = sections,
             dismiss = dismiss,
             background = background,
             animation = animation,
             localizations = localizations,
-            default_locale = map["default_locale"] as? String,
+            default_locale = map.str(SURFACE, docPath, "default_locale"),
             haptic = haptic,
             particle_effect = particleEffect,
-            video_background_url = map["video_background_url"] as? String,
+            video_background_url = map.str(SURFACE, docPath, "video_background_url"),
             // Top-level placement / version / audience / post-purchase
-            placement = map["placement"] as? String,
-            placement_label = map["placement_label"] as? String,
-            version = (map["version"] as? Number)?.toInt(),
+            placement = map.str(SURFACE, docPath, "placement"),
+            placement_label = map.str(SURFACE, docPath, "placement_label"),
+            version = (map.num(SURFACE, docPath, "version"))?.toInt(),
             post_purchase = postPurchase,
             audience_rules = map["audience_rules"],
             // Top-level plans + cta.
@@ -1142,322 +1158,340 @@ internal object PaywallConfigParser {
     @Suppress("UNCHECKED_CAST")
     private fun parseSectionFromMap(map: Map<String, Any>): PaywallSection {
         val type = map["type"] as? String ?: ""
-        val dataMap = (map["data"] as? Map<String, Any>) ?: (map["config"] as? Map<String, Any>)
+        // These two are read BEFORE `path` exists, because `path` is built from the section id
+        // below — so they name the section by the only handle available here.
+        val sectionHandle = "sections[${map["id"] as? String ?: type}]"
+        val dataMap = (map.objMap(SURFACE, sectionHandle, "data"))
+            ?: (map.objMap(SURFACE, sectionHandle, "config"))
+
+        /*
+         * #957 — the reads below NOTICE a present-but-wrong-typed field instead of absorbing it.
+         *
+         * `as?` yields null for "absent", "null" and "wrong type" alike, so a `corner_radius` the
+         * console sent as `"12"` was indistinguishable from one nobody set — the author's value was
+         * dropped and nothing anywhere knew. iOS has always known, because `Codable` throws; this
+         * is the Android half of that, reported through the same path #935 built.
+         *
+         * `path` names the field for the report. The section's own id is the most specific handle
+         * the parser has here, and it is what an author sees in the console.
+         */
+        val sectionPath = sectionHandle
+        val path = "$sectionPath.config"
 
         val data = dataMap?.let { d ->
             PaywallSectionData(
-                title = d["title"] as? String,
-                subtitle = d["subtitle"] as? String,
-                image_url = d["image_url"] as? String,
-                image_alignment = d["image_alignment"] as? String,
-                image_max_height = (d["image_max_height"] as? Number)?.toFloat(),
+                title = d.str(SURFACE, path, "title"),
+                subtitle = d.str(SURFACE, path, "subtitle"),
+                image_url = d.str(SURFACE, path, "image_url"),
+                image_alignment = d.str(SURFACE, path, "image_alignment"),
+                image_max_height = d.num(SURFACE, path, "image_max_height")?.toFloat(),
                 // Data-level title_style /
                 // subtitle_style decoded from text-style maps.
-                title_style = parseDataTextStyle(d["title_style"]),
-                subtitle_style = parseDataTextStyle(d["subtitle_style"]),
+                title_style = parseDataTextStyle(d["title_style"], "$path.title_style"),
+                subtitle_style = parseDataTextStyle(d["subtitle_style"], "$path.subtitle_style"),
                 // Wrap features/plans as ImmutableList.
-                features = (d["features"] as? List<*>)?.filterIsInstance<String>()?.toImmutableList(),
-                item_subtitle_color = d["item_subtitle_color"] as? String,
-                item_subtitle_font_size = (d["item_subtitle_font_size"] as? Number)?.toFloat(),
-                item_image_shape = d["item_image_shape"] as? String,
-                item_excluded_color = d["item_excluded_color"] as? String,
-                plans = (d["plans"] as? List<*>)?.mapIndexedNotNull { idx, planData ->
+                features = (d.list(SURFACE, path, "features"))?.filterIsInstance<String>()?.toImmutableList(),
+                item_subtitle_color = d.str(SURFACE, path, "item_subtitle_color"),
+                item_subtitle_font_size = d.num(SURFACE, path, "item_subtitle_font_size")?.toFloat(),
+                item_image_shape = d.str(SURFACE, path, "item_image_shape"),
+                item_excluded_color = d.str(SURFACE, path, "item_excluded_color"),
+                plans = (d.list(SURFACE, path, "plans"))?.mapIndexedNotNull { idx, planData ->
                     if (planData is Map<*, *>) {
                         @Suppress("UNCHECKED_CAST")
                         parsePlanFromMap(planData as Map<String, Any>).withFallbackId(idx)
                     } else null
                 }?.toImmutableList(),
-                cta = (d["cta"] as? Map<String, Any>)?.let { ctaMap ->
+                cta = (d.objMap(SURFACE, path, "cta"))?.let { ctaMap ->
                     val rawStyle = ctaMap["style"]
                     val styleMap = rawStyle as? Map<*, *>
                     PaywallCTA(
-                        text = ctaMap["text"] as? String ?: "",
+                        text = ctaMap.str(SURFACE, "$path.cta", "text") ?: "",
                         style = rawStyle,
-                        bg_color = ctaMap["bg_color"] as? String
+                        bg_color = ctaMap.str(SURFACE, "$path.cta", "bg_color")
                             ?: (styleMap?.get("bg_color") as? String),
-                        text_color = ctaMap["text_color"] as? String
+                        text_color = ctaMap.str(SURFACE, "$path.cta", "text_color")
                             ?: (styleMap?.get("text_color") as? String),
-                        corner_radius = (ctaMap["corner_radius"] as? Number)?.toDouble()
+                        corner_radius = (ctaMap.num(SURFACE, "$path.cta", "corner_radius"))?.toDouble()
                             ?: (styleMap?.get("corner_radius") as? Number)?.toDouble(),
                         // PaywallCTAStyle extras (height/font_size/padding_vertical)
-                        height = (ctaMap["height"] as? Number)?.toDouble()
+                        height = (ctaMap.num(SURFACE, "$path.cta", "height"))?.toDouble()
                             ?: (styleMap?.get("height") as? Number)?.toDouble(),
-                        font_size = (ctaMap["font_size"] as? Number)?.toDouble()
+                        font_size = (ctaMap.num(SURFACE, "$path.cta", "font_size"))?.toDouble()
                             ?: (styleMap?.get("font_size") as? Number)?.toDouble(),
-                        padding_vertical = (ctaMap["padding_vertical"] as? Number)?.toDouble()
+                        padding_vertical = (ctaMap.num(SURFACE, "$path.cta", "padding_vertical"))?.toDouble()
                             ?: (styleMap?.get("padding_vertical") as? Number)?.toDouble(),
                     )
                 },
-                rating = (d["rating"] as? Number)?.toDouble(),
-                review_count = (d["review_count"] as? Number)?.toInt(),
-                testimonial = d["testimonial"] as? String,
-                sub_type = d["sub_type"] as? String,
-                countdown_seconds = (d["countdown_seconds"] as? Number)?.toInt(),
-                text = d["text"] as? String,
-                guarantee_text = d["guarantee_text"] as? String,
-                height = (d["height"] as? Number)?.toFloat(),
-                corner_radius = (d["corner_radius"] as? Number)?.toFloat(),
-                lottie_height = (d["lottie_height"] as? Number)?.toFloat(),
-                video_height = (d["video_height"] as? Number)?.toFloat(),
-                spacer_height = (d["spacer_height"] as? Number)?.toFloat(),
-                quote = d["quote"] as? String,
-                author_name = d["author_name"] as? String,
-                author_role = d["author_role"] as? String,
-                avatar_url = d["avatar_url"] as? String,
+                rating = d.num(SURFACE, path, "rating")?.toDouble(),
+                review_count = d.num(SURFACE, path, "review_count")?.toInt(),
+                testimonial = d.str(SURFACE, path, "testimonial"),
+                sub_type = d.str(SURFACE, path, "sub_type"),
+                countdown_seconds = d.num(SURFACE, path, "countdown_seconds")?.toInt(),
+                text = d.str(SURFACE, path, "text"),
+                guarantee_text = d.str(SURFACE, path, "guarantee_text"),
+                height = d.num(SURFACE, path, "height")?.toFloat(),
+                corner_radius = d.num(SURFACE, path, "corner_radius")?.toFloat(),
+                lottie_height = d.num(SURFACE, path, "lottie_height")?.toFloat(),
+                video_height = d.num(SURFACE, path, "video_height")?.toFloat(),
+                spacer_height = d.num(SURFACE, path, "spacer_height")?.toFloat(),
+                quote = d.str(SURFACE, path, "quote"),
+                author_name = d.str(SURFACE, path, "author_name"),
+                author_role = d.str(SURFACE, path, "author_role"),
+                avatar_url = d.str(SURFACE, path, "avatar_url"),
                 // Rich media fields
-                lottie_url = d["lottie_url"] as? String,
-                lottie_loop = d["lottie_loop"] as? Boolean,
-                lottie_speed = (d["lottie_speed"] as? Number)?.toFloat(),
-                rive_url = d["rive_url"] as? String,
-                rive_state_machine = d["rive_state_machine"] as? String,
-                video_url = d["video_url"] as? String,
-                video_thumbnail_url = d["video_thumbnail_url"] as? String,
-                video_autoplay = d["video_autoplay"] as? Boolean,
-                video_loop = d["video_loop"] as? Boolean,
+                lottie_url = d.str(SURFACE, path, "lottie_url"),
+                lottie_loop = d.bool(SURFACE, path, "lottie_loop"),
+                lottie_speed = d.num(SURFACE, path, "lottie_speed")?.toFloat(),
+                rive_url = d.str(SURFACE, path, "rive_url"),
+                rive_state_machine = d.str(SURFACE, path, "rive_state_machine"),
+                video_url = d.str(SURFACE, path, "video_url"),
+                video_thumbnail_url = d.str(SURFACE, path, "video_thumbnail_url"),
+                video_autoplay = d.bool(SURFACE, path, "video_autoplay"),
+                video_loop = d.bool(SURFACE, path, "video_loop"),
                 // Countdown section
-                variant = d["variant"] as? String,
-                duration_seconds = (d["duration_seconds"] as? Number)?.toInt(),
-                target_datetime = d["target_datetime"] as? String,
-                show_days = d["show_days"] as? Boolean,
-                show_hours = d["show_hours"] as? Boolean,
-                show_minutes = d["show_minutes"] as? Boolean,
-                show_seconds = d["show_seconds"] as? Boolean,
-                labels = (d["labels"] as? Map<*, *>)?.entries?.associate { (k, v) -> (k as? String ?: "") to (v as? String ?: "") },
-                on_expire_action = d["on_expire_action"] as? String,
-                expired_text = d["expired_text"] as? String,
-                accent_color = d["accent_color"] as? String,
-                background_color = d["background_color"] as? String,
-                font_size = (d["font_size"] as? Number)?.toFloat(),
-                alignment = d["alignment"] as? String,
+                variant = d.str(SURFACE, path, "variant"),
+                duration_seconds = d.num(SURFACE, path, "duration_seconds")?.toInt(),
+                target_datetime = d.str(SURFACE, path, "target_datetime"),
+                show_days = d.bool(SURFACE, path, "show_days"),
+                show_hours = d.bool(SURFACE, path, "show_hours"),
+                show_minutes = d.bool(SURFACE, path, "show_minutes"),
+                show_seconds = d.bool(SURFACE, path, "show_seconds"),
+                labels = (d.obj(SURFACE, path, "labels"))?.entries?.associate { (k, v) -> (k as? String ?: "") to (v as? String ?: "") },
+                on_expire_action = d.str(SURFACE, path, "on_expire_action"),
+                expired_text = d.str(SURFACE, path, "expired_text"),
+                accent_color = d.str(SURFACE, path, "accent_color"),
+                background_color = d.str(SURFACE, path, "background_color"),
+                font_size = d.num(SURFACE, path, "font_size")?.toFloat(),
+                alignment = d.str(SURFACE, path, "alignment"),
                 // Legal section
-                color = d["color"] as? String,
-                links = (d["links"] as? List<*>)?.mapNotNull { linkData ->
-                    (linkData as? Map<*, *>)?.let { lm ->
+                color = d.str(SURFACE, path, "color"),
+                links = (d.list(SURFACE, path, "links"))?.mapNotNull { linkData ->
+                    (linkData as? Map<String, Any>)?.let { lm ->
                         PaywallLink(
-                            label = lm["label"] as? String ?: "",
-                            url = lm["url"] as? String ?: "",
+                            label = lm.str(SURFACE, "$path.links", "label") ?: "",
+                            url = lm.str(SURFACE, "$path.links", "url") ?: "",
                             // Link action ("restore", "url", etc.) parity
-                            action = lm["action"] as? String,
+                            action = lm.str(SURFACE, "$path.links", "action"),
                         )
                     }
                 },
                 // Divider section
-                thickness = (d["thickness"] as? Number)?.toFloat(),
-                line_style = d["style"] as? String,
-                margin_top = (d["margin_top"] as? Number)?.toFloat(),
-                margin_bottom = (d["margin_bottom"] as? Number)?.toFloat(),
-                margin_horizontal = (d["margin_horizontal"] as? Number)?.toFloat(),
-                label_text = d["label_text"] as? String,
-                label_color = d["label_color"] as? String,
-                label_bg_color = d["label_bg_color"] as? String,
-                label_font_size = (d["label_font_size"] as? Number)?.toFloat(),
+                thickness = d.num(SURFACE, path, "thickness")?.toFloat(),
+                line_style = d.str(SURFACE, path, "style"),
+                margin_top = d.num(SURFACE, path, "margin_top")?.toFloat(),
+                margin_bottom = d.num(SURFACE, path, "margin_bottom")?.toFloat(),
+                margin_horizontal = d.num(SURFACE, path, "margin_horizontal")?.toFloat(),
+                label_text = d.str(SURFACE, path, "label_text"),
+                label_color = d.str(SURFACE, path, "label_color"),
+                label_bg_color = d.str(SURFACE, path, "label_bg_color"),
+                label_font_size = d.num(SURFACE, path, "label_font_size")?.toFloat(),
                 // Countdown layout selector.
-                layout = d["layout"] as? String,
+                layout = d.str(SURFACE, path, "layout"),
                 // Sticky footer section
-                cta_text = d["cta_text"] as? String,
-                cta_bg_color = d["cta_bg_color"] as? String,
-                cta_text_color = d["cta_text_color"] as? String,
-                cta_corner_radius = (d["cta_corner_radius"] as? Number)?.toFloat(),
-                secondary_text = d["secondary_text"] as? String,
-                secondary_action = d["secondary_action"] as? String,
-                secondary_url = d["secondary_url"] as? String,
-                legal_text = d["legal_text"] as? String,
-                legal_font_size = (d["legal_font_size"] as? Number)?.toFloat(),
-                legal_text_color = d["legal_text_color"] as? String,
-                blur_background = d["blur_background"] as? Boolean,
-                padding = (d["padding"] as? Number)?.toFloat(),
+                cta_text = d.str(SURFACE, path, "cta_text"),
+                cta_bg_color = d.str(SURFACE, path, "cta_bg_color"),
+                cta_text_color = d.str(SURFACE, path, "cta_text_color"),
+                cta_corner_radius = d.num(SURFACE, path, "cta_corner_radius")?.toFloat(),
+                secondary_text = d.str(SURFACE, path, "secondary_text"),
+                secondary_action = d.str(SURFACE, path, "secondary_action"),
+                secondary_url = d.str(SURFACE, path, "secondary_url"),
+                legal_text = d.str(SURFACE, path, "legal_text"),
+                legal_font_size = d.num(SURFACE, path, "legal_font_size")?.toFloat(),
+                legal_text_color = d.str(SURFACE, path, "legal_text_color"),
+                blur_background = d.bool(SURFACE, path, "blur_background"),
+                padding = d.num(SURFACE, path, "padding")?.toFloat(),
                 // Carousel section
-                pages = (d["pages"] as? List<*>)?.mapNotNull { pageData ->
-                    (pageData as? Map<*, *>)?.let { pm ->
+                pages = (d.list(SURFACE, path, "pages"))?.mapNotNull { pageData ->
+                    (pageData as? Map<String, Any>)?.let { pm ->
                         @Suppress("UNCHECKED_CAST")
-                        val childSections = (pm["children"] as? List<Map<String, Any>>)?.map { parseSectionFromMap(it) }
+                        val childSections = (pm.listOfMaps(SURFACE, path, "children"))?.map { parseSectionFromMap(it) }
                         PaywallCarouselPage(
-                            id = pm["id"] as? String ?: "",
+                            id = pm.str(SURFACE, "$path.pages", "id") ?: "",
                             children = childSections,
                         )
                     }
                 },
-                auto_scroll = d["auto_scroll"] as? Boolean,
-                auto_scroll_interval_ms = (d["auto_scroll_interval_ms"] as? Number)?.toInt(),
-                show_indicators = d["show_indicators"] as? Boolean,
-                indicator_color = d["indicator_color"] as? String,
-                indicator_active_color = d["indicator_active_color"] as? String,
+                auto_scroll = d.bool(SURFACE, path, "auto_scroll"),
+                auto_scroll_interval_ms = d.num(SURFACE, path, "auto_scroll_interval_ms")?.toInt(),
+                show_indicators = d.bool(SURFACE, path, "show_indicators"),
+                indicator_color = d.str(SURFACE, path, "indicator_color"),
+                indicator_active_color = d.str(SURFACE, path, "indicator_active_color"),
                 // Timeline / Icon grid items
-                items = (d["items"] as? List<*>)?.mapNotNull { itemData ->
-                    (itemData as? Map<*, *>)?.let { im ->
+                items = (d.list(SURFACE, path, "items"))?.mapNotNull { itemData ->
+                    (itemData as? Map<String, Any>)?.let { im ->
                         PaywallGenericItem(
-                            id = im["id"] as? String,
-                            title = im["title"] as? String,
-                            subtitle = im["subtitle"] as? String,
-                            icon = im["icon"] as? String,
-                            status = im["status"] as? String,
-                            label = im["label"] as? String,
-                            description = im["description"] as? String,
+                            id = im.str(SURFACE, "$path.items", "id"),
+                            title = im.str(SURFACE, "$path.items", "title"),
+                            subtitle = im.str(SURFACE, "$path.items", "subtitle"),
+                            icon = im.str(SURFACE, "$path.items", "icon"),
+                            status = im.str(SURFACE, "$path.items", "status"),
+                            label = im.str(SURFACE, "$path.items", "label"),
+                            description = im.str(SURFACE, "$path.items", "description"),
                             // Features-list extras parity
-                            text = im["text"] as? String,
-                            image_url = im["image_url"] as? String,
-                            included = im["included"] as? Boolean,
-                            emoji = im["emoji"] as? String,
-                            color = im["color"] as? String,
+                            text = im.str(SURFACE, "$path.items", "text"),
+                            image_url = im.str(SURFACE, "$path.items", "image_url"),
+                            included = im.bool(SURFACE, "$path.items", "included"),
+                            emoji = im.str(SURFACE, "$path.items", "emoji"),
+                            color = im.str(SURFACE, "$path.items", "color"),
                         )
                     }
                 },
-                line_color = d["line_color"] as? String,
-                completed_color = d["completed_color"] as? String,
-                current_color = d["current_color"] as? String,
-                upcoming_color = d["upcoming_color"] as? String,
-                show_line = d["show_line"] as? Boolean,
-                compact = d["compact"] as? Boolean,
+                line_color = d.str(SURFACE, path, "line_color"),
+                completed_color = d.str(SURFACE, path, "completed_color"),
+                current_color = d.str(SURFACE, path, "current_color"),
+                upcoming_color = d.str(SURFACE, path, "upcoming_color"),
+                show_line = d.bool(SURFACE, path, "show_line"),
+                compact = d.bool(SURFACE, path, "compact"),
                 // Icon grid / comparison table
-                columns = (d["columns"] as? Number)?.toInt(),
-                icon_size = (d["icon_size"] as? Number)?.toFloat(),
-                icon_color = d["icon_color"] as? String,
-                spacing = (d["spacing"] as? Number)?.toFloat(),
+                columns = d.num(SURFACE, path, "columns")?.toInt(),
+                icon_size = d.num(SURFACE, path, "icon_size")?.toFloat(),
+                icon_color = d.str(SURFACE, path, "icon_color"),
+                spacing = d.num(SURFACE, path, "spacing")?.toFloat(),
                 // Comparison table section
                 table_columns = ((d["table_columns"] ?: d["columns"]) as? List<*>)?.mapNotNull { colData ->
-                    (colData as? Map<*, *>)?.let { cm ->
+                    (colData as? Map<String, Any>)?.let { cm ->
                         PaywallTableColumn(
-                            label = cm["label"] as? String ?: "",
-                            highlighted = cm["highlighted"] as? Boolean,
+                            label = cm.str(SURFACE, "$path.table_columns", "label") ?: "",
+                            highlighted = cm.bool(SURFACE, "$path.table_columns", "highlighted"),
                         )
                     }
                 },
-                rows = (d["rows"] as? List<*>)?.mapNotNull { rowData ->
-                    (rowData as? Map<*, *>)?.let { rm ->
+                rows = (d.list(SURFACE, path, "rows"))?.mapNotNull { rowData ->
+                    (rowData as? Map<String, Any>)?.let { rm ->
                         PaywallTableRow(
-                            feature = rm["feature"] as? String ?: "",
-                            values = (rm["values"] as? List<*>)?.filterIsInstance<String>() ?: emptyList(),
+                            feature = rm.str(SURFACE, "$path.rows", "feature") ?: "",
+                            values = (rm.list(SURFACE, path, "values"))?.filterIsInstance<String>() ?: emptyList(),
                         )
                     }
                 },
-                check_color = d["check_color"] as? String,
-                cross_color = d["cross_color"] as? String,
-                highlight_color = d["highlight_color"] as? String,
-                border_color = d["border_color"] as? String,
+                check_color = d.str(SURFACE, path, "check_color"),
+                cross_color = d.str(SURFACE, path, "cross_color"),
+                highlight_color = d.str(SURFACE, path, "highlight_color"),
+                border_color = d.str(SURFACE, path, "border_color"),
                 // Promo input section
-                placeholder = d["placeholder"] as? String,
-                button_text = d["button_text"] as? String,
-                success_text = d["success_text"] as? String,
-                error_text = d["error_text"] as? String,
+                placeholder = d.str(SURFACE, path, "placeholder"),
+                button_text = d.str(SURFACE, path, "button_text"),
+                success_text = d.str(SURFACE, path, "success_text"),
+                error_text = d.str(SURFACE, path, "error_text"),
                 // Toggle section
-                label = d["label"] as? String,
-                description = d["description"] as? String,
-                default_value = d["default_value"] as? Boolean,
-                on_color = d["on_color"] as? String,
-                off_color = d["off_color"] as? String,
-                label_color_val = d["label_color"] as? String,
-                description_color = d["description_color"] as? String,
-                icon = d["icon"] as? String,
-                affects_price = d["affects_price"] as? Boolean,
+                label = d.str(SURFACE, path, "label"),
+                description = d.str(SURFACE, path, "description"),
+                default_value = d.bool(SURFACE, path, "default_value"),
+                on_color = d.str(SURFACE, path, "on_color"),
+                off_color = d.str(SURFACE, path, "off_color"),
+                label_color_val = d.str(SURFACE, path, "label_color"),
+                description_color = d.str(SURFACE, path, "description_color"),
+                icon = d.str(SURFACE, path, "icon"),
+                affects_price = d.bool(SURFACE, path, "affects_price"),
                 // Reviews carousel section
-                reviews = (d["reviews"] as? List<*>)?.mapNotNull { reviewData ->
-                    (reviewData as? Map<*, *>)?.let { rm ->
+                reviews = (d.list(SURFACE, path, "reviews"))?.mapNotNull { reviewData ->
+                    (reviewData as? Map<String, Any>)?.let { rm ->
                         PaywallReview(
-                            text = rm["text"] as? String ?: "",
-                            author = rm["author"] as? String ?: "",
-                            rating = (rm["rating"] as? Number)?.toDouble(),
-                            avatar_url = rm["avatar_url"] as? String,
-                            date = rm["date"] as? String,
+                            text = rm.str(SURFACE, "$path.reviews", "text") ?: "",
+                            author = rm.str(SURFACE, "$path.reviews", "author") ?: "",
+                            rating = (rm.num(SURFACE, "$path.reviews", "rating"))?.toDouble(),
+                            avatar_url = rm.str(SURFACE, "$path.reviews", "avatar_url"),
+                            date = rm.str(SURFACE, "$path.reviews", "date"),
                             // Emoji avatar fallback (iOS parity)
-                            avatar_emoji = rm["avatar_emoji"] as? String,
+                            avatar_emoji = rm.str(SURFACE, "$path.reviews", "avatar_emoji"),
                         )
                     }
                 },
-                show_rating_stars = d["show_rating_stars"] as? Boolean,
-                star_color = d["star_color"] as? String,
+                show_rating_stars = d.bool(SURFACE, path, "show_rating_stars"),
+                star_color = d.str(SURFACE, path, "star_color"),
                 // Gap 10-11: Plan display style + card/badge styling
-                plan_display_style = d["plan_display_style"] as? String,
-                card_corner_radius = (d["card_corner_radius"] as? Number)?.toFloat(),
-                card_padding = (d["card_padding"] as? Number)?.toFloat(),
-                card_gap = (d["card_gap"] as? Number)?.toFloat(),
-                card_height = (d["card_height"] as? Number)?.toFloat(),
+                plan_display_style = d.str(SURFACE, path, "plan_display_style"),
+                card_corner_radius = d.num(SURFACE, path, "card_corner_radius")?.toFloat(),
+                card_padding = d.num(SURFACE, path, "card_padding")?.toFloat(),
+                card_gap = d.num(SURFACE, path, "card_gap")?.toFloat(),
+                card_height = d.num(SURFACE, path, "card_height")?.toFloat(),
                 // Pass raw — renderer decodes Bool|String|null into elevation.
                 card_shadow = d["card_shadow"],
-                badge_position = d["badge_position"] as? String,
+                badge_position = d.str(SURFACE, path, "badge_position"),
                 // The console writes the badge shape under `badge_style` (matching iOS
                 // `badgeStyle="badge_style"`); Android read only `badge_shape`, which the console NEVER
                 // writes, so the shape was always null → always a pill. Read `badge_style` first,
                 // `badge_shape` as a back-compat fallback.
                 badge_shape = (d["badge_style"] ?: d["badge_shape"]) as? String,
-                badge_bg_color = d["badge_bg_color"] as? String,
-                badge_text_color = d["badge_text_color"] as? String,
-                badge_font_size = (d["badge_font_size"] as? Number)?.toFloat(),
+                badge_bg_color = d.str(SURFACE, path, "badge_bg_color"),
+                badge_text_color = d.str(SURFACE, path, "badge_text_color"),
+                badge_font_size = d.num(SURFACE, path, "badge_font_size")?.toFloat(),
                 // Plan-card show-flags +
                 // selection styling. Without these, console-authored
                 // plan cards always render flat (name + price + period
                 // + badge), and selection state can't tint colors.
-                show_plan_icons = d["show_plan_icons"] as? Boolean,
-                show_plan_images = d["show_plan_images"] as? Boolean,
-                show_plan_subtitles = d["show_plan_subtitles"] as? Boolean,
-                show_plan_features = d["show_plan_features"] as? Boolean,
-                show_savings = d["show_savings"] as? Boolean,
-                subtitle_position = d["subtitle_position"] as? String,
-                selected_text_color = d["selected_text_color"] as? String,
-                unselected_border_color = d["unselected_border_color"] as? String,
-                unselected_bg_color = d["unselected_bg_color"] as? String,
-                selected_border_color = d["selected_border_color"] as? String,
-                selected_bg_color = d["selected_bg_color"] as? String,
-                show_divider = d["show_divider"] as? Boolean,
-                divider_color = d["divider_color"] as? String,
-                strikethrough_color = d["strikethrough_color"] as? String,
+                show_plan_icons = d.bool(SURFACE, path, "show_plan_icons"),
+                show_plan_images = d.bool(SURFACE, path, "show_plan_images"),
+                show_plan_subtitles = d.bool(SURFACE, path, "show_plan_subtitles"),
+                show_plan_features = d.bool(SURFACE, path, "show_plan_features"),
+                show_savings = d.bool(SURFACE, path, "show_savings"),
+                subtitle_position = d.str(SURFACE, path, "subtitle_position"),
+                selected_text_color = d.str(SURFACE, path, "selected_text_color"),
+                unselected_border_color = d.str(SURFACE, path, "unselected_border_color"),
+                unselected_bg_color = d.str(SURFACE, path, "unselected_bg_color"),
+                selected_border_color = d.str(SURFACE, path, "selected_border_color"),
+                selected_bg_color = d.str(SURFACE, path, "selected_bg_color"),
+                show_divider = d.bool(SURFACE, path, "show_divider"),
+                divider_color = d.str(SURFACE, path, "divider_color"),
+                strikethrough_color = d.str(SURFACE, path, "strikethrough_color"),
                 // Same manual-mapping trap as field_style: unmapped here
                 // these stay null and the renderer branch can never fire.
-                strikethrough_font_size = (d["strikethrough_font_size"] as? Number)?.toFloat(),
-                strikethrough_gap = (d["strikethrough_gap"] as? Number)?.toFloat(),
-                price_layout = d["price_layout"] as? String,
-                badge_border_color = d["badge_border_color"] as? String,
-                badge_border_width = (d["badge_border_width"] as? Number)?.toFloat(),
-                badge_icon = d["badge_icon"] as? String,
+                strikethrough_font_size = d.num(SURFACE, path, "strikethrough_font_size")?.toFloat(),
+                strikethrough_gap = d.num(SURFACE, path, "strikethrough_gap")?.toFloat(),
+                price_layout = d.str(SURFACE, path, "price_layout"),
+                badge_border_color = d.str(SURFACE, path, "badge_border_color"),
+                badge_border_width = d.num(SURFACE, path, "badge_border_width")?.toFloat(),
+                badge_icon = d.str(SURFACE, path, "badge_icon"),
                 // PW-10 — restore button placement on CTA section.
-                restore_text = d["restore_text"] as? String,
-                show_restore = d["show_restore"] as? Boolean,
-                restore_position = d["restore_position"] as? String,
-                restore_text_color = d["restore_text_color"] as? String,
-                restore_bg_color = d["restore_bg_color"] as? String,
-                restore_corner_radius = (d["restore_corner_radius"] as? Number)?.toFloat(),
-                restore_font_size = (d["restore_font_size"] as? Number)?.toFloat(),
-                restore_gap = (d["restore_gap"] as? Number)?.toFloat(),
+                restore_text = d.str(SURFACE, path, "restore_text"),
+                show_restore = d.bool(SURFACE, path, "show_restore"),
+                restore_position = d.str(SURFACE, path, "restore_position"),
+                restore_text_color = d.str(SURFACE, path, "restore_text_color"),
+                restore_bg_color = d.str(SURFACE, path, "restore_bg_color"),
+                restore_corner_radius = d.num(SURFACE, path, "restore_corner_radius")?.toFloat(),
+                restore_font_size = d.num(SURFACE, path, "restore_font_size")?.toFloat(),
+                restore_gap = d.num(SURFACE, path, "restore_gap")?.toFloat(),
                 // Authored button actions and extra buttons.
-                cta_action = d["cta_action"] as? String,
-                restore_action = d["restore_action"] as? String,
-                extra_buttons = (d["extra_buttons"] as? List<*>)?.mapNotNull { raw ->
+                cta_action = d.str(SURFACE, path, "cta_action"),
+                restore_action = d.str(SURFACE, path, "restore_action"),
+                extra_buttons = (d.list(SURFACE, path, "extra_buttons"))?.mapNotNull { raw ->
                     @Suppress("UNCHECKED_CAST")
                     val m = raw as? Map<String, Any?> ?: return@mapNotNull null
                     PaywallExtraButton(
-                        text = m["text"] as? String,
-                        action = m["action"] as? String,
-                        url = m["url"] as? String,
-                        bg_color = m["bg_color"] as? String,
-                        text_color = m["text_color"] as? String,
-                        font_size = (m["font_size"] as? Number)?.toFloat(),
-                        style = m["style"] as? String,
-                        corner_radius = (m["corner_radius"] as? Number)?.toFloat(),
+                        text = m.str(SURFACE, "$path.extra_buttons", "text"),
+                        action = m.str(SURFACE, "$path.extra_buttons", "action"),
+                        url = m.str(SURFACE, "$path.extra_buttons", "url"),
+                        bg_color = m.str(SURFACE, "$path.extra_buttons", "bg_color"),
+                        text_color = m.str(SURFACE, "$path.extra_buttons", "text_color"),
+                        font_size = (m.num(SURFACE, "$path.extra_buttons", "font_size"))?.toFloat(),
+                        style = m.str(SURFACE, "$path.extra_buttons", "style"),
+                        corner_radius = (m.num(SURFACE, "$path.extra_buttons", "corner_radius"))?.toFloat(),
                     )
                 },
                 // CTA gradient + height/font_size (iOS PaywallConfig.swift extras).
-                cta_gradient = (d["cta_gradient"] as? Map<String, Any>)?.let { g ->
+                cta_gradient = (d.objMap(SURFACE, path, "cta_gradient"))?.let { g ->
                     @Suppress("UNCHECKED_CAST")
-                    val stopsList = (g["stops"] as? List<*>)?.mapNotNull { s ->
+                    val stopsList = (g.list(SURFACE, path, "stops"))?.mapNotNull { s ->
                         val sm = (s as? Map<String, Any>) ?: return@mapNotNull null
                         PaywallGradientStop(
-                            color = sm["color"] as? String,
-                            position = (sm["position"] as? Number)?.toDouble(),
+                            color = sm.str(SURFACE, "$path.cta_gradient.stops", "color"),
+                            position = (sm.num(SURFACE, "$path.cta_gradient.stops", "position"))?.toDouble(),
                         )
                     }
                     PaywallGradient(
-                        type = g["type"] as? String,
-                        angle = (g["angle"] as? Number)?.toDouble(),
+                        type = g.str(SURFACE, "$path.cta_gradient", "type"),
+                        angle = (g.num(SURFACE, "$path.cta_gradient", "angle"))?.toDouble(),
                         stops = stopsList,
                     )
                 },
-                cta_height = (d["cta_height"] as? Number)?.toFloat(),
-                cta_font_size = (d["cta_font_size"] as? Number)?.toFloat(),
-                cta_font_weight = d["cta_font_weight"] as? String,
+                cta_height = d.num(SURFACE, path, "cta_height")?.toFloat(),
+                cta_font_size = d.num(SURFACE, path, "cta_font_size")?.toFloat(),
+                cta_font_weight = d.str(SURFACE, path, "cta_font_weight"),
             )
         }
 
         // Parse per-section style
-        val styleMap = map["style"] as? Map<String, Any>
+        val styleMap = map.objMap(SURFACE, path, "style")
         val style = styleMap?.let { parseStyle(it) }
 
         return PaywallSection(
@@ -1465,17 +1499,17 @@ internal object PaywallConfigParser {
             data = data,
             style = style,
             // Section id + scroll-collapse parity
-            id = map["id"] as? String,
-            collapse_on_scroll = map["collapse_on_scroll"] as? Boolean,
-            zone = map["zone"] as? String,
+            id = map.str(SURFACE, sectionPath, "id"),
+            collapse_on_scroll = map.bool(SURFACE, sectionPath, "collapse_on_scroll"),
+            zone = map.str(SURFACE, sectionPath, "zone"),
         )
     }
 
     @Suppress("UNCHECKED_CAST")
     private fun parseStyle(map: Map<String, Any>): ai.appdna.sdk.core.SectionStyleConfig {
-        val containerMap = map["container"] as? Map<String, Any>
+        val containerMap = map.objMap(SURFACE, "style", "container")
         val container = containerMap?.let { parseElementStyle(it) }
-        val elementsMap = map["elements"] as? Map<String, Any>
+        val elementsMap = map.objMap(SURFACE, "style", "elements")
         val elements = elementsMap?.mapValues { (_, v) ->
             parseElementStyle(v as? Map<String, Any> ?: emptyMap())
         }
@@ -1493,58 +1527,62 @@ internal object PaywallConfigParser {
         parseElementStyle(map)
 
     private fun parseElementStyle(map: Map<String, Any>): ai.appdna.sdk.core.ElementStyleConfig {
-        val bgMap = map["background"] as? Map<String, Any>
+        // #958 — a mis-typed style value is reported rather than absorbed. Element styles are
+        // where #905, #910, #913 and #947 all lived, and a colour sent as a number or a radius
+        // sent as a string is the shape an author or a generator actually produces.
+        val path = "style.elements"
+        val bgMap = map.objMap(SURFACE, path, "background")
         val bg = bgMap?.let {
-            val gradMap = it["gradient"] as? Map<String, Any>
+            val gradMap = it.objMap(SURFACE, path, "gradient")
             val grad = gradMap?.let { g ->
-                val stops = (g["stops"] as? List<Map<String, Any>>)?.map { s ->
+                val stops = (g.listOfMaps(SURFACE, path, "stops"))?.map { s ->
                     ai.appdna.sdk.core.GradientStopConfig(
-                        color = s["color"] as? String ?: "#000000",
-                        position = (s["position"] as? Number)?.toDouble() ?: 0.0,
+                        color = s.str(SURFACE, path, "color") ?: "#000000",
+                        position = (s.num(SURFACE, path, "position"))?.toDouble() ?: 0.0,
                     )
                 }
-                ai.appdna.sdk.core.GradientConfig(type = g["type"] as? String, angle = (g["angle"] as? Number)?.toDouble(), stops = stops)
+                ai.appdna.sdk.core.GradientConfig(type = g.str(SURFACE, path, "type"), angle = (g.num(SURFACE, path, "angle"))?.toDouble(), stops = stops)
             }
             ai.appdna.sdk.core.BackgroundStyleConfig(
-                type = it["type"] as? String, color = it["color"] as? String,
-                gradient = grad, image_url = it["image_url"] as? String,
-                image_fit = it["image_fit"] as? String, overlay = it["overlay"] as? String,
+                type = it.str(SURFACE, path, "type"), color = it.str(SURFACE, path, "color"),
+                gradient = grad, image_url = it.str(SURFACE, path, "image_url"),
+                image_fit = it.str(SURFACE, path, "image_fit"), overlay = it.str(SURFACE, path, "overlay"),
             )
         }
-        val borderMap = map["border"] as? Map<String, Any>
+        val borderMap = map.objMap(SURFACE, path, "border")
         val border = borderMap?.let {
             ai.appdna.sdk.core.BorderStyleConfig(
-                width = (it["width"] as? Number)?.toDouble(), color = it["color"] as? String,
-                style = it["style"] as? String, radius = (it["radius"] as? Number)?.toDouble(),
-                radius_top_left = (it["radius_top_left"] as? Number)?.toDouble(),
-                radius_top_right = (it["radius_top_right"] as? Number)?.toDouble(),
-                radius_bottom_left = (it["radius_bottom_left"] as? Number)?.toDouble(),
-                radius_bottom_right = (it["radius_bottom_right"] as? Number)?.toDouble(),
+                width = (it.num(SURFACE, path, "width"))?.toDouble(), color = it.str(SURFACE, path, "color"),
+                style = it.str(SURFACE, path, "style"), radius = (it.num(SURFACE, path, "radius"))?.toDouble(),
+                radius_top_left = (it.num(SURFACE, path, "radius_top_left"))?.toDouble(),
+                radius_top_right = (it.num(SURFACE, path, "radius_top_right"))?.toDouble(),
+                radius_bottom_left = (it.num(SURFACE, path, "radius_bottom_left"))?.toDouble(),
+                radius_bottom_right = (it.num(SURFACE, path, "radius_bottom_right"))?.toDouble(),
             )
         }
-        val shadowMap = map["shadow"] as? Map<String, Any>
+        val shadowMap = map.objMap(SURFACE, path, "shadow")
         val shadow = shadowMap?.let {
             ai.appdna.sdk.core.ShadowStyleConfig(
-                x = (it["x"] as? Number)?.toDouble(), y = (it["y"] as? Number)?.toDouble(),
-                blur = (it["blur"] as? Number)?.toDouble(), spread = (it["spread"] as? Number)?.toDouble(),
-                color = it["color"] as? String,
+                x = (it.num(SURFACE, path, "x"))?.toDouble(), y = (it.num(SURFACE, path, "y"))?.toDouble(),
+                blur = (it.num(SURFACE, path, "blur"))?.toDouble(), spread = (it.num(SURFACE, path, "spread"))?.toDouble(),
+                color = it.str(SURFACE, path, "color"),
             )
         }
-        val paddingMap = map["padding"] as? Map<String, Any>
+        val paddingMap = map.objMap(SURFACE, path, "padding")
         val padding = paddingMap?.let {
             ai.appdna.sdk.core.SpacingConfig(
-                top = (it["top"] as? Number)?.toDouble(), right = (it["right"] as? Number)?.toDouble(),
-                bottom = (it["bottom"] as? Number)?.toDouble(), left = (it["left"] as? Number)?.toDouble(),
+                top = (it.num(SURFACE, path, "top"))?.toDouble(), right = (it.num(SURFACE, path, "right"))?.toDouble(),
+                bottom = (it.num(SURFACE, path, "bottom"))?.toDouble(), left = (it.num(SURFACE, path, "left"))?.toDouble(),
             )
         }
-        val tsMap = map["text_style"] as? Map<String, Any>
-        val textStyle = parseDataTextStyle(tsMap)
+        val tsMap = map.objMap(SURFACE, path, "text_style")
+        val textStyle = parseDataTextStyle(tsMap, "$path.text_style")
         @Suppress("UNCHECKED_CAST")
-        val nested = (map["element_style"] as? Map<String, Any>)?.let { parseElementStyle(it) }
+        val nested = map.objMap(SURFACE, path, "element_style")?.let { parseElementStyle(it) }
         return ai.appdna.sdk.core.ElementStyleConfig(
             background = bg, border = border, shadow = shadow, padding = padding,
-            corner_radius = (map["corner_radius"] as? Number)?.toDouble(),
-            opacity = (map["opacity"] as? Number)?.toDouble(),
+            corner_radius = (map.num(SURFACE, path, "corner_radius"))?.toDouble(),
+            opacity = (map.num(SURFACE, path, "opacity"))?.toDouble(),
             text_style = textStyle,
             // #905 — the console's own spelling for a per-element container style.
             element_style = nested,
@@ -1556,17 +1594,17 @@ internal object PaywallConfigParser {
     // subtitle_style. Mirrors iOS TextStyleConfig.init(from:) at
     // PaywallConfig.swift:170-179.
     @Suppress("UNCHECKED_CAST")
-    private fun parseDataTextStyle(raw: Any?): ai.appdna.sdk.core.TextStyleConfig? {
+    private fun parseDataTextStyle(raw: Any?, path: String): ai.appdna.sdk.core.TextStyleConfig? {
         val it = raw as? Map<String, Any> ?: return null
         return ai.appdna.sdk.core.TextStyleConfig(
-            font_family = it["font_family"] as? String,
-            font_size = (it["font_size"] as? Number)?.toDouble(),
-            font_weight = (it["font_weight"] as? Number)?.toInt(),
-            color = it["color"] as? String,
-            alignment = it["alignment"] as? String,
-            line_height = (it["line_height"] as? Number)?.toDouble(),
-            letter_spacing = (it["letter_spacing"] as? Number)?.toDouble(),
-            opacity = (it["opacity"] as? Number)?.toDouble(),
+            font_family = it.str(SURFACE, path, "font_family"),
+            font_size = (it.num(SURFACE, path, "font_size"))?.toDouble(),
+            font_weight = (it.num(SURFACE, path, "font_weight"))?.toInt(),
+            color = it.str(SURFACE, path, "color"),
+            alignment = it.str(SURFACE, path, "alignment"),
+            line_height = (it.num(SURFACE, path, "line_height"))?.toDouble(),
+            letter_spacing = (it.num(SURFACE, path, "letter_spacing"))?.toDouble(),
+            opacity = (it.num(SURFACE, path, "opacity"))?.toDouble(),
         )
     }
 
@@ -1591,58 +1629,64 @@ internal object PaywallConfigParser {
     internal fun parsePlanForTest(map: Map<String, Any>): PaywallPlan = parsePlanFromMap(map)
 
     private fun parsePlanFromMap(map: Map<String, Any>): PaywallPlan {
+        // #958 — a mis-typed plan field is reported rather than absorbed. The product id is the
+        // handle an author recognises; `id` is the fallback when a plan carries no product.
+        val path = "plans[${map["product_id"] as? String ?: map["id"] as? String ?: "?"}]"
         // Parse structured trial object (legacy `trial_duration` string still supported)
-        val trialMap = map["trial"] as? Map<String, Any>
+        val trialMap = map.objMap(SURFACE, path, "trial")
         val trial = trialMap?.let {
             PaywallPlanTrial(
-                duration_days = (it["duration_days"] as? Number)?.toInt(),
-                label = it["label"] as? String,
+                duration_days = (it.num(SURFACE, path, "duration_days"))?.toInt(),
+                label = it.str(SURFACE, path, "label"),
             )
         }
         return PaywallPlan(
-            id = map["id"] as? String ?: "",
-            product_id = map["product_id"] as? String ?: "",
-            name = map["name"] as? String ?: "",
-            price = map["price"] as? String ?: "",
-            period = map["period"] as? String,
-            badge = map["badge"] as? String,
-            trial_duration = map["trial_duration"] as? String,
-            is_default = map["is_default"] as? Boolean,
-            label = map["label"] as? String ?: "",
-            price_display = map["price_display"] as? String ?: "",
+            id = map.str(SURFACE, path, "id") ?: "",
+            product_id = map.str(SURFACE, path, "product_id") ?: "",
+            name = map.str(SURFACE, path, "name") ?: "",
+            // The five fields iOS coerces (`PaywallPlan.looseString`). A paywall carrying
+            // `"price": 9.99` drew `9.99` on iOS and NOTHING here, because `as? String` dropped it.
+            price = map.looseStr(SURFACE, path, "price") ?: "",
+            period = map.str(SURFACE, path, "period"),
+            badge = map.str(SURFACE, path, "badge"),
+            trial_duration = map.looseStr(SURFACE, path, "trial_duration"),
+            is_default = map.bool(SURFACE, path, "is_default"),
+            label = map.str(SURFACE, path, "label") ?: "",
+            price_display = map.looseStr(SURFACE, path, "price_display") ?: "",
             // #923 — absent means "ask the store", so only an explicit `false` opts out.
-            use_store_price = map["use_store_price"] as? Boolean,
-            sort_order = (map["sort_order"] as? Number)?.toInt() ?: 0,
+            use_store_price = map.bool(SURFACE, path, "use_store_price"),
+            sort_order = (map.num(SURFACE, path, "sort_order"))?.toInt() ?: 0,
             //
             trial = trial,
-            description = map["description"] as? String,
+            description = map.str(SURFACE, path, "description"),
             // Plan features list immutable for Compose stability.
-            features = (map["features"] as? List<*>)?.filterIsInstance<String>()?.toImmutableList(),
-            savings_text = map["savings_text"] as? String,
-            cta_text = map["cta_text"] as? String,
-            icon = map["icon"] as? String,
-            image_url = map["image_url"] as? String,
-            original_price_display = map["original_price_display"]?.let { it as? String ?: it.toString() },
-            // Same loose read as the anchor price above: a numeric total must not nil the plan.
-            price_total_display = map["price_total_display"]?.let { it as? String ?: it.toString() },
-            description_badge = (map["description_badge"] as? Map<*, *>)?.let { b ->
+            features = (map.list(SURFACE, path, "features"))?.filterIsInstance<String>()?.toImmutableList(),
+            savings_text = map.str(SURFACE, path, "savings_text"),
+            cta_text = map.str(SURFACE, path, "cta_text"),
+            icon = map.str(SURFACE, path, "icon"),
+            image_url = map.str(SURFACE, path, "image_url"),
+            // Already coerced before `looseStr` existed, but with a plain `toString()` — which gave
+            // `"9.0"` where iOS gives `"9"`. Same reader now, so the two agree to the digit.
+            original_price_display = map.looseStr(SURFACE, path, "original_price_display"),
+            price_total_display = map.looseStr(SURFACE, path, "price_total_display"),
+            description_badge = (map.objMap(SURFACE, path, "description_badge"))?.let { b ->
                 PaywallDescriptionBadge(
-                    enabled = b["enabled"] as? Boolean,
-                    bg_color = b["bg_color"] as? String,
-                    text_color = b["text_color"] as? String,
-                    corner_radius = (b["corner_radius"] as? Number)?.toFloat(),
+                    enabled = b.bool(SURFACE, "$path.description_badge", "enabled"),
+                    bg_color = b.str(SURFACE, "$path.description_badge", "bg_color"),
+                    text_color = b.str(SURFACE, "$path.description_badge", "text_color"),
+                    corner_radius = (b.num(SURFACE, "$path.description_badge", "corner_radius"))?.toFloat(),
                 )
             },
             // #587 / #588 / #589 — per-plan presentation. Sizes read loosely (`Number`, or a
             // numeric string) for the same reason the prices above do: the console writes them
             // through a slider, but an imported or AI-generated paywall can carry "13".
-            price_color = map["price_color"] as? String,
-            subtitle_color = map["subtitle_color"] as? String,
+            price_color = map.str(SURFACE, path, "price_color"),
+            subtitle_color = map.str(SURFACE, path, "subtitle_color"),
             subtitle_font_size = looseFloat(map["subtitle_font_size"]),
-            subtitle_align = map["subtitle_align"] as? String,
-            display_mode = map["display_mode"] as? String,
+            subtitle_align = map.str(SURFACE, path, "subtitle_align"),
+            display_mode = map.str(SURFACE, path, "display_mode"),
             text_only_font_size = looseFloat(map["text_only_font_size"]),
-            text_only_color = map["text_only_color"] as? String,
+            text_only_color = map.str(SURFACE, path, "text_only_color"),
         )
     }
 
