@@ -86,3 +86,53 @@ internal object LocationAnswer {
         (typedQuery.present() ?: s.rawQuery.present())?.let { put("raw_query", it) }
     }
 }
+
+/**
+ * The four Console settings that shape a location autocomplete search, resolved once for whichever
+ * surface is asking.
+ *
+ * 🔴 EXTRACTED BECAUSE THE DUPLICATION WAS THE DEFECT (#963). The form-step Location field read all
+ * four keys and the `input_location` content block read none of them — it had grown its own copy of
+ * the search call that dropped every parameter, so an author who set Type = "City" on a content
+ * block got street addresses, silently. One resolver, used by both surfaces, is what makes that
+ * impossible to repeat rather than merely fixed once.
+ *
+ * `defaultMinChars` differs per surface on purpose: the form-step field has always used 2 and the
+ * content block 3 (which is also what the Console seeds). Preserving each keeps a block that
+ * authored nothing on the threshold it has today.
+ */
+internal data class LocationSearchSettings(
+    /**
+     * 🔴 NULLABLE, and null means the author never chose one — which is NOT the same as "address".
+     * The server narrows results only when `type` is present (`GeocodingService.ts:230-232`,
+     * `:318-323`), so substituting a default here would silently change what every unauthored field
+     * returns. Each surface applies its own historical default at the call site.
+     */
+    val type: String?,
+    val biasCountry: String?,
+    val language: String?,
+    val minChars: Int,
+) {
+    companion object {
+        /** From a content block's free-form `field_config` map. */
+        fun from(config: Map<String, Any?>?, defaultMinChars: Int): LocationSearchSettings =
+            LocationSearchSettings(
+                type = (config?.get("location_type") as? String)?.takeIf { it.isNotBlank() },
+                biasCountry = (config?.get("location_bias_country") as? String)?.takeIf { it.isNotBlank() },
+                language = (config?.get("location_language") as? String)?.takeIf { it.isNotBlank() },
+                // A threshold below 1 would search on an empty field, which is a request the proxy
+                // rejects and a dropdown the user never asked for.
+                minChars = ((config?.get("location_min_chars") as? Number)?.toInt() ?: defaultMinChars)
+                    .coerceAtLeast(1),
+            )
+
+        /** From a form-step field's typed `FormFieldConfig`. */
+        fun from(config: FormFieldConfig?, defaultMinChars: Int): LocationSearchSettings =
+            LocationSearchSettings(
+                type = config?.location_type?.takeIf { it.isNotBlank() },
+                biasCountry = config?.location_bias_country?.takeIf { it.isNotBlank() },
+                language = config?.location_language?.takeIf { it.isNotBlank() },
+                minChars = (config?.location_min_chars ?: defaultMinChars).coerceAtLeast(1),
+            )
+    }
+}

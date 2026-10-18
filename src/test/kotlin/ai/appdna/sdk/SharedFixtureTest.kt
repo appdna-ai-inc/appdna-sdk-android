@@ -268,6 +268,7 @@ class SharedFixtureTest(
             "bottom_zone_overflows" -> runBottomZoneOverflows(action, spy)
             "resolve_element_container" -> runElementContainer(action, spy)
             "resolve_plan_period" -> runPlanPeriod(action, spy)
+            "resolve_location_search" -> runLocationSearch(action, spy)
             "resolve_step_auto_advance" -> runStepAutoAdvance(action, spy)
             "resolve_store_price" -> runStorePrice(action, spy)
             "parse_blocks_leniently" -> runLenientBlocks(action, spy)
@@ -1955,6 +1956,60 @@ class SharedFixtureTest(
                 plan
             }
             withStore.displayPeriod?.takeIf { it.isNotEmpty() }
+        }
+    }
+
+    /**
+     * #963 — the Console's four location settings, resolved for the surface that offers them.
+     *
+     * 🔴 FOUR SURFACES, NOT TWO. A form-step Location field takes its config as a typed
+     * `FormFieldConfig`; an `input_location` content block takes a free-form `field_config` map. The
+     * field read all four settings and the block read NONE, because the block had grown its own copy
+     * of the search call that took only the query — so Type = "city" returned street addresses and
+     * an authored Min characters did nothing, silently, on both platforms.
+     *
+     * Both shapes go through the REAL [ai.appdna.sdk.onboarding.LocationSearchSettings], and the
+     * typed one through the REAL step parser, because a driver that builds the config by hand can
+     * only ever agree with itself.
+     *
+     * The two `defaultMinChars` are deliberate: 2 for a form-step field, 3 for a content block
+     * (what the Console seeds), preserved per surface so no published flow changes.
+     */
+    private fun runLocationSearch(action: JSONObject, spy: Spy) {
+        val cases = action.optJSONArray("cases") ?: unsupported("resolve_location_search without cases")
+        spy.state["results"] = (0 until cases.length()).map { i ->
+            val case = cases.getJSONObject(i)
+            val raw = jsonToMap(case.getJSONObject("value"))
+            val resolved = when (val surface = case.getString("surface")) {
+                "content_block" ->
+                    ai.appdna.sdk.onboarding.LocationSearchSettings.from(raw, defaultMinChars = 3)
+                "form_field" -> {
+                    // The real parser, reached through a real step, so the typed config is built the
+                    // way production builds it.
+                    val step = ai.appdna.sdk.onboarding.OnboardingConfigParser.parseStepForTest(
+                        mapOf(
+                            "id" to "s",
+                            "type" to "form",
+                            // `fields` lives under `config` — the parser reads the step's StepConfig.
+                            "config" to mapOf(
+                                "fields" to listOf(
+                                    mapOf("id" to "loc", "type" to "location", "label" to "Where", "config" to raw),
+                                ),
+                            ),
+                        ),
+                    ) ?: error("the form step did not parse")
+                    val config: ai.appdna.sdk.onboarding.FormFieldConfig? =
+                        step.config.fields?.firstOrNull()?.config
+                    ai.appdna.sdk.onboarding.LocationSearchSettings.from(config, defaultMinChars = 2)
+                }
+                else -> error("unknown surface $surface")
+            }
+            listOf(
+                resolved.type ?: "-",
+                resolved.biasCountry ?: "-",
+                resolved.language ?: "-",
+                resolved.minChars.toString(),
+            ).joinToString("|")
         }
     }
 

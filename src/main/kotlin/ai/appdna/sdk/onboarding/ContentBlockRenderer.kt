@@ -12579,6 +12579,12 @@ private fun FormInputLocationPlaceholder(
     // and dropdown_* styling (all read from field_config, matching iOS + editor).
     val cfg = block.field_config
     val showPrefixIcon = (cfg?.get("show_prefix_icon") as? Boolean) ?: true
+    // #963 — the four location settings the Console writes for THIS block
+    // (`StepContentEditor.tsx:2845` seeds `location_type` + `location_min_chars`; `:9073` renders the
+    // Type select). They were read by the form-step field only, so a block authored "City" searched
+    // for street addresses and an authored Min characters did nothing. Default 3, not the form-step
+    // field's 2: that is this surface's long-standing threshold and what the Console seeds.
+    val search = LocationSearchSettings.from(cfg, defaultMinChars = 3)
     val fieldTextColor = block.field_style?.text_color?.let { StyleEngine.parseColor(it) } ?: Color.Unspecified
     val ddBgColor = (cfg?.get("dropdown_bg_color") as? String)?.takeIf { it.isNotEmpty() }?.let { StyleEngine.parseColor(it) }
     val ddTextColor = (cfg?.get("dropdown_text_color") as? String)?.let { StyleEngine.parseColor(it) }
@@ -12612,11 +12618,13 @@ private fun FormInputLocationPlaceholder(
                 inputValues[fieldId] = LocationAnswer.typed(newText)
                 // Debounce API calls — wait 300ms after last keystroke
                 debounceJob?.cancel()
-                if (newText.length >= 3) {
+                if (newText.length >= search.minChars) {
                     debounceJob = coroutineScope.launch {
                         kotlinx.coroutines.delay(300)
                         isSearching = true
-                        suggestions = fetchLocationSuggestions(newText)
+                        suggestions = fetchLocationSuggestions(
+                            newText, search.type, search.biasCountry, search.language,
+                        )
                         showSuggestions = suggestions.isNotEmpty()
                         isSearching = false
                     }
@@ -12742,67 +12750,10 @@ private fun FormInputLocationPlaceholder(
 
 // LocationSuggestion, parseLocationSuggestion and LocationAnswer live in LocationAnswer.kt.
 
-/** Fetch location suggestions from the AppDNA backend geocoding API.
- *
- * Path is `/api/v1/sdk/geocode/autocomplete` (matches the actual
- * SDK-scoped backend route — the previous `/api/v1/geocoding/autocomplete` 404'd).
- * Host is sourced from the configured environment so sandbox builds hit the
- * correct backend; the SDK API key is forwarded via `x-api-key` to match other
- * SDK calls.
- */
-private suspend fun fetchLocationSuggestions(query: String): List<LocationSuggestion> {
-    return try {
-        val baseUrl = ai.appdna.sdk.AppDNA.getApiBaseUrl()
-        val apiKey = ai.appdna.sdk.AppDNA.getApiKey()
-        val url = java.net.URL("$baseUrl/api/v1/sdk/geocode/autocomplete")
-        // Backend at `src/app/api/v1/sdk/geocode/
-        // autocomplete/route.ts:27` exports ONLY POST. GET returned 405 →
-        // silent emptyList → suggestions never appeared. iOS POSTs JSON
-        // body via Endpoint.geocodeAutocomplete (LocationFieldView.swift
-        // :197-234). Both sites in this file (this `LocationFieldComposable`
-        // helper inline path + the canonical helper in
-        // LocationFieldComposable.kt) need the POST body shape.
-        val requestBody = org.json.JSONObject().apply {
-            put("query", query)
-            put("limit", 5)
-        }.toString()
-        val body: String? = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
-            val connection = (url.openConnection() as? java.net.HttpURLConnection)?.apply {
-                requestMethod = "POST"
-                connectTimeout = 10000
-                readTimeout = 10000
-                doOutput = true
-                setRequestProperty("Content-Type", "application/json")
-                if (apiKey != null) setRequestProperty("x-api-key", apiKey)
-                // The server answers null for a missing coordinate / zone only to an SDK that says it
-                // reads null (Android >= 1.0.54); without these headers it sends the legacy 0 / "UTC" shape.
-                setRequestProperty("x-sdk-version", ai.appdna.sdk.AppDNA.sdkVersion)
-                setRequestProperty("x-sdk-platform", "android")
-            } ?: return@withContext null
-            try {
-                connection.outputStream.use { it.write(requestBody.toByteArray(Charsets.UTF_8)) }
-                if (connection.responseCode != 200) return@withContext null
-                connection.inputStream.bufferedReader().readText()
-            } finally {
-                runCatching { connection.disconnect() }
-            }
-        }
-        if (body == null) return emptyList()
-        // Backend wraps in `{data: {suggestions: [...]}}`; iOS reads
-        // `json.data.suggestions`. Was reading `json.data` directly →
-        // null because data is an object.
-        val json = org.json.JSONObject(body)
-        val results = json.optJSONObject("data")?.optJSONArray("suggestions") ?: return emptyList()
-
-        (0 until minOf(results.length(), 5)).mapNotNull { i ->
-            val item = results.optJSONObject(i) ?: return@mapNotNull null
-            parseLocationSuggestion(item)
-        }
-    } catch (e: Exception) {
-        ai.appdna.sdk.Log.debug("Location autocomplete failed: ${e.message}")
-        emptyList()
-    }
-}
+// #963 — the duplicate `fetchLocationSuggestions(query)` that used to live here is gone. It took
+// only the query, so the four location keys the console writes for this block never reached the
+// proxy. The canonical helper in LocationFieldComposable.kt takes all four and is the only one now;
+// its own comment used to point AT this copy, which is how the two drifted in the first place.
 
 // MARK: - AC-048: Image Picker with PickVisualMedia (Android 13+, backported via Activity Result API)
 

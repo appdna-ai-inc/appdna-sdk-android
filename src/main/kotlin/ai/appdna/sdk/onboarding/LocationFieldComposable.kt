@@ -59,13 +59,17 @@ fun LocationFieldComposable(
     // iOS LocationFieldView.swift:43-44
     // defaults to 2 keystrokes before triggering autocomplete. Android
     // was at 3, delaying suggestions on short city names.
-    val minChars = (config?.location_min_chars ?: 2).coerceAtLeast(1)
+    // #963 — resolved by the shared LocationSearchSettings, the same one the `input_location`
+    // content block uses, so the two surfaces cannot drift apart again.
+    val search = LocationSearchSettings.from(config, defaultMinChars = 2)
+    val minChars = search.minChars
     val placeholder = config?.location_placeholder
         ?: field.placeholder
         ?: "Search for a location..."
-    val locationType = config?.location_type ?: "address"
-    val biasCountry = config?.location_bias_country
-    val language = config?.location_language
+    // Android has always sent "address" when nothing was authored; preserved verbatim.
+    val locationType = search.type ?: "address"
+    val biasCountry = search.biasCountry
+    val language = search.language
 
     val initialText = (values[field.id] as? Map<*, *>)?.get("address") as? String
         ?: values[field.id]?.toString().orEmpty()
@@ -237,11 +241,14 @@ fun LocationFieldComposable(
 /**
  * Calls `/api/v1/sdk/geocode/autocomplete?q=…` (host comes from the
  * configured environment) and forwards the SDK API key via `x-api-key`.
- * Matches the existing inline implementation in `ContentBlockRenderer.kt`.
+ * The ONLY location-autocomplete call in the SDK: the form-step Location field and the
+ * `input_location` content block both go through here (#963 deleted the content block's own copy,
+ * which dropped every parameter below).
  */
-private suspend fun fetchLocationSuggestions(
+internal suspend fun fetchLocationSuggestions(
     query: String,
-    locationType: String,
+    /** Null or blank = the author chose none, and the server must not be told one. */
+    locationType: String?,
     biasCountry: String?,
     language: String?,
 ): List<LocationSuggestion> {
@@ -260,7 +267,7 @@ private suspend fun fetchLocationSuggestions(
         val requestBody = org.json.JSONObject().apply {
             put("query", query)
             put("limit", 5)
-            if (locationType.isNotBlank()) put("type", locationType)
+            if (!locationType.isNullOrBlank()) put("type", locationType)
             if (!biasCountry.isNullOrBlank()) put("bias_country", biasCountry)
             if (!language.isNullOrBlank()) put("language", language)
         }.toString()
