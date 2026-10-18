@@ -2251,6 +2251,37 @@ internal fun PaywallSectionView(
             val customSelectedBorder = section.data?.selected_border_color?.let { parseHexColor(it) }
             val customSelectedBg = section.data?.selected_bg_color?.let { parseHexColor(it) }
 
+            /*
+             * #966 — the SELECTED tile, as a hex, derived the same way its unselected sibling is.
+             *
+             * 🔴 THE SELECTED CARD WAS THE ONE THAT DISAPPEARED, which is the inverse of the usual
+             * failure and was sitting in a committed golden:
+             * `src/test/snapshots/paywall_light_page_plans_vertical_stack.png` shows the selected
+             * plan with NO NAME AND NO PRICE — only its grey description survived — while the
+             * unselected plan beside it renders all three lines.
+             *
+             * Two assumptions stacked. The fill defaulted to `Color.White.copy(alpha = 0.16f)`,
+             * which over a white page IS the page. And the text defaulted to `Color.Unspecified`,
+             * which inherits the Activity's DARK-themed `onSurface` and so came out near-white.
+             * White on white.
+             *
+             * The comment on `planTextColor` already argued this exact point — "the text can no
+             * longer be left to the theme: on a white page a white label on a near-white tile is
+             * exactly the 1:1 defect #909 fixed" — and then applied it to the UNSELECTED branch
+             * only. One branch of one expression.
+             *
+             * A higher alpha than the unselected tile's 0.1 on purpose: the two must be
+             * distinguishable from each other, not merely from the page. On any dark page
+             * `readableHex` returns `#FFFFFF` and the composite is byte-identical to the white-16%
+             * that shipped, so nothing that is live today moves.
+             */
+            val selectedTileHex = section.data?.selected_bg_color
+                ?: PaywallTextDefaults.composite(
+                    PaywallTextDefaults.readableHex(config.pageBackgroundHex()),
+                    config.pageBackgroundHex(),
+                    0.16,
+                )
+
             @Composable
             fun PlanCard(plan: PaywallPlan, planIdx: Int, modifier: Modifier = Modifier) {
                 val isSelected = selectedPlanId == plan.id
@@ -2314,11 +2345,34 @@ internal fun PaywallSectionView(
                 val unselectedBg = unselectedBgColor
                     ?: unselectedTileHex?.let { StyleEngine.parseColor(it) }
                     ?: Color.White.copy(alpha = 0.1f)
-                // PW-9: text color flips when selected if author provided one.
+                /*
+                 * PW-9: text color flips when selected if author provided one.
+                 *
+                 * #966 — and when the author provided NONE it follows the TILE, on both states.
+                 * Both branches used to be `Color.Unspecified`, which inherits the Activity's
+                 * DARK-themed `onSurface` and so comes out near-white.
+                 *
+                 * 🔴 THIS IS THE SHARED CARD, so that one expression reached five arms —
+                 * `grid`, `mini_cards`, `horizontal_scroll`, `carousel_cards` and `single_hero`.
+                 * Recorded on a `#FFFFFF` page, `grid` drew "Monthly $9.99" and "Annual $49.99" in
+                 * white on a near-white card; only the grey descriptions were legible. #946 swept
+                 * the SECTIONS and #961 the dispatch arms, and this card sat between them: it is
+                 * not a section and it is not an arm.
+                 *
+                 * The selected tile here is the ACCENT at 10% over the page — this card's own fill,
+                 * not the dispatch's `selectedTileHex` — so the ink is judged against that. On any
+                 * dark page `readable` returns `#FFFFFF`, which is what `Color.Unspecified`
+                 * resolved to there, so nothing that ships today moves.
+                 */
+                val selectedTileForInk = PaywallTextDefaults.composite(
+                    ai.appdna.sdk.AppDNA.brandAccentHex,
+                    config.pageBackgroundHex(),
+                    0.1,
+                )
                 val resolvedTextColor = if (isSelected) {
-                    selectedTextColor ?: Color.Unspecified
+                    selectedTextColor ?: PaywallTextDefaults.readable(selectedTileForInk)
                 } else {
-                    Color.Unspecified
+                    PaywallTextDefaults.readable(unselectedTileHex)
                 }
                 Card(
                     modifier = modifier
@@ -3055,6 +3109,22 @@ internal fun PaywallSectionView(
                         // Expandable vertical list — selected plan shows expanded details
                         plans.forEachIndexed { planIdx, plan ->
                             val isSelected = selectedPlanId == plan.id
+                            /*
+                             * #966 — the text follows the tile, on BOTH states.
+                             *
+                             * 🔴 MEASURED, NOT READ. Recorded on a `#FFFFFF` page, this arm drew
+                             * `Monthly` and `$9.99` in WHITE on a near-white card and the second
+                             * plan was not on the screen at all — `planNameStyle` defaults to
+                             * `color = Color.White` and nothing here overrode it, while the
+                             * unselected fill was `Color.White.copy(alpha = 0.06f)`.
+                             *
+                             * `vertical_stack` solved exactly this and accordion never got the
+                             * same treatment, which is what a capture per arm is for: the golden
+                             * for this style did not exist until #966.
+                             */
+                            val accTileHex = if (isSelected) selectedTileHex else unselectedTileHex
+                            val accTextColor = (if (isSelected) selectedTextColor else null)
+                                ?: PaywallTextDefaults.readable(accTileHex)
                             Card(
                                 modifier = Modifier
                                     .fillMaxWidth()
@@ -3073,7 +3143,7 @@ internal fun PaywallSectionView(
                                     // a light brand (e.g. white) collapses onto the white-10% unselected
                                     // fill and the selection becomes invisible. Brand drives foreground
                                     // accents (border/badge/check), not the card fill.
-                                    containerColor = if (isSelected) (customSelectedBg ?: Color.White.copy(alpha = 0.16f)) else (unselectedBgColor ?: Color.White.copy(alpha = 0.06f))
+                                    containerColor = if (isSelected) (customSelectedBg ?: StyleEngine.parseColor(selectedTileHex ?: "#FFFFFF")) else (unselectedBgColor ?: StyleEngine.parseColor(unselectedTileHex ?: "#FFFFFF"))
                                 ),
                             ) {
                                 Column(modifier = Modifier.padding(cardPad)) {
@@ -3082,15 +3152,15 @@ internal fun PaywallSectionView(
                                         horizontalArrangement = Arrangement.SpaceBetween,
                                         verticalAlignment = Alignment.CenterVertically,
                                     ) {
-                                        Text(text = loc("plan.$planIdx.name", plan.displayName), style = planNameStyle, modifier = planNameElementModifier)
-                                        Text(text = loc("plan.$planIdx.price", plan.displayPrice), style = priceStyle, modifier = priceElementModifier)
+                                        Text(text = loc("plan.$planIdx.name", plan.displayName), style = planNameStyle, color = accTextColor, modifier = planNameElementModifier)
+                                        Text(text = loc("plan.$planIdx.price", plan.displayPrice), style = priceStyle, color = accTextColor, modifier = priceElementModifier)
                                     }
                                     if (isSelected) {
                                         Spacer(Modifier.height(8.dp))
                                         plan.displayPeriod?.let {
                                         Text(
                                             text = loc("plan.$planIdx.period", it),
-                                            style = periodStyle,
+                                            style = periodStyle, color = accTextColor.copy(alpha = 0.7f),
                                             modifier = periodElementModifier,
                                         )
                                     }
@@ -3100,7 +3170,7 @@ internal fun PaywallSectionView(
                                         }
                                         plan.trialLabel?.let {
                                             Spacer(Modifier.height(4.dp))
-                                            Text(text = it, style = periodStyle)
+                                            Text(text = it, style = periodStyle, color = accTextColor.copy(alpha = 0.7f))
                                         }
                                         // Render expanded body
                                         // matching iOS PaywallRenderer.swift:2080-2105:
@@ -3114,7 +3184,7 @@ internal fun PaywallSectionView(
                                             Spacer(Modifier.height(8.dp))
                                             Text(
                                                 text = loc("plan.$planIdx.description", desc),
-                                                style = periodStyle,
+                                                style = periodStyle, color = accTextColor.copy(alpha = 0.7f),
                                             )
                                         }
                                         plan.savings_text?.takeIf { it.isNotBlank() }?.let { savings ->
@@ -3140,7 +3210,7 @@ internal fun PaywallSectionView(
                                                         Spacer(Modifier.width(6.dp))
                                                         Text(
                                                             text = loc("plan.$planIdx.feature.$fIdx", feature),
-                                                            style = periodStyle,
+                                                            style = periodStyle, color = accTextColor.copy(alpha = 0.7f),
                                                             modifier = planFeatureElementModifier,
                                                         )
                                                     }
@@ -3470,8 +3540,15 @@ internal fun PaywallSectionView(
                              * the selected tile. So the colour is DERIVED from the tile the user
                              * will actually see, authored or composited.
                              */
-                            val planTextColor = if (isSelected) (selectedTextColor ?: Color.Unspecified)
-                                else (unselectedTileHex?.let { PaywallTextDefaults.readable(it) } ?: Color.Unspecified)
+                            // #966 — BOTH branches derive from the tile the user will see. The
+                            // selected one used to fall to `Color.Unspecified`, i.e. the Activity's
+                            // dark theme, which is why the selected plan's name and price vanished
+                            // on a white page while its unselected sibling rendered correctly.
+                            val planTextColor = if (isSelected) {
+                                selectedTextColor ?: PaywallTextDefaults.readable(selectedTileHex)
+                            } else {
+                                unselectedTileHex?.let { PaywallTextDefaults.readable(it) } ?: Color.Unspecified
+                            }
                             // iOS PlanCard.swift:245-247 — reserve overhang so the
                             // straddling badge isn't clipped and doesn't cover content.
                             val badgeTopReserve = if (!plan.badge.isNullOrBlank() && badgePosition != "inline")
@@ -3507,7 +3584,7 @@ internal fun PaywallSectionView(
                                         // through, giving a "strange gradient inside the card". Derive
                                         // an opaque subtle tone from the authored selected color (darker)
                                         // so it stays theme-aware + distinct; fall back to a subtle navy.
-                                        containerColor = if (isSelected) (customSelectedBg ?: Color.White.copy(alpha = 0.16f))
+                                        containerColor = if (isSelected) (customSelectedBg ?: StyleEngine.parseColor(selectedTileHex ?: "#FFFFFF"))
                                             else (unselectedBgColor
                                                 // #926 — the page's own 10% wash, opaque, so this
                                                 // tile matches iOS instead of a navy constant.

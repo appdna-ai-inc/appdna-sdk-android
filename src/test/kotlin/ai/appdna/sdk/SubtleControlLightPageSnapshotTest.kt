@@ -223,6 +223,24 @@ class SubtleControlLightPageSnapshotTest {
     @Test fun plansTimelineOnAWhitePage() = planStyle("timeline")
     @Test fun plansPricingTableOnAWhitePage() = planStyle("pricing_table")
     @Test fun plansFeatureMatrixOnAWhitePage() = planStyle("feature_matrix")
+
+    /*
+     * #966 — the seven arms that had NO light-page capture at all, which is why the selected-card
+     * defect sat unseen in `paywall_light_page_plans_vertical_stack.png` (the selected plan there
+     * renders no name and no price) and why `accordion` was never looked at.
+     *
+     * 🔴 WHICH OF THESE ARE BROKEN IS A QUESTION TO MEASURE. `accordion` passes `planNameStyle`
+     * with no colour override and that style defaults to `color = Color.White`, so reading the code
+     * predicts invisible names — but `single_hero`, `product_as_cta` and `timeline_reveal` were
+     * changed for #961 without a light-page capture either, and a prediction is not a measurement.
+     */
+    @Test fun plansAccordionOnAWhitePage() = planStyle("accordion")
+    @Test fun plansGridOnAWhitePage() = planStyle("grid")
+    @Test fun plansTabGroupsOnAWhitePage() = planStyle("tab_groups")
+    @Test fun plansSingleHeroOnAWhitePage() = planStyle("single_hero")
+    @Test fun plansProductAsCtaOnAWhitePage() = planStyle("product_as_cta")
+    @Test fun plansTimelineRevealOnAWhitePage() = planStyle("timeline_reveal")
+    @Test fun plansCarouselCardsOnAWhitePage() = planStyle("carousel_cards")
     @Test fun plansInteractiveSliderOnAWhitePage() = planStyle("interactive_slider")
 
     /** A reviews carousel: quote white@90%, author white@70%, date white@40%, dots white@30%. */
