@@ -602,7 +602,22 @@ data class PaywallPlan(
     // ("7-day") is enriched to "7-day free trial" to match iOS PaywallConfig.swift
     // (the suffix used to be appended only at the iOS grid render site, so Android
     // showed "7-day" where iOS grid cards showed "7-day free trial").
-    val trialLabel: String? get() = trial?.label ?: trial_duration?.let { "$it free trial" }
+    /**
+     * #933 — an ISO duration in `trial_duration` is PHRASED rather than printed raw.
+     *
+     * `trial_duration` is author-supplied text, and the two stores express a trial period as an ISO
+     * duration (`P7D`, `P1W`). A config carrying the store's own spelling — an import, a hand-edited
+     * document or a generator, the same route #959's numeric price arrived by — rendered literally
+     * as **"P7D free trial"**. [BillingPeriodPhrase] turns that into "7 days free trial"; anything
+     * it cannot parse is printed exactly as authored, so "7-day" is untouched.
+     */
+    val trialLabel: String? get() = trial?.label ?: trial_duration?.let { d ->
+        val phrased = ai.appdna.sdk.billing.BillingPeriodPhrase.duration(
+            d,
+            java.util.Locale.getDefault().language,
+        ) ?: d
+        "$phrased free trial"
+    }
 }
 
 data class PaywallCTA(
