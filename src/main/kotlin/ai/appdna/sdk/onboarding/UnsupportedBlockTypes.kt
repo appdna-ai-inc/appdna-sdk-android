@@ -21,11 +21,22 @@ internal object UnsupportedBlockTypes {
 
     fun note(rawType: String) {
         if (!reported.add(rawType)) return
-        ai.appdna.sdk.AppDNA.reportInitDegraded(
-            IllegalStateException(
-                "Content block type '$rawType' is not supported by AppDNA SDK " +
-                    "${ai.appdna.sdk.AppDNA.sdkVersion} and will render as nothing. Update the SDK."
-            )
+        val detail = "content_blocks[].type: '$rawType' is not supported by AppDNA SDK " +
+            "${ai.appdna.sdk.AppDNA.sdkVersion} and renders as nothing. Update the SDK."
+        ai.appdna.sdk.AppDNA.reportInitDegraded(IllegalStateException(detail))
+        /*
+         * #935 — and to the fleet, and to the lifecycle delegate.
+         *
+         * `onInitDegraded` has carried this since it was written, which is the HOST half. What
+         * nobody had was the other one: how often this happens in the field. The event answers
+         * that without any host implementing anything, and `onConfigurationIssue` is the delegate
+         * a host can forward to its own crash reporter alongside every other config problem,
+         * rather than only the ones that look like an init failure.
+         */
+        ai.appdna.sdk.core.ConfigurationIssueReporter.report(
+            surface = "onboarding_flow",
+            id = null,
+            detail = detail,
         )
     }
 

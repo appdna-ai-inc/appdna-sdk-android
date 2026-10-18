@@ -115,6 +115,17 @@ object AppDNA {
     }
 
     /**
+     * #935 — read access for the SDK's own reporters, and a Kotlin-idiomatic setter.
+     *
+     * `setLifecycleDelegate` is the Java-facing entry and stays; `ConfigurationIssueReporter` needs
+     * to READ the delegate, which was private with no accessor at all.
+     */
+    @JvmStatic
+    var lifecycleDelegateOrNull: ai.appdna.sdk.generated.AppDNALifecycleDelegate?
+        get() = lifecycleDelegate
+        set(value) { lifecycleDelegate = value }
+
+    /**
      * Current backend-driven SDK lock state. `null` when active;
      * a non-null `Pair(reason, lockedAtIso)` means the SDK is in locked
      * mode and UI render paths (paywall_trigger, messages, surveys) should
