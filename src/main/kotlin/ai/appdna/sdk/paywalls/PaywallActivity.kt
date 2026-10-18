@@ -4007,8 +4007,24 @@ internal fun PaywallSectionView(
                         )
                     }
                     else -> { // app_rating
+                        /*
+                         * 🔴 #947's defect, on the platform #947 did not touch.
+                         *
+                         * This was `Color.White.copy(alpha = 0.7f)` — white at 70% over a WHITE
+                         * page is nothing, so the review count and the quote simply were not there
+                         * on any light paywall. iOS retired the same constant on its side when
+                         * #947 measured 1,557 pixels changing between appearances; Android kept
+                         * it, so the two platforms disagreed about a line both of them draw.
+                         *
+                         * On a dark page this is byte-identical to the old constant — `readable`
+                         * returns `#FFFFFF` for any page dark enough for white to pass AA — which
+                         * is what makes it safe: it moves pixels only where the old value drew
+                         * nothing. The same reasoning `subtleOnPage` is documented with.
+                         */
+                        val socialProofSecondary =
+                            PaywallTextDefaults.readable(LocalPaywallPageHex.current).copy(alpha = 0.7f)
                         val socialValueStyle = StyleEngine.applyTextStyle(
-                            TextStyle(color = Color.White.copy(alpha = 0.7f), fontSize = 13.sp),
+                            TextStyle(color = socialProofSecondary, fontSize = 13.sp),
                             section.style?.elements?.get("value")?.text_style
                         )
                         // #910 — the `value` element's container, beside the text style it
@@ -4017,6 +4033,32 @@ internal fun PaywallSectionView(
                             with(StyleEngine) {
                                 applyContainerStyle(section.style?.elements?.get("value")?.elementContainer)
                             }
+                        }
+                        /*
+                         * #954 — the caption, above the stars.
+                         *
+                         * `data.text` decoded, travelled and was drawn by the `countdown` and
+                         * `trial_badge` branches and by NOTHING in this one, so an author could
+                         * write "Loved by 12,000 runners", see it in the console preview, publish
+                         * it, and have no device draw it. One saved section on dev carried `text`
+                         * and nothing else and rendered blank for exactly this reason. Above the
+                         * stars because that is the reading order of the pattern, and where the
+                         * countdown branch puts its own label (iOS SocialProof.swift).
+                         */
+                        section.data?.text?.takeIf { it.isNotBlank() }?.let { caption ->
+                            Text(
+                                text = loc("social_proof.text", caption),
+                                style = StyleEngine.applyTextStyle(
+                                    TextStyle(fontSize = 12.sp, color = socialProofSecondary),
+                                    section.style?.elements?.get("text")?.text_style,
+                                ),
+                                textAlign = TextAlign.Center,
+                                modifier = Modifier.run {
+                                    with(StyleEngine) {
+                                        applyContainerStyle(section.style?.elements?.get("text")?.elementContainer)
+                                    }
+                                },
+                            )
                         }
                         section.data?.rating?.let { rating ->
                             // \u2014 render 5 fixed stars
@@ -4058,9 +4100,55 @@ internal fun PaywallSectionView(
                             Spacer(Modifier.height(8.dp))
                             Text(
                                 text = "\"${loc("social_proof.testimonial", it)}\"",
-                                style = socialValueStyle,
+                                /*
+                                 * #954 — the QUOTE's own element, not the review count's.
+                                 *
+                                 * It shared `value` with the count, so an author who restyled one
+                                 * restyled both and neither could be set alone. iOS gave the quote
+                                 * `elements["testimonial"]` in the same change, and
+                                 * `paywall-element-style-every-site` caught the half-done version
+                                 * immediately — "an element styled on one platform and not the
+                                 * other is the divergence class this repo keeps shipping".
+                                 */
+                                style = StyleEngine.applyTextStyle(
+                                    TextStyle(fontSize = 13.sp, color = socialProofSecondary),
+                                    section.style?.elements?.get("testimonial")?.text_style,
+                                ),
                                 textAlign = TextAlign.Center,
+                                modifier = Modifier.run {
+                                    with(StyleEngine) {
+                                        applyContainerStyle(
+                                            section.style?.elements?.get("testimonial")?.elementContainer,
+                                        )
+                                    }
+                                },
                             )
+                            /*
+                             * #955 — the attribution, which the generator writes and this section
+                             * could not draw. 12 of 22 saved sections on dev carry an `author`,
+                             * because the paywall prompt asked for one; it decoded as `author_name`
+                             * and reached no renderer. The `testimonial` SECTION has drawn it all
+                             * along, which is what makes this a gap rather than a feature: the same
+                             * content rendered two ways depending on which section type an author
+                             * happened to pick.
+                             */
+                            section.data.author_name?.takeIf { n -> n.isNotBlank() }?.let { author ->
+                                Text(
+                                    text = "\u2014 ${loc("social_proof.author_name", author)}",
+                                    style = StyleEngine.applyTextStyle(
+                                        TextStyle(fontSize = 12.sp, color = socialProofSecondary.copy(alpha = 0.75f)),
+                                        section.style?.elements?.get("author_name")?.text_style,
+                                    ),
+                                    textAlign = TextAlign.Center,
+                                    modifier = Modifier.run {
+                                        with(StyleEngine) {
+                                            applyContainerStyle(
+                                                section.style?.elements?.get("author_name")?.elementContainer,
+                                            )
+                                        }
+                                    },
+                                )
+                            }
                         }
                     }
                 }
