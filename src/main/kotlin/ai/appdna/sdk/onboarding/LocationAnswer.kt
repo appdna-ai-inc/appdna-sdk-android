@@ -114,10 +114,30 @@ internal data class LocationSearchSettings(
     val minChars: Int,
 ) {
     companion object {
+        /**
+         * The only values the geocoding proxy accepts
+         * (`/api/v1/sdk/geocode/autocomplete` → `z.enum(['city','address','region','country'])`).
+         *
+         * 🔴 A TYPE WE CANNOT USE IS TREATED AS ABSENT, NOT PASSED ON. The proxy answers an unknown
+         * `type` with a ValidationError, and both SDKs read a non-200 as "no suggestions" — so
+         * forwarding a bad value turns the whole autocomplete OFF rather than degrading it.
+         *
+         * Not hypothetical. Content-block `field_config` is `.passthrough()` and therefore
+         * UNVALIDATED, and the Console's content-block Location Type select offered
+         * **`coordinates`** — in no enum, no SDK, and refused by the proxy. Those blocks were
+         * harmless only because this surface sent no `type` at all; the moment it started honouring
+         * the authored one (#963) every one of them would have gone silently dead. The picker is
+         * fixed too (#964), but published documents outlive a picker fix.
+         */
+        private val PROXY_TYPES = setOf("city", "address", "region", "country")
+
+        private fun acceptableType(raw: String?): String? =
+            raw?.takeIf { it.isNotBlank() }?.takeIf { it in PROXY_TYPES }
+
         /** From a content block's free-form `field_config` map. */
         fun from(config: Map<String, Any?>?, defaultMinChars: Int): LocationSearchSettings =
             LocationSearchSettings(
-                type = (config?.get("location_type") as? String)?.takeIf { it.isNotBlank() },
+                type = acceptableType(config?.get("location_type") as? String),
                 biasCountry = (config?.get("location_bias_country") as? String)?.takeIf { it.isNotBlank() },
                 language = (config?.get("location_language") as? String)?.takeIf { it.isNotBlank() },
                 // A threshold below 1 would search on an empty field, which is a request the proxy
@@ -129,7 +149,7 @@ internal data class LocationSearchSettings(
         /** From a form-step field's typed `FormFieldConfig`. */
         fun from(config: FormFieldConfig?, defaultMinChars: Int): LocationSearchSettings =
             LocationSearchSettings(
-                type = config?.location_type?.takeIf { it.isNotBlank() },
+                type = acceptableType(config?.location_type),
                 biasCountry = config?.location_bias_country?.takeIf { it.isNotBlank() },
                 language = config?.location_language?.takeIf { it.isNotBlank() },
                 minChars = (config?.location_min_chars ?: defaultMinChars).coerceAtLeast(1),

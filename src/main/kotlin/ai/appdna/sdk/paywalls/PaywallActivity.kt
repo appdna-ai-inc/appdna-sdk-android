@@ -2747,8 +2747,10 @@ internal fun PaywallSectionView(
 
             Column(modifier = Modifier.fillMaxWidth().run { with(StyleEngine) { applyContainerStyle(section.style?.container) } }) {
                 when (displayStyle) {
-                    "horizontal_scroll", "carousel_cards", "carousel" -> {
-                        // Horizontally scrollable plan cards / carousel
+                    "horizontal_scroll", "carousel" -> {
+                        // Horizontally scrollable plan cards — neighbours PEEK at both edges
+                        // (48dp content padding), which is what distinguishes this style from
+                        // `carousel_cards` below.
                         val pagerState = rememberPagerState(
                             initialPage = plans.indexOfFirst { it.id == selectedPlanId }.coerceAtLeast(0),
                             pageCount = { plans.size }
@@ -2759,6 +2761,55 @@ internal fun PaywallSectionView(
                             pageSpacing = cardGap,
                         ) { planIdx ->
                             PlanCard(plan = plans[planIdx], planIdx = planIdx, modifier = Modifier.fillMaxWidth())
+                        }
+                    }
+                    "carousel_cards" -> {
+                        /*
+                         * #962 — ONE CARD PER PAGE, WITH DOTS, like iOS.
+                         *
+                         * 🔴 This value used to share the arm above, so Android drew
+                         * `carousel_cards` and `horizontal_scroll` IDENTICALLY — while the Console
+                         * offers them as two separate choices, and iOS gives `carousel_cards` its
+                         * own `case` (a paged `TabView`, which on iOS means full-width pages plus
+                         * page dots). So an author picked the second option, got the first one on
+                         * Android, and had nothing to tell them why.
+                         *
+                         * `check:plan-display-parity` could not see it: both platforms HAD an arm,
+                         * so neither side was missing anything. Only reading the two bodies showed
+                         * it, which is why the gate now also asserts that a style with its own arm
+                         * on one platform is not grouped away on the other.
+                         *
+                         * Full-width pages (no `contentPadding` peek) is the behavioural difference
+                         * that matters; the dots are what a reader uses to know how many plans
+                         * there are, and they read off the PAGE (#938) rather than assuming a dark
+                         * backdrop.
+                         */
+                        val pagerState = rememberPagerState(
+                            initialPage = plans.indexOfFirst { it.id == selectedPlanId }.coerceAtLeast(0),
+                            pageCount = { plans.size }
+                        )
+                        HorizontalPager(
+                            state = pagerState,
+                            pageSpacing = cardGap,
+                        ) { planIdx ->
+                            PlanCard(plan = plans[planIdx], planIdx = planIdx, modifier = Modifier.fillMaxWidth())
+                        }
+                        if (plans.size > 1) {
+                            Spacer(Modifier.height(10.dp))
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.Center,
+                            ) {
+                                repeat(plans.size) { idx ->
+                                    Box(
+                                        modifier = Modifier
+                                            .padding(horizontal = 3.dp)
+                                            .size(8.dp)
+                                            .clip(CircleShape)
+                                            .background(if (idx == pagerState.currentPage) planInk else planSubtleInk),
+                                    )
+                                }
+                            }
                         }
                     }
                     "segmented_toggle", "segmented" -> {
@@ -2848,7 +2899,7 @@ internal fun PaywallSectionView(
                             )
                         }
                     }
-                    "pill_selector", "minimal_chips" -> {
+                    "pill_selector" -> {
                         // Mirror iOS PaywallRenderer.swift:1736-1759 — horizontal
                         // ScrollView so 4+ pills stay readable (previously each
                         // pill was `.weight(1f)` and compressed to unreadable
@@ -3114,17 +3165,6 @@ internal fun PaywallSectionView(
                             }
                         }
                     }
-                    "toggle_cards" -> {
-                        // Row of toggle-style cards (2 plans side by side)
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.spacedBy(cardGap),
-                        ) {
-                            plans.forEachIndexed { planIdx, plan ->
-                                PlanCard(plan = plan, planIdx = planIdx, modifier = Modifier.weight(1f))
-                            }
-                        }
-                    }
                     // 5 plan
                     // display styles previously fell through to the
                     // vertical-stack default. Each iOS branch at
@@ -3284,9 +3324,33 @@ internal fun PaywallSectionView(
                                     .padding(vertical = cardGap / 2)
                                     .planSelectionAnimation(config.animation?.plan_selection_animation, isSelected),
                                 shape = cardShape,
+                                /*
+                                 * #961 — EVERY row is accent-filled, matching iOS
+                                 * (`PaywallRenderer.swift` `case "product_as_cta"`, which fills
+                                 * unconditionally with `cardStyle.selectedBorderColor ?? accent`).
+                                 *
+                                 * 🔴 This was two defects in one expression. The `else` branch drew
+                                 * a 10%-white tile carrying 90%-white text — invisible on invisible
+                                 * on a light page, so the alternative plans were simply not there.
+                                 * And it was drawing a SELECTION state that this layout's own
+                                 * interaction makes meaningless: `onClick` above does
+                                 * `onPlanSelect` AND `onCTATap` in one gesture, so tapping a row
+                                 * buys it. There is no select-then-confirm step for a highlight to
+                                 * belong to, and a ghosted row that is really a one-tap purchase
+                                 * button reads as disabled.
+                                 *
+                                 * White content is correct here precisely BECAUSE the fill is now
+                                 * always the accent — which is why this arm needs no
+                                 * `PaywallTextDefaults.readable(on: pageBackgroundHex)` treatment
+                                 * the way its `single_hero` and `timeline_reveal` siblings did: it
+                                 * never draws on the page.
+                                 *
+                                 * `isSelected` is still read by `planSelectionAnimation` below, so
+                                 * the tapped row animates.
+                                 */
                                 colors = ButtonDefaults.buttonColors(
-                                    containerColor = if (isSelected) ai.appdna.sdk.AppDNA.brandAccentColor() else Color.White.copy(alpha = 0.1f),
-                                    contentColor = if (isSelected) Color.White else Color.White.copy(alpha = 0.9f),
+                                    containerColor = ai.appdna.sdk.AppDNA.brandAccentColor(),
+                                    contentColor = Color.White,
                                 ),
                                 contentPadding = PaddingValues(horizontal = cardPad, vertical = cardPad),
                             ) {
@@ -3352,6 +3416,24 @@ internal fun PaywallSectionView(
                             }
                         }
                     }
+                    /*
+                     * #962 — `minimal_chips` and `toggle_cards` USED TO BE RENDERED HERE and iOS
+                     * never had either, so the same document drew a pill selector / toggle cards on
+                     * one platform and a plain vertical stack on the other. (`minimal_chips` was an
+                     * ALIAS on the `pill_selector` arm; `toggle_cards` had eleven lines of its own.)
+                     *
+                     * 🔴 Removed rather than ported, because neither value exists anywhere in the
+                     * platform that could produce it: `grep -rn "minimal_chips\|toggle_cards" src/`
+                     * returns NOTHING — not the Console's plan_display_style picker (13 values,
+                     * neither among them), not the paywall schema, not the console preview, not the
+                     * generator, not a prompt. They could only ever arrive by hand-editing a
+                     * document, and a style the SDK renders that the Console cannot set is the
+                     * dead-end Rule 8 exists to forbid. Both now fall to the shared vertical stack,
+                     * which is exactly what iOS already did — so the two platforms agree.
+                     *
+                     * Re-adding either means a Console control AND both renderers AND a fixture, in
+                     * one change (Rule 8). The old Compose is in git history behind this commit.
+                     */
                     else -> {
                         // vertical_stack (default) — mirror iOS PlanCard.swift:
                         // name+price in a LEADING weight(1f) column (price never

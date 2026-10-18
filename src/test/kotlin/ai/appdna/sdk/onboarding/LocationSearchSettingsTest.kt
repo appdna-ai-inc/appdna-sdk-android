@@ -139,4 +139,26 @@ class LocationSearchSettingsTest {
         assertNull(s.language)
         assertEquals(2, s.minChars)
     }
+
+    @Test
+    fun `a type the PROXY does not accept resolves to UNSET, not forwarded`() {
+        /*
+         * 🔴 THE REGRESSION #963 WOULD HAVE SHIPPED. The proxy validates `type` against
+         * `z.enum(['city','address','region','country'])` and answers anything else with a
+         * ValidationError — which both SDKs read as "no suggestions". So forwarding a bad value
+         * turns the whole autocomplete OFF rather than degrading it.
+         *
+         * `coordinates` is the real one: content-block `field_config` is `.passthrough()` and so
+         * UNVALIDATED, and the Console's content-block Location Type select offered it. Those
+         * blocks were harmless only while this surface sent no `type` at all.
+         */
+        assertNull(LocationSearchSettings.from(mapOf("location_type" to "coordinates"), defaultMinChars = 3).type)
+        assertNull(LocationSearchSettings.from(mapOf("location_type" to "Address"), defaultMinChars = 3).type)
+        assertNull(LocationSearchSettings.from(mapOf("location_type" to "anything"), defaultMinChars = 3).type)
+        // ...and the four it DOES accept still pass through, including `region`, which the
+        // content-block picker was missing while offering `coordinates`.
+        for (t in listOf("city", "address", "region", "country")) {
+            assertEquals(t, LocationSearchSettings.from(mapOf("location_type" to t), defaultMinChars = 3).type)
+        }
+    }
 }
