@@ -3149,6 +3149,71 @@ internal fun PaywallSectionView(
                             }
                         }
                     }
+                    "tab_groups" -> {
+                        /*
+                         * #960 — a tab bar, one tab per plan, with the SELECTED plan's full card
+                         * beneath it. The console has offered this style in its picker since it
+                         * shipped and neither renderer had an arm for it, so an author picked
+                         * "Tab groups", saw the console preview draw it, published, and every
+                         * device silently drew the default vertical stack instead.
+                         *
+                         * The shape is the console preview's (`PaywallPreview.tsx`, "6. Tab
+                         * Groups"), which was the only specification that existed: equal-width
+                         * tabs over a full-width rule, the selected tab's segment of that rule in
+                         * the accent colour, and one plan card below.
+                         *
+                         * 🔴 The rule is drawn as a per-tab underline rather than a row-wide border
+                         * with an offset child. Both look identical; this one cannot drift out of
+                         * alignment when a label wraps, and it needs no `drawBehind` arithmetic to
+                         * stay centred under its tab.
+                         */
+                        val selectedIdx = plans.indexOfFirst { it.id == selectedPlanId }
+                            .coerceAtLeast(0)
+                        val selectedPlan = plans.getOrNull(selectedIdx)
+                        val tabAccent = customSelectedBorder ?: ai.appdna.sdk.AppDNA.brandAccentColor()
+                        // #946 — read off the PAGE, not a constant. A 20%-ink rule is visible on a
+                        // dark paywall and on a light one; `Color.White` would be invisible on the
+                        // second, which is the defect that sweep existed for.
+                        val tabRule = unselectedBorderColor ?: planSubtleInk.copy(alpha = 0.2f)
+                        val tabInactiveInk = planInk.copy(alpha = 0.7f)
+                        Row(modifier = Modifier.fillMaxWidth()) {
+                            plans.forEachIndexed { planIdx, plan ->
+                                val isSelected = plan.id == selectedPlan?.id
+                                Column(
+                                    modifier = Modifier
+                                        .weight(1f)
+                                        .clickable { onPlanSelect(plan.id) },
+                                    horizontalAlignment = Alignment.CenterHorizontally,
+                                ) {
+                                    Text(
+                                        text = loc("plan.$planIdx.name", plan.displayName),
+                                        fontSize = 13.sp,
+                                        fontWeight = FontWeight.SemiBold,
+                                        color = if (isSelected) tabAccent else tabInactiveInk,
+                                        maxLines = 1,
+                                        // Same reason as every other label here: Clip cuts a long
+                                        // plan name mid-glyph with no sign anything is missing.
+                                        overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
+                                        modifier = Modifier.padding(bottom = 8.dp),
+                                    )
+                                    Box(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .height(2.dp)
+                                            .background(if (isSelected) tabAccent else tabRule),
+                                    )
+                                }
+                            }
+                        }
+                        selectedPlan?.let { sp ->
+                            Spacer(Modifier.height(12.dp))
+                            PlanCard(
+                                plan = sp,
+                                planIdx = selectedIdx,
+                                modifier = Modifier.fillMaxWidth(),
+                            )
+                        }
+                    }
                     "single_hero" -> {
                         // Mirror iOS PaywallRenderer.swift:2117-2122 — render
                         // only the hero (first) plan; collapse remaining
@@ -3170,7 +3235,11 @@ internal fun PaywallSectionView(
                             ) {
                                 Text(
                                     text = if (isHeroExpanded) "Hide options" else "More options",
-                                    color = Color.White.copy(alpha = 0.85f),
+                                    // #961 — was `Color.White.copy(alpha = 0.85f)`. On a light
+                                    // paywall this is the only way to reach the other plans, and
+                                    // it was invisible: the flow looked like it had one plan.
+                                    // `readable` returns the old white on any dark page.
+                                    color = planInk.copy(alpha = 0.85f),
                                     fontWeight = FontWeight.SemiBold,
                                 )
                             }
@@ -3269,7 +3338,10 @@ internal fun PaywallSectionView(
                                         .size(12.dp)
                                         .clip(androidx.compose.foundation.shape.CircleShape)
                                         .background(
-                                            if (isSelected) ai.appdna.sdk.AppDNA.brandAccentColor() else Color.White.copy(alpha = 0.4f),
+                                            // #961 — the unselected dot was `Color.White` at 40%,
+                                            // so on a light page the timeline lost every stop but
+                                            // the current one.
+                                            if (isSelected) ai.appdna.sdk.AppDNA.brandAccentColor() else planSubtleInk.copy(alpha = 0.4f),
                                         ),
                                 )
                                 Spacer(Modifier.width(12.dp))

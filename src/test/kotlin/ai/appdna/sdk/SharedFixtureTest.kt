@@ -1790,6 +1790,10 @@ class SharedFixtureTest(
                 // objects, not the raw map, so a field the model silently drops shows up here.
                 val plansSection = parsed.sections.firstOrNull { it.type == "plans" }
                 spy.state["parsed_price_layout"] = plansSection?.data?.price_layout
+                // #960 — which plan LAYOUT the document asked for. Both dispatches end in a
+                // default arm, so a value that fails to reach the DTO is indistinguishable from
+                // the vertical stack an author did not ask for.
+                spy.state["parsed_plan_display_style"] = plansSection?.data?.plan_display_style
                 spy.state["parsed_strikethrough_font_size"] = plansSection?.data?.strikethrough_font_size
                 spy.state["parsed_strikethrough_gap"] = plansSection?.data?.strikethrough_gap
                 val plansList = parsed.plans.orEmpty()
