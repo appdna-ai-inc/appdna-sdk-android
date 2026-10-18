@@ -30,6 +30,23 @@ android {
         targetSdk = 35
         versionCode = 1
         versionName = "1.0"
+
+        /*
+         * #951 — a Maps key the sample can be GIVEN, defaulting to empty.
+         *
+         * The SDK reads `com.google.android.geo.API_KEY` from the MERGED manifest, so a map block
+         * renders its interactive tier only when the HOST declares one. The sample declared none at
+         * all, which meant the one surface we walk maps on could only ever show the static tier —
+         * the gesture behaviour a customer reports was unreachable here.
+         *
+         * Empty (the default) is read by `hasGoogleMapsManifestKey` as absent, so nothing changes
+         * for anyone who does not pass one. The Flutter example does the same thing with the same
+         * placeholder name.
+         *
+         *     ./gradlew :sample:assembleDebug -PappdnaMapsKey=<your key>
+         */
+        manifestPlaceholders["appdnaMapsKey"] =
+            (project.findProperty("appdnaMapsKey") as String?) ?: ""
     }
 
     buildTypes {

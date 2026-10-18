@@ -21,6 +21,11 @@ import com.google.android.gms.maps.model.CameraPosition
 import com.google.android.gms.maps.model.LatLng
 import com.google.android.gms.maps.model.MapStyleOptions
 import com.google.maps.android.compose.GoogleMap
+import androidx.compose.runtime.compositionLocalOf
+import androidx.compose.runtime.MutableState
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.ui.input.pointer.PointerEventPass
+import androidx.compose.ui.input.pointer.pointerInput
 import com.google.maps.android.compose.MapProperties
 import com.google.maps.android.compose.MapType
 import com.google.maps.android.compose.MapUiSettings
@@ -49,6 +54,38 @@ import com.google.maps.android.compose.rememberCameraPositionState
  * caller falls back to the static tier, which needs no manifest and still honours every styling
  * field. A host that does nothing therefore gets the map it gets today, not a regression.
  */
+/**
+ * #951 — the step's scroll stands down while a finger is on the map.
+ *
+ * 🔴 WHY THE MAP BARELY PANNED. A map block renders inside `ThreeZoneBlockLayout`, whose content
+ * column is a `Modifier.verticalScroll(...)`. `GoogleMap` is an `AndroidView` wrapping a `MapView`,
+ * and when a drag begins on that view the Compose scroll and the MapView's own touch handling
+ * compete for the pointer — the scroll usually wins, because it claims the gesture before the
+ * embedded view's `MotionEvent`s are dispatched. The customer's words for that were: *"the map
+ * moves by a tiny amount, and only when the gesture is picked up at all."*
+ *
+ * iOS never had it: a `GMSMapView` installs its own `UIGestureRecognizer`s and UIKit resolves the
+ * conflict in the map's favour, while SwiftUI's `ScrollView` yields.
+ *
+ * The fix uses the two pieces Compose provides for exactly this: `verticalScroll` takes an
+ * `enabled` flag, and a `pointerInput` handler that never calls `consume()` WATCHES a gesture
+ * without taking any of it. So the map lowers the flag while a finger is on it and raises it when
+ * the last one leaves, while the MapView underneath still receives every event of the gesture.
+ *
+ * 🔴 NOT `pointerInteropFilter`. That one takes part in dispatch, and is what `AndroidView`
+ * already uses internally to hand events to the embedded view — a second one around the same node
+ * puts two interop filters on one gesture.
+ *
+ * 🔴 AND NOT `motionEventSpy` EITHER, which was the first implementation and reads better. It only
+ * sees `MotionEvent`s, and a gesture Compose cancels (`ACTION_CANCEL`) never arrived as one in the
+ * Compose test harness, so the flag stuck DOWN and the step could never scroll again. Reading
+ * `changes.none { it.pressed }` is the same question asked where the answer always exists.
+ *
+ * 🔴 Turning the step's scroll OFF entirely was the other option and is wrong: a step whose content
+ * is taller than the viewport would be stranded, which is exactly the #598 regression.
+ */
+internal val LocalStepScrollEnabled = compositionLocalOf<MutableState<Boolean>?> { null }
+
 @Composable
 internal fun GoogleInteractiveMap(block: ContentBlock, rawResolved: Boolean = false, modifier: Modifier = Modifier) {
     // Every decision (route source, markers, camera) is the pure plan; this
@@ -79,8 +116,18 @@ internal fun GoogleInteractiveMap(block: ContentBlock, rawResolved: Boolean = fa
         }
     }
 
+    // #951 — raised while a finger is on the map, so the step's scroll stands down. Null when the
+    // map is drawn outside a scrolling step (the screens surface), where there is nothing to yield.
+    val stepScroll = LocalStepScrollEnabled.current
+    // A step whose scroll never came back is worse than the bug this fixes, so the flag is restored
+    // if the map leaves the composition mid-gesture — a step advancing under the finger, or a
+    // host-data refresh swapping the block out. Neither sends UP or CANCEL.
+    DisposableEffect(stepScroll) { onDispose { stepScroll?.value = true } }
+
     GoogleMap(
-        modifier = modifier.fillMaxSize(),
+        modifier = modifier
+            .fillMaxSize()
+            .mapClaimsTheDrag(stepScroll),
         cameraPositionState = cameraPositionState,
         onMapLoaded = { mapLoaded = true },
         properties = MapProperties(
@@ -213,3 +260,39 @@ internal fun hasGoogleMapsManifestKey(context: Context): Boolean = runCatching {
     val ai = context.packageManager.getApplicationInfo(context.packageName, PackageManager.GET_META_DATA)
     !ai.metaData?.getString("com.google.android.geo.API_KEY").isNullOrBlank()
 }.getOrDefault(false)
+
+/**
+ * #951 — observe the pointer without consuming it, and park the step's scroll while it is down.
+ *
+ * `motionEventSpy`'s contract is that the watcher does not take part in dispatch, so every
+ * `MotionEvent` still reaches the `MapView` underneath exactly as it would without this: the map
+ * pans, pinches and taps its markers as usual. All this records is that a gesture is in flight.
+ *
+ * UP and CANCEL both restore the scroll, and CANCEL is not optional — a gesture the system takes
+ * away (a notification shade pulled down, an incoming call) never sends UP, and a step whose scroll
+ * never came back would be a worse bug than the one this fixes.
+ */
+internal fun Modifier.mapClaimsTheDrag(stepScroll: MutableState<Boolean>?): Modifier =
+    if (stepScroll == null) {
+        this
+    } else {
+        this.pointerInput(stepScroll) {
+            try {
+                awaitPointerEventScope {
+                    while (true) {
+                        /*
+                         * `Initial` is the parent-to-child pass, so this runs before the scroll's
+                         * own handling of the same event — and NOTHING is consumed, so every change
+                         * travels on to the `MapView` exactly as it would without this modifier.
+                         */
+                        val event = awaitPointerEvent(PointerEventPass.Initial)
+                        stepScroll.value = event.changes.none { it.pressed }
+                    }
+                }
+            } finally {
+                // The handler is restarted when the gesture is cancelled or the node leaves; either
+                // way the step gets its scroll back, which is the state that must never be lost.
+                stepScroll.value = true
+            }
+        }
+    }

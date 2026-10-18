@@ -20,6 +20,15 @@
         android:theme="@style/Theme.AppDNASample"
         android:allowBackup="false">
 
+        <!-- TEST-ONLY: the Maps key the sample is given at build time (see sample/build.gradle.kts).
+             Empty (the committed default) = the SDK's own `hasGoogleMapsManifestKey` reads it as
+             absent and a map block renders the STATIC tier, exactly as before. Pass
+             `-PappdnaMapsKey=<key>` to drive the pannable interactive tier, which the Maps SDK can
+             only take from the merged manifest. -->
+        <meta-data
+            android:name="com.google.android.geo.API_KEY"
+            android:value="${appdnaMapsKey}" />
+
         <activity
             android:name=".MainActivity"
             android:exported="true"

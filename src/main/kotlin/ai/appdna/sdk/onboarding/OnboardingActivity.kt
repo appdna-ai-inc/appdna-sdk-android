@@ -2684,7 +2684,7 @@ internal fun bottomZoneReserve(hasBottomZone: Boolean, measured: Dp): Dp = when 
 }
 
 @androidx.compose.runtime.Composable
-private fun ThreeZoneBlockLayout(
+internal fun ThreeZoneBlockLayout(
     blocks: List<ContentBlock>,
     onAction: (String) -> Unit,
     toggleValues: MutableMap<String, Boolean>,
@@ -2723,6 +2723,17 @@ private fun ThreeZoneBlockLayout(
     // The consent-CTA gate judges the WHOLE layered step (lifted maps included), not
     // just the column this layout draws.
     val stepGateBlocks = LocalStepGateBlocks.current ?: blocks
+    /*
+     * #951 — false only while a map child has a finger down on it; true everywhere else, so a step
+     * taller than the viewport still scrolls (removing the scroll wholesale is the #598 regression).
+     *
+     * Reading `.value` HERE invalidates this composable, so the step's content recomposes when the
+     * flag moves. That is affordable because the flag moves exactly TWICE per gesture — once on the
+     * press and once on the release — and never per motion event: `mapClaimsTheDrag` writes
+     * `changes.none { it.pressed }`, which is the same boolean for every move in between, and
+     * Compose does not invalidate on a write that does not change the value.
+     */
+    val stepScrollClaimable = LocalStepScrollEnabled.current?.value ?: true
     // Drop the `!anyZoned` early
     // return so the unzoned case still runs through the partition + zone
     // render path, getting responsive horizontal padding + scroll wrapper
@@ -2807,7 +2818,8 @@ private fun ThreeZoneBlockLayout(
                 Column(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .verticalScroll(rememberScrollState())
+                        // #951 — `enabled = false` while a map child holds the gesture.
+                        .verticalScroll(rememberScrollState(), enabled = stepScrollClaimable)
                         .heightIn(min = viewportHeight)
                         .padding(horizontal = horizontalPadding)
                         .padding(bottom = bottomZoneReserve(bottom.isNotEmpty(), measuredBottomHeight)),
@@ -2846,7 +2858,8 @@ private fun ThreeZoneBlockLayout(
                 modifier = Modifier
                     .fillMaxSize()
                     .padding(bottom = bottomZoneReserve(bottom.isNotEmpty(), measuredBottomHeight))
-                    .verticalScroll(rememberScrollState())
+                    // #951 — `enabled = false` while a map child holds the gesture.
+                    .verticalScroll(rememberScrollState(), enabled = stepScrollClaimable)
                     .padding(horizontal = horizontalPadding),
                 verticalArrangement = Arrangement.spacedBy(12.dp),
             ) {
@@ -3569,7 +3582,22 @@ private fun BlockBasedStepView(
     // What nested renderers (row, stack, section_background, carousel pages) read.
     val stepInteraction = rememberStepInteraction(coordinator, ::handleInteract) { liveParamsState.value.pending }
 
+    /*
+     * #951 — the step's scroll stands down while a finger is on an embedded map.
+     *
+     * A `GoogleMap` is an `AndroidView` around a `MapView`, and the content column it sits in is a
+     * `Modifier.verticalScroll`. Both want the drag, and the Compose scroll wins it before the
+     * MapView's own `MotionEvent`s are dispatched — so the map panned by a few pixels, or not at
+     * all. The map lowers this flag on ACTION_DOWN (`MapInteractive.mapClaimsTheDrag`) and raises
+     * it on UP/CANCEL, and the two content columns below read it as `verticalScroll(enabled =)`.
+     *
+     * Hoisted HERE rather than inside `ThreeZoneBlockLayout` because the provider has to sit above
+     * every renderer a map can appear in, and this is the step's render scope.
+     */
+    val stepScrollEnabled = androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf(true) }
+
     androidx.compose.runtime.CompositionLocalProvider(
+        LocalStepScrollEnabled provides stepScrollEnabled,
         LocalHostDataRawResolved provides (hostResolved != null),
         LocalHostDataRawResolvedIds provides (hostResolved?.rawResolvedIds ?: emptySet()),
         LocalHostDataSheets provides (hostResolved?.sheetRaw ?: emptyMap()),
