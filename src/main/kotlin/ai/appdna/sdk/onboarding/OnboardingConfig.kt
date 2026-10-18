@@ -12,6 +12,10 @@ import ai.appdna.sdk.core.TypedRead
 import ai.appdna.sdk.core.bool
 import ai.appdna.sdk.core.num
 import ai.appdna.sdk.core.str
+import ai.appdna.sdk.core.list
+import ai.appdna.sdk.core.listOfMaps
+import ai.appdna.sdk.core.obj
+import ai.appdna.sdk.core.objMap
 
 /** #958 — what a mis-typed field in this document is reported against. */
 private const val SURFACE = TypedRead.ONBOARDING
@@ -1022,9 +1026,9 @@ internal object OnboardingConfigParser {
 
     @Suppress("UNCHECKED_CAST")
     fun parseOnboardingRoot(data: Map<String, Any>): Pair<String?, Map<String, OnboardingFlowConfig>> {
-        val activeFlowId = data["active_flow_id"] as? String
+        val activeFlowId = data.str(SURFACE, "onboarding", "active_flow_id")
 
-        val flowsMap = data["flows"] as? Map<String, Any> ?: emptyMap()
+        val flowsMap = data.objMap(SURFACE, "onboarding", "flows") ?: emptyMap()
         val parsed = mutableMapOf<String, OnboardingFlowConfig>()
         for ((key, value) in flowsMap) {
             if (value is Map<*, *>) {
@@ -1049,71 +1053,74 @@ internal object OnboardingConfigParser {
 
     @Suppress("UNCHECKED_CAST")
     private fun parseFlowConfig(id: String, map: Map<String, Any>): OnboardingFlowConfig {
-        val stepsList = map["steps"] as? List<Map<String, Any>> ?: emptyList()
+        // #958 — what a mis-typed field on the FLOW document is reported against; the nested
+        // objects below name their own sub-paths.
+        val docPath = "flows[$id]"
+        val stepsList = map.listOfMaps(SURFACE, docPath, "steps") ?: emptyList()
         // Wrap as ImmutableList so the @Stable
         // OnboardingFlowConfig contract holds (Compose stability inference).
         val steps = stepsList.map { parseStep(it) }.toImmutableList()
 
-        val settingsMap = map["settings"] as? Map<String, Any> ?: emptyMap()
+        val settingsMap = map.objMap(SURFACE, docPath, "settings") ?: emptyMap()
         // Parse haptic config
-        val hapticMap = settingsMap["haptic"] as? Map<String, Any>
+        val hapticMap = settingsMap.objMap(SURFACE, docPath, "haptic")
         val haptic = hapticMap?.let { h ->
-            val triggersMap = h["triggers"] as? Map<String, Any>
+            val triggersMap = h.objMap(SURFACE, docPath, "triggers")
             HapticConfig(
-                enabled = h["enabled"] as? Boolean ?: false,
+                enabled = h.bool(SURFACE, "settings.haptic", "enabled") ?: false,
                 triggers = triggersMap?.let { t ->
                     HapticTriggers(
-                        on_step_advance = t["on_step_advance"] as? String,
-                        on_button_tap = t["on_button_tap"] as? String,
-                        on_option_select = t["on_option_select"] as? String,
-                        on_toggle = t["on_toggle"] as? String,
-                        on_form_submit = t["on_form_submit"] as? String,
-                        on_error = t["on_error"] as? String,
-                        on_success = t["on_success"] as? String,
+                        on_step_advance = t.str(SURFACE, "settings.haptic.triggers", "on_step_advance"),
+                        on_button_tap = t.str(SURFACE, "settings.haptic.triggers", "on_button_tap"),
+                        on_option_select = t.str(SURFACE, "settings.haptic.triggers", "on_option_select"),
+                        on_toggle = t.str(SURFACE, "settings.haptic.triggers", "on_toggle"),
+                        on_form_submit = t.str(SURFACE, "settings.haptic.triggers", "on_form_submit"),
+                        on_error = t.str(SURFACE, "settings.haptic.triggers", "on_error"),
+                        on_success = t.str(SURFACE, "settings.haptic.triggers", "on_success"),
                     )
                 } ?: HapticTriggers(),
             )
         }
         // Parse particle effect config
-        val particleMap = settingsMap["particle_effect"] as? Map<String, Any>
+        val particleMap = settingsMap.objMap(SURFACE, docPath, "particle_effect")
         val particleEffect = particleMap?.let { p ->
             ParticleEffect(
-                type = p["type"] as? String ?: "confetti",
-                trigger = p["trigger"] as? String ?: "on_appear",
-                duration_ms = (p["duration_ms"] as? Number)?.toInt() ?: 2500,
-                intensity = p["intensity"] as? String ?: "medium",
-                colors = (p["colors"] as? List<*>)?.filterIsInstance<String>(),
+                type = p.str(SURFACE, "settings.particle_effect", "type") ?: "confetti",
+                trigger = p.str(SURFACE, "settings.particle_effect", "trigger") ?: "on_appear",
+                duration_ms = (p.num(SURFACE, "settings.particle_effect", "duration_ms"))?.toInt() ?: 2500,
+                intensity = p.str(SURFACE, "settings.particle_effect", "intensity") ?: "medium",
+                colors = (p.list(SURFACE, docPath, "colors"))?.filterIsInstance<String>(),
             )
         }
         // Parse back_button_style + content_padding + block_spacing
-        val backBtnMap = settingsMap["back_button_style"] as? Map<String, Any>
+        val backBtnMap = settingsMap.objMap(SURFACE, docPath, "back_button_style")
         val backButtonStyle = backBtnMap?.let { b ->
             BackButtonStyle(
-                icon_size = (b["icon_size"] as? Number)?.toDouble(),
-                icon_color = b["icon_color"] as? String,
-                position = b["position"] as? String,
-                icon = b["icon"] as? String,
-                close_on_first = b["close_on_first"] as? Boolean,
+                icon_size = (b.num(SURFACE, "settings.back_button_style", "icon_size"))?.toDouble(),
+                icon_color = b.str(SURFACE, "settings.back_button_style", "icon_color"),
+                position = b.str(SURFACE, "settings.back_button_style", "position"),
+                icon = b.str(SURFACE, "settings.back_button_style", "icon"),
+                close_on_first = b.bool(SURFACE, "settings.back_button_style", "close_on_first"),
             )
         }
 
         val settings = OnboardingSettings(
-            show_progress = settingsMap["show_progress"] as? Boolean ?: true,
-            allow_back = settingsMap["allow_back"] as? Boolean ?: true,
-            skip_to_step = settingsMap["skip_to_step"] as? String,
+            show_progress = settingsMap.bool(SURFACE, "settings", "show_progress") ?: true,
+            allow_back = settingsMap.bool(SURFACE, "settings", "allow_back") ?: true,
+            skip_to_step = settingsMap.str(SURFACE, "settings", "skip_to_step"),
             haptic = haptic,
             particle_effect = particleEffect,
-            progress_color = settingsMap["progress_color"] as? String,
-            progress_track_color = settingsMap["progress_track_color"] as? String,
-            progress_height = (settingsMap["progress_height"] as? Number)?.toDouble(),
-            progress_gradient_colors = (settingsMap["progress_gradient_colors"] as? List<*>)?.mapNotNull { it as? String },
-            progress_skip_label = settingsMap["progress_skip_label"] as? String,
-            progress_flash_color = settingsMap["progress_flash_color"] as? String,
-            progress_style = settingsMap["progress_style"] as? String,
+            progress_color = settingsMap.str(SURFACE, "settings", "progress_color"),
+            progress_track_color = settingsMap.str(SURFACE, "settings", "progress_track_color"),
+            progress_height = (settingsMap.num(SURFACE, "settings", "progress_height"))?.toDouble(),
+            progress_gradient_colors = (settingsMap.list(SURFACE, docPath, "progress_gradient_colors"))?.mapNotNull { it as? String },
+            progress_skip_label = settingsMap.str(SURFACE, "settings", "progress_skip_label"),
+            progress_flash_color = settingsMap.str(SURFACE, "settings", "progress_flash_color"),
+            progress_style = settingsMap.str(SURFACE, "settings", "progress_style"),
             back_button_style = backButtonStyle,
-            dismiss_allowed = settingsMap["dismiss_allowed"] as? Boolean,
-            content_padding = (settingsMap["content_padding"] as? Number)?.toDouble(),
-            block_spacing = (settingsMap["block_spacing"] as? Number)?.toDouble(),
+            dismiss_allowed = settingsMap.bool(SURFACE, "settings", "dismiss_allowed"),
+            content_padding = (settingsMap.num(SURFACE, "settings", "content_padding"))?.toDouble(),
+            block_spacing = (settingsMap.num(SURFACE, "settings", "block_spacing"))?.toDouble(),
         )
 
         // Top-level flow fields (status / graph_layout / graph_nodes / audience_rules)
@@ -1123,12 +1130,12 @@ internal object OnboardingConfigParser {
         val graphNodes = map["graph_nodes"] as? Map<String, Any?>
 
         return OnboardingFlowConfig(
-            id = map["id"] as? String ?: id,
-            name = map["name"] as? String ?: "",
-            version = (map["version"] as? Number)?.toInt() ?: 1,
+            id = map.str(SURFACE, docPath, "id") ?: id,
+            name = map.str(SURFACE, docPath, "name") ?: "",
+            version = (map.num(SURFACE, docPath, "version"))?.toInt() ?: 1,
             steps = steps,
             settings = settings,
-            status = map["status"] as? String,
+            status = map.str(SURFACE, docPath, "status"),
             graph_layout = graphLayout,
             graph_nodes = graphNodes,
             audience_rules = map["audience_rules"],
@@ -1141,56 +1148,60 @@ internal object OnboardingConfigParser {
 
     @Suppress("UNCHECKED_CAST")
     private fun parseStep(map: Map<String, Any>): OnboardingStep {
-        val typeStr = map["type"] as? String ?: "custom"
-        val configMap = (map["config"] as? Map<String, Any>)
-            ?: (map["layout"] as? Map<String, Any>)
+        // #958 — what a mis-typed field in this step is reported against. The step ID, because that
+        // is what an author searches the console for; `?` when the step has no id, which is itself
+        // worth seeing in a report.
+        val path = "steps[${map["id"] as? String ?: "?"}]"
+        val typeStr = map.str(SURFACE, path, "type") ?: "custom"
+        val configMap = (map.objMap(SURFACE, path, "config"))
+            ?: (map.objMap(SURFACE, path, "layout"))
             ?: emptyMap()
 
         // ImmutableList wraps for Compose-stable iteration.
-        val options = (configMap["options"] as? List<*>)?.mapNotNull { opt ->
+        val options = (configMap.list(SURFACE, path, "options"))?.mapNotNull { opt ->
             if (opt is Map<*, *>) {
                 val optMap = opt as Map<String, Any>
                 QuestionOption(
-                    id = optMap["id"] as? String ?: "",
-                    label = optMap["label"] as? String ?: "",
-                    icon = optMap["icon"] as? String,
+                    id = optMap.str(SURFACE, path, "id") ?: "",
+                    label = optMap.str(SURFACE, path, "label") ?: "",
+                    icon = optMap.str(SURFACE, path, "icon"),
                     // Per-option subtitle.
-                    subtitle = optMap["subtitle"] as? String,
+                    subtitle = optMap.str(SURFACE, path, "subtitle"),
                 )
             } else null
         }?.toImmutableList()
 
-        val items = (configMap["items"] as? List<*>)?.mapNotNull { item ->
+        val items = (configMap.list(SURFACE, path, "items"))?.mapNotNull { item ->
             if (item is Map<*, *>) {
                 val itemMap = item as Map<String, Any>
                 ValuePropItem(
-                    icon = itemMap["icon"] as? String ?: "",
-                    title = itemMap["title"] as? String ?: "",
-                    subtitle = itemMap["subtitle"] as? String ?: ""
+                    icon = itemMap.str(SURFACE, path, "icon") ?: "",
+                    title = itemMap.str(SURFACE, path, "title") ?: "",
+                    subtitle = itemMap.str(SURFACE, path, "subtitle") ?: ""
                 )
             } else null
         }?.toImmutableList()
 
-        val selectionModeStr = configMap["selection_mode"] as? String
+        val selectionModeStr = configMap.str(SURFACE, path, "selection_mode")
         val selectionMode = selectionModeStr?.let { SelectionMode.fromString(it) }
 
         @Suppress("UNCHECKED_CAST")
-        val fields = (configMap["fields"] as? List<*>)?.mapNotNull { f ->
+        val fields = (configMap.list(SURFACE, path, "fields"))?.mapNotNull { f ->
             if (f is Map<*, *>) {
                 val fm = f as Map<String, Any>
                 // Wrap form-field options as ImmutableList.
-                val fieldOptions = (fm["options"] as? List<*>)?.mapNotNull { o ->
+                val fieldOptions = (fm.list(SURFACE, path, "options"))?.mapNotNull { o ->
                     if (o is Map<*, *>) {
                         val om = o as Map<String, Any>
                         FormFieldOption(
-                            id = om["id"] as? String ?: "",
-                            label = om["label"] as? String ?: "",
-                            icon = om["icon"] as? String,
+                            id = om.str(SURFACE, path, "id") ?: "",
+                            label = om.str(SURFACE, path, "label") ?: "",
+                            icon = om.str(SURFACE, path, "icon"),
                             value = om["value"]
                         )
                     } else null
                 }?.toImmutableList()
-                val fieldConfigMap = fm["config"] as? Map<String, Any>
+                val fieldConfigMap = fm.objMap(SURFACE, path, "config")
                 val fieldConfig = fieldConfigMap?.let { fc ->
                     // Same shape of parser drift R36/R37
                     // closed for ContentBlock + R40 closed for nested
@@ -1203,78 +1214,78 @@ internal object OnboardingConfigParser {
                     // (FormFieldRendererExtras.kt + FormStepComposable.kt)
                     // the missing keys directly via `config?.X`.
                     FormFieldConfig(
-                        max_length = (fc["max_length"] as? Number)?.toInt(),
-                        min_length = (fc["min_length"] as? Number)?.toInt(),
-                        keyboard_type = fc["keyboard_type"] as? String,
-                        autocapitalize = fc["autocapitalize"] as? String,
-                        autocorrect = fc["autocorrect"] as? Boolean,
-                        multiline_min_lines = (fc["multiline_min_lines"] as? Number)?.toInt(),
-                        min_value = (fc["min_value"] as? Number)?.toDouble(),
-                        max_value = (fc["max_value"] as? Number)?.toDouble(),
-                        step = (fc["step"] as? Number)?.toDouble(),
-                        unit = fc["unit"] as? String,
-                        decimal_places = (fc["decimal_places"] as? Number)?.toInt(),
-                        min_date = fc["min_date"] as? String,
-                        max_date = fc["max_date"] as? String,
-                        date_format = fc["date_format"] as? String,
-                        picker_style = fc["picker_style"] as? String,
-                        search_enabled = fc["search_enabled"] as? Boolean,
-                        multi_select = fc["multi_select"] as? Boolean,
-                        max_selections = (fc["max_selections"] as? Number)?.toInt(),
+                        max_length = (fc.num(SURFACE, path, "max_length"))?.toInt(),
+                        min_length = (fc.num(SURFACE, path, "min_length"))?.toInt(),
+                        keyboard_type = fc.str(SURFACE, path, "keyboard_type"),
+                        autocapitalize = fc.str(SURFACE, path, "autocapitalize"),
+                        autocorrect = fc.bool(SURFACE, path, "autocorrect"),
+                        multiline_min_lines = (fc.num(SURFACE, path, "multiline_min_lines"))?.toInt(),
+                        min_value = (fc.num(SURFACE, path, "min_value"))?.toDouble(),
+                        max_value = (fc.num(SURFACE, path, "max_value"))?.toDouble(),
+                        step = (fc.num(SURFACE, path, "step"))?.toDouble(),
+                        unit = fc.str(SURFACE, path, "unit"),
+                        decimal_places = (fc.num(SURFACE, path, "decimal_places"))?.toInt(),
+                        min_date = fc.str(SURFACE, path, "min_date"),
+                        max_date = fc.str(SURFACE, path, "max_date"),
+                        date_format = fc.str(SURFACE, path, "date_format"),
+                        picker_style = fc.str(SURFACE, path, "picker_style"),
+                        search_enabled = fc.bool(SURFACE, path, "search_enabled"),
+                        multi_select = fc.bool(SURFACE, path, "multi_select"),
+                        max_selections = (fc.num(SURFACE, path, "max_selections"))?.toInt(),
                         default_value = fc["default_value"],
                         // Location
-                        location_type = fc["location_type"] as? String,
-                        location_bias_country = fc["location_bias_country"] as? String,
-                        location_language = fc["location_language"] as? String,
-                        location_placeholder = fc["location_placeholder"] as? String,
-                        location_min_chars = (fc["location_min_chars"] as? Number)?.toInt(),
+                        location_type = fc.str(SURFACE, path, "location_type"),
+                        location_bias_country = fc.str(SURFACE, path, "location_bias_country"),
+                        location_language = fc.str(SURFACE, path, "location_language"),
+                        location_placeholder = fc.str(SURFACE, path, "location_placeholder"),
+                        location_min_chars = (fc.num(SURFACE, path, "location_min_chars"))?.toInt(),
                         // show_prefix_icon +
                         // tooltip_text/tooltip_icon parsed from field_config.
-                        show_prefix_icon = fc["show_prefix_icon"] as? Boolean,
-                        tooltip_text = fc["tooltip_text"] as? String,
-                        tooltip_icon = fc["tooltip_icon"] as? String,
+                        show_prefix_icon = fc.bool(SURFACE, path, "show_prefix_icon"),
+                        tooltip_text = fc.str(SURFACE, path, "tooltip_text"),
+                        tooltip_icon = fc.str(SURFACE, path, "tooltip_icon"),
                         // Rating
-                        max_stars = (fc["max_stars"] as? Number)?.toInt(),
-                        allow_half = fc["allow_half"] as? Boolean,
-                        star_size = (fc["star_size"] as? Number)?.toInt(),
-                        filled_color = fc["filled_color"] as? String,
-                        empty_color = fc["empty_color"] as? String,
+                        max_stars = (fc.num(SURFACE, path, "max_stars"))?.toInt(),
+                        allow_half = fc.bool(SURFACE, path, "allow_half"),
+                        star_size = (fc.num(SURFACE, path, "star_size"))?.toInt(),
+                        filled_color = fc.str(SURFACE, path, "filled_color"),
+                        empty_color = fc.str(SURFACE, path, "empty_color"),
                         // range_slider
-                        min_label = fc["min_label"] as? String,
-                        max_label = fc["max_label"] as? String,
+                        min_label = fc.str(SURFACE, path, "min_label"),
+                        max_label = fc.str(SURFACE, path, "max_label"),
                         // image_picker
-                        max_size_mb = (fc["max_size_mb"] as? Number)?.toDouble(),
-                        allowed_types = fc["allowed_types"] as? String,
-                        aspect_ratio = fc["aspect_ratio"] as? String,
-                        placeholder_text = fc["placeholder_text"] as? String,
+                        max_size_mb = (fc.num(SURFACE, path, "max_size_mb"))?.toDouble(),
+                        allowed_types = fc.str(SURFACE, path, "allowed_types"),
+                        aspect_ratio = fc.str(SURFACE, path, "aspect_ratio"),
+                        placeholder_text = fc.str(SURFACE, path, "placeholder_text"),
                         // color picker
-                        default_color = fc["default_color"] as? String,
-                        show_opacity = fc["show_opacity"] as? Boolean,
-                        preset_colors = (fc["preset_colors"] as? List<*>)?.filterIsInstance<String>(),
+                        default_color = fc.str(SURFACE, path, "default_color"),
+                        show_opacity = fc.bool(SURFACE, path, "show_opacity"),
+                        preset_colors = (fc.list(SURFACE, path, "preset_colors"))?.filterIsInstance<String>(),
                         // url validation
-                        validate_format = fc["validate_format"] as? Boolean,
+                        validate_format = fc.bool(SURFACE, path, "validate_format"),
                         // multiline_chips
-                        max_chips = (fc["max_chips"] as? Number)?.toInt(),
-                        suggestions = (fc["suggestions"] as? List<*>)?.filterIsInstance<String>(),
-                        allow_custom = fc["allow_custom"] as? Boolean,
+                        max_chips = (fc.num(SURFACE, path, "max_chips"))?.toInt(),
+                        suggestions = (fc.list(SURFACE, path, "suggestions"))?.filterIsInstance<String>(),
+                        allow_custom = fc.bool(SURFACE, path, "allow_custom"),
                         // signature
-                        stroke_color = fc["stroke_color"] as? String,
-                        stroke_width = (fc["stroke_width"] as? Number)?.toDouble(),
-                        clear_button_text = fc["clear_button_text"] as? String,
+                        stroke_color = fc.str(SURFACE, path, "stroke_color"),
+                        stroke_width = (fc.num(SURFACE, path, "stroke_width"))?.toDouble(),
+                        clear_button_text = fc.str(SURFACE, path, "clear_button_text"),
                     )
                 }
-                val validationMap = fm["validation"] as? Map<String, Any>
+                val validationMap = fm.objMap(SURFACE, path, "validation")
                 val fieldValidation = validationMap?.let { v ->
                     FormFieldValidation(
-                        pattern = v["pattern"] as? String,
-                        pattern_message = v["pattern_message"] as? String
+                        pattern = v.str(SURFACE, path, "pattern"),
+                        pattern_message = v.str(SURFACE, path, "pattern_message")
                     )
                 }
-                val depMap = fm["depends_on"] as? Map<String, Any>
+                val depMap = fm.objMap(SURFACE, path, "depends_on")
                 val dependency = depMap?.let { d ->
                     FormFieldDependency(
-                        field_id = d["field_id"] as? String ?: "",
-                        operator = d["operator"] as? String ?: "not_empty",
+                        field_id = d.str(SURFACE, path, "field_id") ?: "",
+                        operator = d.str(SURFACE, path, "operator") ?: "not_empty",
                         value = d["value"]
                     )
                 }
@@ -1283,16 +1294,16 @@ internal object OnboardingConfigParser {
                 // toggle track tint, OutlinedTextField border colors, and
                 // corner radius.
                 @Suppress("UNCHECKED_CAST")
-                val styleMap = fm["style"] as? Map<String, Any>
+                val styleMap = fm.objMap(SURFACE, path, "style")
                 val fieldStyle = styleMap?.let { sm ->
                     FormFieldStyle(
-                        label_style = sm["label_style"] as? Map<String, Any>,
-                        input_style = sm["input_style"] as? Map<String, Any>,
-                        error_style = sm["error_style"] as? Map<String, Any>,
-                        corner_radius = (sm["corner_radius"] as? Number)?.toDouble(),
-                        border_color = sm["border_color"] as? String,
-                        focus_border_color = sm["focus_border_color"] as? String,
-                        background_color = sm["background_color"] as? String,
+                        label_style = sm.objMap(SURFACE, path, "label_style"),
+                        input_style = sm.objMap(SURFACE, path, "input_style"),
+                        error_style = sm.objMap(SURFACE, path, "error_style"),
+                        corner_radius = (sm.num(SURFACE, path, "corner_radius"))?.toDouble(),
+                        border_color = sm.str(SURFACE, path, "border_color"),
+                        focus_border_color = sm.str(SURFACE, path, "focus_border_color"),
+                        background_color = sm.str(SURFACE, path, "background_color"),
                     )
                 }
                 FormField(
@@ -1300,11 +1311,11 @@ internal object OnboardingConfigParser {
                     // `self.id = decodeIfPresent(.id) ?? UUID().uuidString`.
                     // Was empty-string fallback → id-less fields shared
                     // `inputValues[fieldId]` collisions in responses payload.
-                    id = fm["id"] as? String ?: java.util.UUID.randomUUID().toString(),
-                    type = FormFieldType.fromString(fm["type"] as? String ?: "text"),
-                    label = fm["label"] as? String ?: "",
-                    placeholder = fm["placeholder"] as? String,
-                    required = fm["required"] as? Boolean ?: false,
+                    id = fm.str(SURFACE, path, "id") ?: java.util.UUID.randomUUID().toString(),
+                    type = FormFieldType.fromString(fm.str(SURFACE, path, "type") ?: "text"),
+                    label = fm.str(SURFACE, path, "label") ?: "",
+                    placeholder = fm.str(SURFACE, path, "placeholder"),
+                    required = fm.bool(SURFACE, path, "required") ?: false,
                     validation = fieldValidation,
                     options = fieldOptions,
                     config = fieldConfig,
@@ -1331,13 +1342,13 @@ internal object OnboardingConfigParser {
          * to catch, and the reason this is fixed BEFORE the console stops writing the duplicate.
          */
         @Suppress("UNCHECKED_CAST")
-        val publishedContentBlocks = (configMap["content_blocks"] as? List<*>)?.takeIf { it.isNotEmpty() }
-            ?: (map["content_blocks"] as? List<*>)
+        val publishedContentBlocks = (configMap.list(SURFACE, path, "content_blocks"))?.takeIf { it.isNotEmpty() }
+            ?: (map.list(SURFACE, path, "content_blocks"))
         // Capture the raw ladder ONCE: a deep copy (the maps are shared with the
         // config cache), every id-less block at any depth stamped `<stepId>/<index path>`, authored
         // SDK-internal markers stripped. The typed blocks below are decoded from THIS copy, so
         // authored readers (secret ids, prefetch) and the resolved blocks agree on every id.
-        val stampedRaw = publishedContentBlocks?.let { captureRawContentBlocks(it, map["id"] as? String ?: "") }
+        val stampedRaw = publishedContentBlocks?.let { captureRawContentBlocks(it, map.str(SURFACE, path, "id") ?: "") }
         val rawContentBlocks = stampedRaw?.blocks
         val contentBlocks = rawContentBlocks?.mapNotNull { b ->
             if (b is Map<*, *>) {
@@ -1351,17 +1362,17 @@ internal object OnboardingConfigParser {
                 // nested inside a container. iOS gets full parity
                 // automatically because ContentBlock is Codable; Android
                 // emulates that via this shared helper.
-                decodeContentBlock(bm)
+                decodeContentBlock(bm, "$path.content_blocks")
             } else null
         }?.toImmutableList()
 
         // Parse background config
         @Suppress("UNCHECKED_CAST")
-        val bgMap = configMap["background"] as? Map<String, Any>
+        val bgMap = configMap.objMap(SURFACE, path, "background")
         val background = bgMap?.let { bg ->
-            val gradMap = bg["gradient"] as? Map<String, Any>
+            val gradMap = bg.objMap(SURFACE, path, "gradient")
             val gradient = gradMap?.let { g ->
-                val stopsList = (g["stops"] as? List<*>)?.mapNotNull { s ->
+                val stopsList = (g.list(SURFACE, path, "stops"))?.mapNotNull { s ->
                     if (s is Map<*, *>) {
                         ai.appdna.sdk.core.GradientStopConfig(
                             color = (s as Map<String, Any>)["color"] as? String ?: "#000000",
@@ -1369,12 +1380,12 @@ internal object OnboardingConfigParser {
                         )
                     } else null
                 }
-                ai.appdna.sdk.core.GradientConfig(type = g["type"] as? String, angle = (g["angle"] as? Number)?.toDouble(), stops = stopsList)
+                ai.appdna.sdk.core.GradientConfig(type = g.str(SURFACE, path, "type"), angle = (g.num(SURFACE, path, "angle"))?.toDouble(), stops = stopsList)
             }
             ai.appdna.sdk.core.BackgroundStyleConfig(
-                type = bg["type"] as? String, color = bg["color"] as? String,
-                gradient = gradient, image_url = bg["image_url"] as? String,
-                image_fit = bg["image_fit"] as? String, overlay = bg["overlay"] as? String,
+                type = bg.str(SURFACE, path, "type"), color = bg.str(SURFACE, path, "color"),
+                gradient = gradient, image_url = bg.str(SURFACE, path, "image_url"),
+                image_fit = bg.str(SURFACE, path, "image_fit"), overlay = bg.str(SURFACE, path, "overlay"),
                 // R15 + R35 fixes shadowed because parser
                 // never read these. overlay_opacity drives the dim layer over
                 // image/lottie/rive backgrounds; lottie_url + animation_loop
@@ -1382,25 +1393,25 @@ internal object OnboardingConfigParser {
                 // full-screen Rive branch. Without these parsed, the
                 // canonical iOS-style background payload silently rendered as
                 // theme default.
-                overlay_opacity = (bg["overlay_opacity"] as? Number)?.toDouble(),
-                lottie_url = bg["lottie_url"] as? String,
-                animation_loop = bg["animation_loop"] as? Boolean,
-                rive_url = bg["rive_url"] as? String,
+                overlay_opacity = (bg.num(SURFACE, path, "overlay_opacity"))?.toDouble(),
+                lottie_url = bg.str(SURFACE, path, "lottie_url"),
+                animation_loop = bg.bool(SURFACE, path, "animation_loop"),
+                rive_url = bg.str(SURFACE, path, "rive_url"),
             )
         }
 
         // Parse animation config
         @Suppress("UNCHECKED_CAST")
-        val animMap = configMap["animation"] as? Map<String, Any>
+        val animMap = configMap.objMap(SURFACE, path, "animation")
         val animConfig = animMap?.let { a ->
             ai.appdna.sdk.core.AnimationConfig(
-                entry_animation = a["entry_animation"] as? String,
-                entry_duration_ms = (a["entry_duration_ms"] as? Number)?.toInt(),
-                section_stagger = a["section_stagger"] as? String,
-                section_stagger_delay_ms = (a["section_stagger_delay_ms"] as? Number)?.toInt(),
-                cta_animation = a["cta_animation"] as? String,
-                plan_selection_animation = a["plan_selection_animation"] as? String,
-                dismiss_animation = a["dismiss_animation"] as? String,
+                entry_animation = a.str(SURFACE, path, "entry_animation"),
+                entry_duration_ms = (a.num(SURFACE, path, "entry_duration_ms"))?.toInt(),
+                section_stagger = a.str(SURFACE, path, "section_stagger"),
+                section_stagger_delay_ms = (a.num(SURFACE, path, "section_stagger_delay_ms"))?.toInt(),
+                cta_animation = a.str(SURFACE, path, "cta_animation"),
+                plan_selection_animation = a.str(SURFACE, path, "plan_selection_animation"),
+                dismiss_animation = a.str(SURFACE, path, "dismiss_animation"),
             )
         }
 
@@ -1410,22 +1421,22 @@ internal object OnboardingConfigParser {
 
         // Parse step-level text_style and element_style
         @Suppress("UNCHECKED_CAST")
-        val textStyle = (configMap["text_style"] as? Map<String, Any>)?.let { parseTextStyleConfig(it) }
+        val textStyle = (configMap.objMap(SURFACE, path, "text_style"))?.let { parseTextStyleConfig(it) }
         @Suppress("UNCHECKED_CAST")
-        val elementStyle = (configMap["element_style"] as? Map<String, Any>)?.let { parseElementStyleConfig(it) }
+        val elementStyle = (configMap.objMap(SURFACE, path, "element_style"))?.let { parseElementStyleConfig(it) }
 
         val config = StepConfig(
-            title = configMap["title"] as? String,
-            subtitle = configMap["subtitle"] as? String,
-            image_url = configMap["image_url"] as? String,
-            cta_text = configMap["cta_text"] as? String,
-            skip_enabled = configMap["skip_enabled"] as? Boolean,
+            title = configMap.str(SURFACE, path, "title"),
+            subtitle = configMap.str(SURFACE, path, "subtitle"),
+            image_url = configMap.str(SURFACE, path, "image_url"),
+            cta_text = configMap.str(SURFACE, path, "cta_text"),
+            skip_enabled = configMap.bool(SURFACE, path, "skip_enabled"),
             options = options,
             selection_mode = selectionMode,
             items = items,
-            layout = configMap["layout"] as? Map<String, Any>,
+            layout = configMap.objMap(SURFACE, path, "layout"),
             fields = fields,
-            validation_mode = configMap["validation_mode"] as? String,
+            validation_mode = configMap.str(SURFACE, path, "validation_mode"),
             // `field_defaults` parser drop. Data class
             // declares it (line 193); FormStepComposable.kt reads it via
             // `config.field_defaults?.forEach`; OnboardingActivity merges
@@ -1434,37 +1445,37 @@ internal object OnboardingConfigParser {
             // Override path populated it. Console-authored
             // `field_defaults` (vs. hook-supplied) was dropped on parse,
             // so editor pre-fills never reached the form composable.
-            field_defaults = configMap["field_defaults"] as? Map<String, Any>,
+            field_defaults = configMap.objMap(SURFACE, path, "field_defaults"),
             content_blocks = contentBlocks,
-            layout_variant = configMap["layout_variant"] as? String,
+            layout_variant = configMap.str(SURFACE, path, "layout_variant"),
             background = background,
             text_style = textStyle,
             element_style = elementStyle,
             animation = animConfig,
             localizations = localizations,
-            default_locale = configMap["default_locale"] as? String,
+            default_locale = configMap.str(SURFACE, path, "default_locale"),
             chat_config = parseChatConfig(configMap["chat_config"]),
             // Decoded from the SAME top level as content_blocks (console siblings),
             // NOT from the inner `layout` sub-map.
-            permission_type = configMap["permission_type"] as? String,
-            show_settings_fallback_on_denied = configMap["show_settings_fallback_on_denied"] as? Boolean,
-            settings_fallback_label = configMap["settings_fallback_label"] as? String,
+            permission_type = configMap.str(SURFACE, path, "permission_type"),
+            show_settings_fallback_on_denied = configMap.bool(SURFACE, path, "show_settings_fallback_on_denied"),
+            settings_fallback_label = configMap.str(SURFACE, path, "settings_fallback_label"),
         )
 
         // Parse hook config
         @Suppress("UNCHECKED_CAST")
-        val hookMap = map["hook"] as? Map<String, Any>
+        val hookMap = map.objMap(SURFACE, path, "hook")
         val hook = hookMap?.let { h ->
-            val enabled = h["enabled"] as? Boolean ?: false
-            val webhookUrl = h["webhook_url"] as? String ?: ""
+            val enabled = h.bool(SURFACE, path, "enabled") ?: false
+            val webhookUrl = h.str(SURFACE, path, "webhook_url") ?: ""
             if (enabled && webhookUrl.isNotEmpty()) {
                 StepHookConfig(
                     enabled = true,
                     webhook_url = webhookUrl,
-                    timeout_ms = (h["timeout_ms"] as? Number)?.toInt() ?: 10000,
-                    loading_text = h["loading_text"] as? String,
-                    error_text = h["error_text"] as? String,
-                    retry_count = (h["retry_count"] as? Number)?.toInt() ?: 0,
+                    timeout_ms = (h.num(SURFACE, path, "timeout_ms"))?.toInt() ?: 10000,
+                    loading_text = h.str(SURFACE, path, "loading_text"),
+                    error_text = h.str(SURFACE, path, "error_text"),
+                    retry_count = (h.num(SURFACE, path, "retry_count"))?.toInt() ?: 0,
                     headers = h["headers"] as? Map<String, String>
                 )
             } else null
@@ -1480,25 +1491,25 @@ internal object OnboardingConfigParser {
         val configLayoutRules = parseNextStepRulesList(configMap["next_step_rules"])
         // Restart attempt 2 F2: per-step
         // progress-color override read from configMap.
-        val progressColor = configMap["progress_color"] as? String
+        val progressColor = configMap.str(SURFACE, path, "progress_color")
 
         val configWithLayoutRules = if (configLayoutRules != null || progressColor != null) {
             config.copy(next_step_rules = configLayoutRules, progress_color = progressColor)
         } else config
 
         return OnboardingStep(
-            id = map["id"] as? String ?: "",
+            id = map.str(SURFACE, path, "id") ?: "",
             type = OnboardingStep.StepType.fromString(typeStr),
             config = configWithLayoutRules,
             hook = hook,
             // The console writes hide_progress/hide_back INSIDE the step's layout object
             // (`configMap`), not at the step root — read layout first with a root fallback
             // (mirrors iOS OnboardingConfig.swift LayoutFlagKeys decode).
-            hide_progress = map["hide_progress"] as? Boolean ?: configMap["hide_progress"] as? Boolean,
-            hide_back = map["hide_back"] as? Boolean ?: configMap["hide_back"] as? Boolean,
+            hide_progress = map.bool(SURFACE, path, "hide_progress") ?: configMap.bool(SURFACE, path, "hide_progress"),
+            hide_back = map.bool(SURFACE, path, "hide_back") ?: configMap.bool(SURFACE, path, "hide_back"),
             // Same root-then-layout ladder as the two flags above (#896).
-            request_store_review = map["request_store_review"] as? Boolean
-                ?: configMap["request_store_review"] as? Boolean,
+            request_store_review = map.bool(SURFACE, path, "request_store_review")
+                ?: configMap.bool(SURFACE, path, "request_store_review"),
             /*
              * #921 — the SAME root-then-layout ladder, and here it is the ONLY path that works for
              * a graph-authored step: `updateNodeData` writes every Logic-panel flag into
@@ -1509,12 +1520,12 @@ internal object OnboardingConfigParser {
              * Long, so `3` (not `3.0`) would have cast to null and the timer would never start —
              * the same class of miss as the `priceCents` Int/Double cast in the paywall DTO.
              */
-            auto_advance_seconds = (map["auto_advance_seconds"] as? Number)?.toDouble()
-                ?: (configMap["auto_advance_seconds"] as? Number)?.toDouble(),
-            wait_for_host = map["wait_for_host"] as? Boolean
-                ?: configMap["wait_for_host"] as? Boolean,
+            auto_advance_seconds = (map.num(SURFACE, path, "auto_advance_seconds"))?.toDouble()
+                ?: (configMap.num(SURFACE, path, "auto_advance_seconds"))?.toDouble(),
+            wait_for_host = map.bool(SURFACE, path, "wait_for_host")
+                ?: configMap.bool(SURFACE, path, "wait_for_host"),
             next_step_rules = nextStepRules,
-            name = map["name"] as? String,
+            name = map.str(SURFACE, path, "name"),
             rawContentBlocks = stampedRaw,
         )
     }
@@ -1563,7 +1574,7 @@ internal object OnboardingConfigParser {
         return (raw as? List<*>)?.mapNotNull { r ->
             if (r is Map<*, *>) {
                 val rm = r as Map<String, Any>
-                val conditionsRaw = rm["conditions"] as? List<*>
+                val conditionsRaw = rm.list(SURFACE, "next_step_rules", "conditions")
                 val conditionsList = conditionsRaw?.mapNotNull { entry ->
                     when (entry) {
                         is Map<*, *> -> (entry as Map<String, Any?>)
@@ -1574,8 +1585,8 @@ internal object OnboardingConfigParser {
                 NextStepRule(
                     condition = rm["condition"],
                     conditions = conditionsList,
-                    logic = rm["logic"] as? String,
-                    target_step_id = rm["target_step_id"] as? String ?: ""
+                    logic = rm.str(SURFACE, "next_step_rules", "logic"),
+                    target_step_id = rm.str(SURFACE, "next_step_rules", "target_step_id") ?: ""
                 )
             } else null
         }?.toImmutableList()
@@ -1605,11 +1616,11 @@ internal object OnboardingConfigParser {
      */
     @Suppress("UNCHECKED_CAST")
     internal fun parseElementStyleConfig(map: Map<String, Any>): ai.appdna.sdk.core.ElementStyleConfig {
-        val bgMap = map["background"] as? Map<String, Any>
+        val bgMap = map.objMap(SURFACE, "style.elements", "background")
         val bg = bgMap?.let {
-            val gradMap = it["gradient"] as? Map<String, Any>
+            val gradMap = it.objMap(SURFACE, "style.elements", "gradient")
             val grad = gradMap?.let { g ->
-                val stops = (g["stops"] as? List<Map<String, Any>>)?.map { s ->
+                val stops = g.listOfMaps(SURFACE, "style.elements", "stops")?.map { s ->
                     ai.appdna.sdk.core.GradientStopConfig(
                         color = s.str(SURFACE, "style.elements", "color") ?: "#000000",
                         position = (s.num(SURFACE, "style.elements", "position"))?.toDouble() ?: 0.0,
@@ -1623,7 +1634,7 @@ internal object OnboardingConfigParser {
                 image_fit = it.str(SURFACE, "style.elements", "image_fit"), overlay = it.str(SURFACE, "style.elements", "overlay"),
             )
         }
-        val borderMap = map["border"] as? Map<String, Any>
+        val borderMap = map.objMap(SURFACE, "style.elements", "border")
         val border = borderMap?.let {
             ai.appdna.sdk.core.BorderStyleConfig(
                 width = (it.num(SURFACE, "style.elements", "width"))?.toDouble(), color = it.str(SURFACE, "style.elements", "color"),
@@ -1732,7 +1743,11 @@ internal object OnboardingConfigParser {
      * `ContentBlock` is `Codable`; Android emulates that via this helper.
      */
     @Suppress("UNCHECKED_CAST")
-    private fun decodeContentBlock(bm: Map<String, Any>): ContentBlock {
+    private fun decodeContentBlock(bm: Map<String, Any>, parentPath: String = "content_blocks"): ContentBlock {
+        // #958 — `steps[step_1].content_blocks[hero]`, so a report names the screen AND the block.
+        // Defaulted rather than required: a nested child is decoded through the same function and
+        // its caller does not always know the step.
+        val path = "$parentPath[${bm["id"] as? String ?: "?"}]"
         return ContentBlock(
             // Match iOS ContentBlockTypes.swift:1208
             // `self.id = decodeIfPresent(.id) ?? UUID().uuidString`. Was
@@ -1741,159 +1756,159 @@ internal object OnboardingConfigParser {
             // `loc?.invoke("block.${block.id}.text", …)` resolved identical
             // localization keys across every id-less block. Affects nested
             // row/stack children too via R40 shared decodeContentBlock path.
-            id = bm["id"] as? String ?: java.util.UUID.randomUUID().toString(),
-            type = bm["type"] as? String ?: "text",
-            text = bm["text"] as? String,
-            level = (bm["level"] as? Number)?.toInt(),
-            image_url = bm["image_url"] as? String,
-            alt = bm["alt"] as? String,
-            corner_radius = (bm["corner_radius"] as? Number)?.toDouble(),
-            height = (bm["height"] as? Number)?.toDouble(),
-            variant = bm["variant"] as? String,
-            action = bm["action"] as? String,
-            action_value = bm["action_value"] as? String,
-            bg_color = bm["bg_color"] as? String,
-            text_color = bm["text_color"] as? String,
-            button_corner_radius = (bm["button_corner_radius"] as? Number)?.toDouble(),
+            id = bm.str(SURFACE, path, "id") ?: java.util.UUID.randomUUID().toString(),
+            type = bm.str(SURFACE, path, "type") ?: "text",
+            text = bm.str(SURFACE, path, "text"),
+            level = (bm.num(SURFACE, path, "level"))?.toInt(),
+            image_url = bm.str(SURFACE, path, "image_url"),
+            alt = bm.str(SURFACE, path, "alt"),
+            corner_radius = (bm.num(SURFACE, path, "corner_radius"))?.toDouble(),
+            height = (bm.num(SURFACE, path, "height"))?.toDouble(),
+            variant = bm.str(SURFACE, path, "variant"),
+            action = bm.str(SURFACE, path, "action"),
+            action_value = bm.str(SURFACE, path, "action_value"),
+            bg_color = bm.str(SURFACE, path, "bg_color"),
+            text_color = bm.str(SURFACE, path, "text_color"),
+            button_corner_radius = (bm.num(SURFACE, path, "button_corner_radius"))?.toDouble(),
             // Device QA (s20/s22) — sound_button remote audio clip.
-            spacer_height = (bm["spacer_height"] as? Number)?.toDouble(),
-            items = (bm["items"] as? List<*>)?.filterIsInstance<String>()?.toImmutableList(),
-            list_style = bm["list_style"] as? String,
-            divider_color = bm["divider_color"] as? String,
-            divider_thickness = (bm["divider_thickness"] as? Number)?.toDouble(),
-            divider_margin_y = (bm["divider_margin_y"] as? Number)?.toDouble(),
-            badge_text = bm["badge_text"] as? String,
-            badge_bg_color = bm["badge_bg_color"] as? String,
-            badge_text_color = bm["badge_text_color"] as? String,
-            badge_corner_radius = (bm["badge_corner_radius"] as? Number)?.toDouble(),
-            icon_emoji = bm["icon_emoji"] as? String,
-            icon_size = (bm["icon_size"] as? Number)?.toDouble(),
-            icon_alignment = bm["icon_alignment"] as? String,
-            toggle_label = bm["toggle_label"] as? String,
-            toggle_description = bm["toggle_description"] as? String,
-            toggle_default = bm["toggle_default"] as? Boolean,
-            video_thumbnail_url = bm["video_thumbnail_url"] as? String,
+            spacer_height = (bm.num(SURFACE, path, "spacer_height"))?.toDouble(),
+            items = (bm.list(SURFACE, path, "items"))?.filterIsInstance<String>()?.toImmutableList(),
+            list_style = bm.str(SURFACE, path, "list_style"),
+            divider_color = bm.str(SURFACE, path, "divider_color"),
+            divider_thickness = (bm.num(SURFACE, path, "divider_thickness"))?.toDouble(),
+            divider_margin_y = (bm.num(SURFACE, path, "divider_margin_y"))?.toDouble(),
+            badge_text = bm.str(SURFACE, path, "badge_text"),
+            badge_bg_color = bm.str(SURFACE, path, "badge_bg_color"),
+            badge_text_color = bm.str(SURFACE, path, "badge_text_color"),
+            badge_corner_radius = (bm.num(SURFACE, path, "badge_corner_radius"))?.toDouble(),
+            icon_emoji = bm.str(SURFACE, path, "icon_emoji"),
+            icon_size = (bm.num(SURFACE, path, "icon_size"))?.toDouble(),
+            icon_alignment = bm.str(SURFACE, path, "icon_alignment"),
+            toggle_label = bm.str(SURFACE, path, "toggle_label"),
+            toggle_description = bm.str(SURFACE, path, "toggle_description"),
+            toggle_default = bm.bool(SURFACE, path, "toggle_default"),
+            video_thumbnail_url = bm.str(SURFACE, path, "video_thumbnail_url"),
             // Per-block text style + video source fields
-            style = (bm["style"] as? Map<String, Any>)?.let { parseTextStyleConfig(it) },
-            video_url = bm["video_url"] as? String,
-            video_height = (bm["video_height"] as? Number)?.toDouble(),
-            video_corner_radius = (bm["video_corner_radius"] as? Number)?.toDouble(),
+            style = (bm.objMap(SURFACE, path, "style"))?.let { parseTextStyleConfig(it) },
+            video_url = bm.str(SURFACE, path, "video_url"),
+            video_height = (bm.num(SURFACE, path, "video_height"))?.toDouble(),
+            video_corner_radius = (bm.num(SURFACE, path, "video_corner_radius"))?.toDouble(),
             // Rich media fields
-            lottie_url = bm["lottie_url"] as? String,
-            lottie_json = bm["lottie_json"] as? Map<String, Any>,
-            lottie_autoplay = bm["lottie_autoplay"] as? Boolean,
-            lottie_loop = bm["lottie_loop"] as? Boolean,
-            lottie_speed = (bm["lottie_speed"] as? Number)?.toFloat(),
-            rive_url = bm["rive_url"] as? String,
-            rive_artboard = bm["rive_artboard"] as? String,
-            rive_state_machine = bm["rive_state_machine"] as? String,
+            lottie_url = bm.str(SURFACE, path, "lottie_url"),
+            lottie_json = bm.objMap(SURFACE, path, "lottie_json"),
+            lottie_autoplay = bm.bool(SURFACE, path, "lottie_autoplay"),
+            lottie_loop = bm.bool(SURFACE, path, "lottie_loop"),
+            lottie_speed = (bm.num(SURFACE, path, "lottie_speed"))?.toFloat(),
+            rive_url = bm.str(SURFACE, path, "rive_url"),
+            rive_artboard = bm.str(SURFACE, path, "rive_artboard"),
+            rive_state_machine = bm.str(SURFACE, path, "rive_state_machine"),
             icon_ref = bm["icon_ref"] ?: bm["icon"],
-            video_autoplay = bm["video_autoplay"] as? Boolean,
-            video_loop = bm["video_loop"] as? Boolean,
-            video_muted = bm["video_muted"] as? Boolean,
+            video_autoplay = bm.bool(SURFACE, path, "video_autoplay"),
+            video_loop = bm.bool(SURFACE, path, "video_loop"),
+            video_muted = bm.bool(SURFACE, path, "video_muted"),
             // Per-block style design tokens
-            block_style = (bm["block_style"] as? Map<String, Any>)?.let { parseBlockStyle(it) },
+            block_style = (bm.objMap(SURFACE, path, "block_style"))?.let { parseBlockStyle(it) },
             // 2D positioning
-            vertical_align = bm["vertical_align"] as? String,
-            horizontal_align = bm["horizontal_align"] as? String,
-            vertical_offset = (bm["vertical_offset"] as? Number)?.toDouble(),
-            horizontal_offset = (bm["horizontal_offset"] as? Number)?.toDouble(),
+            vertical_align = bm.str(SURFACE, path, "vertical_align"),
+            horizontal_align = bm.str(SURFACE, path, "horizontal_align"),
+            vertical_offset = (bm.num(SURFACE, path, "vertical_offset"))?.toDouble(),
+            horizontal_offset = (bm.num(SURFACE, path, "horizontal_offset"))?.toDouble(),
             // Three-zone layout opt-in.
-            zone = bm["zone"] as? String,
+            zone = bm.str(SURFACE, path, "zone"),
             // page_indicator fields
-            dot_count = (bm["dot_count"] as? Number)?.toInt(),
-            active_index = (bm["active_index"] as? Number)?.toInt(),
-            active_color = bm["active_color"] as? String,
-            inactive_color = bm["inactive_color"] as? String,
-            dot_size = (bm["dot_size"] as? Number)?.toDouble(),
-            dot_spacing = (bm["dot_spacing"] as? Number)?.toDouble(),
-            active_dot_width = (bm["active_dot_width"] as? Number)?.toDouble(),
+            dot_count = (bm.num(SURFACE, path, "dot_count"))?.toInt(),
+            active_index = (bm.num(SURFACE, path, "active_index"))?.toInt(),
+            active_color = bm.str(SURFACE, path, "active_color"),
+            inactive_color = bm.str(SURFACE, path, "inactive_color"),
+            dot_size = (bm.num(SURFACE, path, "dot_size"))?.toDouble(),
+            dot_spacing = (bm.num(SURFACE, path, "dot_spacing"))?.toDouble(),
+            active_dot_width = (bm.num(SURFACE, path, "active_dot_width"))?.toDouble(),
             // social_login fields
-            providers = (bm["providers"] as? List<*>)?.mapNotNull { p ->
+            providers = (bm.list(SURFACE, path, "providers"))?.mapNotNull { p ->
                 if (p is Map<*, *>) {
                     @Suppress("UNCHECKED_CAST")
                     val pm = p as Map<String, Any>
                     SocialProvider(
-                        type = pm["type"] as? String ?: "",
-                        label = pm["label"] as? String,
-                        enabled = pm["enabled"] as? Boolean ?: true,
+                        type = pm.str(SURFACE, path, "type") ?: "",
+                        label = pm.str(SURFACE, path, "label"),
+                        enabled = pm.bool(SURFACE, path, "enabled") ?: true,
                         // OB-2 — per-provider color/style overrides.
-                        bg_color = pm["bg_color"] as? String,
-                        text_color = pm["text_color"] as? String,
-                        border_color = pm["border_color"] as? String,
-                        border_width = (pm["border_width"] as? Number)?.toFloat(),
-                        corner_radius = (pm["corner_radius"] as? Number)?.toFloat(),
-                        icon_style = pm["icon_style"] as? String,
-                        icon_url = pm["icon_url"] as? String,
+                        bg_color = pm.str(SURFACE, path, "bg_color"),
+                        text_color = pm.str(SURFACE, path, "text_color"),
+                        border_color = pm.str(SURFACE, path, "border_color"),
+                        border_width = (pm.num(SURFACE, path, "border_width"))?.toFloat(),
+                        corner_radius = (pm.num(SURFACE, path, "corner_radius"))?.toFloat(),
+                        icon_style = pm.str(SURFACE, path, "icon_style"),
+                        icon_url = pm.str(SURFACE, path, "icon_url"),
                         // #560 — Android maps every provider key by hand, so a field the console
                         // writes and this line omits is null forever and the renderer silently uses
                         // its default. That is the exact class this file's own comments record.
-                        font_size = (pm["font_size"] as? Number)?.toFloat(),
+                        font_size = (pm.num(SURFACE, path, "font_size"))?.toFloat(),
                     )
                 } else null
             }?.toImmutableList(),
-            button_style = bm["button_style"] as? String,
-            button_height = (bm["button_height"] as? Number)?.toDouble(),
-            spacing = (bm["spacing"] as? Number)?.toDouble(),
-            show_divider = bm["show_divider"] as? Boolean,
-            divider_text = bm["divider_text"] as? String,
+            button_style = bm.str(SURFACE, path, "button_style"),
+            button_height = (bm.num(SURFACE, path, "button_height"))?.toDouble(),
+            spacing = (bm.num(SURFACE, path, "spacing"))?.toDouble(),
+            show_divider = bm.bool(SURFACE, path, "show_divider"),
+            divider_text = bm.str(SURFACE, path, "divider_text"),
             // Social-Login styling v2
             // countdown_timer fields
-            target_type = bm["target_type"] as? String,
-            duration_seconds = (bm["duration_seconds"] as? Number)?.toInt(),
-            target_datetime = bm["target_datetime"] as? String,
-            show_days = bm["show_days"] as? Boolean,
-            show_hours = bm["show_hours"] as? Boolean,
-            show_minutes = bm["show_minutes"] as? Boolean,
-            show_seconds = bm["show_seconds"] as? Boolean,
-            labels = (bm["labels"] as? Map<String, Any>)?.let { lm ->
+            target_type = bm.str(SURFACE, path, "target_type"),
+            duration_seconds = (bm.num(SURFACE, path, "duration_seconds"))?.toInt(),
+            target_datetime = bm.str(SURFACE, path, "target_datetime"),
+            show_days = bm.bool(SURFACE, path, "show_days"),
+            show_hours = bm.bool(SURFACE, path, "show_hours"),
+            show_minutes = bm.bool(SURFACE, path, "show_minutes"),
+            show_seconds = bm.bool(SURFACE, path, "show_seconds"),
+            labels = (bm.objMap(SURFACE, path, "labels"))?.let { lm ->
                 CountdownLabels(
-                    days = lm["days"] as? String,
-                    hours = lm["hours"] as? String,
-                    minutes = lm["minutes"] as? String,
-                    seconds = lm["seconds"] as? String,
+                    days = lm.str(SURFACE, path, "days"),
+                    hours = lm.str(SURFACE, path, "hours"),
+                    minutes = lm.str(SURFACE, path, "minutes"),
+                    seconds = lm.str(SURFACE, path, "seconds"),
                 )
             },
-            on_expire_action = bm["on_expire_action"] as? String,
-            expired_text = bm["expired_text"] as? String,
-            accent_color = bm["accent_color"] as? String,
-            font_size = (bm["font_size"] as? Number)?.toDouble(),
-            alignment = bm["alignment"] as? String,
+            on_expire_action = bm.str(SURFACE, path, "on_expire_action"),
+            expired_text = bm.str(SURFACE, path, "expired_text"),
+            accent_color = bm.str(SURFACE, path, "accent_color"),
+            font_size = (bm.num(SURFACE, path, "font_size"))?.toDouble(),
+            alignment = bm.str(SURFACE, path, "alignment"),
             // Rating fields
-            field_id = bm["field_id"] as? String,
-            max_stars = (bm["max_stars"] as? Number)?.toInt(),
-            default_value = (bm["default_value"] as? Number)?.toDouble(),
-            star_size = (bm["star_size"] as? Number)?.toDouble(),
-            active_rating_color = bm["active_rating_color"] as? String ?: bm["filled_color"] as? String ?: bm["active_color"] as? String,
-            inactive_rating_color = bm["inactive_rating_color"] as? String ?: bm["empty_color"] as? String ?: bm["inactive_color"] as? String,
-            allow_half = bm["allow_half"] as? Boolean,
-            label = bm["label"] as? String,
+            field_id = bm.str(SURFACE, path, "field_id"),
+            max_stars = (bm.num(SURFACE, path, "max_stars"))?.toInt(),
+            default_value = (bm.num(SURFACE, path, "default_value"))?.toDouble(),
+            star_size = (bm.num(SURFACE, path, "star_size"))?.toDouble(),
+            active_rating_color = bm.str(SURFACE, path, "active_rating_color") ?: bm.str(SURFACE, path, "filled_color") ?: bm.str(SURFACE, path, "active_color"),
+            inactive_rating_color = bm.str(SURFACE, path, "inactive_rating_color") ?: bm.str(SURFACE, path, "empty_color") ?: bm.str(SURFACE, path, "inactive_color"),
+            allow_half = bm.bool(SURFACE, path, "allow_half"),
+            label = bm.str(SURFACE, path, "label"),
             // rich_text fields
-            content = bm["content"] as? String,
-            base_style = (bm["base_style"] as? Map<String, Any>)?.let { parseTextStyleConfig(it) },
-            link_color = bm["link_color"] as? String,
-            max_lines = (bm["max_lines"] as? Number)?.toInt(),
+            content = bm.str(SURFACE, path, "content"),
+            base_style = (bm.objMap(SURFACE, path, "base_style"))?.let { parseTextStyleConfig(it) },
+            link_color = bm.str(SURFACE, path, "link_color"),
+            max_lines = (bm.num(SURFACE, path, "max_lines"))?.toInt(),
             // progress_bar fields
-            segment_count = (bm["segment_count"] as? Number)?.toInt() ?: (bm["total_segments"] as? Number)?.toInt(),
-            active_segments = (bm["active_segments"] as? Number)?.toInt() ?: (bm["filled_segments"] as? Number)?.toInt(),
-            fill_color = bm["fill_color"] as? String,
-            track_color = bm["track_color"] as? String,
-            segment_gap = (bm["segment_gap"] as? Number)?.toDouble(),
-            show_label = bm["show_label"] as? Boolean,
-            label_style = (bm["label_style"] as? Map<String, Any>)?.let { parseTextStyleConfig(it) },
+            segment_count = (bm.num(SURFACE, path, "segment_count"))?.toInt() ?: (bm.num(SURFACE, path, "total_segments"))?.toInt(),
+            active_segments = (bm.num(SURFACE, path, "active_segments"))?.toInt() ?: (bm.num(SURFACE, path, "filled_segments"))?.toInt(),
+            fill_color = bm.str(SURFACE, path, "fill_color"),
+            track_color = bm.str(SURFACE, path, "track_color"),
+            segment_gap = (bm.num(SURFACE, path, "segment_gap"))?.toDouble(),
+            show_label = bm.bool(SURFACE, path, "show_label"),
+            label_style = (bm.objMap(SURFACE, path, "label_style"))?.let { parseTextStyleConfig(it) },
             // Timeline fields
-            timeline_items = (bm["timeline_items"] as? List<*>
-                ?: bm["items"] as? List<*>)?.mapNotNull { ti ->
+            timeline_items = (bm.list(SURFACE, path, "timeline_items")
+                ?: bm.list(SURFACE, path, "items"))?.mapNotNull { ti ->
                 if (ti is Map<*, *>) {
                     @Suppress("UNCHECKED_CAST")
                     val tm = ti as Map<String, Any>
                     // Only parse as TimelineItem if it has a title (to distinguish from string items)
-                    val title = tm["title"] as? String ?: return@mapNotNull null
+                    val title = tm.str(SURFACE, path, "title") ?: return@mapNotNull null
                     TimelineItem(
-                        id = tm["id"] as? String ?: "",
+                        id = tm.str(SURFACE, path, "id") ?: "",
                         title = title,
-                        subtitle = tm["subtitle"] as? String,
-                        icon = tm["icon"] as? String,
+                        subtitle = tm.str(SURFACE, path, "subtitle"),
+                        icon = tm.str(SURFACE, path, "icon"),
                         // Drop `?: "upcoming"` parser
                         // walk-back of R18. R18 made `status` nullable
                         // on the data class so missing-status timeline
@@ -1901,121 +1916,121 @@ internal object OnboardingConfigParser {
                         // Parser hardcoded `?: "upcoming"`, so the
                         // renderer's `if (item.status == "upcoming")`
                         // greyed every missing-status title regardless.
-                        status = tm["status"] as? String,
+                        status = tm.str(SURFACE, path, "status"),
                     )
                 } else null
             }?.toImmutableList(),
-            line_color = bm["line_color"] as? String,
-            completed_color = bm["completed_color"] as? String,
-            current_color = bm["current_color"] as? String,
-            upcoming_color = bm["upcoming_color"] as? String,
-            show_line = bm["show_line"] as? Boolean,
-            compact = bm["compact"] as? Boolean,
-            title_style = (bm["title_style"] as? Map<String, Any>)?.let { parseTextStyleConfig(it) },
-            subtitle_style = (bm["subtitle_style"] as? Map<String, Any>)?.let { parseTextStyleConfig(it) },
+            line_color = bm.str(SURFACE, path, "line_color"),
+            completed_color = bm.str(SURFACE, path, "completed_color"),
+            current_color = bm.str(SURFACE, path, "current_color"),
+            upcoming_color = bm.str(SURFACE, path, "upcoming_color"),
+            show_line = bm.bool(SURFACE, path, "show_line"),
+            compact = bm.bool(SURFACE, path, "compact"),
+            title_style = (bm.objMap(SURFACE, path, "title_style"))?.let { parseTextStyleConfig(it) },
+            subtitle_style = (bm.objMap(SURFACE, path, "subtitle_style"))?.let { parseTextStyleConfig(it) },
             // animated_loading fields
-            loading_items = (bm["loading_items"] as? List<*>
-                ?: if (bm["type"] == "animated_loading") bm["items"] as? List<*> else null)?.mapNotNull { li ->
+            loading_items = (bm.list(SURFACE, path, "loading_items")
+                ?: if (bm["type"] == "animated_loading") bm.list(SURFACE, path, "items") else null)?.mapNotNull { li ->
                 if (li is Map<*, *>) {
                     @Suppress("UNCHECKED_CAST")
                     val lm = li as Map<String, Any>
                     LoadingItem(
-                        label = lm["label"] as? String ?: "",
-                        duration_ms = (lm["duration_ms"] as? Number)?.toInt() ?: 1000,
-                        icon = lm["icon"] as? String,
+                        label = lm.str(SURFACE, path, "label") ?: "",
+                        duration_ms = (lm.num(SURFACE, path, "duration_ms"))?.toInt() ?: 1000,
+                        icon = lm.str(SURFACE, path, "icon"),
                         // Orbit-variant per-item fields.
                         // Until an earlier fix these were declared on LoadingItem
                         // but never read from JSON.
-                        icon_url = lm["icon_url"] as? String,
-                        icon_bg_color = lm["icon_bg_color"] as? String,
-                        icon_size = (lm["icon_size"] as? Number)?.toFloat(),
-                        icon_orbit_angle = (lm["icon_orbit_angle"] as? Number)?.toFloat(),
+                        icon_url = lm.str(SURFACE, path, "icon_url"),
+                        icon_bg_color = lm.str(SURFACE, path, "icon_bg_color"),
+                        icon_size = (lm.num(SURFACE, path, "icon_size"))?.toFloat(),
+                        icon_orbit_angle = (lm.num(SURFACE, path, "icon_orbit_angle"))?.toFloat(),
                     )
                 } else null
             }?.toImmutableList(),
-            progress_color = bm["progress_color"] as? String,
-            check_color = bm["check_color"] as? String,
-            total_duration_ms = (bm["total_duration_ms"] as? Number)?.toInt(),
-            auto_advance = bm["auto_advance"] as? Boolean,
-            show_percentage = bm["show_percentage"] as? Boolean,
+            progress_color = bm.str(SURFACE, path, "progress_color"),
+            check_color = bm.str(SURFACE, path, "check_color"),
+            total_duration_ms = (bm.num(SURFACE, path, "total_duration_ms"))?.toInt(),
+            auto_advance = bm.bool(SURFACE, path, "auto_advance"),
+            show_percentage = bm.bool(SURFACE, path, "show_percentage"),
             // Form input fields
-            field_label = bm["field_label"] as? String,
-            field_placeholder = bm["field_placeholder"] as? String,
-            field_required = bm["field_required"] as? Boolean,
+            field_label = bm.str(SURFACE, path, "field_label"),
+            field_placeholder = bm.str(SURFACE, path, "field_placeholder"),
+            field_required = bm.bool(SURFACE, path, "field_required"),
             // multi_select on input_select
             // (iOS ContentBlockTypes.swift:1120). Without this Android
             // always renders single-select even when authored multi.
-            multi_select = bm["multi_select"] as? Boolean,
+            multi_select = bm.bool(SURFACE, path, "multi_select"),
             // Date picker constraints +
             // chrome (iOS ContentBlockStandaloneViews.swift:966-1239).
-            allow_future = bm["allow_future"] as? Boolean,
-            allow_past = bm["allow_past"] as? Boolean,
-            date_validation_message = bm["date_validation_message"] as? String,
-            picker_presentation = bm["picker_presentation"] as? String,
-            picker_mode = bm["picker_mode"] as? String,
-            picker_spacing = (bm["picker_spacing"] as? Number)?.toDouble(),
-            wheel_bg_color = bm["wheel_bg_color"] as? String,
-            wheel_height = (bm["wheel_height"] as? Number)?.toDouble(),
-            calendar_bg_color = bm["calendar_bg_color"] as? String,
+            allow_future = bm.bool(SURFACE, path, "allow_future"),
+            allow_past = bm.bool(SURFACE, path, "allow_past"),
+            date_validation_message = bm.str(SURFACE, path, "date_validation_message"),
+            picker_presentation = bm.str(SURFACE, path, "picker_presentation"),
+            picker_mode = bm.str(SURFACE, path, "picker_mode"),
+            picker_spacing = (bm.num(SURFACE, path, "picker_spacing"))?.toDouble(),
+            wheel_bg_color = bm.str(SURFACE, path, "wheel_bg_color"),
+            wheel_height = (bm.num(SURFACE, path, "wheel_height"))?.toDouble(),
+            calendar_bg_color = bm.str(SURFACE, path, "calendar_bg_color"),
             // Sprint 7 scroll-collapse.
-            collapse_on_scroll = bm["collapse_on_scroll"] as? Boolean,
+            collapse_on_scroll = bm.bool(SURFACE, path, "collapse_on_scroll"),
             // The `?.let` is load-bearing. Extracting this into the shared parser gave it an
             // `.orEmpty()` tail -- correct for the Option Set path, where an empty list is a real
             // answer -- and that turned an ABSENT `field_options` into an empty list rather than
             // null. iOS decodes absent as nil, and a Select distinguishes "no options authored"
             // from "options authored, none of them valid", so the two platforms disagreed.
-            field_options = (bm["field_options"] as? List<*>)?.let { parseInputOptionList(it).toImmutableList() },
+            field_options = (bm.list(SURFACE, path, "field_options"))?.let { parseInputOptionList(it, "$path.field_options").toImmutableList() },
             // Gap 8: Parse field_config for display_style, use_variable, use_webhook
             // progress_bar `label_format`/`custom_label` are authored
             // top-level by the console editor, but Android can't add top-level ContentBlock
             // params (JVM arg-budget guard), so fold them into field_config for the renderer.
             // iOS reads them as top-level Codable fields.
             field_config = run {
-                val base = (bm["field_config"] as? Map<String, Any>)?.toMutableMap()
-                val labelFormat = bm["label_format"] as? String
-                val customLabel = bm["custom_label"] as? String
+                val base = (bm.objMap(SURFACE, path, "field_config"))?.toMutableMap()
+                val labelFormat = bm.str(SURFACE, path, "label_format")
+                val customLabel = bm.str(SURFACE, path, "custom_label")
                 // Fold the top-level `video_controls` key
                 // into field_config so the renderer can honour it without adding
                 // a new top-level ContentBlock field (budget-locked). The console
                 // editor + preview + iOS all read `video_controls`.
-                val videoControls = bm["video_controls"] as? Boolean
+                val videoControls = bm.bool(SURFACE, path, "video_controls")
                 // star_background particle_color /
                 // particle_opacity / particle_speed are authored top-level by the
                 // console editor + preview + (now) iOS, but Android is budget-locked
                 // (245/245 top-level params). Fold them into field_config so the
                 // StarBackgroundBlock renderer can honor them.
-                val particleColor = bm["particle_color"] as? String
-                val particleOpacity = (bm["particle_opacity"] as? Number)?.toDouble()
-                val particleSpeed = bm["particle_speed"] as? String
+                val particleColor = bm.str(SURFACE, path, "particle_color")
+                val particleOpacity = (bm.num(SURFACE, path, "particle_opacity"))?.toDouble()
+                val particleSpeed = bm.str(SURFACE, path, "particle_speed")
                 // countdown_timer `timer_variant` authored top-level by editor; fold for the renderer.
-                val timerVariant = bm["timer_variant"] as? String
+                val timerVariant = bm.str(SURFACE, path, "timer_variant")
                 // Progress/Loading v2 — `label_placement` (progress_bar) + `loading_text_align`
                 // (animated_loading) authored top-level by the console editor; fold into
                 // field_config since Android's top-level ContentBlock is budget-locked. iOS
                 // reads them as top-level Codable fields.
-                val labelPlacement = bm["label_placement"] as? String
-                val loadingTextAlign = bm["loading_text_align"] as? String
+                val labelPlacement = bm.str(SURFACE, path, "label_placement")
+                val loadingTextAlign = bm.str(SURFACE, path, "loading_text_align")
                 // date_wheel_picker selection-line color/stroke authored
                 // top-level by the console editor + preview (block.wheel_line_color /
                 // wheel_line_stroke_width) and read as top-level Codable fields by iOS
                 // (ContentBlockStandaloneViews.swift:1335-1339). Android's top-level
                 // ContentBlock is budget-locked at the JVM 255-arg limit, so fold both
                 // into field_config for the DateWheelPickerBlock renderer to read.
-                val wheelLineColor = bm["wheel_line_color"] as? String
-                val wheelLineStrokeWidth = (bm["wheel_line_stroke_width"] as? Number)?.toDouble()
+                val wheelLineColor = bm.str(SURFACE, path, "wheel_line_color")
+                val wheelLineStrokeWidth = (bm.num(SURFACE, path, "wheel_line_stroke_width"))?.toDouble()
                 // ContentBlock 255-arg budget — these 10 were removed from the Android ContentBlock
                 // ctor (was 255→245) and are now read from field_config by the renderer. Console
                 // authors them top-level + iOS reads them top-level; fold into field_config here.
-                val audioUrl = bm["audio_url"] as? String
-                val buttonTextAlign = bm["button_text_align"] as? String
-                val dividerPosition = bm["divider_position"] as? String
-                val dotShape = bm["dot_shape"] as? String
-                val galleryAutoscroll = bm["gallery_autoscroll"] as? Boolean
-                val galleryAutoscrollSpeed = (bm["gallery_autoscroll_speed"] as? Number)?.toDouble()
-                val galleryFill = bm["gallery_fill"] as? Boolean
-                val particleMulticolor = bm["particle_multicolor"] as? Boolean
-                val timeFormat = bm["time_format"] as? String
-                val timeTextSize = (bm["time_text_size"] as? Number)?.toDouble()
+                val audioUrl = bm.str(SURFACE, path, "audio_url")
+                val buttonTextAlign = bm.str(SURFACE, path, "button_text_align")
+                val dividerPosition = bm.str(SURFACE, path, "divider_position")
+                val dotShape = bm.str(SURFACE, path, "dot_shape")
+                val galleryAutoscroll = bm.bool(SURFACE, path, "gallery_autoscroll")
+                val galleryAutoscrollSpeed = (bm.num(SURFACE, path, "gallery_autoscroll_speed"))?.toDouble()
+                val galleryFill = bm.bool(SURFACE, path, "gallery_fill")
+                val particleMulticolor = bm.bool(SURFACE, path, "particle_multicolor")
+                val timeFormat = bm.str(SURFACE, path, "time_format")
+                val timeTextSize = (bm.num(SURFACE, path, "time_text_size"))?.toDouble()
                 if (labelFormat == null && customLabel == null && videoControls == null &&
                     particleColor == null && particleOpacity == null && particleSpeed == null &&
                     timerVariant == null && labelPlacement == null && loadingTextAlign == null &&
@@ -2052,50 +2067,50 @@ internal object OnboardingConfigParser {
                 }
             },
             // Visibility, animation, pressed style, bindings, sizing
-            visibility_condition = (bm["visibility_condition"] as? Map<String, Any>)?.let { vc ->
+            visibility_condition = (bm.objMap(SURFACE, path, "visibility_condition"))?.let { vc ->
                 VisibilityCondition(
-                    type = vc["type"] as? String ?: "always",
-                    variable = vc["variable"] as? String,
+                    type = vc.str(SURFACE, path, "type") ?: "always",
+                    variable = vc.str(SURFACE, path, "variable"),
                     value = vc["value"],
-                    expression = vc["expression"] as? String,
+                    expression = vc.str(SURFACE, path, "expression"),
                 )
             },
-            entrance_animation = (bm["entrance_animation"] as? Map<String, Any>)?.let { ea ->
+            entrance_animation = (bm.objMap(SURFACE, path, "entrance_animation"))?.let { ea ->
                 EntranceAnimationConfig(
-                    type = ea["type"] as? String ?: "none",
-                    duration_ms = (ea["duration_ms"] as? Number)?.toInt() ?: 300,
-                    delay_ms = (ea["delay_ms"] as? Number)?.toInt() ?: 0,
-                    easing = ea["easing"] as? String ?: "ease_out",
-                    spring_damping = (ea["spring_damping"] as? Number)?.toDouble(),
-                    animation_delay_ms = (ea["animation_delay_ms"] as? Number)?.toInt() ?: 0,
-                    animation_order = (ea["animation_order"] as? Number)?.toInt(),
+                    type = ea.str(SURFACE, path, "type") ?: "none",
+                    duration_ms = (ea.num(SURFACE, path, "duration_ms"))?.toInt() ?: 300,
+                    delay_ms = (ea.num(SURFACE, path, "delay_ms"))?.toInt() ?: 0,
+                    easing = ea.str(SURFACE, path, "easing") ?: "ease_out",
+                    spring_damping = (ea.num(SURFACE, path, "spring_damping"))?.toDouble(),
+                    animation_delay_ms = (ea.num(SURFACE, path, "animation_delay_ms"))?.toInt() ?: 0,
+                    animation_order = (ea.num(SURFACE, path, "animation_order"))?.toInt(),
                 )
             },
-            pressed_style = (bm["pressed_style"] as? Map<String, Any>)?.let { ps ->
+            pressed_style = (bm.objMap(SURFACE, path, "pressed_style"))?.let { ps ->
                 PressedStyleConfig(
-                    scale = (ps["scale"] as? Number)?.toDouble(),
-                    opacity = (ps["opacity"] as? Number)?.toDouble(),
-                    bg_color = ps["bg_color"] as? String,
-                    text_color = ps["text_color"] as? String,
+                    scale = (ps.num(SURFACE, path, "scale"))?.toDouble(),
+                    opacity = (ps.num(SURFACE, path, "opacity"))?.toDouble(),
+                    bg_color = ps.str(SURFACE, path, "bg_color"),
+                    text_color = ps.str(SURFACE, path, "text_color"),
                 )
             },
-            bindings = (bm["bindings"] as? Map<*, *>)?.entries?.associate { (k, v) -> k.toString() to v.toString() },
-            element_width = bm["element_width"] as? String,
-            element_height = bm["element_height"] as? String,
-            overflow = bm["overflow"] as? String,
+            bindings = (bm.obj(SURFACE, path, "bindings"))?.entries?.associate { (k, v) -> k.toString() to v.toString() },
+            element_width = bm.str(SURFACE, path, "element_width"),
+            element_height = bm.str(SURFACE, path, "element_height"),
+            overflow = bm.str(SURFACE, path, "overflow"),
             // Row / stack container fields
             // Coalesce `children` and
             // legacy `stack_children`. iOS ContentBlockTypes.swift:1068
             // accepts both keys; Android previously read only `children`,
             // so console-saved stack containers rendered blank.
-            children = parseChildBlocks(bm["children"] ?: bm["stack_children"]),
-            row_direction = bm["row_direction"] as? String,
-            row_distribution = bm["row_distribution"] as? String,
-            row_child_fill = bm["row_child_fill"] as? Boolean,
-            gap = (bm["gap"] as? Number)?.toDouble(),
-            wrap = bm["wrap"] as? Boolean,
-            justify = bm["justify"] as? String,
-            align_items = bm["align_items"] as? String,
+            children = parseChildBlocks(bm["children"] ?: bm["stack_children"], path),
+            row_direction = bm.str(SURFACE, path, "row_direction"),
+            row_distribution = bm.str(SURFACE, path, "row_distribution"),
+            row_child_fill = bm.bool(SURFACE, path, "row_child_fill"),
+            gap = (bm.num(SURFACE, path, "gap"))?.toDouble(),
+            wrap = bm.bool(SURFACE, path, "wrap"),
+            justify = bm.str(SURFACE, path, "justify"),
+            align_items = bm.str(SURFACE, path, "align_items"),
 
             // ============================================================
             // Lens A P0 systemic parser drift fix.
@@ -2112,96 +2127,96 @@ internal object OnboardingConfigParser {
             // Console flow.schema.ts:225-244 emits these — NOT the
             // legacy `lottie_*`/`rive_*` aliases — so authoring
             // `autoplay: false` was always lost on Android.
-            autoplay = bm["autoplay"] as? Boolean,
-            loop = bm["loop"] as? Boolean,
-            muted = bm["muted"] as? Boolean,
-            controls = bm["controls"] as? Boolean,
-            inline_playback = bm["inline_playback"] as? Boolean,
-            lottie_height = (bm["lottie_height"] as? Number)?.toDouble(),
-            lottie_width = (bm["lottie_width"] as? Number)?.toDouble(),
-            play_on_scroll = bm["play_on_scroll"] as? Boolean,
-            play_on_tap = bm["play_on_tap"] as? Boolean,
-            color_overrides = (bm["color_overrides"] as? Map<*, *>)?.entries
+            autoplay = bm.bool(SURFACE, path, "autoplay"),
+            loop = bm.bool(SURFACE, path, "loop"),
+            muted = bm.bool(SURFACE, path, "muted"),
+            controls = bm.bool(SURFACE, path, "controls"),
+            inline_playback = bm.bool(SURFACE, path, "inline_playback"),
+            lottie_height = (bm.num(SURFACE, path, "lottie_height"))?.toDouble(),
+            lottie_width = (bm.num(SURFACE, path, "lottie_width"))?.toDouble(),
+            play_on_scroll = bm.bool(SURFACE, path, "play_on_scroll"),
+            play_on_tap = bm.bool(SURFACE, path, "play_on_tap"),
+            color_overrides = (bm.obj(SURFACE, path, "color_overrides"))?.entries
                 ?.mapNotNull { (k, v) ->
                     val ks = k as? String ?: return@mapNotNull null
                     val vs = v as? String ?: return@mapNotNull null
                     ks to vs
                 }?.toMap(),
-            artboard = bm["artboard"] as? String,
-            state_machine = bm["state_machine"] as? String,
-            rive_inputs = @Suppress("UNCHECKED_CAST") (bm["rive_inputs"] as? Map<String, Any>),
-            trigger_on_step_complete = bm["trigger_on_step_complete"] as? String,
+            artboard = bm.str(SURFACE, path, "artboard"),
+            state_machine = bm.str(SURFACE, path, "state_machine"),
+            rive_inputs = @Suppress("UNCHECKED_CAST") (bm.objMap(SURFACE, path, "rive_inputs")),
+            trigger_on_step_complete = bm.str(SURFACE, path, "trigger_on_step_complete"),
 
             // PricingCard fields (iOS ContentBlockTypes.swift PricingPlan).
             // PricingCardBlock at ContentBlockRenderer.kt:4006 reads
             // block.pricing_plans which was always null — card always
             // empty.
-            pricing_plans = (bm["pricing_plans"] as? List<*>)?.mapNotNull { pp ->
+            pricing_plans = (bm.list(SURFACE, path, "pricing_plans"))?.mapNotNull { pp ->
                 if (pp is Map<*, *>) {
                     @Suppress("UNCHECKED_CAST")
                     val pm = pp as Map<String, Any>
                     PricingPlan(
-                        id = pm["id"] as? String ?: "",
-                        label = pm["label"] as? String ?: pm["title"] as? String ?: "",
-                        price = pm["price"] as? String ?: "",
-                        period = pm["period"] as? String ?: "",
-                        badge = pm["badge"] as? String,
-                        is_highlighted = pm["is_highlighted"] as? Boolean
-                            ?: pm["highlighted"] as? Boolean
+                        id = pm.str(SURFACE, path, "id") ?: "",
+                        label = pm.str(SURFACE, path, "label") ?: pm.str(SURFACE, path, "title") ?: "",
+                        price = pm.str(SURFACE, path, "price") ?: "",
+                        period = pm.str(SURFACE, path, "period") ?: "",
+                        badge = pm.str(SURFACE, path, "badge"),
+                        is_highlighted = pm.bool(SURFACE, path, "is_highlighted")
+                            ?: pm.bool(SURFACE, path, "highlighted")
                             ?: false,
                     )
                 } else null
             }?.toImmutableList(),
-            pricing_layout = bm["pricing_layout"] as? String,
+            pricing_layout = bm.str(SURFACE, path, "pricing_layout"),
 
             // Rich text canonical
-            markdown_content = bm["markdown_content"] as? String,
-            rich_text_variant = bm["rich_text_variant"] as? String,
+            markdown_content = bm.str(SURFACE, path, "markdown_content"),
+            rich_text_variant = bm.str(SURFACE, path, "rich_text_variant"),
 
             // Social-login R13 below-inputs CTA layout
-            email_login_placement = bm["email_login_placement"] as? String,
-            email_cta_spacing_below = (bm["email_cta_spacing_below"] as? Number)?.toDouble(),
+            email_login_placement = bm.str(SURFACE, path, "email_login_placement"),
+            email_cta_spacing_below = (bm.num(SURFACE, path, "email_cta_spacing_below"))?.toDouble(),
 
             // Rating canonical R3
-            default_rating = (bm["default_rating"] as? Number)?.toDouble(),
-            rating_label = bm["rating_label"] as? String,
+            default_rating = (bm.num(SURFACE, path, "default_rating"))?.toDouble(),
+            rating_label = bm.str(SURFACE, path, "rating_label"),
 
             // ProgressBar canonical (Phase F)
-            total_segments = (bm["total_segments"] as? Number)?.toInt(),
-            progress_value = (bm["progress_value"] as? Number)?.toDouble(),
-            progress_variant = bm["progress_variant"] as? String,
-            bar_color = bm["bar_color"] as? String,
-            bar_gradient_colors = (bm["bar_gradient_colors"] as? List<*>)?.mapNotNull { it as? String },
-            bar_height = (bm["bar_height"] as? Number)?.toDouble(),
+            total_segments = (bm.num(SURFACE, path, "total_segments"))?.toInt(),
+            progress_value = (bm.num(SURFACE, path, "progress_value"))?.toDouble(),
+            progress_variant = bm.str(SURFACE, path, "progress_variant"),
+            bar_color = bm.str(SURFACE, path, "bar_color"),
+            bar_gradient_colors = (bm.list(SURFACE, path, "bar_gradient_colors"))?.mapNotNull { it as? String },
+            bar_height = (bm.num(SURFACE, path, "bar_height"))?.toDouble(),
 
             // WheelPicker (Phase F + horizontal/haptic)
-            min_value = (bm["min_value"] as? Number)?.toDouble(),
-            max_value_picker = (bm["max_value_picker"] as? Number)?.toDouble(),
-            step_value = (bm["step_value"] as? Number)?.toDouble(),
-            default_picker_value = (bm["default_picker_value"] as? Number)?.toDouble(),
-            unit = bm["unit"] as? String,
-            unit_position = bm["unit_position"] as? String,
-            visible_items = (bm["visible_items"] as? Number)?.toInt(),
-            wheel_orientation = bm["wheel_orientation"] as? String,
-            orientation = bm["orientation"] as? String,
-            highlight_color = bm["highlight_color"] as? String,
-            haptic_on_scroll = bm["haptic_on_scroll"] as? Boolean,
+            min_value = (bm.num(SURFACE, path, "min_value"))?.toDouble(),
+            max_value_picker = (bm.num(SURFACE, path, "max_value_picker"))?.toDouble(),
+            step_value = (bm.num(SURFACE, path, "step_value"))?.toDouble(),
+            default_picker_value = (bm.num(SURFACE, path, "default_picker_value"))?.toDouble(),
+            unit = bm.str(SURFACE, path, "unit"),
+            unit_position = bm.str(SURFACE, path, "unit_position"),
+            visible_items = (bm.num(SURFACE, path, "visible_items"))?.toInt(),
+            wheel_orientation = bm.str(SURFACE, path, "wheel_orientation"),
+            orientation = bm.str(SURFACE, path, "orientation"),
+            highlight_color = bm.str(SURFACE, path, "highlight_color"),
+            haptic_on_scroll = bm.bool(SURFACE, path, "haptic_on_scroll"),
 
             // DateWheelPicker (Phase F)
-            min_date = bm["min_date"] as? String,
-            max_date = bm["max_date"] as? String,
-            default_date_value = bm["default_date_value"] as? String,
+            min_date = bm.str(SURFACE, path, "min_date"),
+            max_date = bm.str(SURFACE, path, "max_date"),
+            default_date_value = bm.str(SURFACE, path, "default_date_value"),
             // `columns` (per-wheel type/label/values list)
             // was declared on ContentBlock + read by the renderer but
             // never extracted from JSON. date_wheel_picker fell through
             // to default month/day/year columns regardless of console.
-            columns = (bm["columns"] as? List<*>)?.mapNotNull { c ->
+            columns = (bm.list(SURFACE, path, "columns"))?.mapNotNull { c ->
                 if (c is Map<*, *>) {
                     @Suppress("UNCHECKED_CAST") val cm = c as Map<String, Any>
                     DateWheelColumn(
-                        type = cm["type"] as? String ?: "",
-                        label = cm["label"] as? String,
-                        values = (cm["values"] as? List<*>)
+                        type = cm.str(SURFACE, path, "type") ?: "",
+                        label = cm.str(SURFACE, path, "label"),
+                        values = (cm.list(SURFACE, path, "values"))
                             ?.mapNotNull { it as? String }
                             ?.toImmutableList(),
                     )
@@ -2209,69 +2224,69 @@ internal object OnboardingConfigParser {
             }?.toImmutableList(),
 
             // PulsingAvatar (Phase F)
-            pulse_color = bm["pulse_color"] as? String,
-            pulse_ring_count = (bm["pulse_ring_count"] as? Number)?.toInt(),
-            pulse_speed = (bm["pulse_speed"] as? Number)?.toDouble(),
-            border_width = (bm["border_width"] as? Number)?.toDouble(),
-            border_color = bm["border_color"] as? String,
-            image_shape = bm["image_shape"] as? String,
-            image_corner_radius = (bm["image_corner_radius"] as? Number)?.toDouble(),
-            badge_position = bm["badge_position"] as? String,
-            badge_size = (bm["badge_size"] as? Number)?.toDouble(),
+            pulse_color = bm.str(SURFACE, path, "pulse_color"),
+            pulse_ring_count = (bm.num(SURFACE, path, "pulse_ring_count"))?.toInt(),
+            pulse_speed = (bm.num(SURFACE, path, "pulse_speed"))?.toDouble(),
+            border_width = (bm.num(SURFACE, path, "border_width"))?.toDouble(),
+            border_color = bm.str(SURFACE, path, "border_color"),
+            image_shape = bm.str(SURFACE, path, "image_shape"),
+            image_corner_radius = (bm.num(SURFACE, path, "image_corner_radius"))?.toDouble(),
+            badge_position = bm.str(SURFACE, path, "badge_position"),
+            badge_size = (bm.num(SURFACE, path, "badge_size"))?.toDouble(),
 
             // StarBackground (Phase F) — density/speed are String tokens
             // ("low"/"medium"/"high", "slow"/"normal"/"fast") on the
             // data class; iOS reads the same shape.
-            particle_type = bm["particle_type"] as? String,
-            density = bm["density"] as? String,
-            speed = bm["speed"] as? String,
-            secondary_color = bm["secondary_color"] as? String,
-            size_range = (bm["size_range"] as? List<*>)?.mapNotNull { (it as? Number)?.toDouble() }?.toImmutableList(),
-            fullscreen = bm["fullscreen"] as? Boolean,
+            particle_type = bm.str(SURFACE, path, "particle_type"),
+            density = bm.str(SURFACE, path, "density"),
+            speed = bm.str(SURFACE, path, "speed"),
+            secondary_color = bm.str(SURFACE, path, "secondary_color"),
+            size_range = (bm.list(SURFACE, path, "size_range"))?.mapNotNull { (it as? Number)?.toDouble() }?.toImmutableList(),
+            fullscreen = bm.bool(SURFACE, path, "fullscreen"),
 
             // CircularGauge (Phase F — block previously rendered fully default)
-            gauge_value = (bm["gauge_value"] as? Number)?.toDouble(),
-            max_value = (bm["max_value"] as? Number)?.toDouble(),
+            gauge_value = (bm.num(SURFACE, path, "gauge_value"))?.toDouble(),
+            max_value = (bm.num(SURFACE, path, "max_value"))?.toDouble(),
             // Both max_value AND max_gauge_value are
             // accepted iOS-side (ContentBlockRenderer.swift falls back
             // `block.max_value ?? block.max_gauge_value ?? 100.0`).
             // Decoder previously dropped max_gauge_value silently.
-            max_gauge_value = (bm["max_gauge_value"] as? Number)?.toDouble(),
-            gauge_variant = bm["gauge_variant"] as? String,
-            gradient_start_color = bm["gradient_start_color"] as? String,
-            gradient_end_color = bm["gradient_end_color"] as? String,
-            arrow_color = bm["arrow_color"] as? String,
-            arrow_stroke_width = (bm["arrow_stroke_width"] as? Number)?.toDouble(),
-            min_label = bm["min_label"] as? String,
-            max_label = bm["max_label"] as? String,
-            min_max_font_size = (bm["min_max_font_size"] as? Number)?.toDouble(),
-            min_max_color = bm["min_max_color"] as? String,
-            percentage_location = bm["percentage_location"] as? String,
-            sublabel = bm["sublabel"] as? String,
-            stroke_width = (bm["stroke_width"] as? Number)?.toDouble(),
-            label_color = bm["label_color"] as? String,
-            label_font_size = (bm["label_font_size"] as? Number)?.toDouble(),
-            animate = bm["animate"] as? Boolean,
-            animation_duration_ms = (bm["animation_duration_ms"] as? Number)?.toInt(),
+            max_gauge_value = (bm.num(SURFACE, path, "max_gauge_value"))?.toDouble(),
+            gauge_variant = bm.str(SURFACE, path, "gauge_variant"),
+            gradient_start_color = bm.str(SURFACE, path, "gradient_start_color"),
+            gradient_end_color = bm.str(SURFACE, path, "gradient_end_color"),
+            arrow_color = bm.str(SURFACE, path, "arrow_color"),
+            arrow_stroke_width = (bm.num(SURFACE, path, "arrow_stroke_width"))?.toDouble(),
+            min_label = bm.str(SURFACE, path, "min_label"),
+            max_label = bm.str(SURFACE, path, "max_label"),
+            min_max_font_size = (bm.num(SURFACE, path, "min_max_font_size"))?.toDouble(),
+            min_max_color = bm.str(SURFACE, path, "min_max_color"),
+            percentage_location = bm.str(SURFACE, path, "percentage_location"),
+            sublabel = bm.str(SURFACE, path, "sublabel"),
+            stroke_width = (bm.num(SURFACE, path, "stroke_width"))?.toDouble(),
+            label_color = bm.str(SURFACE, path, "label_color"),
+            label_font_size = (bm.num(SURFACE, path, "label_font_size"))?.toDouble(),
+            animate = bm.bool(SURFACE, path, "animate"),
+            animation_duration_ms = (bm.num(SURFACE, path, "animation_duration_ms"))?.toInt(),
 
             // AnimatedLoading variant — block.variant alias works,
             // but loading_variant is the canonical name iOS reads.
-            loading_variant = bm["loading_variant"] as? String,
-            loading_text = bm["loading_text"] as? String,
-            loading_text_position = bm["loading_text_position"] as? String,
-            loading_text_size = (bm["loading_text_size"] as? Number)?.toDouble(),
-            loading_text_color = bm["loading_text_color"] as? String,
-            gallery_images = (bm["gallery_images"] as? List<*>)?.mapNotNull { it as? String }?.toImmutableList(),
-            gallery_item_width = (bm["gallery_item_width"] as? Number)?.toDouble(),
-            gallery_item_height = (bm["gallery_item_height"] as? Number)?.toDouble(),
-            gallery_corner_radius = (bm["gallery_corner_radius"] as? Number)?.toDouble(),
-            gallery_spacing = (bm["gallery_spacing"] as? Number)?.toDouble(),
-            gallery_align = bm["gallery_align"] as? String,
+            loading_variant = bm.str(SURFACE, path, "loading_variant"),
+            loading_text = bm.str(SURFACE, path, "loading_text"),
+            loading_text_position = bm.str(SURFACE, path, "loading_text_position"),
+            loading_text_size = (bm.num(SURFACE, path, "loading_text_size"))?.toDouble(),
+            loading_text_color = bm.str(SURFACE, path, "loading_text_color"),
+            gallery_images = (bm.list(SURFACE, path, "gallery_images"))?.mapNotNull { it as? String }?.toImmutableList(),
+            gallery_item_width = (bm.num(SURFACE, path, "gallery_item_width"))?.toDouble(),
+            gallery_item_height = (bm.num(SURFACE, path, "gallery_item_height"))?.toDouble(),
+            gallery_corner_radius = (bm.num(SURFACE, path, "gallery_corner_radius"))?.toDouble(),
+            gallery_spacing = (bm.num(SURFACE, path, "gallery_spacing"))?.toDouble(),
+            gallery_align = bm.str(SURFACE, path, "gallery_align"),
 
             // Container/positioning (multiple R-rounds) — column_ratios
             // is a colon-encoded ratio string ("1:2") on both platforms
             // (iOS ContentBlockTypes.swift, Android data class line 634).
-            column_ratios = bm["column_ratios"] as? String,
+            column_ratios = bm.str(SURFACE, path, "column_ratios"),
 
             // Same-pattern parser drift
             // continuation of R36. These four fields are declared on the
@@ -2284,43 +2299,43 @@ internal object OnboardingConfigParser {
             // dropped it entirely; console-authored field styling
             // silently fell through to hardcoded defaults
             // (#D1D5DB borders, 8.0 radius, #374151 labels).
-            field_style = (bm["field_style"] as? Map<*, *>)?.let { fs ->
+            field_style = (bm.objMap(SURFACE, path, "field_style"))?.let { fs ->
                 FormFieldBlockStyle(
-                    background_color = fs["background_color"] as? String,
-                    border_color = fs["border_color"] as? String,
-                    border_width = (fs["border_width"] as? Number)?.toDouble(),
-                    corner_radius = (fs["corner_radius"] as? Number)?.toDouble(),
-                    text_color = fs["text_color"] as? String,
-                    placeholder_color = fs["placeholder_color"] as? String,
-                    font_size = (fs["font_size"] as? Number)?.toDouble(),
-                    focused_border_color = fs["focused_border_color"] as? String,
-                    label_color = fs["label_color"] as? String,
-                    label_font_size = (fs["label_font_size"] as? Number)?.toDouble(),
+                    background_color = fs.str(SURFACE, path, "background_color"),
+                    border_color = fs.str(SURFACE, path, "border_color"),
+                    border_width = (fs.num(SURFACE, path, "border_width"))?.toDouble(),
+                    corner_radius = (fs.num(SURFACE, path, "corner_radius"))?.toDouble(),
+                    text_color = fs.str(SURFACE, path, "text_color"),
+                    placeholder_color = fs.str(SURFACE, path, "placeholder_color"),
+                    font_size = (fs.num(SURFACE, path, "font_size"))?.toDouble(),
+                    focused_border_color = fs.str(SURFACE, path, "focused_border_color"),
+                    label_color = fs.str(SURFACE, path, "label_color"),
+                    label_font_size = (fs.num(SURFACE, path, "label_font_size"))?.toDouble(),
                     // Android builds FormFieldBlockStyle key by key, so
                     // adding a field to the data class is not enough: unmapped here it stays
                     // null forever and the renderer reading it can never fire. This is the
                     // half of the label_position defect that the fixture actually caught.
-                    label_position = fs["label_position"] as? String,
-                    label_align = fs["label_align"] as? String,
-                    label_font_family = fs["label_font_family"] as? String,
-                    error_border_color = fs["error_border_color"] as? String,
-                    error_text_color = fs["error_text_color"] as? String,
-                    track_color = fs["track_color"] as? String,
-                    fill_color = fs["fill_color"] as? String,
-                    thumb_color = fs["thumb_color"] as? String,
-                    toggle_on_color = fs["toggle_on_color"] as? String,
-                    toggle_off_color = fs["toggle_off_color"] as? String,
+                    label_position = fs.str(SURFACE, path, "label_position"),
+                    label_align = fs.str(SURFACE, path, "label_align"),
+                    label_font_family = fs.str(SURFACE, path, "label_font_family"),
+                    error_border_color = fs.str(SURFACE, path, "error_border_color"),
+                    error_text_color = fs.str(SURFACE, path, "error_text_color"),
+                    track_color = fs.str(SURFACE, path, "track_color"),
+                    fill_color = fs.str(SURFACE, path, "fill_color"),
+                    thumb_color = fs.str(SURFACE, path, "thumb_color"),
+                    toggle_on_color = fs.str(SURFACE, path, "toggle_on_color"),
+                    toggle_off_color = fs.str(SURFACE, path, "toggle_off_color"),
                     // Match iOS ContentBlockTypes.swift:291-312
                     // (3 fields missed). Renderer wiring follow-up.
-                    height = fs["height"] as? String,
-                    font_weight = fs["font_weight"] as? String,
-                    focused_background_color = fs["focused_background_color"] as? String,
+                    height = fs.str(SURFACE, path, "height"),
+                    font_weight = fs.str(SURFACE, path, "font_weight"),
+                    focused_background_color = fs.str(SURFACE, path, "focused_background_color"),
                     // Select v2 (Device QA) — per-option styling extras.
-                    option_font_family = fs["option_font_family"] as? String,
-                    option_corner_radius = (fs["option_corner_radius"] as? Number)?.toDouble(),
-                    option_text_wrap = fs["option_text_wrap"] as? Boolean,
-                    option_image_scale = fs["option_image_scale"] as? String,
-                    checkmark_color = fs["checkmark_color"] as? String,
+                    option_font_family = fs.str(SURFACE, path, "option_font_family"),
+                    option_corner_radius = (fs.num(SURFACE, path, "option_corner_radius"))?.toDouble(),
+                    option_text_wrap = fs.bool(SURFACE, path, "option_text_wrap"),
+                    option_image_scale = fs.str(SURFACE, path, "option_image_scale"),
+                    checkmark_color = fs.str(SURFACE, path, "checkmark_color"),
                 )
             },
 
@@ -2329,20 +2344,20 @@ internal object OnboardingConfigParser {
             // ContentBlockRenderer.kt:2561 reads filled_segments first
             // (`block.filled_segments ?: block.active_segments`).
             // Author intent was lost when only filled_segments was set.
-            filled_segments = (bm["filled_segments"] as? Number)?.toInt(),
+            filled_segments = (bm.num(SURFACE, path, "filled_segments"))?.toInt(),
 
             // Rating canonical iOS-first names (R3 added the
             // renderer fallback at lines 2301-2306 but parser never
             // reads them; rating fell through to default colours).
-            filled_color = bm["filled_color"] as? String,
-            empty_color = bm["empty_color"] as? String,
-            z_index = (bm["z_index"] as? Number)?.toDouble(),
-            image_fit = bm["image_fit"] as? String,
-            image_frame = bm["image_frame"] as? String,
-            view_key = bm["view_key"] as? String,
-            custom_config = @Suppress("UNCHECKED_CAST") (bm["custom_config"] as? Map<String, Any>),
-            placeholder_image_url = bm["placeholder_image_url"] as? String,
-            placeholder_text = bm["placeholder_text"] as? String,
+            filled_color = bm.str(SURFACE, path, "filled_color"),
+            empty_color = bm.str(SURFACE, path, "empty_color"),
+            z_index = (bm.num(SURFACE, path, "z_index"))?.toDouble(),
+            image_fit = bm.str(SURFACE, path, "image_fit"),
+            image_frame = bm.str(SURFACE, path, "image_frame"),
+            view_key = bm.str(SURFACE, path, "view_key"),
+            custom_config = @Suppress("UNCHECKED_CAST") (bm.objMap(SURFACE, path, "custom_config")),
+            placeholder_image_url = bm.str(SURFACE, path, "placeholder_image_url"),
+            placeholder_text = bm.str(SURFACE, path, "placeholder_text"),
         )
     }
 
@@ -2361,12 +2376,15 @@ internal object OnboardingConfigParser {
      * any block nested inside a row or stack container.
      */
     @Suppress("UNCHECKED_CAST")
-    private fun parseChildBlocks(raw: Any?): kotlinx.collections.immutable.ImmutableList<ContentBlock>? {
+    private fun parseChildBlocks(
+        raw: Any?,
+        parentPath: String = "content_blocks",
+    ): kotlinx.collections.immutable.ImmutableList<ContentBlock>? {
         val list = raw as? List<*> ?: return null
         return list.mapNotNull { child ->
             if (child is Map<*, *>) {
                 val cm = child as Map<String, Any>
-                decodeContentBlock(cm)
+                decodeContentBlock(cm, "$parentPath.children")
             } else null
         }.takeIf { it.isNotEmpty() }?.toImmutableList()
     }
@@ -2381,7 +2399,10 @@ internal object OnboardingConfigParser {
      * is exactly how this DTO reached 24 fields with a comment noting the last audit found them
      * dropped on parse.
      */
-    internal fun parseInputOptionList(raw: List<*>?): List<InputOption> =
+    internal fun parseInputOptionList(
+        raw: List<*>?,
+        path: String = "field_options",
+    ): List<InputOption> =
         raw?.mapNotNull { fo ->
                     if (fo is Map<*, *>) {
                         @Suppress("UNCHECKED_CAST")
@@ -2400,53 +2421,53 @@ internal object OnboardingConfigParser {
                             // server-side analytics joins + next_step_rule
                             // comparisons + webhook payloads when console
                             // author set both id and value.
-                            value = fm["value"] as? String ?: fm["id"] as? String ?: "",
-                            label = fm["label"] as? String ?: "",
+                            value = fm.str(SURFACE, path, "value") ?: fm.str(SURFACE, path, "id") ?: "",
+                            label = fm.str(SURFACE, path, "label") ?: "",
                             // Android maps every key by hand — omit this and category is null
                             // forever and the chip filter can never match anything.
-                            category = fm["category"] as? String,
+                            category = fm.str(SURFACE, path, "category"),
                             // The option's bottom-sheet contents, parsed
                             // with the same child-block helper the stack/row containers use.
                             sheet_blocks = parseChildBlocks(fm["sheet_blocks"]),
-                            image_url = fm["image_url"] as? String,
+                            image_url = fm.str(SURFACE, path, "image_url"),
                             // Match iOS rawValue fallback at
                             // ContentBlockTypes.swift:357-360. Was id-only; when
                             // console author writes only `value`, iOS resolves
                             // `id=value`, Android got `id=null` → renderer code
                             // keying selection state by option.id silently broke.
-                            id = fm["id"] as? String ?: fm["value"] as? String,
-                            icon = fm["icon"] as? String,
-                            selected_image_url = fm["selected_image_url"] as? String,
-                            unselected_image_url = fm["unselected_image_url"] as? String,
-                            subtitle = fm["subtitle"] as? String,
-                            title_color = fm["title_color"] as? String,
-                            subtitle_color = fm["subtitle_color"] as? String,
-                            title_font_size = (fm["title_font_size"] as? Number)?.toDouble(),
-                            subtitle_font_size = (fm["subtitle_font_size"] as? Number)?.toDouble(),
-                            title_font_weight = fm["title_font_weight"] as? String,
-                            selected_icon = fm["selected_icon"] as? String,
-                            unselected_icon = fm["unselected_icon"] as? String,
-                            image_overlay_color = fm["image_overlay_color"] as? String,
-                            image_overlay_opacity = (fm["image_overlay_opacity"] as? Number)?.toDouble(),
-                            selected_image_overlay_color = fm["selected_image_overlay_color"] as? String,
-                            selected_image_overlay_opacity = (fm["selected_image_overlay_opacity"] as? Number)?.toDouble(),
-                            image_shape = fm["image_shape"] as? String,
-                            border_color = fm["border_color"] as? String,
-                            selected_border_color = fm["selected_border_color"] as? String,
-                            bg_color = fm["bg_color"] as? String,
-                            selected_bg_color = fm["selected_bg_color"] as? String,
-                            selected_text_color = fm["selected_text_color"] as? String,
-                            cell_alignment = fm["cell_alignment"] as? String,
+                            id = fm.str(SURFACE, path, "id") ?: fm.str(SURFACE, path, "value"),
+                            icon = fm.str(SURFACE, path, "icon"),
+                            selected_image_url = fm.str(SURFACE, path, "selected_image_url"),
+                            unselected_image_url = fm.str(SURFACE, path, "unselected_image_url"),
+                            subtitle = fm.str(SURFACE, path, "subtitle"),
+                            title_color = fm.str(SURFACE, path, "title_color"),
+                            subtitle_color = fm.str(SURFACE, path, "subtitle_color"),
+                            title_font_size = (fm.num(SURFACE, path, "title_font_size"))?.toDouble(),
+                            subtitle_font_size = (fm.num(SURFACE, path, "subtitle_font_size"))?.toDouble(),
+                            title_font_weight = fm.str(SURFACE, path, "title_font_weight"),
+                            selected_icon = fm.str(SURFACE, path, "selected_icon"),
+                            unselected_icon = fm.str(SURFACE, path, "unselected_icon"),
+                            image_overlay_color = fm.str(SURFACE, path, "image_overlay_color"),
+                            image_overlay_opacity = (fm.num(SURFACE, path, "image_overlay_opacity"))?.toDouble(),
+                            selected_image_overlay_color = fm.str(SURFACE, path, "selected_image_overlay_color"),
+                            selected_image_overlay_opacity = (fm.num(SURFACE, path, "selected_image_overlay_opacity"))?.toDouble(),
+                            image_shape = fm.str(SURFACE, path, "image_shape"),
+                            border_color = fm.str(SURFACE, path, "border_color"),
+                            selected_border_color = fm.str(SURFACE, path, "selected_border_color"),
+                            bg_color = fm.str(SURFACE, path, "bg_color"),
+                            selected_bg_color = fm.str(SURFACE, path, "selected_bg_color"),
+                            selected_text_color = fm.str(SURFACE, path, "selected_text_color"),
+                            cell_alignment = fm.str(SURFACE, path, "cell_alignment"),
                             // leading/trailing labels + per-option badge (were unparsed).
-                            leading_text = fm["leading_text"] as? String,
-                            trailing_text = fm["trailing_text"] as? String,
-                            text_alignment = fm["text_alignment"] as? String,
-                            badge = (fm["badge"] as? Map<*, *>)?.let { bdg ->
+                            leading_text = fm.str(SURFACE, path, "leading_text"),
+                            trailing_text = fm.str(SURFACE, path, "trailing_text"),
+                            text_alignment = fm.str(SURFACE, path, "text_alignment"),
+                            badge = (fm.objMap(SURFACE, path, "badge"))?.let { bdg ->
                                 ai.appdna.sdk.onboarding.OptionBadge(
-                                    text = bdg["text"] as? String,
-                                    bg_color = bdg["bg_color"] as? String,
-                                    text_color = bdg["text_color"] as? String,
-                                    position = bdg["position"] as? String,
+                                    text = bdg.str(SURFACE, "$path.badge", "text"),
+                                    bg_color = bdg.str(SURFACE, "$path.badge", "bg_color"),
+                                    text_color = bdg.str(SURFACE, "$path.badge", "text_color"),
+                                    position = bdg.str(SURFACE, "$path.badge", "position"),
                                 )
                             },
                         )
