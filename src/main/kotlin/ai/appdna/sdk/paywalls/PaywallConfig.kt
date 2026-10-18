@@ -1463,12 +1463,30 @@ internal object PaywallConfigParser {
                 icon_color = d.str(SURFACE, path, "icon_color"),
                 spacing = d.num(SURFACE, path, "spacing")?.toFloat(),
                 // Comparison table section
+                /*
+                 * 🔴 BOTH SHAPES, and only the object one was accepted.
+                 *
+                 * `columns` is the fallback key, and an author (or a template) writes it as a plain
+                 * list of LABELS — `["Free", "Premium"]`. `mapNotNull` kept only `Map` elements, so
+                 * every string was dropped and the table rendered its rows with NO COLUMN HEADERS,
+                 * while iOS drew them: `PaywallRenderer.swift` falls back to `columns as? [String]`.
+                 *
+                 * Measured on dev: 2 of 2 comparison tables carry `columns` as a string array, one
+                 * of them on an ACTIVE paywall. So this was not a latent asymmetry — it was a live
+                 * table that said what it compared on one platform and not the other. A string
+                 * carries no highlight, which is the one thing the object form adds.
+                 */
                 table_columns = ((d["table_columns"] ?: d["columns"]) as? List<*>)?.mapNotNull { colData ->
-                    (colData as? Map<String, Any>)?.let { cm ->
-                        PaywallTableColumn(
-                            label = cm.str(SURFACE, "$path.table_columns", "label") ?: "",
-                            highlighted = cm.bool(SURFACE, "$path.table_columns", "highlighted"),
-                        )
+                    when (colData) {
+                        is Map<*, *> -> {
+                            @Suppress("UNCHECKED_CAST") val cm = colData as Map<String, Any>
+                            PaywallTableColumn(
+                                label = cm.str(SURFACE, "$path.table_columns", "label") ?: "",
+                                highlighted = cm.bool(SURFACE, "$path.table_columns", "highlighted"),
+                            )
+                        }
+                        is String -> PaywallTableColumn(label = colData, highlighted = null)
+                        else -> null
                     }
                 },
                 rows = (d.list(SURFACE, path, "rows"))?.mapNotNull { rowData ->
