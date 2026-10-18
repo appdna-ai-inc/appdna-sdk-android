@@ -40,6 +40,32 @@ object PaywallTextDefaults {
     /** The same answer as a Compose [Color], for a renderer to apply directly. */
     fun readable(background: String?): Color = StyleEngine.parseColor(readableHex(background))
 
+    /**
+     * #938 — the alpha a DECORATIVE control takes when nobody authored its colour.
+     *
+     * An inactive segmented pill's border, a carousel's unselected indicator and a pager's
+     * unselected dot are all meant to be present without competing. 30% is the figure iOS's plan
+     * tile settled on (`Color.gray.opacity(0.3)`), so the two agree.
+     */
+    const val SUBTLE_ALPHA = 0.3f
+
+    /**
+     * #938 — a decorative control's colour, READ OFF THE PAGE instead of assumed.
+     *
+     * Three of these were `Color.White.copy(alpha = 0.3f)`: white at 30% over a WHITE page is
+     * nothing, so an author who set no indicator colour on a light paywall shipped controls that
+     * are not there. #926 found the same constant on the unselected plan tile's border and the
+     * device frame showed the whole card disappear; iOS had already retired it on its side with
+     * the comment *"(was white.opacity(0.15) — invisible on light paywall backgrounds)"*.
+     *
+     * 🔴 ON A DARK PAGE THIS IS BYTE-IDENTICAL TO THE OLD CONSTANT. `readable` returns `#FFFFFF`
+     * for any page dark enough for white to pass AA, so the result is `Color.White` at the same
+     * 30% — which is the whole reason this is safe to change. A default that moves pixels on live
+     * paywalls would be worse than the inconsistency it fixes; this one moves pixels only where
+     * the old value drew nothing.
+     */
+    fun subtleOnPage(background: String?): Color = readable(background).copy(alpha = SUBTLE_ALPHA)
+
     /** A translucent tile over a page: what the eye actually sees, so the text is judged on THAT. */
     fun composite(foreground: String?, over: String?, alpha: Double): String? {
         val f = foreground?.let { channels(it) } ?: return over

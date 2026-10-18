@@ -2182,8 +2182,19 @@ internal fun PaywallSectionView(
              * which has no such control, while the control it really has sat one attribution away.
              * Hoisting is the fix; regenerating the baseline would bury it.
              */
+            /*
+             * 🔴 #938 — the ink, not an assumed white. `composite("#FFFFFF", page, 0.1)` is the page
+             * itself when the page IS white, so the unselected tile had no edge on a light paywall
+             * — the screenshot showed the second plan as bare text with no card. Compositing the
+             * READABLE ink gives a faint gray there and, on any dark page, `readable` returns
+             * `#FFFFFF` and the result is byte-identical to what shipped.
+             */
             val unselectedTileHex = section.data?.unselected_bg_color
-                ?: PaywallTextDefaults.composite("#FFFFFF", config.pageBackgroundHex(), 0.1)
+                ?: PaywallTextDefaults.composite(
+                    PaywallTextDefaults.readableHex(config.pageBackgroundHex()),
+                    config.pageBackgroundHex(),
+                    0.1,
+                )
             val customSelectedBorder = section.data?.selected_border_color?.let { parseHexColor(it) }
             val customSelectedBg = section.data?.selected_bg_color?.let { parseHexColor(it) }
 
@@ -2239,9 +2250,16 @@ internal fun PaywallSectionView(
                  * An authored `unselected_bg_color` still wins outright: 15 of 36 active plans
                  * sections on dev author one, and none of them changes.
                  */
+                /*
+                 * 🔴 #938 — the READABLE ink composited over the page, not an assumed white.
+                 * `composite("#FFFFFF", page, 0.1)` returns the page itself when the page IS white,
+                 * so this tile had no edge at all on a light paywall. Surfaced by
+                 * `check:authorability` once its scans stopped reading comments as code, and it is
+                 * the same defect the pill arm had. Byte-identical on any dark page, where
+                 * `readable` returns `#FFFFFF` and the composite is the one that shipped.
+                 */
                 val unselectedBg = unselectedBgColor
-                    ?: PaywallTextDefaults.composite("#FFFFFF", config.pageBackgroundHex(), 0.1)
-                        ?.let { StyleEngine.parseColor(it) }
+                    ?: unselectedTileHex?.let { StyleEngine.parseColor(it) }
                     ?: Color.White.copy(alpha = 0.1f)
                 // PW-9: text color flips when selected if author provided one.
                 val resolvedTextColor = if (isSelected) {
@@ -2770,23 +2788,51 @@ internal fun PaywallSectionView(
                                 Box(
                                     modifier = Modifier
                                         .clip(cardShape)
+                                        /*
+                                         * #938 — the unselected pill, READ OFF THE PAGE.
+                                         *
+                                         * Both of these were white: the tile at 10% and the border
+                                         * at 30%, which over a WHITE page is a pill that is not
+                                         * there at all — no fill, no outline, just its label. The
+                                         * vertical_stack tile already composites (#926/#891) and
+                                         * this arm is a separate implementation that did not, the
+                                         * same split that hid #905's borders and #913's period.
+                                         *
+                                         * On a dark page both are byte-identical to what they were.
+                                         */
                                         .background(
-                                            if (isSelected) ai.appdna.sdk.AppDNA.brandAccentColor() else Color.White.copy(alpha = 0.1f),
+                                            if (isSelected) ai.appdna.sdk.AppDNA.brandAccentColor()
+                                            else (unselectedTileHex?.let { StyleEngine.parseColor(it) }
+                                                ?: Color.White.copy(alpha = 0.1f)),
                                             cardShape,
                                         )
                                         .border(
                                             if (isSelected) 0.dp else 1.dp,
-                                            if (isSelected) Color.Transparent else Color.White.copy(alpha = 0.3f),
+                                            if (isSelected) Color.Transparent
+                                            else PaywallTextDefaults.subtleOnPage(config.pageBackgroundHex()),
                                             cardShape,
                                         )
                                         .clickable { onPlanSelect(plan.id) }
                                         .padding(horizontal = 16.dp, vertical = 12.dp),
                                     contentAlignment = Alignment.Center,
                                 ) {
+                                    /*
+                                     * 🔴 #938/#891 — the label, read off the PILL rather than
+                                     * assumed. `planNameStyle` and `priceStyle` default to white,
+                                     * which is right on the accent-filled selected pill and wrong
+                                     * on the unselected one the moment the page is light: the first
+                                     * screenshot after the tile became visible showed "Annual BBB"
+                                     * as white on near-white, legible only by its antialiasing.
+                                     * The selected pill keeps white, because its fill is the brand
+                                     * accent whatever the page is.
+                                     */
+                                    val pillTextColor =
+                                        if (isSelected) (selectedTextColor ?: Color.White)
+                                        else PaywallTextDefaults.readable(unselectedTileHex)
                                     Column(horizontalAlignment = Alignment.CenterHorizontally) {
                                         Text(
                                             text = loc("plan.$planIdx.name", plan.displayName),
-                                            style = planNameStyle.copy(fontSize = 14.sp),
+                                            style = planNameStyle.copy(fontSize = 14.sp, color = pillTextColor),
                                             modifier = planNameElementModifier,
                                             textAlign = TextAlign.Center,
                                             maxLines = 1,
@@ -2794,7 +2840,7 @@ internal fun PaywallSectionView(
                                         )
                                         Text(
                                             text = loc("plan.$planIdx.price", plan.displayPrice),
-                                            style = priceStyle.copy(fontSize = 14.sp),
+                                            style = priceStyle.copy(fontSize = 14.sp, color = pillTextColor),
                                             modifier = priceElementModifier,
                                             textAlign = TextAlign.Center,
                                             maxLines = 1,
@@ -4262,7 +4308,11 @@ internal fun PaywallSectionView(
             PaywallToggleSection(section = section, loc = loc, toggleStates = toggleStates)
         }
         "reviews_carousel" -> {
-            PaywallReviewsCarouselSection(section = section, loc = loc)
+            PaywallReviewsCarouselSection(
+                section = section,
+                pageBackgroundHex = config.pageBackgroundHex(),
+                loc = loc,
+            )
         }
     }
 }
@@ -4597,6 +4647,12 @@ private fun PaywallCarouselSection(
 ) {
     val pages = section.data?.pages ?: return
     if (pages.isEmpty()) return
+    /*
+     * #938/#891 — a carousel page's title and subtitle were hard-coded white, so a carousel on a
+     * light paywall showed its heading as nothing. `ink` is the readable colour for THIS page and
+     * each use keeps the alpha it had: a dark paywall draws exactly what it drew before.
+     */
+    val ink = PaywallTextDefaults.readable(config.pageBackgroundHex())
     val pagerState = rememberPagerState(pageCount = { pages.size })
     val coroutineScope = rememberCoroutineScope()
     val autoScroll = section.data.auto_scroll ?: false
@@ -4619,11 +4675,11 @@ private fun PaywallCarouselSection(
             ) {
                 page.children?.forEach { child ->
                     child.data?.title?.let {
-                        Text(text = it, fontWeight = FontWeight.Bold, color = Color.White, fontSize = 16.sp)
+                        Text(text = it, fontWeight = FontWeight.Bold, color = ink, fontSize = 16.sp)
                         Spacer(Modifier.height(4.dp))
                     }
                     child.data?.subtitle?.let {
-                        Text(text = it, color = Color.White.copy(alpha = 0.8f), fontSize = 14.sp)
+                        Text(text = it, color = ink.copy(alpha = 0.8f), fontSize = 14.sp)
                         Spacer(Modifier.height(4.dp))
                     }
                     child.data?.image_url?.let { url ->
@@ -4641,8 +4697,16 @@ private fun PaywallCarouselSection(
             Spacer(Modifier.height(8.dp))
             Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                 repeat(pages.size) { idx ->
-                    val activeColor = section.data.indicator_active_color?.let { parseHexColor(it) } ?: Color.White
-                    val inactiveColor = section.data.indicator_color?.let { parseHexColor(it) } ?: Color.White.copy(alpha = 0.3f)
+                    /*
+                     * #938 — an indicator nobody authored, READ OFF THE PAGE. Both of these were
+                     * white — the active dot opaque, the rest at 30% — so a carousel on a light
+                     * paywall showed no dots at all and the reader had no way to know how many
+                     * pages there were. Byte-identical on a dark page.
+                     */
+                    val activeColor = section.data.indicator_active_color?.let { parseHexColor(it) }
+                        ?: PaywallTextDefaults.readable(config.pageBackgroundHex())
+                    val inactiveColor = section.data.indicator_color?.let { parseHexColor(it) }
+                        ?: PaywallTextDefaults.subtleOnPage(config.pageBackgroundHex())
                     Box(
                         modifier = Modifier
                             .size(8.dp)
@@ -5119,10 +5183,25 @@ private fun PaywallToggleSection(
 @Composable
 private fun PaywallReviewsCarouselSection(
     section: PaywallSection,
+    /**
+     * #938 — the page this section is drawn on, so a colour nobody authored can be read off it.
+     *
+     * The hex rather than the whole `PaywallConfig`: this composable needs one fact about the
+     * document and taking all of it would make the dependency look larger than it is. iOS reads
+     * the same value from the environment (`\.paywallBackgroundHex`).
+     */
+    pageBackgroundHex: String?,
     loc: (String, String) -> String,
 ) {
     val reviews = section.data?.reviews ?: return
     if (reviews.isEmpty()) return
+    /*
+     * #938/#891 — every colour below was a hard-coded white, so this whole section was legible
+     * only on a dark page: the quote, the author, the date, the avatar circle and the pager dots.
+     * `ink` is the readable colour FOR THIS PAGE and each use keeps the alpha it had, so a dark
+     * paywall draws exactly the pixels it drew before and a light one becomes readable.
+     */
+    val ink = PaywallTextDefaults.readable(pageBackgroundHex)
     val pagerState = rememberPagerState(pageCount = { reviews.size })
     val autoScroll = section.data.auto_scroll ?: true
     val intervalMs = section.data.auto_scroll_interval_ms ?: 4000
@@ -5181,11 +5260,11 @@ private fun PaywallReviewsCarouselSection(
                 // Quote text
                 val quoteTextStyle = if (textStyleConfig != null) {
                     StyleEngine.applyTextStyle(
-                        TextStyle(color = Color.White.copy(alpha = 0.9f), fontSize = 14.sp, textAlign = TextAlign.Center),
+                        TextStyle(color = ink.copy(alpha = 0.9f), fontSize = 14.sp, textAlign = TextAlign.Center),
                         textStyleConfig,
                     )
                 } else {
-                    TextStyle(color = Color.White.copy(alpha = 0.9f), fontSize = 14.sp, textAlign = TextAlign.Center)
+                    TextStyle(color = ink.copy(alpha = 0.9f), fontSize = 14.sp, textAlign = TextAlign.Center)
                 }
                 Text(
                     text = "\u201C${review.text}\u201D",
@@ -5222,7 +5301,7 @@ private fun PaywallReviewsCarouselSection(
                                 modifier = Modifier
                                     .size(28.dp)
                                     .clip(CircleShape)
-                                    .background(Color.White.copy(alpha = 0.1f)),
+                                    .background(ink.copy(alpha = 0.1f)),
                                 contentAlignment = Alignment.Center,
                             ) { Text(text = avatarEmoji, fontSize = 16.sp) }
                         }
@@ -5231,29 +5310,29 @@ private fun PaywallReviewsCarouselSection(
                                 modifier = Modifier
                                     .size(28.dp)
                                     .clip(CircleShape)
-                                    .background(Color.White.copy(alpha = 0.15f)),
+                                    .background(ink.copy(alpha = 0.15f)),
                                 contentAlignment = Alignment.Center,
                             ) {
                                 Text(
                                     text = review.author.first().uppercaseChar().toString(),
                                     fontSize = 13.sp,
                                     fontWeight = FontWeight.SemiBold,
-                                    color = Color.White,
+                                    color = ink,
                                 )
                             }
                         }
                     }
                     val authorStyle = if (authorStyleConfig != null) {
                         StyleEngine.applyTextStyle(
-                            TextStyle(fontWeight = FontWeight.Medium, color = Color.White.copy(alpha = 0.7f), fontSize = 12.sp),
+                            TextStyle(fontWeight = FontWeight.Medium, color = ink.copy(alpha = 0.7f), fontSize = 12.sp),
                             authorStyleConfig,
                         )
                     } else {
-                        TextStyle(fontWeight = FontWeight.Medium, color = Color.White.copy(alpha = 0.7f), fontSize = 12.sp)
+                        TextStyle(fontWeight = FontWeight.Medium, color = ink.copy(alpha = 0.7f), fontSize = 12.sp)
                     }
                     Text(text = review.author, style = authorStyle, modifier = authorElementModifier)
                     review.date?.let {
-                        Text(text = it, fontSize = 10.sp, color = Color.White.copy(alpha = 0.4f))
+                        Text(text = it, fontSize = 10.sp, color = ink.copy(alpha = 0.4f))
                     }
                 }
             }
@@ -5267,7 +5346,12 @@ private fun PaywallReviewsCarouselSection(
                     modifier = Modifier
                         .size(6.dp)
                         .clip(CircleShape)
-                        .background(if (idx == pagerState.currentPage) Color.White else Color.White.copy(alpha = 0.3f)),
+                        // #938 — same page-derived default as the carousel indicators above: a
+                        // white dot over a white page is one dot's worth of nothing.
+                        .background(
+                            if (idx == pagerState.currentPage) ink
+                            else PaywallTextDefaults.subtleOnPage(pageBackgroundHex),
+                        ),
                 )
             }
         }
