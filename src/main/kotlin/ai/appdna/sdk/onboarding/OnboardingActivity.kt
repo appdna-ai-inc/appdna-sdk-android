@@ -172,6 +172,30 @@ class OnboardingActivity : ComponentActivity() {
             return
         }
 
+        /*
+         * #952 — WARM THE MAPS RENDERER BEFORE THE STEP THAT NEEDS IT.
+         *
+         * 🔴 MEASURED, NOT GUESSED. The main-thread sampler caught the block and named it:
+         *
+         *     main thread BLOCKED for 719ms and counting, while "OnboardingActivity" was in front
+         *       android.widget.TextView.<init>
+         *       com.google.maps.api.android.lib6.impl.fc.<init>        (mapsdynamite 23.18.18)
+         *       android.os.Binder.transact
+         *       com.google.android.gms.maps.internal.zzl.onCreate      (play-services-maps 18.2.0)
+         *
+         * `MapView.onCreate` is a SYNCHRONOUS Binder round-trip into the dynamite-loaded Maps
+         * implementation, which then builds its own view tree. It costs the better part of a
+         * second the first time, on the main thread, inside composition — and an activity that
+         * cannot return to the looper for that long is exactly what the system reports as
+         * `wm_failed_to_pause`, which is how a customer's logcat found it.
+         *
+         * `MapsInitializer.initialize` does that loading ahead of time, and it is safe off the
+         * main thread. Doing it HERE — once, when a flow that contains a map is opened — means the
+         * expensive part has already happened by the time the user reaches the map step, and an
+         * app whose flows contain no map never loads Play Services at all.
+         */
+        if (flow.hasMapBlock()) warmGoogleMapsRenderer(applicationContext)
+
         // Restore (currentStepIndex, responses) from
         // `savedInstanceState` so process-death / config-change rotations
         // re-enter the flow on the same step with prior answers intact.
@@ -4466,4 +4490,32 @@ private fun CustomStep(config: StepConfig, onNext: (Map<String, Any>?) -> Unit) 
             Text(text = (config.cta_text ?: "Continue").interpolated(), fontWeight = FontWeight.SemiBold, fontSize = 17.sp)
         }
     }
+}
+
+/**
+ * #952 — does any step in this flow draw an interactive map?
+ *
+ * Cheap and total: the whole flow is already in memory, and a map block is the only thing that
+ * triggers the Maps SDK's dynamite load.
+ */
+private fun OnboardingFlowConfig.hasMapBlock(): Boolean = steps.any { step ->
+    // `content_blocks` lives on the step's CONFIG, and the renderer's own ladder is the one to
+    // follow — a flow saved before the hoist carries them only there.
+    step.config.content_blocks?.any { it.type == "map" } == true
+}
+
+/**
+ * Load the Maps renderer OFF the main thread, once per process.
+ *
+ * Failures are swallowed deliberately: this is a warm-up, and an app without Play Services must
+ * reach the static map tier exactly as it does today rather than crash on the way.
+ */
+private val mapsWarmed = java.util.concurrent.atomic.AtomicBoolean(false)
+
+private fun warmGoogleMapsRenderer(context: android.content.Context) {
+    if (!mapsWarmed.compareAndSet(false, true)) return
+    Thread({
+        runCatching { com.google.android.gms.maps.MapsInitializer.initialize(context) }
+            .onFailure { ai.appdna.sdk.Log.debug { "Maps renderer warm-up skipped: ${it.message}" } }
+    }, "appdna-maps-warmup").apply { isDaemon = true }.start()
 }
