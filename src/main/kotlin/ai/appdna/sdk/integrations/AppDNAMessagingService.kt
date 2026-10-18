@@ -334,7 +334,18 @@ internal class PushDismissReceiver : BroadcastReceiver() {
         if (intent.action != ACTION_PUSH_DISMISSED) return
         val pushId = intent.getStringExtra("push_id") ?: return
         try {
-            AppDNA.track("push_dismissed", mapOf("push_id" to pushId))
+            /*
+             * #968 — `delivery_id` was PUT ON THE INTENT and then dropped here, while the public
+             * events page documents `push_dismissed` as carrying `push_id · delivery_id`. So the
+             * one event that says a push was rejected could not be joined to the delivery that
+             * caused it. Sent only when present, like every other push event.
+             */
+            val deliveryId = intent.getStringExtra("delivery_id")
+            val props = buildMap<String, Any> {
+                put("push_id", pushId)
+                if (!deliveryId.isNullOrEmpty()) put("delivery_id", deliveryId)
+            }
+            AppDNA.track("push_dismissed", props)
         } catch (e: Throwable) {
             Log.warning("PushDismissReceiver: failed to track push_dismissed: ${e.message}")
         }
