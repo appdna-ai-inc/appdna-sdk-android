@@ -1,5 +1,6 @@
 package ai.appdna.sdk.paywalls
 
+import androidx.compose.runtime.compositionLocalOf
 import androidx.compose.ui.graphics.Color
 import ai.appdna.sdk.core.StyleEngine
 import kotlin.math.max
@@ -23,6 +24,22 @@ import kotlin.math.pow
  *
  * Driven by the `paywall_default_text_colour` shared fixture on both platforms.
  */
+/**
+ * #946 — the page the paywall is drawn on, available to every composable beneath it.
+ *
+ * Twelve composables resolved their colours by assuming a backdrop, because the alternative was
+ * threading one string through twelve signatures — and the two that were measured came back as
+ * blank white rectangles on a light page (#938). A CompositionLocal costs each of them one line
+ * and no signature at all, which is what makes the sweep possible rather than merely desirable.
+ *
+ * iOS reads the same value from `\.paywallBackgroundHex` in the environment; this is the Android
+ * spelling of it, so a change on either side has an obvious counterpart on the other.
+ *
+ * `null` means "the document authored no page colour", which `readable` already answers with
+ * `#FFFFFF` — the behaviour every one of these composables had before.
+ */
+internal val LocalPaywallPageHex = compositionLocalOf<String?> { null }
+
 object PaywallTextDefaults {
     const val DARK = "#111827"
     const val LIGHT = "#FFFFFF"

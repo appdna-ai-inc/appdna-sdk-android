@@ -1276,7 +1276,9 @@ fun PaywallScreen(
             if (back.enabled == true && showBack) {
                 val backCd = stringResource(R.string.appdna_a11y_paywall_close)
                 val backSize = back.size ?: 16f
-                val backColor = back.color?.let { parseHexColor(it) } ?: Color.White
+                // #946 — the chevron is drawn on the PAGE.
+                val backColor = back.color?.let { parseHexColor(it) }
+                    ?: PaywallTextDefaults.readable(config.pageBackgroundHex())
                 val backOnLeft = (back.position ?: "top_left") == "top_left"
                 if ((back.style ?: "chevron") == "text_link") {
                     TextButton(
@@ -1338,7 +1340,9 @@ fun PaywallScreen(
                     ) {
                         Text(
                             text = loc("dismiss.text", config.dismiss?.text ?: "No thanks"),
-                            color = Color.White.copy(alpha = 0.6f),
+                            // #946 — "No thanks" is drawn on the page, not on a control.
+                            color = PaywallTextDefaults.readable(config.pageBackgroundHex())
+                                .copy(alpha = 0.6f),
                             fontSize = 14.sp,
                         )
                     }
@@ -1352,7 +1356,11 @@ fun PaywallScreen(
                             .width(36.dp)
                             .height(5.dp)
                             .clip(RoundedCornerShape(3.dp))
-                            .background(Color.White.copy(alpha = 0.5f))
+                            // #946 — the grabber is the only affordance on a swipe-down paywall,
+                            // and white at 50% over a white page is no affordance at all.
+                            .background(
+                                PaywallTextDefaults.readable(config.pageBackgroundHex()).copy(alpha = 0.5f),
+                            )
                     )
                 }
                 // A chevron that LEAVES the paywall, which returns the user to
@@ -1364,7 +1372,9 @@ fun PaywallScreen(
                 else -> { // back_button chevron, or x_button (the default)
                     val closeCd = stringResource(R.string.appdna_a11y_paywall_close)
                     val glyphSize = (config.dismiss?.size ?: 16f)
-                    val glyphColor = config.dismiss?.color?.let { parseHexColor(it) } ?: Color.White
+                    // #946 — the ✕ is drawn on the PAGE, so its default is read off the page.
+                    val glyphColor = config.dismiss?.color?.let { parseHexColor(it) }
+                        ?: PaywallTextDefaults.readable(config.pageBackgroundHex())
                     val onLeft = (config.dismiss?.position ?: "top_right") == "top_left"
                     IconButton(
                         onClick = { triggerDismiss() },
@@ -1709,6 +1719,19 @@ internal fun PaywallSectionView(
      */
     headerCloseInset: Dp = 0.dp,
 ) {
+    /*
+     * #946 — the page, published once for every composable beneath this one.
+     *
+     * Twelve of them resolved colours by assuming a backdrop, and the two that were measured
+     * came back as blank white rectangles on a light page (#938). Threading one string through
+     * twelve signatures is what kept that from being fixed; a CompositionLocal costs each of
+     * them one line and no signature at all.
+     *
+     * Provided HERE rather than only in `PaywallScreen`, because the section renderers are also
+     * driven directly — by the snapshot tests, and by the screens surface — and the default of
+     * `null` would quietly mean "assume white" on those paths.
+     */
+    CompositionLocalProvider(LocalPaywallPageHex provides config.pageBackgroundHex()) {
     when (section.type) {
         "header" -> {
             // Mirror iOS HeaderSection.swift:54 — `.padding(.top, 40)` gives
@@ -2038,6 +2061,18 @@ internal fun PaywallSectionView(
             val periodElementModifier = Modifier.run {
                 with(StyleEngine) { applyContainerStyle(elementStyle("period")) }
             }
+            /*
+             * #946 — the plans section's own ink, read off the page.
+             *
+             * `planNameStyle` and `priceStyle` default to white below, which is right on a tile
+             * filled with the brand accent and wrong on every arm that draws straight onto the
+             * page. `radio_list` and `segmented_toggle` were measured on a `#FFFFFF` page and came
+             * back with 0 page-derived pixels: the selected row was legible only by its accent
+             * fill, and the UNSELECTED plan was not on the screen at all — no tile, no border, and
+             * white text.
+             */
+            val planInk = PaywallTextDefaults.readable(config.pageBackgroundHex())
+            val planSubtleInk = PaywallTextDefaults.subtleOnPage(config.pageBackgroundHex())
             val planNameStyle = StyleEngine.applyTextStyle(
                 TextStyle(fontWeight = FontWeight.SemiBold, color = Color.White, fontSize = 16.sp),
                 // Mirror iOS PlanCard.swift:22 (elements["plan_name"] ?? elements["label"]) — the
@@ -2724,9 +2759,31 @@ internal fun PaywallSectionView(
                         val segActiveBg = customSelectedBg ?: ai.appdna.sdk.AppDNA.brandAccentColor().copy(alpha = 0.2f)
                         val segActiveBorder = customSelectedBorder ?: ai.appdna.sdk.AppDNA.brandAccentColor()
                         val segInactiveBg = unselectedBgColor ?: Color.Transparent
-                        val segInactiveBorder = unselectedBorderColor ?: Color.White.copy(alpha = 0.2f)
-                        val segActiveText = selectedTextColor ?: Color.White
-                        val segInactiveText = Color.White.copy(alpha = 0.7f)
+                        /*
+                         * #946 — BOTH halves, read off what they are actually drawn on.
+                         *
+                         * The inactive half's border and label were white, and on a `#FFFFFF` page
+                         * the capture showed one segment and an empty rectangle where the author's
+                         * second plan should be.
+                         *
+                         * 🔴 The ACTIVE half was white too, and white was wrong there as well —
+                         * `segActiveBg` is the brand accent at 20%, which over a light page is a
+                         * pale lavender, not a solid fill. The first fixed capture showed "Annual"
+                         * correctly and "Monthly" still legible only by its antialiasing. So the
+                         * active label is read off the composited ACTIVE TILE rather than off the
+                         * page, which gives white on a dark paywall and ink on a light one.
+                         */
+                        val segInactiveBorder = unselectedBorderColor ?: planSubtleInk.copy(alpha = 0.2f)
+                        val segActiveBgHex = section.data?.selected_bg_color
+                        val segActiveText = selectedTextColor ?: PaywallTextDefaults.readable(
+                            PaywallTextDefaults.composite(
+                                segActiveBgHex ?: (ai.appdna.sdk.AppDNA.brandAccentHex ?: "#6366F1"),
+                                config.pageBackgroundHex(),
+                                // An authored fill is opaque; the default is the accent at 20%.
+                                if (segActiveBgHex != null) 1.0 else 0.2,
+                            ),
+                        )
+                        val segInactiveText = planInk.copy(alpha = 0.7f)
                         SingleChoiceSegmentedButtonRow(
                             modifier = Modifier.fillMaxWidth(),
                         ) {
@@ -2870,7 +2927,10 @@ internal fun PaywallSectionView(
                                     )
                                     .border(
                                         if (isSelected) 2.dp else 1.dp,
-                                        if (isSelected) ai.appdna.sdk.AppDNA.brandAccentColor() else Color.White.copy(alpha = 0.2f),
+                                        // #946 — the unselected row's only edge. White at 20%
+                                        // over a white page is a plan the author cannot see.
+                                        if (isSelected) ai.appdna.sdk.AppDNA.brandAccentColor()
+                                        else planSubtleInk.copy(alpha = 0.2f),
                                         cardShape,
                                     )
                                     .clickable { onPlanSelect(plan.id) }
@@ -2882,22 +2942,35 @@ internal fun PaywallSectionView(
                                     onClick = { onPlanSelect(plan.id) },
                                     colors = androidx.compose.material3.RadioButtonDefaults.colors(
                                         selectedColor = ai.appdna.sdk.AppDNA.brandAccentColor(),
-                                        unselectedColor = Color.White.copy(alpha = 0.5f),
+                                        // #946 — the unselected radio ring, read off the page.
+                                        unselectedColor = planInk.copy(alpha = 0.5f),
                                     ),
                                 )
                                 Spacer(Modifier.width(8.dp))
+                                /*
+                                 * #946 — this row's text, read off the PAGE.
+                                 *
+                                 * Both rows draw onto the page: the unselected one is transparent
+                                 * and the selected one is the brand accent at 10%, which over a
+                                 * light page is still a light surface. `planNameStyle` and
+                                 * `priceStyle` default to white, so the measured capture showed
+                                 * the selected plan's name and price legible only by their
+                                 * antialiasing and the unselected plan's not at all. An authored
+                                 * `selected_text_color` still wins on the selected row.
+                                 */
+                                val rowInk = if (isSelected) (selectedTextColor ?: planInk) else planInk
                                 Column(modifier = Modifier.weight(1f)) {
-                                    Text(text = loc("plan.$planIdx.name", plan.displayName), style = planNameStyle, modifier = planNameElementModifier)
+                                    Text(text = loc("plan.$planIdx.name", plan.displayName), style = planNameStyle.copy(color = rowInk), modifier = planNameElementModifier)
                                     plan.period?.let {
                                         Text(
                                             text = loc("plan.$planIdx.period", it),
-                                            style = periodStyle,
+                                            style = periodStyle.copy(color = rowInk.copy(alpha = 0.7f)),
                                             modifier = periodElementModifier,
                                         )
                                     }
                                 }
                                 Column(horizontalAlignment = Alignment.End) {
-                                    Text(text = loc("plan.$planIdx.price", plan.displayPrice), style = priceStyle, modifier = priceElementModifier)
+                                    Text(text = loc("plan.$planIdx.price", plan.displayPrice), style = priceStyle.copy(color = rowInk), modifier = priceElementModifier)
                                     plan.badge?.let {
                                         Spacer(Modifier.height(4.dp))
                                         BadgeView(loc("plan.$planIdx.badge", it))
@@ -4315,6 +4388,7 @@ internal fun PaywallSectionView(
             )
         }
     }
+    }
 }
 
 // MARK: - Countdown section
@@ -4380,7 +4454,10 @@ private fun PaywallLegalSection(
     loc: (String, String) -> String,
     onRestore: () -> Unit = {},
 ) {
-    val textColor = section.data?.color?.let { parseHexColor(it) } ?: Color.White.copy(alpha = 0.5f)
+    // #946 — the readable colour FOR THIS PAGE. Every use below keeps the alpha it had, so a
+    // dark paywall draws exactly the pixels it drew before and a light one becomes legible.
+    val ink = PaywallTextDefaults.readable(LocalPaywallPageHex.current)
+    val textColor = section.data?.color?.let { parseHexColor(it) } ?: ink.copy(alpha = 0.5f)
     val fontSize = section.data?.font_size ?: 11f
     val textAlignment = when (section.data?.alignment) {
         "left" -> TextAlign.Start
@@ -4595,9 +4672,12 @@ private fun PaywallCardSection(
     section: PaywallSection,
     loc: (String, String) -> String,
 ) {
+    // #946 — the readable colour FOR THIS PAGE. Every use below keeps the alpha it had, so a
+    // dark paywall draws exactly the pixels it drew before and a light one becomes legible.
+    val ink = PaywallTextDefaults.readable(LocalPaywallPageHex.current)
     val radius = section.data?.corner_radius ?: 16f
-    val bgColor = section.data?.background_color?.let { parseHexColor(it) } ?: Color.White.copy(alpha = 0.08f)
-    val borderClr = section.data?.border_color?.let { parseHexColor(it) } ?: Color.White.copy(alpha = 0.15f)
+    val bgColor = section.data?.background_color?.let { parseHexColor(it) } ?: ink.copy(alpha = 0.08f)
+    val borderClr = section.data?.border_color?.let { parseHexColor(it) } ?: ink.copy(alpha = 0.15f)
 
     Card(
         shape = RoundedCornerShape(radius.dp),
@@ -4613,7 +4693,7 @@ private fun PaywallCardSection(
                     text = loc("card.title", it),
                     fontWeight = FontWeight.SemiBold,
                     fontSize = 16.sp,
-                    color = Color.White,
+                    color = ink,
                 )
                 Spacer(Modifier.height(4.dp))
             }
@@ -4621,7 +4701,7 @@ private fun PaywallCardSection(
                 Text(
                     text = loc("card.subtitle", it),
                     fontSize = 14.sp,
-                    color = Color.White.copy(alpha = 0.8f),
+                    color = ink.copy(alpha = 0.8f),
                 )
                 Spacer(Modifier.height(8.dp))
             }
@@ -4629,7 +4709,7 @@ private fun PaywallCardSection(
                 Text(
                     text = loc("card.body", it),
                     fontSize = 14.sp,
-                    color = Color.White.copy(alpha = 0.9f),
+                    color = ink.copy(alpha = 0.9f),
                 )
             }
         }
@@ -4737,6 +4817,9 @@ private fun PaywallTimelineSection(
     section: PaywallSection,
     loc: (String, String) -> String,
 ) {
+    // #946 — the readable colour FOR THIS PAGE. Every use below keeps the alpha it had, so a
+    // dark paywall draws exactly the pixels it drew before and a light one becomes legible.
+    val ink = PaywallTextDefaults.readable(LocalPaywallPageHex.current)
     val items = section.data?.items ?: return
     val isCompact = section.data.compact ?: false
     val showLine = section.data.show_line ?: true
@@ -4758,7 +4841,7 @@ private fun PaywallTimelineSection(
     // tiny accent dots act as a subtle visual rail.
     val connectorColor = section.data.line_color?.let { parseHexColor(it) }
         ?: section.style?.elements?.get("connector")?.text_style?.color?.let { parseHexColor(it) }
-        ?: Color.White
+        ?: ink
     val titleFontSize = (section.data.font_size ?: 14f).sp
     val itemSpacing = if (isCompact) 12.dp else 20.dp
 
@@ -4816,10 +4899,10 @@ private fun PaywallTimelineSection(
                             .padding(bottom = if (isLast) 0.dp else itemSpacing),
                     ) {
                         item.title?.let {
-                            Text(text = it, fontWeight = FontWeight.SemiBold, color = Color.White, fontSize = titleFontSize)
+                            Text(text = it, fontWeight = FontWeight.SemiBold, color = ink, fontSize = titleFontSize)
                         }
                         item.subtitle?.let {
-                            Text(text = it, color = Color.White.copy(alpha = 0.7f), fontSize = 12.sp)
+                            Text(text = it, color = ink.copy(alpha = 0.7f), fontSize = 12.sp)
                         }
                     }
                 }
@@ -4835,6 +4918,9 @@ private fun PaywallIconGridSection(
     section: PaywallSection,
     loc: (String, String) -> String,
 ) {
+    // #946 — the readable colour FOR THIS PAGE. Every use below keeps the alpha it had, so a
+    // dark paywall draws exactly the pixels it drew before and a light one becomes legible.
+    val ink = PaywallTextDefaults.readable(LocalPaywallPageHex.current)
     val items = section.data?.items ?: return
     val columnCount = section.data.columns ?: 3
     val gridSpacing = section.data.spacing ?: 16f
@@ -4882,17 +4968,17 @@ private fun PaywallIconGridSection(
                         val itemLabel = item.label ?: item.title
                         itemLabel?.let {
                             val ts = if (titleStyle != null) StyleEngine.applyTextStyle(
-                                TextStyle(fontWeight = FontWeight.Medium, color = Color.White, fontSize = 12.sp, textAlign = TextAlign.Center),
+                                TextStyle(fontWeight = FontWeight.Medium, color = ink, fontSize = 12.sp, textAlign = TextAlign.Center),
                                 titleStyle,
-                            ) else TextStyle(fontWeight = FontWeight.Medium, color = Color.White, fontSize = 12.sp, textAlign = TextAlign.Center)
+                            ) else TextStyle(fontWeight = FontWeight.Medium, color = ink, fontSize = 12.sp, textAlign = TextAlign.Center)
                             Text(text = it, style = ts, textAlign = TextAlign.Center, modifier = titleElementModifier)
                         }
                         val itemDesc = item.description ?: item.subtitle
                         itemDesc?.let {
                             val ds = if (descStyle != null) StyleEngine.applyTextStyle(
-                                TextStyle(color = Color.White.copy(alpha = 0.6f), fontSize = 10.sp, textAlign = TextAlign.Center),
+                                TextStyle(color = ink.copy(alpha = 0.6f), fontSize = 10.sp, textAlign = TextAlign.Center),
                                 descStyle,
-                            ) else TextStyle(color = Color.White.copy(alpha = 0.6f), fontSize = 10.sp, textAlign = TextAlign.Center)
+                            ) else TextStyle(color = ink.copy(alpha = 0.6f), fontSize = 10.sp, textAlign = TextAlign.Center)
                             Text(text = it, style = ds, textAlign = TextAlign.Center, modifier = descElementModifier)
                         }
                     }
@@ -5132,6 +5218,9 @@ private fun PaywallToggleSection(
     loc: (String, String) -> String,
     toggleStates: MutableMap<String, Boolean> = mutableMapOf(),
 ) {
+    // #946 — the readable colour FOR THIS PAGE. Every use below keeps the alpha it had, so a
+    // dark paywall draws exactly the pixels it drew before and a light one becomes legible.
+    val ink = PaywallTextDefaults.readable(LocalPaywallPageHex.current)
     val toggleKey = section.data?.label ?: "toggle_${section.type}"
     var isToggled by remember { mutableStateOf(toggleStates[toggleKey] ?: section.data?.default_value ?: false) }
     val onColor = section.data?.on_color?.let { parseHexColor(it) } ?: ai.appdna.sdk.AppDNA.brandAccentColor()
@@ -5154,7 +5243,7 @@ private fun PaywallToggleSection(
                     text = loc("toggle.label", it),
                     fontWeight = FontWeight.Medium,
                     fontSize = 14.sp,
-                    color = section.data.label_color_val?.let { c -> parseHexColor(c) } ?: Color.White,
+                    color = section.data.label_color_val?.let { c -> parseHexColor(c) } ?: ink,
                 )
             }
             section.data?.description?.let {
@@ -5372,6 +5461,9 @@ private fun PaywallReviewsCarouselSection(
 // Countdown timer for social proof
 @Composable
 private fun CountdownTimer(seconds: Int, valueTextStyle: ai.appdna.sdk.core.TextStyleConfig? = null) {
+    // #946 — the readable colour FOR THIS PAGE. Every use below keeps the alpha it had, so a
+    // dark paywall draws exactly the pixels it drew before and a light one becomes legible.
+    val ink = PaywallTextDefaults.readable(LocalPaywallPageHex.current)
     var remaining by remember { mutableIntStateOf(seconds) }
 
     LaunchedEffect(Unit) {
@@ -5386,7 +5478,7 @@ private fun CountdownTimer(seconds: Int, valueTextStyle: ai.appdna.sdk.core.Text
     val secs = remaining % 60
 
     val digitStyle = StyleEngine.applyTextStyle(
-        TextStyle(fontSize = 22.sp, fontWeight = FontWeight.Bold, color = Color.White),
+        TextStyle(fontSize = 22.sp, fontWeight = FontWeight.Bold, color = ink),
         valueTextStyle
     )
 
@@ -5396,12 +5488,12 @@ private fun CountdownTimer(seconds: Int, valueTextStyle: ai.appdna.sdk.core.Text
     ) {
         listOf(hours to "h", minutes to "m", secs to "s").forEachIndexed { index, (value, label) ->
             if (index > 0) {
-                Text(":", color = Color.White.copy(alpha = 0.6f), fontSize = 20.sp, fontWeight = FontWeight.Bold)
+                Text(":", color = ink.copy(alpha = 0.6f), fontSize = 20.sp, fontWeight = FontWeight.Bold)
             }
             Column(
                 horizontalAlignment = Alignment.CenterHorizontally,
                 modifier = Modifier
-                    .background(Color.White.copy(alpha = 0.1f), RoundedCornerShape(8.dp))
+                    .background(ink.copy(alpha = 0.1f), RoundedCornerShape(8.dp))
                     .padding(horizontal = 12.dp, vertical = 6.dp),
             ) {
                 Text(
@@ -5411,7 +5503,7 @@ private fun CountdownTimer(seconds: Int, valueTextStyle: ai.appdna.sdk.core.Text
                     text = String.format(java.util.Locale.US, "%02d", value),
                     style = digitStyle,
                 )
-                Text(text = label, fontSize = 10.sp, color = Color.White.copy(alpha = 0.6f))
+                Text(text = label, fontSize = 10.sp, color = ink.copy(alpha = 0.6f))
             }
         }
     }
