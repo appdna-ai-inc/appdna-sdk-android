@@ -31,7 +31,14 @@ import java.util.concurrent.ConcurrentHashMap
  */
 internal object ConfigurationIssueReporter {
 
-    /** Shared with iOS, so the two platforms land in one BigQuery row set. */
+    /**
+     * Shared with iOS, so the two platforms land in one BigQuery row set.
+     *
+     * 🔴 The literal is repeated at the `track` call below rather than passed from here, and that
+     * is deliberate: `check:server-event-names` harvests event names from `track("…")` call SITES,
+     * so a constant makes a real event look like one no SDK emits. The gate's own comment records
+     * the same trap for `onboarding_flow_completed`.
+     */
     const val EVENT_NAME = "sdk_decode_dropped"
 
     private val seen = ConcurrentHashMap.newKeySet<String>()
@@ -50,7 +57,7 @@ internal object ConfigurationIssueReporter {
         if (!seen.add("$surface|$detail")) return
 
         AppDNA.track(
-            EVENT_NAME,
+            "sdk_decode_dropped",
             mapOf(
                 "surface" to surface,
                 "surface_id" to (id ?: ""),
