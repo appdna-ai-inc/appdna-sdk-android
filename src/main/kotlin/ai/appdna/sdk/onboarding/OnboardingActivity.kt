@@ -81,6 +81,24 @@ import java.net.URL
  */
 class OnboardingActivity : ComponentActivity() {
 
+    /*
+     * #952 — a debuggable host measures its own main-thread stalls while this surface is in front.
+     *
+     * A customer's logcat carried `wm_failed_to_pause` for `PaywallActivity` at the moment an
+     * onboarding map step ended, and nothing of ours said what was running. A release build pays
+     * nothing: `MainThreadStall.start` returns immediately when the host is not debuggable.
+     */
+    override fun onResume() {
+        super.onResume()
+        ai.appdna.sdk.core.MainThreadStall.start(this, "OnboardingActivity")
+    }
+
+    override fun onPause() {
+        ai.appdna.sdk.core.MainThreadStall.stop()
+        super.onPause()
+    }
+
+
     /**
      * VM-backed state survives config changes / process
      * death without leaking pre-launch lambdas across distinct flow launches.

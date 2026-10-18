@@ -87,6 +87,24 @@ import ai.appdna.sdk.R
  */
 class PaywallActivity : ComponentActivity() {
 
+    /*
+     * #952 — a debuggable host measures its own main-thread stalls while this surface is in front.
+     *
+     * A customer's logcat carried `wm_failed_to_pause` for `PaywallActivity` at the moment an
+     * onboarding map step ended, and nothing of ours said what was running. A release build pays
+     * nothing: `MainThreadStall.start` returns immediately when the host is not debuggable.
+     */
+    override fun onResume() {
+        super.onResume()
+        ai.appdna.sdk.core.MainThreadStall.start(this, "PaywallActivity")
+    }
+
+    override fun onPause() {
+        ai.appdna.sdk.core.MainThreadStall.stop()
+        super.onPause()
+    }
+
+
     // OB-5 audit-2 HIGH-3 — instance-level snapshot
     // of the dismiss callback so `onDestroy` can fire it as a backstop when
     // the OS / user kills the Activity outside the regular dismissal paths
