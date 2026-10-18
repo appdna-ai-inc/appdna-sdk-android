@@ -258,12 +258,16 @@ internal class PaywallManager(
         // A snapshot, because `config` above is a captured `var` and Kotlin will not smart-cast one.
         val presented = config
         scope.launch {
-            val prices = ai.appdna.sdk.billing.StorePriceLookup.prices(
+            // #933 — price and period resolved together, inside the same budget, so a paywall
+            // cannot show this month's price against last month's cadence.
+            val facts = ai.appdna.sdk.billing.StorePriceLookup.facts(
                 resolver = ai.appdna.sdk.AppDNA.billing.manager?.priceResolver,
                 productIds = (presented.plans ?: emptyList()).map { it.product_id },
             )
+            val prices = facts.mapNotNull { (id, f) -> f.price?.let { id to it } }.toMap()
+            val periods = facts.mapNotNull { (id, f) -> f.periodIso?.let { id to it } }.toMap()
             // Every place plans live, not only the root array — see `applyingStorePrices`.
-            val withPrices = presented.applyingStorePrices(prices)
+            val withPrices = presented.applyingStorePrices(prices).applyingStorePeriods(periods)
             val sources = (withPrices.plans ?: emptyList()).map { it.priceSource }
             if (sources.isNotEmpty()) {
                 viewProps["price_source"] = sources.joinToString(",")

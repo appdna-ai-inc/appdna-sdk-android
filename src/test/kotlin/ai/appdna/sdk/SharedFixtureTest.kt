@@ -1938,9 +1938,23 @@ class SharedFixtureTest(
     private fun runPlanPeriod(action: JSONObject, spy: Spy) {
         val cases = action.optJSONArray("cases") ?: unsupported("resolve_plan_period without cases")
         spy.state["results"] = (0 until cases.length()).map { i ->
-            val raw = cases.getJSONObject(i).getJSONObject("value")
+            val case = cases.getJSONObject(i)
+            val raw = case.getJSONObject("value")
             val plan = ai.appdna.sdk.paywalls.PaywallConfigParser.parsePlanForTest(jsonToMap(raw))
-            plan.period?.takeIf { it.isNotEmpty() }
+            /*
+             * #933 — a case may carry a `store_period` BESIDE its `value`, because the store's ISO
+             * period is filled in by the presenter and is never part of a published document, so it
+             * cannot live inside the plan the parser reads.
+             *
+             * `displayPeriod` rather than `period`: for every case without a `store_period` the two
+             * are identical, which is why the assertions written before #933 still stand unchanged.
+             */
+            val withStore = if (case.has("store_period")) {
+                plan.copy(resolvedStorePeriod = case.getString("store_period"))
+            } else {
+                plan
+            }
+            withStore.displayPeriod?.takeIf { it.isNotEmpty() }
         }
     }
 

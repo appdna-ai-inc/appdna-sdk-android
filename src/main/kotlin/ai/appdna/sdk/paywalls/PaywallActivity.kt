@@ -2472,7 +2472,10 @@ internal fun PaywallSectionView(
                                         Spacer(Modifier.width(2.dp))
                                     // #913 — the period, small beside the price. See the note
                                     // below the branch.
-                                    plan.period?.takeIf { it.isNotBlank() }?.let {
+                                    // #933 — `displayPeriod`, not `period`: an authored period wins,
+                                    // and a plan that authored none now reads the STORE's, phrased
+                                    // in the device's language instead of drawing nothing.
+                                    plan.displayPeriod?.takeIf { it.isNotBlank() }?.let {
                                         Text(
                                             text = loc("plan.$planIdx.period", it),
                                             // #913 — the period follows the TILE, like the price does.
@@ -2533,7 +2536,7 @@ internal fun PaywallSectionView(
                                     )
                                     // #913 — the period, small beside the price. See the note
                                     // below the branch.
-                                    plan.period?.takeIf { it.isNotBlank() }?.let {
+                                    plan.displayPeriod?.takeIf { it.isNotBlank() }?.let {
                                         Text(
                                             text = loc("plan.$planIdx.period", it),
                                             // #913 — the period follows the TILE, like the price does.
@@ -2838,7 +2841,7 @@ internal fun PaywallSectionView(
                             Spacer(Modifier.height(12.dp))
                             Text(
                                 text = loc("plan.$selectedIdx.price", sp.displayPrice) +
-                                    (sp.period?.let { " / ${loc("plan.$selectedIdx.period", it)}" } ?: ""),
+                                    (sp.displayPeriod?.let { " / ${loc("plan.$selectedIdx.period", it)}" } ?: ""),
                                 style = priceStyle,
                                 modifier = Modifier.fillMaxWidth(),
                                 textAlign = TextAlign.Center,
@@ -2979,7 +2982,7 @@ internal fun PaywallSectionView(
                                 val rowInk = if (isSelected) (selectedTextColor ?: planInk) else planInk
                                 Column(modifier = Modifier.weight(1f)) {
                                     Text(text = loc("plan.$planIdx.name", plan.displayName), style = planNameStyle.copy(color = rowInk), modifier = planNameElementModifier)
-                                    plan.period?.let {
+                                    plan.displayPeriod?.let {
                                         Text(
                                             text = loc("plan.$planIdx.period", it),
                                             style = periodStyle.copy(color = rowInk.copy(alpha = 0.7f)),
@@ -3033,7 +3036,7 @@ internal fun PaywallSectionView(
                                     }
                                     if (isSelected) {
                                         Spacer(Modifier.height(8.dp))
-                                        plan.period?.let {
+                                        plan.displayPeriod?.let {
                                         Text(
                                             text = loc("plan.$planIdx.period", it),
                                             style = periodStyle,
@@ -3515,7 +3518,7 @@ internal fun PaywallSectionView(
                                                     // `fun PlanCard`; wiring only the latter is how
                                                     // #905 and #910 each reached a device with a
                                                     // field that drew nowhere.
-                                                    plan.period?.takeIf { it.isNotBlank() }?.let {
+                                                    plan.displayPeriod?.takeIf { it.isNotBlank() }?.let {
                                                         Text(
                                                             text = loc("plan.$planIdx.period", it),
                                                             // #913 — the period follows the TILE, like the price does.
@@ -3578,7 +3581,7 @@ internal fun PaywallSectionView(
                                                     // `fun PlanCard`; wiring only the latter is how
                                                     // #905 and #910 each reached a device with a
                                                     // field that drew nowhere.
-                                                    plan.period?.takeIf { it.isNotBlank() }?.let {
+                                                    plan.displayPeriod?.takeIf { it.isNotBlank() }?.let {
                                                         Text(
                                                             text = loc("plan.$planIdx.period", it),
                                                             // #913 — the period follows the TILE, like the price does.

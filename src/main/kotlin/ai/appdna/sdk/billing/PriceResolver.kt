@@ -133,6 +133,47 @@ internal class PriceResolver(
      * @param productId The subscription product ID.
      * @return List of OfferDetails for the product.
      */
+    /**
+     * #933 — the ISO billing period of each subscription's BASE plan, by product id, in ONE query.
+     *
+     * 🔴 WHY THIS EXISTS RATHER THAN `getOffers`. The period lives on [OfferDetails], and
+     * `getOffers` takes a single product id — so reading it for a three-plan paywall would be three
+     * extra Play round-trips. This reads the same `ProductDetails` list `getSubscriptionProducts`
+     * already queries, and keeps the period off the public [ProductInfo] DTO, which the RN and
+     * Flutter bridges map field by field.
+     *
+     * A product Play does not know, and a one-time product with no subscription offer, are both
+     * simply absent — the same signal as a failed lookup, and it resolves the same way.
+     */
+    suspend fun getSubscriptionPeriods(productIds: List<String>): Map<String, String> {
+        if (productIds.isEmpty()) return emptyMap()
+        val client = connectionManager.awaitConnectedClient() ?: return emptyMap()
+        val params = QueryProductDetailsParams.newBuilder()
+            .setProductList(
+                productIds.map { id ->
+                    QueryProductDetailsParams.Product.newBuilder()
+                        .setProductId(id)
+                        .setProductType(BillingClient.ProductType.SUBS)
+                        .build()
+                },
+            )
+            .build()
+        val result = client.queryProductDetails(params)
+        if (result.billingResult.responseCode != BillingClient.BillingResponseCode.OK) {
+            Log.warning("PriceResolver: period query failed with code ${result.billingResult.responseCode}")
+            return emptyMap()
+        }
+        val out = mutableMapOf<String, String>()
+        result.productDetailsList?.forEach { details ->
+            // The BASE plan's recurring phase: the last phase of the first offer, since a free
+            // trial or introductory phase precedes it and is NOT the ongoing cadence.
+            val phases = details.subscriptionOfferDetails?.firstOrNull()?.pricingPhases?.pricingPhaseList
+            val base = phases?.lastOrNull()?.billingPeriod
+            if (!base.isNullOrBlank()) out[details.productId] = base
+        }
+        return out
+    }
+
     suspend fun getOffers(productId: String): List<OfferDetails> {
         val client = connectionManager.awaitConnectedClient() ?: return emptyList()
 

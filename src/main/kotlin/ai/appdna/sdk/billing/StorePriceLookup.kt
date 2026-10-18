@@ -28,6 +28,55 @@ import kotlinx.coroutines.withTimeoutOrNull
 internal object StorePriceLookup {
 
     /**
+     * #933 — what the store knows about a product: its localized price and its ISO billing period.
+     *
+     * 🔴 CORRECTED WHILE WRITING THIS. The first version claimed both came off one `ProductInfo`
+     * and read `info.billingPeriod` — which does not exist. `ProductInfo` carries no period at all;
+     * it lives on the base plan's recurring pricing phase, behind a different query. So this is a
+     * price lookup (with its cache rung) plus ONE batched period query, both inside the same
+     * budget — not the single pass the comment first asserted.
+     *
+     * They are still resolved together rather than separately, because a paywall showing this
+     * month's price against last month's cadence is worse than showing neither.
+     */
+    data class StoreFacts(val price: String?, val periodIso: String?)
+
+    /**
+     * Price AND period by product id, in one store round-trip. A product Play does not know is
+     * simply absent, which is the same signal as a failed lookup and resolves the same way.
+     */
+    suspend fun facts(
+        resolver: PriceResolver?,
+        productIds: List<String>,
+        timeoutMs: Long = 1500L,
+    ): Map<String, StoreFacts> {
+        val ids = productIds.filter { it.isNotBlank() }.distinct()
+        if (ids.isEmpty() || resolver == null) return emptyMap()
+
+        // The price half reuses `prices`, cache rung and all — no second implementation to drift.
+        val priceMap = prices(resolver, ids, timeoutMs)
+
+        /*
+         * The period half is ONE batched query. It cannot come off `ProductInfo`, which carries no
+         * period: the value lives on the base plan's recurring pricing phase, and
+         * `getSubscriptionPeriods` reads it from the same `ProductDetails` list the price query
+         * already fetches rather than calling the per-product `getOffers` once per plan.
+         */
+        val periodMap = withTimeoutOrNull(timeoutMs) {
+            runCatching { resolver.getSubscriptionPeriods(ids) }.getOrDefault(emptyMap())
+        } ?: run {
+            Log.info("[Paywall] store period lookup exceeded ${timeoutMs}ms — authored periods stand")
+            emptyMap()
+        }
+
+        return ids.mapNotNull { id ->
+            val price = priceMap[id]
+            val period = periodMap[id]
+            if (price == null && period == null) null else id to StoreFacts(price, period)
+        }.toMap()
+    }
+
+    /**
      * Localized display prices by product id. A product Play does not know is simply absent, which
      * is the same signal as a failed lookup and resolves the same way.
      */

@@ -101,6 +101,32 @@ data class PaywallLayout(
  *
  * An empty map returns the receiver untouched: a failed or timed-out lookup must change nothing.
  */
+/**
+ * #933 — a copy with the STORE's ISO billing period on every plan, wherever that plan lives.
+ *
+ * Deliberately the same shape as [applyingStorePrices], including the section walk: a real paywall
+ * keeps its plans in `layout.sections[].config.plans`, and #923's first version of the price
+ * substitution mapped ONLY the root array, so the whole feature reached nothing on every real
+ * paywall. Repeating that here would repeat that bug.
+ */
+internal fun PaywallConfig.applyingStorePeriods(periods: Map<String, String>): PaywallConfig {
+    if (periods.isEmpty()) return this
+    fun withPeriod(list: List<PaywallPlan>?): ImmutableList<PaywallPlan>? =
+        list?.map { it.copy(resolvedStorePeriod = periods[it.product_id]) }?.toImmutableList()
+    return copy(
+        plans = withPeriod(plans),
+        sections = sections.map { section ->
+            // `data` into a local so the non-null check is one the compiler can see, and the same
+            // `type != "plans"` guard as `applyingStorePrices`: a non-plans section that happens to
+            // carry a `plans` key is not a plan list.
+            val d = section.data
+            val sectionPlans = d?.plans
+            if (section.type != "plans" || d == null || sectionPlans == null) section
+            else section.copy(data = d.copy(plans = withPeriod(sectionPlans)))
+        }.toImmutableList(),
+    )
+}
+
 internal fun PaywallConfig.applyingStorePrices(prices: Map<String, String>): PaywallConfig {
     if (prices.isEmpty()) return this
     fun priced(list: List<PaywallPlan>?): ImmutableList<PaywallPlan>? =
@@ -529,6 +555,13 @@ data class PaywallPlan(
      * product. Never parsed from a document.
      */
     val resolvedStorePrice: String? = null,
+    /**
+     * #933 — the STORE's ISO billing period for this plan's product (`P1M`, `P1Y`), filled in by
+     * the presenter beside [resolvedStorePrice]. Never authored and never published: it is what
+     * Play told this device, so it is accurate for the product the user will actually be charged
+     * for.
+     */
+    val resolvedStorePeriod: String? = null,
     val sort_order: Int = 0,
     // Rich plan metadata (iOS parity)
     val trial: PaywallPlanTrial? = null,
@@ -574,6 +607,21 @@ data class PaywallPlan(
     // over the raw fields when set. iOS source: PaywallConfig.swift via
     // computed Codable accessors.
     val displayName: String get() = label.ifBlank { name }
+    /**
+     * #933 — the period drawn beside the price, phrased in the device's language.
+     *
+     * 🔴 AN AUTHORED `period` WINS. This is additive on purpose: an author who typed "mo" keeps
+     * "mo", so no published paywall changes appearance, while a plan that authored nothing — which
+     * was 0 of 81 in production — gains a correct period instead of none. The store's value is
+     * structural (`P1M`), so it is phrased through [BillingPeriodPhrase] rather than printed.
+     */
+    val displayPeriod: String?
+        get() = period?.takeIf { it.isNotBlank() }
+            ?: ai.appdna.sdk.billing.BillingPeriodPhrase.suffix(
+                resolvedStorePeriod,
+                java.util.Locale.getDefault().language,
+            )
+
     /**
      * Display price — the STORE's, falling back to what the author typed (#923).
      *
