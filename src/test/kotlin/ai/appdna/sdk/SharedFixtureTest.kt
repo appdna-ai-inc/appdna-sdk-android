@@ -273,6 +273,7 @@ class SharedFixtureTest(
             "resolve_step_auto_advance" -> runStepAutoAdvance(action, spy)
             "resolve_store_price" -> runStorePrice(action, spy)
             "parse_blocks_leniently" -> runLenientBlocks(action, spy)
+            "resolve_survey_choice_options" -> runSurveyChoiceOptions(action, spy)
             // #772 — WHICH copy of content_blocks the real parser resolves, per step shape.
             "resolve_content_blocks" -> runResolveContentBlocks(action, spy)
             "countdown_initial_seconds" -> runCountdownInitialSeconds(action, spy)
@@ -2056,6 +2057,37 @@ class SharedFixtureTest(
             val parsed = ai.appdna.sdk.onboarding.OnboardingConfigParser.parseStepForTest(step)
                 ?: error("the step did not parse — which is the defect itself")
             (parsed.config.content_blocks ?: emptyList()).map { it.id }
+        }
+    }
+
+
+    /**
+     * A survey choice option's icon, through the REAL `SurveyQuestion.fromMap` and `resolvedIcon`.
+     *
+     * 🔴 The surviving OPTIONS are asserted as well as their icons, because the iOS half of this
+     * defect deleted options: `icon` was declared `String?` inside a lenient array, so the object
+     * form `IconRefSchema` accepts failed that element and the respondent silently saw one fewer
+     * choice. Android's own half read `as? String`, got null and drew nothing. An option with no
+     * icon resolves to `id|`, so a dropped option can never be read as an icon-less one.
+     */
+    private fun runSurveyChoiceOptions(action: JSONObject, spy: Spy) {
+        val cases = action.optJSONArray("cases") ?: unsupported("resolve_survey_choice_options without cases")
+        spy.state["results"] = (0 until cases.length()).map { i ->
+            val raw = cases.getJSONObject(i).getJSONArray("value")
+            val options = (0 until raw.length()).map { j -> jsonToMap(raw.getJSONObject(j)) }
+            val question = ai.appdna.sdk.feedback.SurveyQuestion.fromMap(
+                mapOf(
+                    "id" to "fixture_q",
+                    "type" to "single_choice",
+                    "text" to "Pick one",
+                    // Keyed exactly as Firestore sends it, so the path under test is production's.
+                    "choice_config" to mapOf("options" to options),
+                ),
+            )
+            (question.options ?: emptyList()).map { opt ->
+                val icon = opt.resolvedIcon
+                if (icon == null) "${opt.id}|" else "${opt.id}|${icon.library}|${icon.name}"
+            }
         }
     }
 

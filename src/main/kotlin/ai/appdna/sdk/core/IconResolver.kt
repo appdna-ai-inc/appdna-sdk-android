@@ -74,19 +74,24 @@ fun IconView(
         }
 
         "sf-symbols" -> {
-            // Map SF Symbols -> Material Icons
-            val materialName = SFSymbolMapping.toMaterial[ref.name]
-            if (materialName != null) {
-                val vector = MaterialIconMapping.resolve(materialName)
-                if (vector != null) {
-                    Icon(
-                        imageVector = vector,
-                        contentDescription = null,
-                        modifier = modifier.size(iconSize),
-                        tint = iconColor,
-                    )
-                    return
-                }
+            /*
+             * Map SF Symbols -> Material Icons, then try the name AS a Material name.
+             *
+             * The second rung matters because a bare string reaches here now (see `resolveIcon`),
+             * and the common bare values are plain words — `star`, `home`, `settings` — which ARE
+             * valid SF Symbols, so iOS draws them, and are valid Material names too. Without it
+             * they would fall to the emoji table and then to "?".
+             */
+            val materialName = SFSymbolMapping.toMaterial[ref.name] ?: ref.name
+            val vector = MaterialIconMapping.resolve(materialName)
+            if (vector != null) {
+                Icon(
+                    imageVector = vector,
+                    contentDescription = null,
+                    modifier = modifier.size(iconSize),
+                    tint = iconColor,
+                )
+                return
             }
             // Fallback to emoji
             val emoji = SFSymbolMapping.toEmoji[ref.name]
@@ -108,7 +113,16 @@ fun IconView(
     }
 }
 
-/// Detects whether an icon value is a plain emoji string or an IconReference
+/**
+ * Reads the two shapes `IconRefSchema` accepts — a bare string, or `{ library, name, color, size }`.
+ *
+ * 🔴 A BARE STRING IS NOT ALWAYS AN EMOJI, and calling it one printed the identifier on screen.
+ * This returned `library = "emoji"` for every string, and `IconView`'s emoji branch draws the name
+ * as text — so an authored `"star.fill"` rendered as a real SF Symbol on iOS and as the literal
+ * words `star.fill` on Android, on every surface that takes an icon. iOS classifies by the first
+ * scalar (`IconReference.init(from:)`); this is the same test, so the two agree, and the
+ * `sf-symbols` branch below then maps the name to a Material icon.
+ */
 fun resolveIcon(value: Any?): IconReference? {
     if (value is IconReference) return value
     if (value is Map<*, *>) {
@@ -122,9 +136,22 @@ fun resolveIcon(value: Any?): IconReference? {
         )
     }
     if (value is String && value.isNotEmpty()) {
-        return IconReference(library = "emoji", name = value)
+        return IconReference(library = if (isEmojiGlyph(value)) "emoji" else "sf-symbols", name = value)
     }
     return null
+}
+
+/**
+ * Whether a bare icon string is an emoji rather than a symbol NAME.
+ *
+ * `OTHER_SYMBOL` is the Unicode category every pictographic emoji and every regional-indicator
+ * flag sits in, and no identifier like `star.fill` or `thumb_up` does — which is the same
+ * distinction iOS draws with `isEmojiPresentation || generalCategory == .otherSymbol`.
+ */
+internal fun isEmojiGlyph(value: String): Boolean {
+    if (value.isEmpty()) return false
+    val type = Character.getType(value.codePointAt(0))
+    return type == Character.OTHER_SYMBOL.toInt() || type == Character.SURROGATE.toInt()
 }
 
 object MaterialIconMapping {

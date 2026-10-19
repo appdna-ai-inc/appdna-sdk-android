@@ -17,6 +17,7 @@ import ai.appdna.sdk.feedback.SurveyAnswer
 import ai.appdna.sdk.feedback.SurveyQuestion
 import ai.appdna.sdk.core.ElementStyleConfig
 import ai.appdna.sdk.core.StyleEngine
+import ai.appdna.sdk.core.IconView
 
 @Composable
 fun MultiChoiceView(
@@ -74,7 +75,7 @@ fun MultiChoiceView(
                             checked = isSelected,
                             onCheckedChange = null,
                         )
-                        option.icon?.let { Text(it, modifier = Modifier.padding(end = 8.dp)) }
+                        option.resolvedIcon?.let { IconView(it, modifier = Modifier.padding(end = 8.dp), defaultSize = 20f) }
                         Text(option.text)
                     }
                 }
@@ -107,7 +108,7 @@ fun MultiChoiceView(
                             checked = isSelected,
                             onCheckedChange = null,
                         )
-                        option.icon?.let { Text(it, modifier = Modifier.padding(end = 8.dp)) }
+                        option.resolvedIcon?.let { IconView(it, modifier = Modifier.padding(end = 8.dp), defaultSize = 20f) }
                         Text(option.text)
                     }
                 }

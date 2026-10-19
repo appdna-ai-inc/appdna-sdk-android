@@ -4,6 +4,8 @@ import androidx.compose.runtime.Immutable
 import androidx.compose.runtime.Stable
 import org.json.JSONObject
 import org.json.JSONArray
+import ai.appdna.sdk.core.IconReference
+import ai.appdna.sdk.core.resolveIcon
 import ai.appdna.sdk.core.TextStyleConfig
 import ai.appdna.sdk.core.ElementStyleConfig
 import ai.appdna.sdk.core.BackgroundStyleConfig
@@ -156,7 +158,12 @@ data class SurveyQuestion(
                     // Accept both `label` (Firestore canonical)
                     // and `text` (legacy) — prefer label, fall back to text.
                     val labelOrText = (om["label"] as? String) ?: (om["text"] as? String) ?: ""
-                    QuestionOption(om["id"] as? String ?: "", labelOrText, om["icon"] as? String)
+                    QuestionOption(
+                        om["id"] as? String ?: "",
+                        labelOrText,
+                        resolveIcon(om["icon"]),
+                        om["emoji"] as? String,
+                    )
                 }?.toImmutableList(),
                 emojiConfig = emojiData?.let {
                     @Suppress("UNCHECKED_CAST")
@@ -252,8 +259,27 @@ data class RatingConfig(
     /** Effective icon — prefer Firestore [icon], fall back to legacy [style]. */
     val resolvedIcon: String get() = icon ?: style
 }
+/**
+ * 🔴 `icon` is an [IconReference], not a `String`.
+ *
+ * `IconRefSchema` accepts a bare string OR `{ library, name, color, size }`, and every other
+ * surface in this SDK decodes it through [resolveIcon]. This one field read `om["icon"] as? String`,
+ * so the object form came back null and the icon was silently absent — while on iOS the same
+ * declaration dropped the whole OPTION, because its options array is lenient per element.
+ *
+ * `emoji` is the shorthand the console schema also accepts; it was decoded by neither platform.
+ */
 @Immutable
-data class QuestionOption(val id: String, val text: String, val icon: String?)
+data class QuestionOption(
+    val id: String,
+    val text: String,
+    val icon: IconReference?,
+    val emoji: String? = null,
+) {
+    /** The icon to draw, whichever field the author used. */
+    val resolvedIcon: IconReference?
+        get() = icon ?: emoji?.let { IconReference(library = "emoji", name = it) }
+}
 @Stable
 data class EmojiConfig(val emojis: List<String> = listOf("\uD83D\uDE21", "\uD83D\uDE15", "\uD83D\uDE10", "\uD83D\uDE0A", "\uD83D\uDE0D"))
 @Immutable
