@@ -12715,10 +12715,11 @@ private fun FormInputLocationPlaceholder(
                             Text(text = "📍", fontSize = 10.sp, color = ddIconColor ?: Color.Unspecified)
                         }
                         // #13 — primary + optional subtitle row (split address on first comma),
-                        // mirroring iOS title/subtitle.
-                        val addrParts = suggestion.address.split(",", limit = 2)
-                        val addrPrimary = addrParts.getOrNull(0)?.trim().orEmpty().ifEmpty { suggestion.address }
-                        val addrSecondary = addrParts.getOrNull(1)?.trim().orEmpty()
+                        // mirroring iOS title/subtitle. #963 — the rule is now
+                        // `LocationAnswer.displayLines`, shared with the form-step field and both
+                        // iOS surfaces; this copy had no city/country fallback for a
+                        // single-segment address and its sibling did.
+                        val (addrPrimary, addrSecondary) = LocationAnswer.displayLines(suggestion)
                         Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
                             Text(
                                 text = addrPrimary,

@@ -205,14 +205,10 @@ fun LocationFieldComposable(
                     // formatted address (street/POI), secondary = the
                     // remainder so users can disambiguate "Springfield, IL"
                     // vs "Springfield, MA" at a glance.
-                    val primary = suggestion.address.substringBefore(",").trim()
-                        .ifEmpty { suggestion.address }
-                    val secondary = suggestion.address
-                        .substringAfter(",", missingDelimiterValue = "")
-                        .trim()
-                        .ifEmpty {
-                            listOfNotNull(suggestion.city, suggestion.country).joinToString(", ")
-                        }
+                    // #963 — the rule itself is `LocationAnswer.displayLines`, shared with the
+                    // content block and with both iOS surfaces, so the four copies that used to
+                    // disagree on the fallback cannot drift again.
+                    val (primary, secondary) = LocationAnswer.displayLines(suggestion)
                     ListItem(
                         modifier = Modifier
                             .fillMaxWidth()

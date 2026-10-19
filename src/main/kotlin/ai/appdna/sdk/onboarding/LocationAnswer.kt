@@ -85,6 +85,36 @@ internal object LocationAnswer {
         s.postalCode.present()?.let { put("postal_code", it) }
         (typedQuery.present() ?: s.rawQuery.present())?.let { put("raw_query", it) }
     }
+
+    /**
+     * The two lines one autocomplete suggestion shows in the dropdown.
+     *
+     * 🔴 ONE RULE FOR EVERY SURFACE AND BOTH PLATFORMS (#963). This used to be four rules: the two
+     * Android surfaces each split the address on its first comma — the form-step field with a
+     * city/country fallback and the content block without — while on iOS the content block took
+     * MapKit's own `title`/`subtitle` and the form-step field showed `city` over
+     * `"state, country"`. Routing the iOS content block through the geocoding proxy removed
+     * MapKit's pre-split strings and so required picking a rule; picking it once, here, is what
+     * stops a fifth appearing. `LocationAnswer.displayLines` in `LocationAnswer.swift` is the Swift
+     * twin, and `location_suggestion_display` pins the pair.
+     *
+     * `formatted_address` is a comma-separated address, so its first segment is the place and the
+     * remainder is where it is. The `city, country` fallback covers a single-segment address (a
+     * country-level suggestion), which would otherwise show one line and no context.
+     */
+    fun displayLines(s: LocationSuggestion): Pair<String, String> {
+        val parts = s.address.split(",", limit = 2)
+        val title = parts.getOrNull(0)?.trim().orEmpty().ifEmpty { s.address }
+        val subtitle = parts.getOrNull(1)?.trim().orEmpty()
+            .ifEmpty {
+                // A fallback part equal to the title is dropped: a single-segment city suggestion
+                // would otherwise read "Kyoto / Kyoto, Japan".
+                listOfNotNull(s.city?.trim()?.ifEmpty { null }, s.country?.trim()?.ifEmpty { null })
+                    .filter { it != title }
+                    .joinToString(", ")
+            }
+        return title to subtitle
+    }
 }
 
 /**

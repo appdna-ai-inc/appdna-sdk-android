@@ -282,6 +282,7 @@ class SharedFixtureTest(
             "location_data_from_answer" -> runLocationDataFromAnswer(action, spy)
             // What a location field stores (the one rule both writers use), read back.
             "location_answer_from_input" -> runLocationAnswerFromInput(action, spy)
+            "location_suggestion_display" -> runLocationSuggestionDisplay(action, spy)
             // The core rule every wrapper bridge's auth gate and decoder use.
             "bridge_step_advance_reply" -> runBridgeStepAdvanceReply(action, spy)
             // Billing — the REAL billing core, FakeBillingClient-driven.
@@ -2372,6 +2373,27 @@ class SharedFixtureTest(
      * `parseLocationSuggestion`, the parser both location writers use), stored in the REAL
      * SessionDataStore and read back through `AppDNA.getLocationData`. Both outputs strict.
      */
+    /**
+     * #963 — the dropdown's two lines, through the REAL `LocationAnswer.displayLines`.
+     *
+     * The case data goes through the REAL `parseLocationSuggestion` first, the same parser the search
+     * uses, so it is a server suggestion rather than a hand-built [LocationSuggestion].
+     */
+    private fun runLocationSuggestionDisplay(action: JSONObject, spy: Spy) {
+        val cases = action.getJSONArray("cases")
+        val lines = (0 until cases.length()).map { i ->
+            val c = cases.getJSONObject(i)
+            val suggestion = ai.appdna.sdk.onboarding.parseLocationSuggestion(c.getJSONObject("suggestion"))
+            val (title, subtitle) = ai.appdna.sdk.onboarding.LocationAnswer.displayLines(suggestion)
+            linkedMapOf<String, Any?>(
+                "name" to c.getString("name"),
+                "title" to title,
+                "subtitle" to subtitle,
+            )
+        }
+        spy.state["lines"] = lines
+    }
+
     private fun runLocationAnswerFromInput(action: JSONObject, spy: Spy) {
         val fieldId = action.getString("field_id")
         val input = action.getJSONObject("input")
