@@ -1363,7 +1363,12 @@ class SharedFixtureTest(
         // filled button at width 40 drew nothing. Resolved through the SAME pure helpers the
         // renderer uses, so a fixture cannot pass while the screen stays wrong.
         spy.state["child_border_widths"] = children.map {
-            ai.appdna.sdk.onboarding.authoredButtonBorderWidth(it.border_width, it.variant)
+            // #1007 — the colour is PASSED, exactly as the renderer passes it.
+            ai.appdna.sdk.onboarding.authoredButtonBorderWidth(
+                it.border_width,
+                it.variant,
+                hasColour = ai.appdna.sdk.onboarding.authoredButtonBorderColorHex(it.border_color) != null,
+            )
         }
         spy.state["child_border_colors"] = children.map {
             ai.appdna.sdk.onboarding.authoredButtonBorderColorHex(it.border_color) ?: ""

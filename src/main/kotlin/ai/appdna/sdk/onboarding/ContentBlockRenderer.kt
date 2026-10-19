@@ -7506,7 +7506,9 @@ private fun MultiButtonsBlock(
      * moving only the background behind them. The inset is shared with iOS in [BlockFullBleed].
      */
     val bleeds = BlockFullBleed.isOn(block.field_config?.get("background_full_bleed"))
-    val inset = BlockFullBleed.STEP_HORIZONTAL_INSET.dp
+    val inset = BlockFullBleed
+        .stepHorizontalInset(LocalConfiguration.current.screenWidthDp.toDouble())
+        .dp
 
     Column(
         modifier = if (bleeds) {

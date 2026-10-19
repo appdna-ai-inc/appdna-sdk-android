@@ -47,8 +47,17 @@ object ButtonLabelColour {
  * Named here so the two platforms and the console preview cannot drift to three different numbers.
  */
 object BlockFullBleed {
-    /** The step's horizontal content padding, which a full-bleed background has to cancel. */
-    const val STEP_HORIZONTAL_INSET: Double = 20.0
+    /**
+     * The step's horizontal content padding, which a full-bleed background has to cancel.
+     *
+     * 🔴 IT IS RESPONSIVE, and a constant was wrong. The first version used 20 and the iOS device
+     * showed a "full bleed" background still inset by about eleven points, because the step layout
+     * insets content by `max(24, screenWidth * 0.08)` — 31.4 on a 393pt phone. A bleed that cancels
+     * the wrong number does not reach the edge, which is the defect it exists to fix.
+     *
+     * The step layout reads this too, so the two cannot drift. iOS computes the same thing.
+     */
+    fun stepHorizontalInset(screenWidthDp: Double): Double = maxOf(24.0, screenWidthDp * 0.08)
 
     /** `field_config.background_full_bleed`, read the same way on both platforms. */
     fun isOn(value: Any?): Boolean = when (value) {

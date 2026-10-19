@@ -2905,7 +2905,10 @@ internal fun ThreeZoneBlockLayout(
     // horizontal margins (`ThreeZoneStepLayout.swift:106`). Mirror the
     // formula in dp so wider screens (foldables, tablets) get proportional
     // breathing room and small phones stay at the 24dp floor.
-    val horizontalPadding = maxOf(24, (configuration.screenWidthDp * 0.08).toInt()).dp
+    // The ONE definition of the step's horizontal inset, shared with the full-bleed modifier that
+    // has to cancel it (#1006). A constant there and a formula here is how a background "reaching
+    // the screen edges" stopped short on iOS.
+    val horizontalPadding = BlockFullBleed.stepHorizontalInset(configuration.screenWidthDp.toDouble()).dp
 
     val keyboardController = androidx.compose.ui.platform.LocalSoftwareKeyboardController.current
     val focusManager = androidx.compose.ui.platform.LocalFocusManager.current
