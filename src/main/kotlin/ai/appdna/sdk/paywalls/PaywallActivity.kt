@@ -4567,20 +4567,36 @@ internal fun PaywallSectionView(
             // minimal / default) matching iOS PaywallRenderer.swift:715-799.
             // Was hardcoded "quote" layout regardless of console value.
             val testimonialLayout = section.data?.layout ?: "quote"
+            /*
+             * #961 follow-up — the testimonial section's ink reads the PAGE, not the phone.
+             *
+             * These three were `Color.White`, `Color.White.copy(alpha = 0.9f)` and
+             * `Color.White.copy(alpha = 0.7f)`: a white quote with a white attribution on a light
+             * paywall, which is the identical defect #946/#947/#966 swept out of the plan-display
+             * arms. The section was missed because it is not a plan arm — the sweep was scoped to
+             * `plan_display_style`, and this renders above them.
+             *
+             * iOS has read the page here all along
+             * (`PaywallRenderer.swift:1083`: `PaywallTextDefaults.readable(on: pageBackgroundHex)
+             * .opacity(0.7)`), so this is Android catching up rather than a new rule.
+             *
+             * Byte-identical on any dark page, where `readable` returns `#FFFFFF`.
+             */
+            val testimonialInk = PaywallTextDefaults.readable(config.pageBackgroundHex())
             val quoteStyle = StyleEngine.applyTextStyle(
                 TextStyle(
-                    color = Color.White.copy(alpha = 0.9f),
+                    color = testimonialInk.copy(alpha = 0.9f),
                     fontSize = if (testimonialLayout == "minimal") 12.sp else 14.sp,
                     textAlign = TextAlign.Center,
                 ),
                 section.style?.elements?.get("quote")?.text_style
             )
             val authorNameStyle = StyleEngine.applyTextStyle(
-                TextStyle(fontWeight = FontWeight.SemiBold, color = Color.White, fontSize = 14.sp),
+                TextStyle(fontWeight = FontWeight.SemiBold, color = testimonialInk, fontSize = 14.sp),
                 section.style?.elements?.get("author_name")?.text_style
             )
             val authorRoleStyle = StyleEngine.applyTextStyle(
-                TextStyle(color = Color.White.copy(alpha = 0.7f), fontSize = 12.sp),
+                TextStyle(color = testimonialInk.copy(alpha = 0.7f), fontSize = 12.sp),
                 section.style?.elements?.get("author_role")?.text_style
             )
             // #913 — the three testimonial elements' containers, from the ElementStylePanel the
