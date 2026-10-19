@@ -242,6 +242,7 @@ class SharedFixtureTest(
             "compose_map_url" -> runComposeMapUrl(action, spy)
             "receive_push" -> runReceivePush(action, spy)
             "tap_push" -> runTapPush(action, spy)
+            "dismiss_push" -> runDismissPush(action, spy)
             "classify_push" -> runClassifyPush(action, spy)
             // The notification channels the REAL poster creates (Android only).
             "post_push_notification" -> runPostPushNotification(action, spy)
@@ -2576,6 +2577,49 @@ class SharedFixtureTest(
         spy.state["returned"] = AppDNA.push.handleTapData(data, action.optStringOrNull("action_id"))
         idle()
         spy.events += p.envelopes().map { it.toEventPair() }
+    }
+
+    /**
+     * #968 — a push swiped away, through the REAL `PushDismissReceiver`.
+     *
+     * The receiver is what the SYSTEM invokes on the delete intent the notification carries, so
+     * driving it with the same intent shape is the closest a JVM test gets to the swipe itself.
+     * Reconstructing its `buildMap` in the test instead would have passed just as happily against
+     * the version that dropped `delivery_id` — a test that re-implements the thing under test can
+     * only ever agree with it.
+     *
+     * `taps_emitted` is the CONTROL: a dismissal must not also look like an open, because the two
+     * are opposite signals in the same campaign funnel.
+     */
+    private fun runDismissPush(action: JSONObject, spy: Spy) {
+        val p = Pipeline(fixtureName).also { pipeline = it }
+        installPush(p, spy)
+        val cases = action.optJSONArray("cases") ?: unsupported("dismiss_push without cases")
+        /*
+         * 🔴 The receiver emits through the GLOBAL `AppDNA.track`, not through the manager
+         * `installPush` wired — it runs with the app typically not running, so there is no
+         * instance for it to reach. Without this the fixture's first run reported `SDK emitted []`
+         * and two expected events: an unconfigured SDK's `track` is a no-op and the receiver's own
+         * `catch` swallows the rest, which is the silent shape the fixture exists to catch.
+         */
+        AppDNA.installEventTrackerForTest(p.tracker)
+        val receiver = ai.appdna.sdk.integrations.PushDismissReceiver()
+        for (i in 0 until cases.length()) {
+            val c = cases.getJSONObject(i)
+            val intent = android.content.Intent(
+                ai.appdna.sdk.integrations.PushDismissReceiver.ACTION_PUSH_DISMISSED,
+            ).apply {
+                putExtra("push_id", c.getString("push_id"))
+                c.optStringOrNull("delivery_id")?.let { putExtra("delivery_id", it) }
+            }
+            receiver.onReceive(ctx, intent)
+        }
+        idle()
+        AppDNA.installEventTrackerForTest(null)
+        val emitted = p.envelopes().map { it.toEventPair() }
+        spy.events += emitted
+        spy.state["dismissals_emitted"] = emitted.count { it.first == "push_dismissed" }
+        spy.state["taps_emitted"] = emitted.count { it.first == "push_tapped" }
     }
 
     // ---------------------------------------------------------------------------------------------
