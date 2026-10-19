@@ -31,6 +31,29 @@ internal class SurveyManager(
     @Volatile private var surveyConfigs: Map<String, SurveyConfig> = emptyMap()
     private val isPresenting = AtomicBoolean(false)
     private var currentSurveyId: String? = null
+
+    /**
+     * `true` means "no feedback form is outstanding", which is the state before one is ever shown.
+     *
+     * 🔴 #920 fixed this on iOS and the comment there said Android "gets this from its activity
+     * lifecycle" — true of the CLEANUP and not of the EVENT. `onActivityDestroyed` dismissed the
+     * dialog and recorded nothing, and neither did a back press or an outside tap, so
+     * `feedback_form_dismissed` under-counted on exactly the paths the user never chose. Worse,
+     * the three outcomes were indistinguishable: a user who read the form and closed it, one who
+     * backed out of it, and one whose form was taken off the screen by the host.
+     */
+    internal var feedbackFormResolved = true
+
+    /**
+     * Record that the feedback form has ended, ONCE, with why. `user` and `presenter_released`
+     * are iOS's own words (`SurveyManager.swift` `resolveFeedbackForm`) — one vocabulary, because
+     * a customer reads one funnel across both platforms.
+     */
+    internal fun resolveFeedbackForm(reason: String) {
+        if (feedbackFormResolved) return
+        feedbackFormResolved = true
+        eventTracker.track("feedback_form_dismissed", mapOf("reason" to reason))
+    }
     private val scope = CoroutineScope(Dispatchers.Main + SupervisorJob())
 
     fun updateConfigs(configs: Map<String, SurveyConfig>) {
@@ -364,7 +387,7 @@ internal class SurveyManager(
             }
             "show_feedback_form" -> {
                 // Present the built-in feedback dialog.
-                presentFeedbackForm(action.message)
+                presentFeedbackForm(action.message, surveyId)
                 // Fire a trackable event for host app awareness.
                 eventTracker.track("survey_followup_feedback_form", mapOf(
                     "survey_id" to surveyId,
@@ -383,7 +406,16 @@ internal class SurveyManager(
         }
     }
 
-    private fun presentFeedbackForm(message: String?) {
+    /**
+     * The survey follow-up feedback form.
+     *
+     * 🔴 `surveyId` is a PARAMETER because `survey_feedback_submitted` declares `survey_id`
+     * required (`src/modules/feedback-loop/events.ts`) and sent only `feedback` — so a funnel
+     * grouped by survey came back empty for every Android respondent who typed something. The
+     * catalog is what a customer reads to build that funnel; a required property that never
+     * arrives is worse than an absent one, because the query looks right.
+     */
+    private fun presentFeedbackForm(message: String?, surveyId: String?) {
         scope.launch(Dispatchers.Main) {
             val activity = getCurrentActivity() ?: run {
                 Log.warning("No activity available for feedback form presentation")
@@ -407,6 +439,7 @@ internal class SurveyManager(
                 .setPositiveButton("Submit") { _, _ ->
                     val feedback = input.text.toString()
                     eventTracker.track("survey_feedback_submitted", mapOf(
+                        "survey_id" to (surveyId ?: ""),
                         "feedback" to feedback
                     ))
                     // Emit canonical `feedback_form_submitted`
@@ -417,10 +450,11 @@ internal class SurveyManager(
                     // backend dedup/parity logic sees identical events
                     // cross-platform.
                     eventTracker.track("feedback_form_submitted", mapOf("feedback" to feedback))
+                    // Submitting ENDS the form, so the dismiss listener below must not also
+                    // record it as a dismissal (mirrors iOS `feedbackFormResolved = true`).
+                    feedbackFormResolved = true
                 }
-                .setNegativeButton("Cancel") { _, _ ->
-                    eventTracker.track("feedback_form_dismissed")
-                }
+                .setNegativeButton("Cancel") { _, _ -> resolveFeedbackForm("user") }
                 .create()
 
             /*
@@ -437,6 +471,10 @@ internal class SurveyManager(
             val lifecycle = object : android.app.Application.ActivityLifecycleCallbacks {
                 override fun onActivityDestroyed(destroyed: Activity) {
                     if (destroyed !== activity) return
+                    // BEFORE `dismiss()`: dismissing fires the listener below, and whichever
+                    // reason reaches the latch first is the one recorded. The form was taken
+                    // away, not dismissed, so this reason has to win.
+                    resolveFeedbackForm("presenter_released")
                     if (dialog.isShowing) dialog.dismiss()
                     app.unregisterActivityLifecycleCallbacks(this)
                 }
@@ -448,7 +486,14 @@ internal class SurveyManager(
                 override fun onActivitySaveInstanceState(a: Activity, b: android.os.Bundle) {}
             }
             app.registerActivityLifecycleCallbacks(lifecycle)
-            dialog.setOnDismissListener { app.unregisterActivityLifecycleCallbacks(lifecycle) }
+            dialog.setOnDismissListener {
+                // A back press and a tap outside the dialog reach NEITHER button — on iOS an
+                // alert cannot be dismissed that way, so those two paths were Android-only and
+                // recorded nothing at all.
+                resolveFeedbackForm("user")
+                app.unregisterActivityLifecycleCallbacks(lifecycle)
+            }
+            feedbackFormResolved = false
             dialog.show()
         }
     }
@@ -522,15 +567,28 @@ internal class SurveyManager(
             }
         }
 
-        // Emoji scale: index 0-1 = negative, 2 = neutral, 3-4 = positive
+        /*
+         * Emoji scale: above the middle is positive, below it negative, the middle itself neutral.
+         *
+         * 🔴 THE SCALE IS THE AUTHORED ONE. This compared the answer against a literal list of the
+         * five DEFAULT emoji and fell through when the index was not found, so an author who
+         * customised `emoji_config.emojis` got NEUTRAL for every respondent and `follow_up_actions`
+         * silently stopped routing. The same literal was in `SurveyManager.swift`; both are fixed
+         * together. The midpoint rule reproduces the old thresholds exactly for a five-emoji scale.
+         */
         if (config.surveyType == "emoji_scale" || firstAnswer.answer is String) {
-            val emojis = listOf("\uD83D\uDE21", "\uD83D\uDE15", "\uD83D\uDE10", "\uD83D\uDE0A", "\uD83D\uDE0D")
-            val emoji = firstAnswer.answer as? String
-            val idx = emojis.indexOf(emoji)
+            val authored = config.questions
+                .firstOrNull { it.id == firstAnswer.questionId }
+                ?.emojiConfig?.emojis
+                ?.takeIf { it.isNotEmpty() }
+            val emojis = authored
+                ?: listOf("\uD83D\uDE21", "\uD83D\uDE15", "\uD83D\uDE10", "\uD83D\uDE0A", "\uD83D\uDE0D")
+            val idx = emojis.indexOf(firstAnswer.answer as? String)
             if (idx >= 0) {
+                val middle = (emojis.size - 1) / 2.0
                 return when {
-                    idx >= 3 -> SurveySentiment.POSITIVE
-                    idx <= 1 -> SurveySentiment.NEGATIVE
+                    idx > middle -> SurveySentiment.POSITIVE
+                    idx < middle -> SurveySentiment.NEGATIVE
                     else -> SurveySentiment.NEUTRAL
                 }
             }
