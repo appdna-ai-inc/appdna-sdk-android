@@ -75,12 +75,12 @@ data class OnboardingFlowConfig(
  *
  * 🔴 #1004 — none of this was authorable on either platform. Android drew `Text("✕")` at a
  * hardcoded 14sp in `onBackground` at 60% alpha, in a row inset 8dp from the screen edge, and the
- * report named all of it: "its size, its background color and the color of the X cannot be set, and
- * it is pushed as far as possible into the top-right corner, which makes it hard to tap".
+ * report named all of it: "its size, its background color and the color of the X cannot be set,
+ * and it is pushed as far as possible into the top-right corner, which makes it hard to tap".
  *
  * The back control has had [BackButtonStyle] for a long time; this is the same shape for the other
- * corner. Every field is optional and the defaults are exactly today's values, so no published flow
- * changes. Mirrors iOS `DismissButtonStyle`.
+ * corner. Every field is optional and the defaults are exactly today's values, so no published
+ * flow changes. Mirrors iOS `DismissButtonStyle`.
  */
 @Immutable
 @androidx.annotation.Keep
@@ -1581,7 +1581,7 @@ internal object OnboardingConfigParser {
             wait_for_host = map.bool(SURFACE, path, "wait_for_host")
                 ?: configMap.bool(SURFACE, path, "wait_for_host"),
             // #1014 — step root first, then `layout`/`config`, like the two flags above: the
-            // editor writes some step settings into the nested map and a reader that knows one
+            // editor writes some step settings into the nested map, and a reader that knows one
             // place misses half the flows.
             tap_anywhere_advances = map.bool(SURFACE, path, "tap_anywhere_advances")
                 ?: configMap.bool(SURFACE, path, "tap_anywhere_advances"),
@@ -1860,18 +1860,6 @@ internal object OnboardingConfigParser {
             lottie_loop = bm.bool(SURFACE, path, "lottie_loop"),
             lottie_speed = (bm.num(SURFACE, path, "lottie_speed"))?.toFloat(),
             rive_url = bm.str(SURFACE, path, "rive_url"),
-            /*
-             * 🔴 THE STATE-MACHINE INPUTS, which this decoder never read.
-             *
-             * The renderer passed `block.rive_inputs` to the Rive view and this parser never
-             * populated that field, so it was always null — while the console schema writes
-             * `inputs` and iOS declared no inputs key at all. Three surfaces, three answers, and an
-             * authored input did nothing anywhere.
-             *
-             * `inputs` is canonical (it is what the schema writes); `rive_inputs` stays as a
-             * read-only alias so anything already authored that way keeps working.
-             */
-            rive_inputs = bm.objMap(SURFACE, path, "inputs") ?: bm.objMap(SURFACE, path, "rive_inputs"),
             rive_artboard = bm.str(SURFACE, path, "rive_artboard"),
             rive_state_machine = bm.str(SURFACE, path, "rive_state_machine"),
             icon_ref = bm["icon_ref"] ?: bm["icon"],
@@ -2207,6 +2195,60 @@ internal object OnboardingConfigParser {
             lottie_width = (bm.num(SURFACE, path, "lottie_width"))?.toDouble(),
             play_on_scroll = bm.bool(SURFACE, path, "play_on_scroll"),
             play_on_tap = bm.bool(SURFACE, path, "play_on_tap"),
+            artboard = bm.str(SURFACE, path, "artboard"),
+            state_machine = bm.str(SURFACE, path, "state_machine"),
+            /*
+             * 🔴 #1017 — THE CANONICAL KEY IS `inputs`, and this read only the alias.
+             *
+             * The console schema writes `inputs`; the renderer passed `block.rive_inputs` to the
+             * Rive view and THIS parser never populated that field, so it was always null — while
+             * iOS declared no inputs key at all. Three surfaces, three answers, and an authored
+             * state-machine input did nothing anywhere. `rive_inputs` stays as a read-only alias
+             * so anything already authored under it keeps working.
+             */
+            rive_inputs = bm.objMap(SURFACE, path, "inputs") ?: bm.objMap(SURFACE, path, "rive_inputs"),
+            trigger_on_step_complete = bm.str(SURFACE, path, "trigger_on_step_complete"),
+
+            // PricingCard fields (iOS ContentBlockTypes.swift PricingPlan).
+            // PricingCardBlock at ContentBlockRenderer.kt:4006 reads
+            // block.pricing_plans which was always null — card always
+            // empty.
+            pricing_plans = (bm.list(SURFACE, path, "pricing_plans"))?.mapNotNull { pp ->
+                if (pp is Map<*, *>) {
+                    @Suppress("UNCHECKED_CAST")
+                    val pm = pp as Map<String, Any>
+                    PricingPlan(
+                        id = pm.str(SURFACE, path, "id") ?: "",
+                        label = pm.str(SURFACE, path, "label") ?: pm.str(SURFACE, path, "title") ?: "",
+                        price = pm.str(SURFACE, path, "price") ?: "",
+                        period = pm.str(SURFACE, path, "period") ?: "",
+                        badge = pm.str(SURFACE, path, "badge"),
+                        is_highlighted = pm.bool(SURFACE, path, "is_highlighted")
+                            ?: pm.bool(SURFACE, path, "highlighted")
+                            ?: false,
+                    )
+                } else null
+            }?.toImmutableList(),
+            pricing_layout = bm.str(SURFACE, path, "pricing_layout"),
+
+            // Rich text canonical
+            markdown_content = bm.str(SURFACE, path, "markdown_content"),
+            rich_text_variant = bm.str(SURFACE, path, "rich_text_variant"),
+
+            // Social-login R13 below-inputs CTA layout
+            email_login_placement = bm.str(SURFACE, path, "email_login_placement"),
+            email_cta_spacing_below = (bm.num(SURFACE, path, "email_cta_spacing_below"))?.toDouble(),
+
+            // Rating canonical R3
+            default_rating = (bm.num(SURFACE, path, "default_rating"))?.toDouble(),
+            rating_label = bm.str(SURFACE, path, "rating_label"),
+
+            // ProgressBar canonical (Phase F)
+            total_segments = (bm.num(SURFACE, path, "total_segments"))?.toInt(),
+            progress_value = (bm.num(SURFACE, path, "progress_value"))?.toDouble(),
+            progress_variant = bm.str(SURFACE, path, "progress_variant"),
+            bar_color = bm.str(SURFACE, path, "bar_color"),
+            bar_gradient_colors = (bm.list(SURFACE, path, "bar_gradient_colors"))?.mapNotNull { it as? String },
             bar_height = (bm.num(SURFACE, path, "bar_height"))?.toDouble(),
 
             // WheelPicker (Phase F + horizontal/haptic)
