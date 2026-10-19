@@ -69,8 +69,16 @@ fun ConfettiOverlay(
     val glyph = glyphForType(effect.type)
     val progress = remember { Animatable(0f) }
 
+    /*
+     * 🔴 #956 — NO SECOND GATE on `effect.trigger`. Every caller already decides WHEN to pass
+     * `trigger = true`: the paywall after a purchase, the survey on completion, a message on its
+     * own condition. Re-checking the authored trigger here could only SUBTRACT, and it did — an
+     * effect authored `on_purchase` was armed by the paywall and refused here, and
+     * `PaywallConfig.kt` defaults an unauthored paywall effect to exactly that. iOS had the same
+     * double gate in `ConfettiOverlay.swift`.
+     */
     LaunchedEffect(trigger) {
-        if (trigger && (effect.trigger == "on_appear" || isActive)) {
+        if (trigger) {
             isActive = true
             progress.snapTo(0f)
             progress.animateTo(
