@@ -2733,9 +2733,11 @@ private fun ButtonBlock(
     //
     // Unset is unchanged: `outline` still rings itself at 1.5dp in its own colour and every other
     // variant still has no border, so no published flow shifts. iOS/preview parity.
-    val authoredBorderWidth = authoredButtonBorderWidth(block.border_width, btnVariant)
-    val authoredBorderColor = authoredButtonBorderColorHex(block.border_color)
-        ?.let { StyleEngine.parseColor(it) } ?: bgColor
+    val authoredBorderHex = authoredButtonBorderColorHex(block.border_color)
+    val authoredBorderWidth = authoredButtonBorderWidth(
+        block.border_width, btnVariant, hasColour = authoredBorderHex != null,
+    )
+    val authoredBorderColor = authoredBorderHex?.let { StyleEngine.parseColor(it) } ?: bgColor
     val authoredBorder = if (authoredBorderWidth > 0.0) {
         androidx.compose.foundation.BorderStroke(authoredBorderWidth.dp, authoredBorderColor)
     } else null
@@ -2924,18 +2926,18 @@ private fun ButtonBlock(
                     contentScale = ContentScale.Fit,
                 )
             }
-            // OB-3 — button text color precedence.
-            // iOS: when `block.style.color` is set, it WINS over `text_color`
-            // (`StyleEngine.swift:148-153` `applyTextStyle` foregroundColor
-            // resolves to `s.color ?? .primary` — `.primary` then falls back
-            // to the parent button's `text_color` via SwiftUI's foregroundColor
-            // inheritance). Compose's contract is the opposite: an explicit
-            // `color` parameter overrides `style.color`, so we previously
-            // forced `text_color` even when console authored a `style.color`
-            // override. Bake the resolved color into `effectiveStyle.color`
-            // (priority: block.style.color → block.text_color), and drop the
-            // explicit `color` param so style wins.
-            val resolvedTextColor = block.style?.color
+            /*
+             * Button label colour precedence — SHARED with iOS, through [ButtonLabelColour].
+             *
+             * 🔴 This was the opposite rule, under a comment that described iOS's OLD behaviour as
+             * if it were parity: `block.style?.color ?: textColor` made the Typography colour win.
+             * #594 had already reversed that on iOS — the button's own `text_color` wins, because
+             * the "Text" picker sits on the button panel and a control that loses silently is a
+             * control that does not exist. So a button with BOTH set drew in two different colours
+             * on the two platforms, and 250 lines above this one `colouredStyle` was applying the
+             * correct rule only for this `.copy(color = …)` to overwrite it.
+             */
+            val resolvedTextColor = ButtonLabelColour.resolve(block.text_color, block.style?.color)
                 ?.let { StyleEngine.parseColor(it) }
                 ?: textColor
             Text(
@@ -7398,8 +7400,22 @@ internal fun buttonFillsWidth(elementWidth: String?): Boolean = elementWidth != 
  * never read. Returning 0 means "no ring", which is what an unauthored non-outline button gets — so
  * no already-published flow changes. Mirrors iOS `authoredButtonBorderWidth`.
  */
-internal fun authoredButtonBorderWidth(authored: Double?, variant: String?): Double {
+internal fun authoredButtonBorderWidth(
+    authored: Double?,
+    variant: String?,
+    hasColour: Boolean = false,
+): Double {
     if (authored != null) return maxOf(0.0, authored)
+    /*
+     * 🔴 #1007 — AN AUTHORED COLOUR IMPLIES A VISIBLE BORDER.
+     *
+     * "Border color" and "Border width" are two separate controls and the width input is empty by
+     * default, so an author who picked a colour and did not then find the second box got NOTHING
+     * drawn — on the device and in the console mock — and reported the colour as a dead control.
+     * 1.5 is the hairline an `outline` button rings itself with, so a filled button with a colour
+     * now matches that weight rather than inventing one. Mirrors iOS.
+     */
+    if (hasColour) return 1.5
     return if (variant == "outline") 1.5 else 0.0
 }
 
@@ -7459,9 +7475,24 @@ private fun MultiButtonsBlock(
     val perRow = ((block.field_config?.get("buttons_per_row") as? Number)?.toInt() ?: 2).coerceIn(1, 3)
     val gap = (block.spacing ?: block.gap ?: 12.0).dp
     val stretchLastRow = (block.field_config?.get("last_row") as? String) == "stretch"
+    /*
+     * #1006 — a shared background that reaches the screen edges.
+     *
+     * Changing the width cannot do this: `element_width: 100%` is 100% of the CONTENT COLUMN, and
+     * the column is inset by the step's horizontal padding. So the column widens past that inset
+     * (`fullBleedHorizontal`, which measures rather than passing a negative padding Compose
+     * rejects) and the rows get the inset back, leaving the buttons exactly where they were and
+     * moving only the background behind them. The inset is shared with iOS in [BlockFullBleed].
+     */
+    val bleeds = BlockFullBleed.isOn(block.field_config?.get("background_full_bleed"))
+    val inset = BlockFullBleed.STEP_HORIZONTAL_INSET.dp
 
     Column(
-        modifier = Modifier.fillMaxWidth(),
+        modifier = if (bleeds) {
+            Modifier.fillMaxWidth().fullBleedHorizontal(inset)
+        } else {
+            Modifier.fillMaxWidth()
+        },
         verticalArrangement = Arrangement.spacedBy(gap),
     ) {
         // The row split is a pure, tested rule (multiButtonRowPlan), not an inline chunk.
@@ -7471,7 +7502,11 @@ private fun MultiButtonsBlock(
             cursor += rowSize
             val filler = multiButtonFillerWeight(rowChildren.size, perRow, stretchLastRow)
             Row(
-                modifier = Modifier.fillMaxWidth(),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    // #1006 — the inset the column just cancelled, given back to the BUTTONS, so
+                    // only the background behind them reaches the edges.
+                    .then(if (bleeds) Modifier.padding(horizontal = inset) else Modifier),
                 horizontalArrangement = Arrangement.spacedBy(gap),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
