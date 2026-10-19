@@ -71,14 +71,6 @@ data class OnboardingFlowConfig(
 )
 
 /**
- * Flow-level settings.
- *
- * `@Keep` so R8/minify cannot strip getters used by reflection
- * via [OnboardingConfigParser].
- */
-@Immutable
-@androidx.annotation.Keep
-/**
  * How the DISMISS control looks — the ✕ that closes the flow.
  *
  * 🔴 #1004 — none of this was authorable on either platform. Android drew `Text("✕")` at a
@@ -91,6 +83,7 @@ data class OnboardingFlowConfig(
  * changes. Mirrors iOS `DismissButtonStyle`.
  */
 @Immutable
+@androidx.annotation.Keep
 data class DismissButtonStyle(
     /** A custom glyph (any character). Null draws ✕. */
     val icon: String? = null,
@@ -109,6 +102,14 @@ data class DismissButtonStyle(
     val resolvedInset: Double get() = inset ?: 8.0
 }
 
+/**
+ * Flow-level settings.
+ *
+ * `@Keep` so R8/minify cannot strip getters used by reflection
+ * via [OnboardingConfigParser].
+ */
+@Immutable
+@androidx.annotation.Keep
 data class BackButtonStyle(
     val icon_size: Double? = null,
     val icon_color: String? = null,
