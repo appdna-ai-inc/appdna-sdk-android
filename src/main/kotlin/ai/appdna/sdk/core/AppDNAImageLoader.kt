@@ -72,6 +72,11 @@ internal object AppDNAImageLoader {
                 } else {
                     add(GifDecoder.Factory())
                 }
+                // #986 — `appdna-assets/<hash><ext>` from a bundled config, resolved out of the
+                // app's own assets when the file is there and handed back untouched when it is
+                // not, so a partially bundled config degrades to the network rather than to a
+                // broken image. The iOS counterpart is `BundledImageResolver`.
+                add(BundledAssetMapper(appContext))
             }
             .memoryCache {
                 MemoryCache.Builder(appContext)
