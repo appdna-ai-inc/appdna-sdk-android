@@ -547,54 +547,11 @@ internal class SurveyManager(
     }
 
     private fun determineSentiment(config: SurveyConfig, answers: List<SurveyAnswer>): SurveySentiment {
-        val firstAnswer = answers.firstOrNull() ?: return SurveySentiment.NEUTRAL
-
-        if (config.surveyType == "nps") {
-            val score = (firstAnswer.answer as? Number)?.toInt() ?: return SurveySentiment.NEUTRAL
-            return when {
-                score >= 9 -> SurveySentiment.POSITIVE
-                score <= 6 -> SurveySentiment.NEGATIVE
-                else -> SurveySentiment.NEUTRAL
-            }
-        }
-
-        if (config.surveyType in listOf("csat", "rating")) {
-            val rating = (firstAnswer.answer as? Number)?.toInt() ?: return SurveySentiment.NEUTRAL
-            return when {
-                rating >= 4 -> SurveySentiment.POSITIVE
-                rating <= 2 -> SurveySentiment.NEGATIVE
-                else -> SurveySentiment.NEUTRAL
-            }
-        }
-
-        /*
-         * Emoji scale: above the middle is positive, below it negative, the middle itself neutral.
-         *
-         * 🔴 THE SCALE IS THE AUTHORED ONE. This compared the answer against a literal list of the
-         * five DEFAULT emoji and fell through when the index was not found, so an author who
-         * customised `emoji_config.emojis` got NEUTRAL for every respondent and `follow_up_actions`
-         * silently stopped routing. The same literal was in `SurveyManager.swift`; both are fixed
-         * together. The midpoint rule reproduces the old thresholds exactly for a five-emoji scale.
-         */
-        if (config.surveyType == "emoji_scale" || firstAnswer.answer is String) {
-            val authored = config.questions
-                .firstOrNull { it.id == firstAnswer.questionId }
-                ?.emojiConfig?.emojis
-                ?.takeIf { it.isNotEmpty() }
-            val emojis = authored
-                ?: listOf("\uD83D\uDE21", "\uD83D\uDE15", "\uD83D\uDE10", "\uD83D\uDE0A", "\uD83D\uDE0D")
-            val idx = emojis.indexOf(firstAnswer.answer as? String)
-            if (idx >= 0) {
-                val middle = (emojis.size - 1) / 2.0
-                return when {
-                    idx > middle -> SurveySentiment.POSITIVE
-                    idx < middle -> SurveySentiment.NEGATIVE
-                    else -> SurveySentiment.NEUTRAL
-                }
-            }
-        }
-
-        return SurveySentiment.NEUTRAL
+        val first = answers.firstOrNull() ?: return SurveySentiment.NEUTRAL
+        val scale = config.questions
+            .firstOrNull { it.id == first.questionId }
+            ?.emojiConfig?.emojis
+        return SurveySentimentRule.resolve(config.surveyType, first.answer, scale)
     }
 
     private fun evaluateConditions(conditions: List<TriggerCondition>, properties: Map<String, Any>): Boolean {

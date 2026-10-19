@@ -275,6 +275,7 @@ class SharedFixtureTest(
             "parse_blocks_leniently" -> runLenientBlocks(action, spy)
             "resolve_survey_choice_options" -> runSurveyChoiceOptions(action, spy)
             "resolve_button_label_colour" -> runButtonLabelColour(action, spy)
+            "resolve_survey_sentiment" -> runSurveySentiment(action, spy)
             // #772 — WHICH copy of content_blocks the real parser resolves, per step shape.
             "resolve_content_blocks" -> runResolveContentBlocks(action, spy)
             "countdown_initial_seconds" -> runCountdownInitialSeconds(action, spy)
@@ -2114,6 +2115,27 @@ class SharedFixtureTest(
                 v.optStringOrNull("text_color"),
                 v.optStringOrNull("style_color"),
             ) ?: ""
+        }
+    }
+
+
+    /**
+     * WHICH follow-up branch a completed survey takes, through the REAL `SurveySentimentRule`.
+     *
+     * 🔴 Driven through the production function, not re-stated: the defect was a hard-coded emoji
+     * scale, and a test that hard-codes its own would agree with it (Rule 25).
+     */
+    private fun runSurveySentiment(action: JSONObject, spy: Spy) {
+        val cases = action.optJSONArray("cases") ?: unsupported("resolve_survey_sentiment without cases")
+        spy.state["results"] = (0 until cases.length()).map { i ->
+            val v = cases.getJSONObject(i).optJSONObject("value") ?: JSONObject()
+            val scaleArr = v.optJSONArray("emoji_scale")
+            val scale = scaleArr?.let { a -> (0 until a.length()).map { a.getString(it) } }
+            val answer: Any? = if (v.isNull("answer")) null else v.get("answer")
+            ai.appdna.sdk.feedback.SurveySentimentRule
+                .resolve(v.optStringOrNull("survey_type"), answer, scale)
+                .name
+                .lowercase()
         }
     }
 

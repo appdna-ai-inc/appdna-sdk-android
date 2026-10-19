@@ -6,7 +6,7 @@ import ai.appdna.sdk.events.DroppedEventsCounter
 import ai.appdna.sdk.events.EventQueue
 import ai.appdna.sdk.events.EventTracker
 import ai.appdna.sdk.network.ApiClient
-import ai.appdna.sdk.network.Environment
+import ai.appdna.sdk.Environment
 import ai.appdna.sdk.storage.EventDatabase
 import ai.appdna.sdk.storage.LocalStorage
 import android.app.Activity
