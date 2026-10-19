@@ -24,6 +24,8 @@ import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import androidx.compose.foundation.border
+import androidx.compose.material3.LocalTextStyle
 import androidx.compose.ui.unit.sp
 import ai.appdna.sdk.core.interpolated
 import ai.appdna.sdk.core.StyleEngine
@@ -866,19 +868,57 @@ private fun textFieldColorsFor(field: FormField): TextFieldColors {
     // running a light Compose theme also benefit — `colorScheme.primary` on
     // the light scheme is M3's deep purple (`#6750A4`), still divergent
     // from the iOS-canonical indigo / system tint.
+    /*
+     * #994 — `text_color`, `placeholder_color` and `focused_background_color` were authorable in
+     * the console and declared by neither SDK, so the text was always white whatever the author
+     * set. `focused_background_color` falls back to `background_color`, which is the behaviour an
+     * author gets from a single Background picker and the one iOS mirrors.
+     */
+    val text = parse(style.text_color)
+    val placeholder = parse(style.placeholder_color)
+    val focusedContainer = parse(style.focused_background_color) ?: container
+
     return OutlinedTextFieldDefaults.colors(
         focusedBorderColor = focusedBorder ?: androidx.compose.ui.graphics.Color.White,
         unfocusedBorderColor = border ?: androidx.compose.ui.graphics.Color.White.copy(alpha = 0.3f),
         errorBorderColor = errorBorder ?: MaterialTheme.colorScheme.error,
-        focusedContainerColor = container ?: androidx.compose.ui.graphics.Color.Transparent,
+        focusedContainerColor = focusedContainer ?: androidx.compose.ui.graphics.Color.Transparent,
         unfocusedContainerColor = container ?: androidx.compose.ui.graphics.Color.Transparent,
         disabledContainerColor = container ?: androidx.compose.ui.graphics.Color.Transparent,
         errorContainerColor = container ?: androidx.compose.ui.graphics.Color.Transparent,
         cursorColor = focusedBorder ?: androidx.compose.ui.graphics.Color.White,
         focusedLabelColor = focusedBorder ?: androidx.compose.ui.graphics.Color.White,
         unfocusedLabelColor = border ?: androidx.compose.ui.graphics.Color.White.copy(alpha = 0.7f),
-        focusedTextColor = androidx.compose.ui.graphics.Color.White,
-        unfocusedTextColor = androidx.compose.ui.graphics.Color.White,
+        focusedTextColor = text ?: androidx.compose.ui.graphics.Color.White,
+        unfocusedTextColor = text ?: androidx.compose.ui.graphics.Color.White,
+        focusedPlaceholderColor = placeholder ?: androidx.compose.ui.graphics.Color.White.copy(alpha = 0.6f),
+        unfocusedPlaceholderColor = placeholder ?: androidx.compose.ui.graphics.Color.White.copy(alpha = 0.6f),
+    )
+}
+
+/**
+ * #994 — the field's own text size, which the console has offered since the panel existed and
+ * neither SDK declared. Unset keeps Material3's own body size, so nothing already published moves.
+ */
+@Composable
+internal fun textFieldTextStyleFor(field: FormField): androidx.compose.ui.text.TextStyle {
+    val size = field.style?.font_size ?: return LocalTextStyle.current
+    return LocalTextStyle.current.copy(fontSize = size.sp)
+}
+
+/**
+ * #994 — `border_width`. Material3's `OutlinedTextField` takes its stroke widths from
+ * `OutlinedTextFieldDefaults`, not from a parameter, so an authored width is applied as a border
+ * on the field's modifier instead. Unset draws nothing extra and leaves the M3 outline alone.
+ */
+internal fun Modifier.appdnaFieldBorder(field: FormField): Modifier {
+    val width = field.style?.border_width?.takeIf { it > 0 } ?: return this
+    val hex = field.style?.border_color ?: return this
+    val radius = field.style?.corner_radius?.toFloat() ?: 4f
+    return this.border(
+        width = width.dp,
+        color = ai.appdna.sdk.core.StyleEngine.parseColor(hex),
+        shape = RoundedCornerShape(radius.dp),
     )
 }
 
