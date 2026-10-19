@@ -217,6 +217,14 @@ data class OnboardingStep(
      * ids, and that a leftover [auto_advance_seconds] cannot cut the app's loading short.
      */
     val wait_for_host: Boolean? = null,
+    /**
+     * #1014 — a tap ANYWHERE on the step advances it.
+     *
+     * A splash that is nothing but an image has no button to hang a CTA on, and the only way past
+     * it was "Allow skip" — a ✕ in the corner, which says "leave" rather than "continue". Composes
+     * with [auto_advance_seconds] rather than replacing it. Mirrors iOS.
+     */
+    val tap_anywhere_advances: Boolean? = null,
     val next_step_rules: ImmutableList<NextStepRule>? = null,
     /**
      * The step's authored name ("Screen path 1").
@@ -1571,6 +1579,11 @@ internal object OnboardingConfigParser {
                 ?: (configMap.num(SURFACE, path, "auto_advance_seconds"))?.toDouble(),
             wait_for_host = map.bool(SURFACE, path, "wait_for_host")
                 ?: configMap.bool(SURFACE, path, "wait_for_host"),
+            // #1014 — step root first, then `layout`/`config`, like the two flags above: the
+            // editor writes some step settings into the nested map and a reader that knows one
+            // place misses half the flows.
+            tap_anywhere_advances = map.bool(SURFACE, path, "tap_anywhere_advances")
+                ?: configMap.bool(SURFACE, path, "tap_anywhere_advances"),
             next_step_rules = nextStepRules,
             name = map.str(SURFACE, path, "name"),
             rawContentBlocks = stampedRaw,

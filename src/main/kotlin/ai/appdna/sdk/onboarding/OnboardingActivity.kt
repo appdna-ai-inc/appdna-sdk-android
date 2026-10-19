@@ -23,7 +23,11 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.gestures.waitForUpOrCancellation
+import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.CheckCircle
@@ -1663,7 +1667,36 @@ internal fun OnboardingFlowHost(
                             slideOutHorizontally(animationSpec = spec) { -it }
                     },
                     label = "step_transition",
-                    modifier = Modifier.weight(1f).fillMaxWidth(),
+                    /*
+                     * #1014 — a tap ANYWHERE advances the step.
+                     *
+                     * 🔴 `pointerInput` with `awaitEachGesture` on the PASS of `Final`, not
+                     * `clickable`: a clickable container consumes the tap, so a step with this on
+                     * AND a button would stop the button working. Waiting for the FINAL pass means
+                     * the children get first refusal — a tap they handled arrives already consumed
+                     * and is ignored here, and a tap on empty space reaches this. That is what
+                     * "anywhere" has to mean on a step that also has something to tap.
+                     *
+                     * It calls the same `advanceOrComplete` the CTA does, so the step's rules, its
+                     * completion event and the required-field gate behave identically. Mirrors iOS,
+                     * which uses `simultaneousGesture` for the same reason.
+                     */
+                    modifier = Modifier
+                        .weight(1f)
+                        .fillMaxWidth()
+                        .pointerInput(currentIndex) {
+                            awaitEachGesture {
+                                awaitFirstDown(requireUnconsumed = false)
+                                val up = waitForUpOrCancellation(PointerEventPass.Final)
+                                if (up == null || up.isConsumed) return@awaitEachGesture
+                                val step = flow.steps.getOrNull(currentIndex) ?: return@awaitEachGesture
+                                if (step.tap_anywhere_advances != true || isProcessing) return@awaitEachGesture
+                                HapticEngine.triggerIfEnabled(
+                                    hostView, hapticConfig?.triggers?.on_step_advance, hapticConfig,
+                                )
+                                advanceOrComplete()
+                            }
+                        },
                 ) { stepIdx ->
                 val step = flow.steps[stepIdx]
                 val effectiveConfig = configOverrides[step.id]
