@@ -55,7 +55,13 @@ object ReviewPromptManager {
             Log.warning("Could not open the store listing for $pkg")
             return
         }
-        AppDNA.track("store_listing_opened", mapOf("package" to pkg))
+        /*
+         * #974 — `store` is the property a funnel can GROUP BY. This event used to carry only
+         * `package` here and only `app_store_id` on iOS, two disjoint keys, so a report grouped by
+         * either saw one platform's traffic and presented it as the whole number. `google_play` /
+         * `app_store` is the same vocabulary `Subscription.store` uses, not a third spelling.
+         */
+        AppDNA.track("store_listing_opened", mapOf("store" to "google_play", "package" to pkg))
     }
 
     private fun getPrefs(context: Context): SharedPreferences {
