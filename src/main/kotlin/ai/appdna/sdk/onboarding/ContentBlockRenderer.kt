@@ -36,6 +36,7 @@ import androidx.compose.ui.unit.sp
 import android.content.Intent
 import android.net.Uri
 import ai.appdna.sdk.Log
+import ai.appdna.sdk.R
 import ai.appdna.sdk.LogLevel
 import ai.appdna.sdk.core.StyleEngine
 import ai.appdna.sdk.core.ShadowStyleConfig
@@ -4563,6 +4564,27 @@ private fun SocialLoginBlock(
                             contentScale = androidx.compose.ui.layout.ContentScale.Fit,
                             modifier = Modifier.padding(end = 8.dp).size(20.dp),
                         )
+                    } else if (provider.type == "google" && monoIconColor == null) {
+                        /*
+                         * #1003 — THE OFFICIAL MARK, not a letter.
+                         *
+                         * This drew `Text("G")` in a bold sans — a letterform, so a Sign in with
+                         * Google button could not be made to match Google's own branding
+                         * guidelines, which require the official asset unmodified. It ships in the
+                         * SDK (`res/drawable-nodpi/appdna_google_g.png`, provenance in its
+                         * `.LICENSE` sidecar) rather than being fetched, so the button draws
+                         * correctly offline and on first launch. iOS does the same.
+                         *
+                         * A monochrome `icon_style` keeps the letterform above: Google's
+                         * guidelines allow a white or black mark on a coloured button, and that is
+                         * an explicit author choice.
+                         */
+                        androidx.compose.foundation.Image(
+                            painter = androidx.compose.ui.res.painterResource(R.drawable.appdna_google_g),
+                            contentDescription = null,
+                            modifier = Modifier.size(18.dp).padding(end = 0.dp),
+                        )
+                        Spacer(Modifier.width(8.dp))
                     } else if (providerIcon.isNotBlank()) {
                         Text(providerIcon, fontSize = providerIconFontSize, fontWeight = providerIconFontWeight, modifier = Modifier.padding(end = 8.dp), color = providerIconColor)
                     }
