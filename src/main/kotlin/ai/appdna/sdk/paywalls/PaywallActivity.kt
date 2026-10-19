@@ -5983,13 +5983,31 @@ private fun PaywallStickyFooter(
     // PaywallRenderer.swift:1054. Was Color.Black 0.95 alpha → light-mode
     // paywalls rendered dark footer.
     val bgColor = section.data?.background_color?.let { parseHexColor(it) } ?: Color.White
+    /*
+     * #976 — `blur_background`, which this section DECODED and never drew. iOS fills the footer
+     * with `.ultraThinMaterial` when it is true (`PaywallRenderer.swift`), so a footer authored to
+     * float over the page as frosted glass was frosted on iOS and an opaque slab on Android: one
+     * document, two paywalls, the divergence class ADR-001 exists to prevent.
+     *
+     * Compose has no `.ultraThinMaterial`. `StyleEngine.applyBlockContainerStyle` already
+     * approximates it for block containers with a translucent white layer, and this uses the same
+     * approximation rather than a second one — the effect over a solid background is close enough
+     * to read as the same design, and a HazeChild dependency is not worth one section.
+     *
+     * Unauthored keeps the opaque fill, so nothing already published moves.
+     */
+    val footerFill = if (section.data?.blur_background == true) {
+        Color.White.copy(alpha = 0.72f)
+    } else {
+        bgColor
+    }
     val context = androidx.compose.ui.platform.LocalContext.current
 
     Column(
         horizontalAlignment = Alignment.CenterHorizontally,
         modifier = Modifier
             .fillMaxWidth()
-            .background(bgColor)
+            .background(footerFill)
             .padding(horizontal = (section.data?.padding ?: 20f).dp, vertical = 16.dp)
             .run { with(StyleEngine) { applyContainerStyle(section.style?.container) } },
     ) {
