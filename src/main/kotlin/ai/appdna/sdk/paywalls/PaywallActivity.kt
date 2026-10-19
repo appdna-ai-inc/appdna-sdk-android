@@ -2151,7 +2151,13 @@ internal fun PaywallSectionView(
             // as the iOS-native naming; keep "square" alias for back-compat.
             val badgeCorner = when (badgeShapeStr) {
                 "square", "rectangle" -> RoundedCornerShape(2.dp)
-                "rounded" -> RoundedCornerShape(4.dp)
+                /*
+                 * #988 — 6dp, not 4. iOS's `badgeShape` has returned
+                 * `RoundedRectangle(cornerRadius: 6)` for `rounded` since it shipped
+                 * (`PlanCard.swift:632`), so the same authored badge had a visibly tighter corner
+                 * on Android. Two pixels, on the one element a paywall uses to say "most popular".
+                 */
+                "rounded" -> RoundedCornerShape(6.dp)
                 // Notched-ribbon: rectangle with a triangular notch cut into the trailing
                 // edge, matching the console PaywallPreview clipPath polygon
                 // (0,0 → 100,0 → 92,50 → 100,100 → 0,100) and the iOS RibbonBadgeShape.
