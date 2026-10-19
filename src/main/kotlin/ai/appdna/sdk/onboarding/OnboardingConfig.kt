@@ -530,16 +530,6 @@ data class FormFieldConfig(
  * maps because the schema treats them as opaque records — authors may
  * pass any sub-keys (e.g. `font_size`, `font_weight`, `color`).
  */
-/**
- * A form-step field's styling, as the console's Field Style panel writes it.
- *
- * 🔴 #994 — THIRTEEN OF THESE WERE DECLARED BY NOBODY. The panel has always offered eighteen
- * controls and this class declared seven, so `text_color`, `font_size`, the icons, the label
- * position and the Select's option styling were authorable and unreadable. The CONTENT-BLOCK input
- * surface honoured most of them all along, so the same setting worked on one surface and not its
- * sibling. `check:form-field-style` now fails when a control is offered and no renderer declares
- * its key.
- */
 data class FormFieldStyle(
     val label_style: Map<String, Any>? = null,
     val input_style: Map<String, Any>? = null,
@@ -548,26 +538,6 @@ data class FormFieldStyle(
     val border_color: String? = null,
     val focus_border_color: String? = null,
     val background_color: String? = null,
-    // ── #994: the text field's own ink and chrome ──
-    val border_width: Double? = null,
-    val text_color: String? = null,
-    val placeholder_color: String? = null,
-    val font_size: Double? = null,
-    /** The fill while the field has focus; falls back to [background_color]. */
-    val focused_background_color: String? = null,
-    // ── #994: the label ──
-    /** `above` (default) · `inline` · `floating` · `hidden`. */
-    val label_position: String? = null,
-    // ── #994: leading / trailing glyphs ──
-    val icon_prefix: String? = null,
-    val icon_suffix: String? = null,
-    // ── #994: a Select's options, mirroring the content block's `field_style.option_*` ──
-    val option_font_family: String? = null,
-    val option_corner_radius: Double? = null,
-    val option_text_wrap: Boolean? = null,
-    /** `contain` · `cover` · `fit`. */
-    val option_image_scale: String? = null,
-    val checkmark_color: String? = null,
 )
 
 data class FormField(
@@ -1330,19 +1300,6 @@ internal object OnboardingConfigParser {
                         label_style = sm.objMap(SURFACE, path, "label_style"),
                         input_style = sm.objMap(SURFACE, path, "input_style"),
                         error_style = sm.objMap(SURFACE, path, "error_style"),
-                        border_width = sm.num(SURFACE, path, "border_width")?.toDouble(),
-                        text_color = sm.str(SURFACE, path, "text_color"),
-                        placeholder_color = sm.str(SURFACE, path, "placeholder_color"),
-                        font_size = sm.num(SURFACE, path, "font_size")?.toDouble(),
-                        focused_background_color = sm.str(SURFACE, path, "focused_background_color"),
-                        label_position = sm.str(SURFACE, path, "label_position"),
-                        icon_prefix = sm.str(SURFACE, path, "icon_prefix"),
-                        icon_suffix = sm.str(SURFACE, path, "icon_suffix"),
-                        option_font_family = sm.str(SURFACE, path, "option_font_family"),
-                        option_corner_radius = sm.num(SURFACE, path, "option_corner_radius")?.toDouble(),
-                        option_text_wrap = sm.bool(SURFACE, path, "option_text_wrap"),
-                        option_image_scale = sm.str(SURFACE, path, "option_image_scale"),
-                        checkmark_color = sm.str(SURFACE, path, "checkmark_color"),
                         corner_radius = (sm.num(SURFACE, path, "corner_radius"))?.toDouble(),
                         border_color = sm.str(SURFACE, path, "border_color"),
                         focus_border_color = sm.str(SURFACE, path, "focus_border_color"),
