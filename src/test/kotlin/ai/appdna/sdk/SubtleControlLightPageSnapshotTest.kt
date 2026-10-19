@@ -241,6 +241,34 @@ class SubtleControlLightPageSnapshotTest {
     @Test fun plansProductAsCtaOnAWhitePage() = planStyle("product_as_cta")
     @Test fun plansTimelineRevealOnAWhitePage() = planStyle("timeline_reveal")
     @Test fun plansCarouselCardsOnAWhitePage() = planStyle("carousel_cards")
+
+    /*
+     * #988 — THE BADGE'S CORNER, which no other capture pins.
+     *
+     * `badge_shape` defaults to `capsule`, so every capture above draws a full pill and none of
+     * them would move if the `rounded` radius changed. iOS has drawn 6pt since it shipped and
+     * Android drew 4 — two pixels on the one element a paywall uses to say "Most popular", and a
+     * difference nobody authored.
+     *
+     * Three shapes, as a discriminating set: `rounded` is what changed, `rectangle` is the 2dp
+     * neighbour it must stay distinct from, and `square` is the Android-only alias that has to keep
+     * drawing the rectangle (iOS accepts it now too, so the word means the same thing on both).
+     */
+    private fun badgeShape(shape: String) = capture(
+        "paywall_light_page_badge_$shape",
+        mapOf(
+            "id" to "sec_plans", "type" to "plans",
+            "data" to mapOf("plan_display_style" to "vertical_stack", "badge_shape" to shape),
+        ),
+        listOf(
+            mapOf("id" to "p_year", "label" to "Annual", "price_display" to "$49.99",
+                  "period" to "year", "badge" to "Save 58%", "is_default" to true),
+        ),
+    )
+
+    @Test fun badgeRoundedOnAWhitePage() = badgeShape("rounded")
+    @Test fun badgeRectangleOnAWhitePage() = badgeShape("rectangle")
+    @Test fun badgeSquareAliasOnAWhitePage() = badgeShape("square")
     @Test fun plansInteractiveSliderOnAWhitePage() = planStyle("interactive_slider")
 
     /** A reviews carousel: quote white@90%, author white@70%, date white@40%, dots white@30%. */

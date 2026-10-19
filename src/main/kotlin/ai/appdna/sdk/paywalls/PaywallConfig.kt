@@ -717,6 +717,24 @@ data class PaywallPlan(
             "$phrased free trial"
         }
         /*
+         * #989 — `trial.duration_days`, which was DECODED AND READ BY NOTHING on either platform.
+         *
+         * The schema requires `{ duration_days, label }` together, so most plans carry both and the
+         * label wins — but 2 of 19 plans on dev have the object with no label, and those drew no
+         * trial text at all while carrying an authored trial length. Phrased through the same
+         * [BillingPeriodPhrase] as every other rung, so "7 days free trial" reads identically
+         * whichever field it came from.
+         *
+         * Below `trial_duration` and above the store: an author's own words still win, and a plan
+         * that already said something keeps saying it.
+         */
+        ?: trial?.duration_days?.takeIf { it > 0 }?.let { days ->
+            ai.appdna.sdk.billing.BillingPeriodPhrase.duration(
+                "P${days}D",
+                java.util.Locale.getDefault().language,
+            )?.let { "$it free trial" }
+        }
+        /*
          * #933 slice 3 — nothing authored, so the STORE's trial, phrased.
          *
          * Last rung on purpose: an authored label and an authored duration both win, so no
