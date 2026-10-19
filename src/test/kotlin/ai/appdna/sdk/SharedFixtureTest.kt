@@ -274,6 +274,7 @@ class SharedFixtureTest(
             "resolve_store_price" -> runStorePrice(action, spy)
             "parse_blocks_leniently" -> runLenientBlocks(action, spy)
             "resolve_survey_choice_options" -> runSurveyChoiceOptions(action, spy)
+            "resolve_button_label_colour" -> runButtonLabelColour(action, spy)
             // #772 — WHICH copy of content_blocks the real parser resolves, per step shape.
             "resolve_content_blocks" -> runResolveContentBlocks(action, spy)
             "countdown_initial_seconds" -> runCountdownInitialSeconds(action, spy)
@@ -2088,6 +2089,26 @@ class SharedFixtureTest(
                 val icon = opt.resolvedIcon
                 if (icon == null) "${opt.id}|" else "${opt.id}|${icon.library}|${icon.name}"
             }
+        }
+    }
+
+
+    /**
+     * WHICH authored colour a button's label draws in, through the REAL
+     * `ButtonLabelColour.resolve` both the renderer and the Swift now call.
+     *
+     * 🔴 Driven through the production function rather than re-stated here: the two platforms had
+     * OPPOSITE rules, and a test that re-implements the rule can only agree with whichever side
+     * wrote it (Rule 25). `""` stands for "neither authored", so the null case is asserted too.
+     */
+    private fun runButtonLabelColour(action: JSONObject, spy: Spy) {
+        val cases = action.optJSONArray("cases") ?: unsupported("resolve_button_label_colour without cases")
+        spy.state["results"] = (0 until cases.length()).map { i ->
+            val v = cases.getJSONObject(i).optJSONObject("value") ?: JSONObject()
+            ai.appdna.sdk.onboarding.ButtonLabelColour.resolve(
+                v.optStringOrNull("text_color"),
+                v.optStringOrNull("style_color"),
+            ) ?: ""
         }
     }
 
