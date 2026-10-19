@@ -311,7 +311,12 @@ internal fun VideoSectionRenderer(section: ScreenSection, context: SectionContex
     ai.appdna.sdk.core.VideoBlockView(
         block = ai.appdna.sdk.core.VideoBlock(
             video_url = url,
-            video_thumbnail_url = section.data["video_thumbnail_url"] as? String,
+            // #981 — the screens editor writes `thumbnail_url` (SectionPropertiesPanel.tsx:521)
+            // and iOS's VideoSectionRenderer reads exactly that, so an authored poster frame
+            // reached nothing here. The prefixed spelling stays first for a section pasted from a
+            // content block.
+            video_thumbnail_url = section.data["video_thumbnail_url"] as? String
+                ?: section.data["thumbnail_url"] as? String,
             video_height = height,
             video_corner_radius = (section.data["video_corner_radius"] as? Number)?.toFloat()
                 ?: (section.data["corner_radius"] as? Number)?.toFloat(),
@@ -343,7 +348,10 @@ internal fun LottieSectionRenderer(section: ScreenSection, context: SectionConte
             lottie_json = json,
             autoplay = section.data["lottie_autoplay"] as? Boolean ?: section.data["autoplay"] as? Boolean ?: true,
             loop = section.data["lottie_loop"] as? Boolean ?: section.data["loop"] as? Boolean ?: true,
-            speed = (section.data["lottie_speed"] as? Number)?.toFloat() ?: 1.0f,
+            // #981 — same: the editor's Speed slider writes `speed`, which iOS reads, and this
+            // read only the prefixed name, so every authored playback speed was 1.0 on Android.
+            speed = (section.data["lottie_speed"] as? Number)?.toFloat()
+                ?: (section.data["speed"] as? Number)?.toFloat() ?: 1.0f,
             height = height,
         ),
     )
