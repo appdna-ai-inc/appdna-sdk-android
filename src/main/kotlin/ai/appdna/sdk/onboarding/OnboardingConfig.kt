@@ -2109,7 +2109,6 @@ internal object OnboardingConfigParser {
             row_child_fill = bm.bool(SURFACE, path, "row_child_fill"),
             gap = (bm.num(SURFACE, path, "gap"))?.toDouble(),
             wrap = bm.bool(SURFACE, path, "wrap"),
-            justify = bm.str(SURFACE, path, "justify"),
             align_items = bm.str(SURFACE, path, "align_items"),
 
             // ============================================================

@@ -172,7 +172,6 @@ object BlockKeyTypes {
             "inactive_rating_color" to "string",
             "inline_playback" to "bool",
             "items" to "string_list",
-            "justify" to "string",
             "label" to "string",
             "label_color" to "string",
             "label_font_size" to "number",

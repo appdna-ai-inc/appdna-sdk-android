@@ -730,7 +730,6 @@ data class ContentBlock(
     val z_index: Double? = null,
     val gap: Double? = null,
     val wrap: Boolean? = null,
-    val justify: String? = null,
     val align_items: String? = null,
     // Row direction and distribution (alignment gap fix)
     val row_direction: String? = null,       // horizontal (default), vertical
