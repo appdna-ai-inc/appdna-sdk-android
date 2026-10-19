@@ -42,7 +42,6 @@ import com.airbnb.lottie.compose.rememberLottieComposition
  */
 data class LottieBlock(
     val lottie_url: String? = null,
-    val lottie_json: Map<String, Any>? = null,
     val autoplay: Boolean = true,
     val loop: Boolean = true,
     val speed: Float = 1.0f,
@@ -51,7 +50,6 @@ data class LottieBlock(
     val alignment: String = "center",
     val play_on_scroll: Boolean? = null,
     val play_on_tap: Boolean? = null,
-    val color_overrides: Map<String, String>? = null,
 )
 
 @Composable

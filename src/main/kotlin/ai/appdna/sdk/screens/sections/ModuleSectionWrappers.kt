@@ -626,9 +626,8 @@ private fun PaywallVideoSection(section: ScreenSection) {
 @Composable
 private fun PaywallLottieSection(section: ScreenSection) {
     val url = section.data["lottie_url"] as? String ?: section.data["url"] as? String
-    @Suppress("UNCHECKED_CAST")
-    val lottieJson = section.data["lottie_json"] as? Map<String, Any>
-    if (url == null && lottieJson == null) {
+    // #996 — `lottie_json` is gone: read here, carried into the DTO, drawn by nothing.
+    if (url == null) {
         val h = (section.data["lottie_height"] as? Number)?.toFloat()
             ?: (section.data["height"] as? Number)?.toFloat() ?: 160f
         Box(
@@ -641,7 +640,6 @@ private fun PaywallLottieSection(section: ScreenSection) {
         ai.appdna.sdk.core.LottieBlockView(
             block = ai.appdna.sdk.core.LottieBlock(
                 lottie_url = url,
-                lottie_json = lottieJson,
                 autoplay = section.data["lottie_autoplay"] as? Boolean ?: section.data["autoplay"] as? Boolean ?: true,
                 loop = section.data["lottie_loop"] as? Boolean ?: section.data["loop"] as? Boolean ?: true,
                 speed = (section.data["lottie_speed"] as? Number)?.toFloat() ?: 1.0f,

@@ -22,7 +22,7 @@ import ai.appdna.sdk.core.StyleEngine
  * Expanded ContentBlock decoder used by
  * SDUI ContentBlocksSectionRenderer. Mirrors ~35 of the ContentBlock
  * fields from the canonical OnboardingConfig.kt parser (still missing
- * lottie_json, providers, field_options, timeline_items, loading_items,
+ * providers, field_options, timeline_items, loading_items,
  * and a handful of style sub-objects — those require helpers that live
  * inside `OnboardingConfigParser`'s private scope and need a dedicated
  * extraction pass to share). Common content-block use cases (text,
@@ -334,18 +334,17 @@ internal fun VideoSectionRenderer(section: ScreenSection, context: SectionContex
 @Composable
 internal fun LottieSectionRenderer(section: ScreenSection, context: SectionContext) {
     val url = section.data["lottie_url"] as? String ?: section.data["url"] as? String
-    @Suppress("UNCHECKED_CAST")
-    val json = section.data["lottie_json"] as? Map<String, Any>
     val height = (section.data["lottie_height"] as? Number)?.toFloat()
         ?: (section.data["height"] as? Number)?.toFloat() ?: 200f
-    if (url == null && json == null) {
+    // #996 — `lottie_json` is gone. It was read here, carried into the DTO, and drawn by NOTHING;
+    // the console could never set it, so no section in production has one.
+    if (url == null) {
         Box(modifier = Modifier.fillMaxWidth().height(height.dp))
         return
     }
     ai.appdna.sdk.core.LottieBlockView(
         block = ai.appdna.sdk.core.LottieBlock(
             lottie_url = url,
-            lottie_json = json,
             autoplay = section.data["lottie_autoplay"] as? Boolean ?: section.data["autoplay"] as? Boolean ?: true,
             loop = section.data["lottie_loop"] as? Boolean ?: section.data["loop"] as? Boolean ?: true,
             // #981 — same: the editor's Speed slider writes `speed`, which iOS reads, and this

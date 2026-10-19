@@ -505,6 +505,55 @@ internal fun NavGlyph(glyph: String, color: Color, size: androidx.compose.ui.uni
     )
 }
 
+/**
+ * The ✕ that closes an onboarding flow, with its authored style.
+ *
+ * 🔴 #1004 — every value here was hardcoded: `Text("✕")` at 14sp in `onBackground` at 60% alpha,
+ * in a row inset 8dp from the screen edge. The report named all of it. Mirrors iOS `DismissGlyph`,
+ * including the 44dp minimum tap target, which does NOT shrink with the glyph: an author making the
+ * ✕ smaller must not make it harder to hit, which is half of what was reported.
+ */
+@Composable
+internal fun DismissGlyph(
+    style: DismissButtonStyle?,
+    fallbackSize: Double? = null,
+    fallbackColor: Color? = null,
+) {
+    val size = style?.icon_size ?: fallbackSize ?: 14.0
+    val colour = style?.icon_color?.takeIf { it.isNotEmpty() }
+        ?.let { ai.appdna.sdk.core.StyleEngine.parseColor(it) }
+        ?: fallbackColor
+        ?: MaterialTheme.colorScheme.onBackground.copy(alpha = 0.6f)
+    val background = style?.bg_color?.takeIf { it.isNotEmpty() }
+        ?.let { ai.appdna.sdk.core.StyleEngine.parseColor(it) }
+
+    Box(
+        modifier = Modifier.size(44.dp),
+        contentAlignment = Alignment.Center,
+    ) {
+        Box(
+            modifier = if (background != null) {
+                Modifier
+                    .background(
+                        background,
+                        androidx.compose.foundation.shape.RoundedCornerShape((style?.bg_radius ?: size).dp),
+                    )
+                    .padding((size * 0.5).dp)
+            } else {
+                Modifier
+            },
+            contentAlignment = Alignment.Center,
+        ) {
+            Text(
+                text = style?.icon?.takeIf { it.isNotEmpty() } ?: "\u2715",
+                fontSize = size.sp,
+                fontWeight = FontWeight.SemiBold,
+                color = colour,
+            )
+        }
+    }
+}
+
 @Composable
 internal fun OnboardingFlowHost(
     flow: OnboardingFlowConfig,
@@ -1471,10 +1520,13 @@ internal fun OnboardingFlowHost(
                 (flow.settings.back_button_style?.close_on_first == true)
             if (navBackVisible || navDismissAllowed) {
             // Navigation bar
+            // #1004 — "pushed as far as possible into the top-right corner, which makes it hard
+            // to tap". 8 is what shipped; an author can now move it in. Shared with iOS.
+            val dismissStyle = flow.settings.dismiss_button_style
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(horizontal = 8.dp),
+                    .padding(horizontal = (dismissStyle?.resolvedInset ?: 8.0).dp),
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
@@ -1555,7 +1607,13 @@ internal fun OnboardingFlowHost(
                         enabled = !isProcessing,
                         modifier = Modifier.semantics { contentDescription = leadCloseCd },
                     ) {
-                        NavGlyph("\u2715", backIconColor, backIconSize)
+                        // The same affordance in the other corner: the authored dismiss style
+                        // when one is set, the back control's look when it is not.
+                        DismissGlyph(
+                            style = dismissStyle,
+                            fallbackSize = backIconSize.value.toDouble(),
+                            fallbackColor = backIconColor,
+                        )
                     }
                 } else {
                     Spacer(Modifier.size(48.dp))
@@ -1584,13 +1642,7 @@ internal fun OnboardingFlowHost(
                     // semantic label by default.
                     modifier = Modifier.semantics { contentDescription = dismissCd },
                 ) {
-                    Text(
-                        text = "\u2715",
-                        // \u2014 match iOS dismiss X font.system(size:14).
-                        fontSize = 14.sp,
-                        fontWeight = FontWeight.SemiBold,
-                        color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.6f)
-                    )
+                    DismissGlyph(style = dismissStyle)
                 }
                 } // end dismissAllowed
             }
@@ -3739,7 +3791,6 @@ private fun BlockBasedStepView(
                             ai.appdna.sdk.core.LottieBlockView(
                                 block = ai.appdna.sdk.core.LottieBlock(
                                     lottie_url = url,
-                                    lottie_json = null,
                                     autoplay = true,
                                     loop = bg.animation_loop ?: true,
                                     speed = 1.0f,
@@ -3748,7 +3799,6 @@ private fun BlockBasedStepView(
                                     alignment = "center",
                                     play_on_scroll = null,
                                     play_on_tap = null,
-                                    color_overrides = null,
                                 ),
                             )
                         }

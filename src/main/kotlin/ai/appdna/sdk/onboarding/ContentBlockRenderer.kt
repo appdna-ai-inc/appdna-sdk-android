@@ -442,7 +442,7 @@ internal fun mapBlockAlignment(horizontal: String?, vertical: String?): Alignmen
 
 /**
  * `@Stable`, not `@Immutable`: ContentBlock still carries
- * passthrough JSON Map/Any? fields per J.22 EXCLUDE rules (`lottie_json`,
+ * passthrough JSON Map/Any? fields per J.22 EXCLUDE rules (
  * `custom_config`, `field_config`, `icon_ref: Any?`, `bindings`) that we
  * deliberately don't migrate — they're caller-supplied JSON bags consumed by
  * specialized renderers, not Compose-iterated lists.
@@ -507,7 +507,6 @@ data class ContentBlock(
     val video_corner_radius: Double? = null,
     // Rich media fields
     val lottie_url: String? = null,
-    val lottie_json: Map<String, Any>? = null,
     val lottie_autoplay: Boolean? = null,
     val lottie_loop: Boolean? = null,
     val lottie_speed: Float? = null,
@@ -515,7 +514,6 @@ data class ContentBlock(
     // never declared (and so silently dropped).
     val play_on_scroll: Boolean? = null,
     val play_on_tap: Boolean? = null,
-    val color_overrides: Map<String, String>? = null,
     val lottie_width: Double? = null,
     /**
      * iOS canonical Lottie-specific height field
@@ -4175,11 +4173,13 @@ private fun VideoBlock(block: ContentBlock) {
 // Lottie content block
 @Composable
 private fun LottieContentBlock(block: ContentBlock) {
-    if (block.lottie_url != null || block.lottie_json != null) {
+    // #996 — `lottie_json` is gone: declared, carried into the DTO, drawn by nothing, and
+    // unauthorable from the console. A block with no `lottie_url` now draws nothing at all, which
+    // is what a block with only a `lottie_json` already drew.
+    if (block.lottie_url != null) {
         LottieBlockView(
             block = LottieBlock(
                 lottie_url = block.lottie_url,
-                lottie_json = block.lottie_json,
                 // iOS reads canonical `block.autoplay` /
                 // `block.loop` (ContentBlockRendererView.swift:595-597);
                 // Android historically only knew the prefixed
@@ -4197,7 +4197,6 @@ private fun LottieContentBlock(block: ContentBlock) {
                 alignment = block.icon_alignment ?: block.alignment ?: "center",  // Editor writes block.alignment
                 play_on_scroll = block.play_on_scroll,
                 play_on_tap = block.play_on_tap,
-                color_overrides = block.color_overrides,
             )
         )
     }
