@@ -1795,6 +1795,24 @@ class SharedFixtureTest(
                 // default arm, so a value that fails to reach the DTO is indistinguishable from
                 // the vertical stack an author did not ask for.
                 spy.state["parsed_plan_display_style"] = plansSection?.data?.plan_display_style
+                /*
+                 * #979 — the countdown section's vocabulary. Eight of its ten console controls
+                 * wrote a key no renderer read, and the generator wrote two more of its own, so a
+                 * value failing to reach the DTO was indistinguishable from an unstyled countdown.
+                 * The four at the end (`label_font_weight`, `digit_*`, `text_color`) had no field
+                 * on either platform's DTO until this change.
+                 */
+                val countdownSection = parsed.sections.firstOrNull { it.type == "countdown" }
+                spy.state["parsed_countdown_duration_seconds"] = countdownSection?.data?.duration_seconds
+                spy.state["parsed_countdown_label_text"] = countdownSection?.data?.label_text
+                spy.state["parsed_countdown_label_color"] = countdownSection?.data?.label_color
+                spy.state["parsed_countdown_layout"] = countdownSection?.data?.layout
+                spy.state["parsed_countdown_background_color"] = countdownSection?.data?.background_color
+                spy.state["parsed_countdown_on_expire_action"] = countdownSection?.data?.on_expire_action
+                spy.state["parsed_countdown_label_font_weight"] = countdownSection?.data?.label_font_weight
+                spy.state["parsed_countdown_digit_font_size"] = countdownSection?.data?.digit_font_size?.toDouble()
+                spy.state["parsed_countdown_digit_font_weight"] = countdownSection?.data?.digit_font_weight
+                spy.state["parsed_countdown_text_color"] = countdownSection?.data?.text_color
                 spy.state["parsed_strikethrough_font_size"] = plansSection?.data?.strikethrough_font_size
                 spy.state["parsed_strikethrough_gap"] = plansSection?.data?.strikethrough_gap
                 val plansList = parsed.plans.orEmpty()

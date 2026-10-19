@@ -559,15 +559,21 @@ internal data class PostPurchaseOverlayState(
     val allowDismiss: Boolean = true,
 )
 
-// Parity: maps a console cta_font_weight string (normal | medium | semibold | bold)
-// to a Compose FontWeight. Mirrors iOS resolveCTAFontWeight semantics; default SemiBold.
-fun resolveCtaWeight(w: String?): FontWeight = when (w?.lowercase()) {
+// Parity: maps a console font-weight string (normal | medium | semibold | bold) to a Compose
+// FontWeight. Mirrors iOS resolveCTAFontWeight semantics.
+//
+// #979 — the fallback is a PARAMETER because the countdown needs two of them: its label has
+// always drawn SemiBold and its digits Bold, so one shared default would have changed the pixels
+// of every countdown already in the field.
+fun resolveWeight(w: String?, fallback: FontWeight): FontWeight = when (w?.lowercase()) {
     "normal", "regular" -> FontWeight.Normal
     "medium" -> FontWeight.Medium
     "bold" -> FontWeight.Bold
     "semibold" -> FontWeight.SemiBold
-    else -> FontWeight.SemiBold
+    else -> fallback
 }
+
+fun resolveCtaWeight(w: String?): FontWeight = resolveWeight(w, FontWeight.SemiBold)
 
 @Composable
 fun PaywallScreen(
@@ -4240,6 +4246,13 @@ internal fun PaywallSectionView(
                         CountdownTimer(
                             seconds = section.data?.countdown_seconds ?: 86400,
                             valueTextStyle = section.style?.elements?.get("value")?.text_style,
+                            showDays = section.data?.show_days,
+                            showHours = section.data?.show_hours,
+                            showMinutes = section.data?.show_minutes,
+                            showSeconds = section.data?.show_seconds,
+                            onExpireAction = section.data?.on_expire_action,
+                            expiredText = section.data?.expired_text?.let { loc("countdown.expired_text", it) },
+                            onExpire = onDismiss,
                         )
                     }
                     "trial_badge" -> {
@@ -4695,7 +4708,7 @@ internal fun PaywallSectionView(
         }
         // 12 new paywall section types
         "countdown" -> {
-            PaywallCountdownSection(section = section, loc = loc)
+            PaywallCountdownSection(section = section, loc = loc, onDismiss = onDismiss)
         }
         "legal" -> {
             PaywallLegalSection(section = section, loc = loc, onRestore = onRestore)
@@ -4753,6 +4766,13 @@ internal fun PaywallSectionView(
 private fun PaywallCountdownSection(
     section: PaywallSection,
     loc: (String, String) -> String,
+    /*
+     * #978 — what `on_expire_action: auto_advance` calls. Defaulted to a no-op so the other call
+     * sites of this composable are unaffected, and wired to the paywall's OWN dismiss rather than
+     * to `finish()`: the Activity keeps a single dismiss path, and a section reaching past it
+     * would skip the guard that stops the SDK dismissing twice.
+     */
+    onDismiss: () -> Unit = {},
 ) {
     val duration = section.data?.duration_seconds ?: section.data?.countdown_seconds ?: 3600
     // Render label + layout (boxed/banner/
@@ -4791,13 +4811,23 @@ private fun PaywallCountdownSection(
                 color = section.data?.label_color?.let { parseHexColor(it) }
                     ?: parseHexColor("#7F1D1D"),
                 fontSize = (section.data?.label_font_size ?: 14f).sp,
-                fontWeight = FontWeight.SemiBold,
+                fontWeight = resolveWeight(section.data?.label_font_weight, FontWeight.SemiBold),
                 modifier = Modifier.padding(bottom = 4.dp),
             )
         }
         CountdownTimer(
             seconds = duration,
             valueTextStyle = section.style?.elements?.get("value")?.text_style,
+            digitFontSize = section.data?.digit_font_size,
+            digitFontWeight = section.data?.digit_font_weight,
+            digitColorHex = section.data?.text_color,
+            showDays = section.data?.show_days,
+            showHours = section.data?.show_hours,
+            showMinutes = section.data?.show_minutes,
+            showSeconds = section.data?.show_seconds,
+            onExpireAction = section.data?.on_expire_action,
+            expiredText = section.data?.expired_text?.let { loc("countdown.expired_text", it) },
+            onExpire = onDismiss,
         )
     }
 }
@@ -5815,26 +5845,86 @@ private fun PaywallReviewsCarouselSection(
 }
 
 // Countdown timer for social proof
+/*
+ * #978 — the six fields that were decoded here and read by NOTHING.
+ *
+ * A timer reached zero and sat at `00:00:00`, which is the one outcome none of
+ * `on_expire_action`'s three values describes. They were in `PaywallSectionData`, so every reader
+ * believed they worked and the paywall generator could author them into real documents.
+ *
+ * `showDays` and its siblings are a FORMAT choice: with days shown a 3-day countdown reads
+ * "02d 23h 59m" rather than "71h 59m". All four unset means the historical h:m:s, so no published
+ * paywall changes. Mirrors iOS `CountdownTimerView`.
+ */
 @Composable
-private fun CountdownTimer(seconds: Int, valueTextStyle: ai.appdna.sdk.core.TextStyleConfig? = null) {
+private fun CountdownTimer(
+    seconds: Int,
+    valueTextStyle: ai.appdna.sdk.core.TextStyleConfig? = null,
+    /*
+     * #979 — the digits' own three console controls. Unset, they keep exactly the values this
+     * composable hard-coded (22sp, Bold, the page-readable ink), so a countdown nobody has styled
+     * draws the pixels it drew before. `valueTextStyle` still applies ON TOP: it is the
+     * design-system channel and the more specific of the two.
+     */
+    digitFontSize: Float? = null,
+    digitFontWeight: String? = null,
+    digitColorHex: String? = null,
+    showDays: Boolean? = null,
+    showHours: Boolean? = null,
+    showMinutes: Boolean? = null,
+    showSeconds: Boolean? = null,
+    onExpireAction: String? = null,
+    expiredText: String? = null,
+    onExpire: (() -> Unit)? = null,
+) {
     // #946 — the readable colour FOR THIS PAGE. Every use below keeps the alpha it had, so a
     // dark paywall draws exactly the pixels it drew before and a light one becomes legible.
     val ink = PaywallTextDefaults.readable(LocalPaywallPageHex.current)
     var remaining by remember { mutableIntStateOf(seconds) }
+    var didFireExpiry by remember { mutableStateOf(false) }
 
     LaunchedEffect(Unit) {
         while (remaining > 0) {
             kotlinx.coroutines.delay(1000)
             remaining--
         }
+        // 🔴 Once only, and OUTSIDE the loop: a timer authored at zero never enters it, and a
+        // re-entrant fire would dismiss repeatedly under `auto_advance`.
+        if (!didFireExpiry) {
+            didFireExpiry = true
+            if (onExpireAction == "auto_advance") onExpire?.invoke()
+        }
     }
 
-    val hours = remaining / 3600
+    val expired = remaining <= 0
+    // `hide` removes the section outright once spent; the other two keep drawing.
+    if (expired && onExpireAction == "hide") return
+    if (expired && onExpireAction == "show_expired_text" && !expiredText.isNullOrEmpty()) {
+        Text(text = expiredText, color = ink, fontSize = 15.sp, fontWeight = FontWeight.SemiBold)
+        return
+    }
+
+    val anyUnitAuthored = showDays != null || showHours != null || showMinutes != null || showSeconds != null
+    val uDays = if (anyUnitAuthored) (showDays ?: false) else false
+    val uHours = if (anyUnitAuthored) (showHours ?: true) else true
+    val uMinutes = if (anyUnitAuthored) (showMinutes ?: true) else true
+    val uSeconds = if (anyUnitAuthored) (showSeconds ?: true) else true
+
+    val days = remaining / 86_400
+    // With days hidden the hours column carries the whole remainder — 71h rather than 2d 23h.
+    val hours = if (uDays) (remaining % 86_400) / 3600 else remaining / 3600
     val minutes = (remaining % 3600) / 60
     val secs = remaining % 60
 
+    // An authored digit colour tints the whole digit row — the chips behind the numbers, the unit
+    // letters and the `:` between them — because they are all one element to an author.
+    val digitInk = digitColorHex?.let { parseHexColor(it) } ?: ink
     val digitStyle = StyleEngine.applyTextStyle(
-        TextStyle(fontSize = 22.sp, fontWeight = FontWeight.Bold, color = ink),
+        TextStyle(
+            fontSize = (digitFontSize ?: 22f).sp,
+            fontWeight = resolveWeight(digitFontWeight, FontWeight.Bold),
+            color = digitInk,
+        ),
         valueTextStyle
     )
 
@@ -5842,14 +5932,20 @@ private fun CountdownTimer(seconds: Int, valueTextStyle: ai.appdna.sdk.core.Text
         horizontalArrangement = Arrangement.spacedBy(4.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        listOf(hours to "h", minutes to "m", secs to "s").forEachIndexed { index, (value, label) ->
+        val shown = buildList {
+            if (uDays) add(days to "d")
+            if (uHours) add(hours to "h")
+            if (uMinutes) add(minutes to "m")
+            if (uSeconds) add(secs to "s")
+        }
+        shown.forEachIndexed { index, (value, label) ->
             if (index > 0) {
-                Text(":", color = ink.copy(alpha = 0.6f), fontSize = 20.sp, fontWeight = FontWeight.Bold)
+                Text(":", color = digitInk.copy(alpha = 0.6f), fontSize = 20.sp, fontWeight = FontWeight.Bold)
             }
             Column(
                 horizontalAlignment = Alignment.CenterHorizontally,
                 modifier = Modifier
-                    .background(ink.copy(alpha = 0.1f), RoundedCornerShape(8.dp))
+                    .background(digitInk.copy(alpha = 0.1f), RoundedCornerShape(8.dp))
                     .padding(horizontal = 12.dp, vertical = 6.dp),
             ) {
                 Text(
@@ -5859,7 +5955,7 @@ private fun CountdownTimer(seconds: Int, valueTextStyle: ai.appdna.sdk.core.Text
                     text = String.format(java.util.Locale.US, "%02d", value),
                     style = digitStyle,
                 )
-                Text(text = label, fontSize = 10.sp, color = ink.copy(alpha = 0.6f))
+                Text(text = label, fontSize = 10.sp, color = digitInk.copy(alpha = 0.6f))
             }
         }
     }

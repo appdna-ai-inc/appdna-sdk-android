@@ -300,6 +300,19 @@ data class PaywallSectionData(
     val label_color: String? = null,
     val label_bg_color: String? = null,
     val label_font_size: Float? = null,
+    /*
+     * #979 — the countdown's four remaining console controls. The editor has offered Label Font
+     * Weight, Digit Size, Digit Font Weight and Text Color since the section existed; no renderer
+     * on any platform read them, so eight of its ten controls wrote keys nothing looked at.
+     *
+     * `text_color` is the DIGITS' colour (the label has `label_color`), which is why the console
+     * control is relabelled "Digit Color". Unset, all four keep the values `CountdownTimer` had
+     * hard-coded: 22sp bold in the page-readable ink, and a SemiBold label.
+     */
+    val label_font_weight: String? = null,
+    val digit_font_size: Float? = null,
+    val digit_font_weight: String? = null,
+    val text_color: String? = null,
     // Countdown section layout selector
     // ("boxed", "banner", or null/inline) matching iOS PaywallRenderer.swift
     // :875-901. Determines whether the countdown timer renders inside a
@@ -1398,6 +1411,10 @@ internal object PaywallConfigParser {
                 margin_horizontal = d.num(SURFACE, path, "margin_horizontal")?.toFloat(),
                 label_text = d.str(SURFACE, path, "label_text"),
                 label_color = d.str(SURFACE, path, "label_color"),
+                label_font_weight = d.str(SURFACE, path, "label_font_weight"),
+                digit_font_size = d.num(SURFACE, path, "digit_font_size")?.toFloat(),
+                digit_font_weight = d.str(SURFACE, path, "digit_font_weight"),
+                text_color = d.str(SURFACE, path, "text_color"),
                 label_bg_color = d.str(SURFACE, path, "label_bg_color"),
                 label_font_size = d.num(SURFACE, path, "label_font_size")?.toFloat(),
                 // Countdown layout selector.
