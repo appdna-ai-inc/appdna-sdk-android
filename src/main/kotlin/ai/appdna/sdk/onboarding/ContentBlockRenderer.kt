@@ -4567,13 +4567,15 @@ private fun SocialLoginBlock(
              * table above rather than re-deriving it, so an edit to one is visible beside the
              * other.
              */
-            val bgHex: String? = provider.bg_color ?: when (provider.type) {
-                "apple" -> "#000000"
-                "google" -> "#4285F4"
-                "facebook" -> "#1877F2"
-                "github" -> "#24292F"
-                else -> block.accent_color ?: block.bg_color ?: (ai.appdna.sdk.AppDNA.brandAccentHex ?: "#6366F1")
-            }
+            val bgHex: String? = provider.bg_color ?: ai.appdna.sdk.core.SocialBrandDefaults.backgroundHex(
+                type = provider.type,
+                // The Triple above is the FILLED table; outlined/minimal resolve their own colours
+                // further down, so the hex asked for here is always the filled one.
+                style = "filled",
+                blockAccent = block.accent_color,
+                blockBg = block.bg_color,
+                brandAccent = ai.appdna.sdk.AppDNA.brandAccentHex,
+            )
             // outlined/minimal buttons have a CLEAR background, so the
             // brand-white default text was invisible (white-on-transparent). iOS forces
             // `.primary` (theme-adaptive) for these styles
