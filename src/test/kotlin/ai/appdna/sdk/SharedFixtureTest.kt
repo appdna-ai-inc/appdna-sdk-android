@@ -279,6 +279,7 @@ class SharedFixtureTest(
             "resolve_block_collapse" -> runBlockCollapse(action, spy)
             "resolve_banner_icon" -> runBannerIcon(action, spy)
             "resolve_celebration_palette" -> runCelebrationPalette(action, spy)
+            "resolve_google_mark_chip" -> runGoogleMarkChip(action, spy)
             "resolve_survey_sentiment" -> runSurveySentiment(action, spy)
             // #772 — WHICH copy of content_blocks the real parser resolves, per step shape.
             "resolve_content_blocks" -> runResolveContentBlocks(action, spy)
@@ -2156,6 +2157,25 @@ class SharedFixtureTest(
      * compared on the WHOLE answer. The unknown-type case is where the SHAPE question diverged,
      * and a fixture that only checked colours would have passed straight over it.
      */
+    /**
+     * WHETHER Google's mark needs a white chip, through the REAL `GoogleMarkChip` both renderers
+     * call.
+     *
+     * The unreadable-background cases earn their place: an absent, empty or malformed hex means
+     * the brand DEFAULT is drawn, and that is `#4285F4`, so the answer has to be "chip".
+     */
+    private fun runGoogleMarkChip(action: JSONObject, spy: Spy) {
+        val cases = action.optJSONArray("cases") ?: unsupported("resolve_google_mark_chip without cases")
+        spy.state["results"] = (0 until cases.length()).map { i ->
+            val v = cases.getJSONObject(i).optJSONObject("value") ?: JSONObject()
+            ai.appdna.sdk.core.GoogleMarkChip.isNeeded(
+                buttonStyle = v.optStringOrNull("style"),
+                backgroundHex = v.optStringOrNull("bg"),
+                iconStyle = v.optStringOrNull("icon_style"),
+            )
+        }
+    }
+
     private fun runCelebrationPalette(action: JSONObject, spy: Spy) {
         val cases = action.optJSONArray("cases") ?: unsupported("resolve_celebration_palette without cases")
         spy.state["results"] = (0 until cases.length()).map { i ->

@@ -4561,6 +4561,19 @@ private fun SocialLoginBlock(
                 )
             }
             val bgColor = provider.bg_color?.let { StyleEngine.parseColor(it) } ?: defaultBg
+            /*
+             * #1030 — the same background as a HEX, because a `Color` carries no readable
+             * components and the chip rule needs a luminance. The brand defaults repeat the
+             * table above rather than re-deriving it, so an edit to one is visible beside the
+             * other.
+             */
+            val bgHex: String? = provider.bg_color ?: when (provider.type) {
+                "apple" -> "#000000"
+                "google" -> "#4285F4"
+                "facebook" -> "#1877F2"
+                "github" -> "#24292F"
+                else -> block.accent_color ?: block.bg_color ?: (ai.appdna.sdk.AppDNA.brandAccentHex ?: "#6366F1")
+            }
             // outlined/minimal buttons have a CLEAR background, so the
             // brand-white default text was invisible (white-on-transparent). iOS forces
             // `.primary` (theme-adaptive) for these styles
@@ -4702,11 +4715,41 @@ private fun SocialLoginBlock(
                          * guidelines allow a white or black mark on a coloured button, and that is
                          * an explicit author choice.
                          */
-                        androidx.compose.foundation.Image(
-                            painter = androidx.compose.ui.res.painterResource(R.drawable.appdna_google_g),
-                            contentDescription = null,
-                            modifier = Modifier.size(18.dp).padding(end = 0.dp),
+                        /*
+                         * #1030 — A WHITE CHIP WHEN THE BUTTON IS TOO DARK TO READ A BLUE ARM
+                         * AGAINST. The mark is red, yellow, green and BLUE, and the Google
+                         * provider's default fill is `#4285F4`: the blue arm and crossbar vanish
+                         * into it and the mark reads as a "C" — intact at 4×, illegible at 18dp.
+                         * Google's guidelines put the mark on a white surface, so the chip is what
+                         * they ask for, and it keeps the author's chosen button colour where
+                         * tinting the asset would not (and the guidelines forbid tinting).
+                         */
+                        val needsChip = ai.appdna.sdk.core.GoogleMarkChip.isNeeded(
+                            buttonStyle = buttonStyle,
+                            backgroundHex = bgHex,
+                            iconStyle = provider.icon_style,
                         )
+                        if (needsChip) {
+                            Box(
+                                modifier = Modifier
+                                    .size(24.dp)
+                                    .clip(androidx.compose.foundation.shape.CircleShape)
+                                    .background(Color.White),
+                                contentAlignment = Alignment.Center,
+                            ) {
+                                androidx.compose.foundation.Image(
+                                    painter = androidx.compose.ui.res.painterResource(R.drawable.appdna_google_g),
+                                    contentDescription = null,
+                                    modifier = Modifier.size(18.dp),
+                                )
+                            }
+                        } else {
+                            androidx.compose.foundation.Image(
+                                painter = androidx.compose.ui.res.painterResource(R.drawable.appdna_google_g),
+                                contentDescription = null,
+                                modifier = Modifier.size(18.dp).padding(end = 0.dp),
+                            )
+                        }
                         Spacer(Modifier.width(8.dp))
                     } else if (providerIcon.isNotBlank()) {
                         Text(providerIcon, fontSize = providerIconFontSize, fontWeight = providerIconFontWeight, modifier = Modifier.padding(end = 8.dp), color = providerIconColor)
