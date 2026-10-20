@@ -3286,15 +3286,13 @@ private fun WarningBannerBlock(block: ContentBlock, loc: ((String, String) -> St
                         .fillMaxWidth()
                         .then(
                             if (linkUrl.isEmpty()) Modifier
+                            // 🔴 Through the scheme allowlist, never a hand-built ACTION_VIEW: a
+                            // config-driven URL is attacker-influenced, and `UrlAllowlistCallSites`
+                            // fails the build for exactly the intent this used to construct.
                             else Modifier.clickable {
-                                runCatching {
-                                    context.startActivity(
-                                        android.content.Intent(
-                                            android.content.Intent.ACTION_VIEW,
-                                            android.net.Uri.parse(linkUrl),
-                                        ),
-                                    )
-                                }.onFailure { Log.warning("warning_banner link could not be opened: ${it.message}") }
+                                if (!ai.appdna.sdk.core.URLSafety.open(context, linkUrl)) {
+                                    Log.warning("warning_banner link refused by the scheme allowlist")
+                                }
                             }
                         ),
                 )
