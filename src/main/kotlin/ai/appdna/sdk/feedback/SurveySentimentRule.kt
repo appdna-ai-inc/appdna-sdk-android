@@ -26,23 +26,49 @@ object SurveySentimentRule {
     fun resolve(surveyType: String?, answer: Any?, emojiScale: List<String>?): SurveySentiment {
         val type = surveyType ?: ""
 
+        /*
+         * 🔴 #1037 — A NUMERIC TYPE WITH A NON-NUMERIC ANSWER FALLS THROUGH. It must not stop here.
+         *
+         * iOS reads `if ["csat","rating"].contains(type), let rating = intValue(answer)`, where the
+         * binding is PART of the condition: a `csat` survey answered with an emoji drops out of the
+         * branch and is classified by its scale below. This file is the shared rule and was written
+         * as `val rating = intValue(answer) ?: return NEUTRAL`, which is a different function — the
+         * early return made the fall-through unreachable.
+         *
+         * So a `csat` survey whose first question is an emoji scale — a thoroughly ordinary thing to
+         * author, "rate your satisfaction" with five faces — classified EVERY answer as neutral on
+         * Android and correctly on iOS. With no `on_neutral` branch authored, `executeFollowUp`
+         * returned at its second `?: return` and the feedback form never appeared, silently and
+         * with nothing in logcat. That is #1037, and it was invisible until a survey was answered
+         * on a device.
+         *
+         * The shared FILE existed on both platforms and the two still disagreed, because a Swift
+         * optional-binding condition and a Kotlin elvis-return are not the same control flow. Only
+         * a fixture that drives both can see that, which is why `survey_sentiment_scale` now
+         * carries the numeric-type-with-an-emoji-answer cases.
+         */
+
         // NPS: 9-10 promoter, 0-6 detractor, 7-8 passive.
         if (type == "nps") {
-            val score = intValue(answer) ?: return SurveySentiment.NEUTRAL
-            return when {
-                score >= 9 -> SurveySentiment.POSITIVE
-                score <= 6 -> SurveySentiment.NEGATIVE
-                else -> SurveySentiment.NEUTRAL
+            val score = intValue(answer)
+            if (score != null) {
+                return when {
+                    score >= 9 -> SurveySentiment.POSITIVE
+                    score <= 6 -> SurveySentiment.NEGATIVE
+                    else -> SurveySentiment.NEUTRAL
+                }
             }
         }
 
         // CSAT / rating out of five.
         if (type == "csat" || type == "rating") {
-            val rating = intValue(answer) ?: return SurveySentiment.NEUTRAL
-            return when {
-                rating >= 4 -> SurveySentiment.POSITIVE
-                rating <= 2 -> SurveySentiment.NEGATIVE
-                else -> SurveySentiment.NEUTRAL
+            val rating = intValue(answer)
+            if (rating != null) {
+                return when {
+                    rating >= 4 -> SurveySentiment.POSITIVE
+                    rating <= 2 -> SurveySentiment.NEGATIVE
+                    else -> SurveySentiment.NEUTRAL
+                }
             }
         }
 
