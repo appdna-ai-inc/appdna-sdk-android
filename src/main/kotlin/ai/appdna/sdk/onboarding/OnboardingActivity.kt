@@ -1194,6 +1194,24 @@ internal fun OnboardingFlowHost(
         )
     }
 
+    /**
+     * #1014 — THE STEP'S TAP-ANYWHERE ADVANCE, in one place.
+     *
+     * 🔴 The guard takes the index it is asked about rather than reading `currentIndex`, because
+     * the step view's own handler fires for the step it is drawing — which during a transition is
+     * not always the current one. A tap that reaches more than one call site still advances ONCE:
+     * `advanceOrComplete()` moves the index, and the guard re-reads the NEW step's flag.
+     */
+    fun tapAnywhereAdvance(index: Int) {
+        val step = flow.steps.getOrNull(index) ?: return
+        if (step.tap_anywhere_advances != true || isProcessing) return
+        if (index != currentIndex) return
+        HapticEngine.triggerIfEnabled(
+            hostView, hapticConfig?.triggers?.on_step_advance, hapticConfig,
+        )
+        advanceOrComplete()
+    }
+
     // Bind the forward-ref now that
     // `advanceOrComplete` exists. Read by `presentPaywallTriggerNode
     // .routeOutcome` unknown-target fallback above.
@@ -1725,15 +1743,44 @@ internal fun OnboardingFlowHost(
                         .fillMaxWidth()
                         .pointerInput(currentIndex) {
                             awaitEachGesture {
-                                awaitFirstDown(requireUnconsumed = false)
-                                val up = waitForUpOrCancellation(PointerEventPass.Final)
-                                if (up == null || up.isConsumed) return@awaitEachGesture
-                                val step = flow.steps.getOrNull(currentIndex) ?: return@awaitEachGesture
-                                if (step.tap_anywhere_advances != true || isProcessing) return@awaitEachGesture
-                                HapticEngine.triggerIfEnabled(
-                                    hostView, hapticConfig?.triggers?.on_step_advance, hapticConfig,
+                                /*
+                                 * 🔴 NOT `waitForUpOrCancellation`. It returns NULL for a change
+                                 * a child consumed, which is indistinguishable from a cancelled
+                                 * gesture — so the `up.isConsumed` test below it was dead code,
+                                 * and on a device EVERY tap came back `up=false` whether it
+                                 * landed on the heading or on empty space. Measured with a
+                                 * diagnostic after two walks had learned nothing:
+                                 *
+                                 *     [DIAG tap] up=false consumed=null idx=0 flag=true processing=false
+                                 *
+                                 * Everything else was right. The gesture simply never saw an up.
+                                 *
+                                 * So the pointer is followed by hand: take the down on the
+                                 * INITIAL pass so no child can hide it, then watch the FINAL pass
+                                 * until every pointer lifts, remembering whether a child consumed
+                                 * anything and whether the finger travelled past touch slop. A tap
+                                 * the children did not take, and did not turn into a scroll, is
+                                 * what "anywhere" means on a step that also has a button.
+                                 */
+                                val down = awaitFirstDown(
+                                    requireUnconsumed = false,
+                                    pass = PointerEventPass.Initial,
                                 )
-                                advanceOrComplete()
+                                var takenByChild = false
+                                var travelled = false
+                                while (true) {
+                                    val event = awaitPointerEvent(PointerEventPass.Final)
+                                    val change = event.changes.firstOrNull { it.id == down.id }
+                                    if (change != null) {
+                                        if (change.isConsumed) takenByChild = true
+                                        if ((change.position - down.position).getDistance() > viewConfiguration.touchSlop) {
+                                            travelled = true
+                                        }
+                                    }
+                                    if (event.changes.none { it.pressed }) break
+                                }
+                                if (takenByChild || travelled) return@awaitEachGesture
+                                tapAnywhereAdvance(currentIndex)
                             }
                         },
                 ) { stepIdx ->
@@ -1750,6 +1797,9 @@ internal fun OnboardingFlowHost(
                 OnboardingStepView(
                     step = step,
                     effectiveConfig = effectiveConfig,
+                    // #1014 — the step's tap-anywhere advance, handed to the root keyboard-dismiss
+                    // handler, which is what actually receives a tap anywhere in the step.
+                    onContentTap = { tapAnywhereAdvance(stepIdx) },
                     // The UN-merged override (the host-data pipeline merges it after
                     // resolve) and the pending flag of THIS step's presentation. An outgoing step
                     // mid-transition keeps the pending flag it had (no selection is cleared
@@ -2427,6 +2477,23 @@ fun OnboardingStepView(
     effectiveConfig: StepConfig,
     onNext: (Map<String, Any>?) -> Unit,
     onSkip: () -> Unit,
+    /**
+     * #1014 — WHAT A TAP ON THIS STEP SHOULD DO, besides dismissing the keyboard.
+     *
+     * 🔴 The tap-anywhere gesture lived on the AnimatedContent OUTSIDE this view and never fired.
+     * Measured, after two device walks that learned nothing and a diagnostic that did:
+     *
+     *     [DIAG tap] taken=true travelled=false idx=0 flag=true processing=false
+     *
+     * `taken=true` for a tap on the heading AND for a tap on empty space — because the root-level
+     * `detectTapGestures` below, which exists to dismiss the keyboard, CONSUMES every tap in the
+     * step before any outer gesture sees it. Exactly the same cause as iOS, where a
+     * `.contentShape(Rectangle()).onTapGesture` sat above everything the blocks carry.
+     *
+     * So the action goes to the handler that already receives the tap, rather than the outer
+     * gesture being reshaped for a sixth time.
+     */
+    onContentTap: () -> Unit = {},
     modifier: Modifier = Modifier,
     flowId: String = "",
     /** The renderer's delegate — see the call site in [OnboardingFlowHost]. */
@@ -2483,6 +2550,8 @@ fun OnboardingStepView(
     if (!blocks.isNullOrEmpty()) {
         // Block-based rendering with layout variants
         BlockBasedStepView(
+            // #1014 — forwarded to the root handler that receives every tap in the step.
+            onContentTap = onContentTap,
             effectiveConfig = effectiveConfig,
             blocks = blocks,
             toggleValues = toggleValues,
@@ -2853,6 +2922,12 @@ internal fun bottomZoneReserve(hasBottomZone: Boolean, measured: Dp): Dp = when 
 internal fun ThreeZoneBlockLayout(
     blocks: List<ContentBlock>,
     onAction: (String) -> Unit,
+    /**
+     * #1014 — what a tap on the step should do besides dismissing the keyboard. The root-level
+     * `detectTapGestures` below is what actually RECEIVES every tap in the step — it consumes
+     * them, which is why the tap-anywhere gesture outside this layout never fired.
+     */
+    onContentTap: () -> Unit = {},
     toggleValues: MutableMap<String, Boolean>,
     inputValues: MutableMap<String, Any>,
     loc: ((String, String) -> String)?,
@@ -2960,10 +3035,16 @@ internal fun ThreeZoneBlockLayout(
             // inner scroll Column only, so taps in the bottom-zone gutter,
             // nav-bar gutter, or progress-bar gutter left the keyboard up
             // and the user got stuck.
-            .pointerInput(Unit) {
+            /*
+             * #1014 — `onContentTap` is keyed in alongside `Unit` so the lambda the gesture holds
+             * is replaced when the step changes. Keyed on `Unit` alone it would capture the first
+             * step's closure for the life of the flow, which is a silent "it worked once".
+             */
+            .pointerInput(onContentTap) {
                 detectTapGestures {
                     keyboardController?.hide()
                     focusManager.clearFocus()
+                    onContentTap()
                 }
             },
     ) {
@@ -3219,6 +3300,9 @@ internal fun shouldRenderSkipAffordance(skipEnabled: Boolean?, hasSkipHandler: B
 
 @Composable
 private fun BlockBasedStepView(
+    /** #1014 — what a tap on the step should do besides dismissing the keyboard; forwarded
+     *  to `ThreeZoneBlockLayout`, whose root handler is what actually receives it. */
+    onContentTap: () -> Unit = {},
     effectiveConfig: StepConfig,
     blocks: List<ContentBlock>,
     toggleValues: MutableMap<String, Boolean>,
@@ -3972,7 +4056,7 @@ private fun BlockBasedStepView(
                                 .padding(vertical = 20.dp), // Horizontal owned by ThreeZoneBlockLayout (8%) so margins match iOS ~10.4% (was double-padded ~15% → headings wrapped more)
                         ) {
                             Box(modifier = Modifier.weight(1f).fillMaxWidth()) {
-                                ThreeZoneBlockLayout(blocks = blocks, onAction = ::handleAction, toggleValues = toggleValues, inputValues = inputValues, loc = ::loc, responses = responses, hookData = hookData, currentStepIndex = currentStepIndex, totalSteps = totalSteps, onInteract = ::handleInteract, fieldConfigOverrides = fieldConfigOverrides, fieldOptionsOverrides = fieldOptionsOverrides)
+                                ThreeZoneBlockLayout(blocks = blocks, onAction = ::handleAction, onContentTap = onContentTap, toggleValues = toggleValues, inputValues = inputValues, loc = ::loc, responses = responses, hookData = hookData, currentStepIndex = currentStepIndex, totalSteps = totalSteps, onInteract = ::handleInteract, fieldConfigOverrides = fieldConfigOverrides, fieldOptionsOverrides = fieldOptionsOverrides)
                             }
                         }
                     }
@@ -3992,7 +4076,7 @@ private fun BlockBasedStepView(
                                 .weight(0.6f)
                                 .padding(16.dp),
                         ) {
-                            ThreeZoneBlockLayout(blocks = blocks, onAction = ::handleAction, toggleValues = toggleValues, inputValues = inputValues, loc = ::loc, responses = responses, hookData = hookData, currentStepIndex = currentStepIndex, totalSteps = totalSteps, onInteract = ::handleInteract, fieldConfigOverrides = fieldConfigOverrides, fieldOptionsOverrides = fieldOptionsOverrides)
+                            ThreeZoneBlockLayout(blocks = blocks, onAction = ::handleAction, onContentTap = onContentTap, toggleValues = toggleValues, inputValues = inputValues, loc = ::loc, responses = responses, hookData = hookData, currentStepIndex = currentStepIndex, totalSteps = totalSteps, onInteract = ::handleInteract, fieldConfigOverrides = fieldConfigOverrides, fieldOptionsOverrides = fieldOptionsOverrides)
                         }
                     }
                 }
@@ -4003,7 +4087,7 @@ private fun BlockBasedStepView(
                             .fillMaxSize()
                             .padding(vertical = 20.dp), // Horizontal owned by TZBL (8%) → margins match iOS ~10.4%
                     ) {
-                        ThreeZoneBlockLayout(blocks = blocks, onAction = ::handleAction, toggleValues = toggleValues, inputValues = inputValues, loc = ::loc, responses = responses, hookData = hookData, currentStepIndex = currentStepIndex, totalSteps = totalSteps, onInteract = ::handleInteract, fieldConfigOverrides = fieldConfigOverrides, fieldOptionsOverrides = fieldOptionsOverrides)
+                        ThreeZoneBlockLayout(blocks = blocks, onAction = ::handleAction, onContentTap = onContentTap, toggleValues = toggleValues, inputValues = inputValues, loc = ::loc, responses = responses, hookData = hookData, currentStepIndex = currentStepIndex, totalSteps = totalSteps, onInteract = ::handleInteract, fieldConfigOverrides = fieldConfigOverrides, fieldOptionsOverrides = fieldOptionsOverrides)
                         Spacer(Modifier.height(16.dp))
                         ai.appdna.sdk.core.NetworkImage(
                             url = effectiveConfig.image_url,
@@ -4025,7 +4109,7 @@ private fun BlockBasedStepView(
                             contentScale = androidx.compose.ui.layout.ContentScale.Fit,
                         )
                         Spacer(Modifier.height(16.dp))
-                        ThreeZoneBlockLayout(blocks = blocks, onAction = ::handleAction, toggleValues = toggleValues, inputValues = inputValues, loc = ::loc, responses = responses, hookData = hookData, currentStepIndex = currentStepIndex, totalSteps = totalSteps, onInteract = ::handleInteract, fieldConfigOverrides = fieldConfigOverrides, fieldOptionsOverrides = fieldOptionsOverrides)
+                        ThreeZoneBlockLayout(blocks = blocks, onAction = ::handleAction, onContentTap = onContentTap, toggleValues = toggleValues, inputValues = inputValues, loc = ::loc, responses = responses, hookData = hookData, currentStepIndex = currentStepIndex, totalSteps = totalSteps, onInteract = ::handleInteract, fieldConfigOverrides = fieldConfigOverrides, fieldOptionsOverrides = fieldOptionsOverrides)
                     }
                 }
                 else -> { // no_image
@@ -4035,7 +4119,7 @@ private fun BlockBasedStepView(
                             .fillMaxSize()
                             .padding(vertical = 20.dp), // Horizontal owned by TZBL (8%) → margins match iOS ~10.4%
                     ) {
-                        ThreeZoneBlockLayout(blocks = blocks, onAction = ::handleAction, toggleValues = toggleValues, inputValues = inputValues, loc = ::loc, responses = responses, hookData = hookData, currentStepIndex = currentStepIndex, totalSteps = totalSteps, onInteract = ::handleInteract, fieldConfigOverrides = fieldConfigOverrides, fieldOptionsOverrides = fieldOptionsOverrides)
+                        ThreeZoneBlockLayout(blocks = blocks, onAction = ::handleAction, onContentTap = onContentTap, toggleValues = toggleValues, inputValues = inputValues, loc = ::loc, responses = responses, hookData = hookData, currentStepIndex = currentStepIndex, totalSteps = totalSteps, onInteract = ::handleInteract, fieldConfigOverrides = fieldConfigOverrides, fieldOptionsOverrides = fieldOptionsOverrides)
                     }
                 }
             }
