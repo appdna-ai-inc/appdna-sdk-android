@@ -133,6 +133,8 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsFocusedAsState
 import androidx.compose.foundation.interaction.collectIsPressedAsState
+import androidx.compose.foundation.layout.requiredHeight
+import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.foundation.gestures.detectDragGestures
@@ -1769,6 +1771,18 @@ fun ContentBlockRendererView(
      * Null = [blocks] (a sheet, a preview).
      */
     stepBlocks: List<ContentBlock>? = null,
+    /**
+     * #993 — how far the step has scrolled, in dp, for blocks authored `collapse_on_scroll`.
+     *
+     * iOS has applied this since Sprint 7 and Android decoded the key and stopped there: every
+     * application of it in this SDK is in `PaywallActivity`, a different surface. So one authored
+     * document produced a block that faded away on one platform and sat still on the other — the
+     * third defect of that exact shape in one sweep, after `label_bg_color` and `blur_background`.
+     *
+     * Zero (the default) means "no scrolling", which collapses nothing — so a caller that does not
+     * pass it renders exactly as before.
+     */
+    scrollOffset: Float = 0f,
 ) {
     // Inside an onboarding step the raw host-data pass resolved, every block here is
     // already resolved AND layered (options, patches): the view-level pass must not run again, or it
@@ -1824,17 +1838,38 @@ fun ContentBlockRendererView(
             val effectiveHeight = if (isInputBlock) null else block.element_height
             val sizingModifier = Modifier.applyRelativeSizing(block.element_width, effectiveHeight, useMinHeight = isTextBlock)
 
+            /*
+             * #993 — scroll-collapse, through the same `BlockCollapseOnScroll.progress` the Swift
+             * calls. ONLY a block that asked for it is touched: `alpha` and a height cap on every
+             * block would clip dropdowns and overflow content, which is the note iOS carries at the
+             * same place.
+             */
+            val collapses = block.collapse_on_scroll == true
+            val collapseProgress = BlockCollapseOnScroll.progress(
+                enabled = collapses,
+                scrollOffset = scrollOffset.toDouble(),
+                threshold = (block.field_config?.get("collapse_threshold") as? Number)?.toDouble(),
+            ).toFloat()
+            val collapseModifier = if (!collapses) Modifier else Modifier
+                .graphicsLayer { alpha = 1f - collapseProgress }
+                .then(if (collapseProgress >= 1f) Modifier.requiredHeight(0.dp) else Modifier)
+                .clipToBounds()
+
             if (shouldAnimate) {
                 block.entrance_animation?.let { anim ->
                     EntranceAnimationWrapper(animation = anim) {
-                        BlockSizingBox(block, sizingModifier) {
-                            RenderBlock(block = block, onAction = onAction, toggleValues = toggleValues, inputValues = inputValues, loc = loc, currentStepIndex = currentStepIndex, totalSteps = totalSteps, onInteract = onInteract, stepBlocks = gateBlocks)
+                        androidx.compose.foundation.layout.Box(modifier = collapseModifier) {
+                            BlockSizingBox(block, sizingModifier) {
+                                RenderBlock(block = block, onAction = onAction, toggleValues = toggleValues, inputValues = inputValues, loc = loc, currentStepIndex = currentStepIndex, totalSteps = totalSteps, onInteract = onInteract, stepBlocks = gateBlocks)
+                            }
                         }
                     }
                 }
             } else {
-                BlockSizingBox(block, sizingModifier) {
-                    RenderBlock(block = block, onAction = onAction, toggleValues = toggleValues, inputValues = inputValues, loc = loc, currentStepIndex = currentStepIndex, totalSteps = totalSteps, onInteract = onInteract, stepBlocks = gateBlocks)
+                androidx.compose.foundation.layout.Box(modifier = collapseModifier) {
+                    BlockSizingBox(block, sizingModifier) {
+                        RenderBlock(block = block, onAction = onAction, toggleValues = toggleValues, inputValues = inputValues, loc = loc, currentStepIndex = currentStepIndex, totalSteps = totalSteps, onInteract = onInteract, stepBlocks = gateBlocks)
+                    }
                 }
             }
         }
@@ -3178,6 +3213,27 @@ private fun WarningBannerBlock(block: ContentBlock, loc: ((String, String) -> St
     val family = ai.appdna.sdk.core.FontResolver.resolve(fc?.get("banner_font_family") as? String)
     val titleSize = ((fc?.get("banner_title_size") as? Number)?.toFloat() ?: 14f).sp
     val subtitleSize = ((fc?.get("banner_subtitle_size") as? Number)?.toFloat() ?: 13f).sp
+    /*
+     * #1005 — the four things a real app's info banner needed and this did not have: the icon
+     * beside the FIRST line rather than always centred, a way to leave the icon out, a colour per
+     * text, and a link under the subtitle. Every default below is what was drawn before, so an
+     * already-published banner is unchanged. Parity with iOS `warningBannerBlock`.
+     */
+    val hideIcon = (fc?.get("banner_hide_icon") as? Boolean) ?: false
+    val iconAlign = when ((fc?.get("banner_icon_align") as? String) ?: "center") {
+        "top" -> Alignment.Top
+        "bottom" -> Alignment.Bottom
+        else -> Alignment.CenterVertically
+    }
+    val titleColor = (fc?.get("banner_title_color") as? String)?.let { StyleEngine.parseColor(it) } ?: textColor
+    val subtitleColor = (fc?.get("banner_subtitle_color") as? String)?.let { StyleEngine.parseColor(it) } ?: textColor
+    val rawLink = (fc?.get("banner_link_text") as? String).orEmpty()
+    val linkText = if (rawLink.isEmpty()) ""
+        else (loc?.invoke("block.${block.id}.banner_link_text", rawLink) ?: rawLink)
+    val linkUrl = (fc?.get("banner_link_url") as? String).orEmpty()
+    val linkColor = (fc?.get("banner_link_color") as? String)?.let { StyleEngine.parseColor(it) } ?: accent
+    val linkSize = ((fc?.get("banner_link_size") as? Number)?.toFloat() ?: 13f).sp
+    val context = androidx.compose.ui.platform.LocalContext.current
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -3185,10 +3241,12 @@ private fun WarningBannerBlock(block: ContentBlock, loc: ((String, String) -> St
             .background(bgOverride ?: accent.copy(alpha = 0.14f))
             .border(borderWidth, borderColor, RoundedCornerShape(radius))
             .padding(horizontal = 14.dp, vertical = 12.dp),
-        verticalAlignment = Alignment.CenterVertically,
+        verticalAlignment = iconAlign,
         horizontalArrangement = Arrangement.spacedBy(10.dp),
     ) {
-        Text(icon, fontSize = 18.sp)
+        if (!hideIcon) {
+            Text(icon, fontSize = 18.sp)
+        }
         Column(
             modifier = Modifier.weight(1f),
             horizontalAlignment = hAlign,
@@ -3198,7 +3256,7 @@ private fun WarningBannerBlock(block: ContentBlock, loc: ((String, String) -> St
                 text,
                 fontSize = titleSize,
                 fontWeight = FontWeight.Medium,
-                color = textColor,
+                color = titleColor,
                 fontFamily = family,
                 textAlign = tAlign,
                 modifier = Modifier.fillMaxWidth(),
@@ -3208,10 +3266,37 @@ private fun WarningBannerBlock(block: ContentBlock, loc: ((String, String) -> St
                     subtitle,
                     fontSize = subtitleSize,
                     fontWeight = FontWeight.Normal,
-                    color = textColor,
+                    color = subtitleColor,
                     fontFamily = family,
                     textAlign = tAlign,
                     modifier = Modifier.fillMaxWidth(),
+                )
+            }
+            if (linkText.isNotEmpty()) {
+                // A link with no URL still DRAWS — an author types the words first and the address
+                // second, and a control that vanishes between the two reads as broken.
+                Text(
+                    linkText,
+                    fontSize = linkSize,
+                    fontWeight = FontWeight.SemiBold,
+                    color = linkColor,
+                    fontFamily = family,
+                    textAlign = tAlign,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .then(
+                            if (linkUrl.isEmpty()) Modifier
+                            else Modifier.clickable {
+                                runCatching {
+                                    context.startActivity(
+                                        android.content.Intent(
+                                            android.content.Intent.ACTION_VIEW,
+                                            android.net.Uri.parse(linkUrl),
+                                        ),
+                                    )
+                                }.onFailure { Log.warning("warning_banner link could not be opened: ${it.message}") }
+                            }
+                        ),
                 )
             }
         }

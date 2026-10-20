@@ -276,6 +276,7 @@ class SharedFixtureTest(
             "resolve_survey_choice_options" -> runSurveyChoiceOptions(action, spy)
             "resolve_button_label_colour" -> runButtonLabelColour(action, spy)
             "resolve_onboarding_celebration" -> runOnboardingCelebration(action, spy)
+            "resolve_block_collapse" -> runBlockCollapse(action, spy)
             "resolve_survey_sentiment" -> runSurveySentiment(action, spy)
             // #772 — WHICH copy of content_blocks the real parser resolves, per step shape.
             "resolve_content_blocks" -> runResolveContentBlocks(action, spy)
@@ -1598,6 +1599,15 @@ class SharedFixtureTest(
                 spy.state["parsed_banner_corner_radius"] = (block.field_config?.get("banner_corner_radius") as? Number)?.toDouble()
                 spy.state["parsed_banner_title_size"] = (block.field_config?.get("banner_title_size") as? Number)?.toDouble()
                 spy.state["parsed_banner_subtitle_size"] = (block.field_config?.get("banner_subtitle_size") as? Number)?.toDouble()
+                // #1005 — icon placement, a colour per text, and the link under the subtitle.
+                spy.state["parsed_banner_hide_icon"] = block.field_config?.get("banner_hide_icon") as? Boolean
+                spy.state["parsed_banner_icon_align"] = block.field_config?.get("banner_icon_align") as? String
+                spy.state["parsed_banner_title_color"] = block.field_config?.get("banner_title_color") as? String
+                spy.state["parsed_banner_subtitle_color"] = block.field_config?.get("banner_subtitle_color") as? String
+                spy.state["parsed_banner_link_text"] = block.field_config?.get("banner_link_text") as? String
+                spy.state["parsed_banner_link_url"] = block.field_config?.get("banner_link_url") as? String
+                spy.state["parsed_banner_link_color"] = block.field_config?.get("banner_link_color") as? String
+                spy.state["parsed_banner_link_size"] = (block.field_config?.get("banner_link_size") as? Number)?.toDouble()
                 spy.state["parsed_sound_icon"] = block.field_config?.get("sound_icon") as? String
                 spy.state["parsed_sound_icon_color"] = block.field_config?.get("sound_icon_color") as? String
                 spy.state["parsed_sound_icon_size"] = (block.field_config?.get("sound_icon_size") as? Number)?.toDouble()
@@ -2116,6 +2126,26 @@ class SharedFixtureTest(
                 v.optStringOrNull("text_color"),
                 v.optStringOrNull("style_color"),
             ) ?: ""
+        }
+    }
+
+
+    /**
+     * HOW FAR a block authored `collapse_on_scroll` has collapsed, through the REAL
+     * `BlockCollapseOnScroll` both renderers call.
+     *
+     * The negative cases carry the weight: a non-positive threshold must fall back rather than
+     * divide by zero, and a negative offset (a bounce at the top) must not read as collapsed.
+     */
+    private fun runBlockCollapse(action: JSONObject, spy: Spy) {
+        val cases = action.optJSONArray("cases") ?: unsupported("resolve_block_collapse without cases")
+        spy.state["results"] = (0 until cases.length()).map { i ->
+            val v = cases.getJSONObject(i).optJSONObject("value") ?: JSONObject()
+            ai.appdna.sdk.onboarding.BlockCollapseOnScroll.progress(
+                v.optBoolean("enabled", false),
+                v.optDouble("scroll", 0.0),
+                if (v.has("threshold")) v.optDouble("threshold") else null,
+            )
         }
     }
 

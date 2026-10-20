@@ -3023,12 +3023,20 @@ internal fun ThreeZoneBlockLayout(
             // ContentBlockRendererView's wrapping Box modifier so the
             // iOS-canonical gap top→center = 12 + 20 = 32pt is preserved.
             // Was Spacer(20dp) only = 20dp, drift 12dp.
+            /*
+             * #993 — the scroll state is HOISTED so blocks authored `collapse_on_scroll` can be
+             * told how far the step has scrolled. iOS reads the same number off a preference key;
+             * here it is the state's own value, converted from pixels to dp because every authored
+             * threshold is in points.
+             */
+            val stepScroll = rememberScrollState()
+            val scrolledDp = with(density) { stepScroll.value.toDp().value }
             Column(
                 modifier = Modifier
                     .fillMaxSize()
                     .padding(bottom = bottomZoneReserve(bottom.isNotEmpty(), measuredBottomHeight))
                     // #951 — `enabled = false` while a map child holds the gesture.
-                    .verticalScroll(rememberScrollState(), enabled = stepScrollClaimable)
+                    .verticalScroll(stepScroll, enabled = stepScrollClaimable)
                     .padding(horizontal = horizontalPadding),
                 verticalArrangement = Arrangement.spacedBy(12.dp),
             ) {
@@ -3050,6 +3058,7 @@ internal fun ThreeZoneBlockLayout(
                     fieldConfigOverrides = fieldConfigOverrides,
                     fieldOptionsOverrides = fieldOptionsOverrides,
                     stepBlocks = stepGateBlocks,
+                    scrollOffset = scrolledDp,
                         )
                     }
                 }
@@ -3071,6 +3080,7 @@ internal fun ThreeZoneBlockLayout(
                     fieldConfigOverrides = fieldConfigOverrides,
                     fieldOptionsOverrides = fieldOptionsOverrides,
                     stepBlocks = stepGateBlocks,
+                    scrollOffset = scrolledDp,
                         )
                     }
                 }
