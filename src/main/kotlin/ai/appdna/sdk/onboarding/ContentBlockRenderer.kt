@@ -1946,12 +1946,33 @@ internal fun RenderBlock(
     // authored `blur_background` / `container_bg_color` / `container_*`.
     // The hook is opt-in: it no-ops when the field_config has no
     // visible container values.
+    /*
+     * 🔴 #1036 — THE BLEED HAS TO HAPPEN WHERE THE BACKGROUND IS PAINTED.
+     *
+     * `background_full_bleed` widened the multi-buttons Column, and the Column is INSIDE this
+     * wrapper — which paints `block_style.background_color` on the un-widened box and clips its
+     * content to it. So the widening was measured, placed at `-86px`, and then clipped away: the
+     * device showed a panel still inset by the step's padding while iOS reached both edges. The
+     * logs said `bleeds=true inset=32.88.dp bleed=86 cmax=908` on a 1080-wide screen — every number
+     * right, and nothing to see.
+     *
+     * So the wrapper bleeds, and a bleeding block is not clipped to its own box. The inner
+     * composable gives the ROWS the inset back, which is what leaves the buttons where they were
+     * and moves only the background.
+     */
+    val blockBleeds = BlockFullBleed.isOn(block.field_config?.get("background_full_bleed"))
+    val blockBleedInset = BlockFullBleed
+        .stepHorizontalInset(LocalConfiguration.current.screenWidthDp.toDouble())
+        .dp
     val contentModifier = with(StyleEngine) {
         Modifier
+            .then(if (blockBleeds) Modifier.fullBleedHorizontal(blockBleedInset) else Modifier)
             .applyBlockStyle(
                 block.block_style,
-                // Overflow blocks (pulse rings / star field) must not be clipped to the block box.
-                clipContent = block.type != "pulsing_avatar" && block.type != "star_background",
+                // Overflow blocks (pulse rings / star field) must not be clipped to the block box,
+                // and neither is one that deliberately paints past it (#1036).
+                clipContent = !blockBleeds &&
+                    block.type != "pulsing_avatar" && block.type != "star_background",
             )
             .applyBlockPosition(
                 verticalAlign = block.vertical_align,
@@ -7588,17 +7609,15 @@ private fun MultiButtonsBlock(
      * rejects) and the rows get the inset back, leaving the buttons exactly where they were and
      * moving only the background behind them. The inset is shared with iOS in [BlockFullBleed].
      */
+    // #1036 — the WRAPPER widens now (it owns the background); this keeps only the row inset, which
+    // is what puts the buttons back where they were.
     val bleeds = BlockFullBleed.isOn(block.field_config?.get("background_full_bleed"))
     val inset = BlockFullBleed
         .stepHorizontalInset(LocalConfiguration.current.screenWidthDp.toDouble())
         .dp
 
     Column(
-        modifier = if (bleeds) {
-            Modifier.fillMaxWidth().fullBleedHorizontal(inset)
-        } else {
-            Modifier.fillMaxWidth()
-        },
+        modifier = Modifier.fillMaxWidth(),
         verticalArrangement = Arrangement.spacedBy(gap),
     ) {
         // The row split is a pure, tested rule (multiButtonRowPlan), not an inline chunk.
