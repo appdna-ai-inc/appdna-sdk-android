@@ -3201,7 +3201,7 @@ private fun WarningBannerBlock(block: ContentBlock, loc: ((String, String) -> St
         else -> "#F59E0B" to "⚠️"
     }
     val accent = StyleEngine.parseColor(block.active_color ?: accentHex)
-    val icon = (block.field_config?.get("banner_icon") as? String) ?: defaultIcon
+    val authoredGlyph = block.field_config?.get("banner_icon") as? String
     val text = loc?.invoke("block.${block.id}.text", block.text ?: "") ?: (block.text ?: "")
     // Device QA (2026-08-04): bg_color/text_color were uneditable. When set they override the
     // accent-tinted background / white message text; unset keeps the variant defaults (parity w/ iOS).
@@ -3254,6 +3254,19 @@ private fun WarningBannerBlock(block: ContentBlock, loc: ((String, String) -> St
     val linkUrl = (fc?.get("banner_link_url") as? String).orEmpty()
     val linkColor = (fc?.get("banner_link_color") as? String)?.let { StyleEngine.parseColor(it) } ?: accent
     val linkSize = ((fc?.get("banner_link_size") as? Number)?.toFloat() ?: 13f).sp
+    /*
+     * #1005 — AN UPLOADED ICON, which is the half an emoji cannot cover: a real app's info banner
+     * carries its own mark, and "paste any emoji" is not a way to set one. A URL wins over the
+     * glyph; the size applies to BOTH, because an 18dp PNG is unreadable and the glyph has to stay
+     * at 18 for every banner already published. Parity with iOS `warningBannerBlock`.
+     */
+    val mark = BannerIconResolution.mark(
+        hidden = hideIcon,
+        iconUrl = fc?.get("banner_icon_url") as? String,
+        glyph = authoredGlyph,
+        variantDefault = defaultIcon,
+    )
+    val iconSize = BannerIconResolution.size((fc?.get("banner_icon_size") as? Number)?.toDouble()).toFloat()
     val context = androidx.compose.ui.platform.LocalContext.current
     Row(
         modifier = Modifier
@@ -3265,8 +3278,14 @@ private fun WarningBannerBlock(block: ContentBlock, loc: ((String, String) -> St
         verticalAlignment = iconAlign,
         horizontalArrangement = Arrangement.spacedBy(10.dp),
     ) {
-        if (!hideIcon) {
-            Text(icon, fontSize = 18.sp)
+        when (mark) {
+            is BannerIconResolution.Mark.None -> Unit
+            is BannerIconResolution.Mark.Image -> ai.appdna.sdk.core.NetworkImage(
+                url = mark.url,
+                contentScale = androidx.compose.ui.layout.ContentScale.Fit,
+                modifier = Modifier.size(iconSize.dp),
+            )
+            is BannerIconResolution.Mark.Glyph -> Text(mark.text, fontSize = iconSize.sp)
         }
         Column(
             modifier = Modifier.weight(1f),

@@ -277,6 +277,7 @@ class SharedFixtureTest(
             "resolve_button_label_colour" -> runButtonLabelColour(action, spy)
             "resolve_onboarding_celebration" -> runOnboardingCelebration(action, spy)
             "resolve_block_collapse" -> runBlockCollapse(action, spy)
+            "resolve_banner_icon" -> runBannerIcon(action, spy)
             "resolve_survey_sentiment" -> runSurveySentiment(action, spy)
             // #772 — WHICH copy of content_blocks the real parser resolves, per step shape.
             "resolve_content_blocks" -> runResolveContentBlocks(action, spy)
@@ -2137,6 +2138,37 @@ class SharedFixtureTest(
      * The negative cases carry the weight: a non-positive threshold must fall back rather than
      * divide by zero, and a negative offset (a bounce at the top) must not read as collapsed.
      */
+    /**
+     * WHICH mark a banner draws and at what size, through the REAL `BannerIconResolution` both
+     * renderers call.
+     *
+     * Flattened to one string per case so the platforms are compared on the WHOLE answer: a run
+     * that got the mark right and the size wrong would otherwise pass half a fixture. The
+     * whitespace-only URL is the case that matters — an author who clears an upload can leave a
+     * space behind, and " " is not an address, so the glyph has to come back.
+     */
+    private fun runBannerIcon(action: JSONObject, spy: Spy) {
+        val cases = action.optJSONArray("cases") ?: unsupported("resolve_banner_icon without cases")
+        spy.state["results"] = (0 until cases.length()).map { i ->
+            val v = cases.getJSONObject(i).optJSONObject("value") ?: JSONObject()
+            val mark = ai.appdna.sdk.onboarding.BannerIconResolution.mark(
+                hidden = v.optBoolean("hidden", false),
+                iconUrl = v.optStringOrNull("icon_url"),
+                glyph = v.optStringOrNull("glyph"),
+                variantDefault = v.optStringOrNull("variant_default") ?: "",
+            )
+            val size = ai.appdna.sdk.onboarding.BannerIconResolution.size(
+                if (v.has("size")) v.optDouble("size") else null,
+            )
+            val described = when (mark) {
+                is ai.appdna.sdk.onboarding.BannerIconResolution.Mark.None -> "none:"
+                is ai.appdna.sdk.onboarding.BannerIconResolution.Mark.Image -> "image:" + mark.url
+                is ai.appdna.sdk.onboarding.BannerIconResolution.Mark.Glyph -> "glyph:" + mark.text
+            }
+            "$described@${size.toInt()}"
+        }
+    }
+
     private fun runBlockCollapse(action: JSONObject, spy: Spy) {
         val cases = action.optJSONArray("cases") ?: unsupported("resolve_block_collapse without cases")
         spy.state["results"] = (0 until cases.length()).map { i ->
