@@ -278,6 +278,7 @@ class SharedFixtureTest(
             "resolve_onboarding_celebration" -> runOnboardingCelebration(action, spy)
             "resolve_block_collapse" -> runBlockCollapse(action, spy)
             "resolve_banner_icon" -> runBannerIcon(action, spy)
+            "resolve_celebration_palette" -> runCelebrationPalette(action, spy)
             "resolve_survey_sentiment" -> runSurveySentiment(action, spy)
             // #772 — WHICH copy of content_blocks the real parser resolves, per step shape.
             "resolve_content_blocks" -> runResolveContentBlocks(action, spy)
@@ -2147,6 +2148,26 @@ class SharedFixtureTest(
      * whitespace-only URL is the case that matters — an author who clears an upload can leave a
      * space behind, and " " is not an address, so the glyph has to come back.
      */
+    /**
+     * WHICH colours a celebration draws and whether it draws a glyph, through the REAL
+     * `CelebrationPalette` both overlays call.
+     *
+     * One string per case — the colours joined, then `|`, then the glyph — so the platforms are
+     * compared on the WHOLE answer. The unknown-type case is where the SHAPE question diverged,
+     * and a fixture that only checked colours would have passed straight over it.
+     */
+    private fun runCelebrationPalette(action: JSONObject, spy: Spy) {
+        val cases = action.optJSONArray("cases") ?: unsupported("resolve_celebration_palette without cases")
+        spy.state["results"] = (0 until cases.length()).map { i ->
+            val v = cases.getJSONObject(i).optJSONObject("value") ?: JSONObject()
+            val type = v.optStringOrNull("type")
+            val arr = v.optJSONArray("colors")
+            val authored = arr?.let { a -> (0 until a.length()).map { a.getString(it) } }
+            val colors = ai.appdna.sdk.core.CelebrationPalette.colors(type, authored)
+            colors.joinToString(",") + "|" + ai.appdna.sdk.core.CelebrationPalette.glyph(type)
+        }
+    }
+
     private fun runBannerIcon(action: JSONObject, spy: Spy) {
         val cases = action.optJSONArray("cases") ?: unsupported("resolve_banner_icon without cases")
         spy.state["results"] = (0 until cases.length()).map { i ->

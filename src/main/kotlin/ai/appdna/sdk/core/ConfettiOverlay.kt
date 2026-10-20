@@ -22,18 +22,6 @@ data class ParticleEffect(
     val colors: List<String>? = null,
 )
 
-// Emoji glyph per particle type matches iOS ConfettiOverlay.swift:39-42.
-// hearts ❤️, snow ❄️, sparkle ✨, fireworks 🎆. confetti falls back to a
-// colored rectangle (drawn as a circle here for round-trip consistency with
-// iOS's small geometric confetti pieces). NOTE: empty string means "no glyph
-// — render as colored circle/rect."
-private fun glyphForType(type: String): String = when (type) {
-    "hearts" -> "❤️"   // ❤️
-    "snow" -> "❄️"      // ❄️
-    "sparkle" -> "✨"          // ✨
-    "fireworks" -> "🎆" // 🎆
-    else -> ""
-}
 
 @Composable
 fun ConfettiOverlay(
@@ -47,26 +35,20 @@ fun ConfettiOverlay(
         else -> 60
     }
 
-    val effectColors = if (!effect.colors.isNullOrEmpty()) {
-        effect.colors.map { StyleEngine.parseColor(it) }
-    } else {
-        // Palette VALUES match iOS Apple HIG
-        // semantic colors mapping to sRGB. Previously used Tailwind hex
-        // (purple-600 0x9333EA, orange-500 0xF97316, pink-500 0xEC4899)
-        // which renders as bluer-violet, vermillion, and pure magenta —
-        // visibly different from iOS .purple (#AF52DE), .orange (#FF9500),
-        // .pink (#FF2D55). Hearts middle pink also corrected from
-        // CSS HotPink (0xFF69B4) to iOS .pink (#FF2D55).
-        when (effect.type) {
-            "hearts" -> listOf(Color.Red, Color(0xFFFF2D55), Color(0xFFFF6B9D))
-            "snow" -> listOf(Color.White, Color(0xFFF0F0F0), Color(0xFFE5E5E5))
-            "sparkle" -> listOf(Color.Yellow, Color(0xFFFF9500), Color(0xFFFFD700))
-            "fireworks" -> listOf(Color.Red, Color.Blue, Color.Green, Color.Yellow, Color(0xFFAF52DE), Color(0xFFFF9500))
-            else -> listOf(Color.Red, Color.Blue, Color.Green, Color.Yellow, Color(0xFFAF52DE), Color(0xFFFF9500), Color(0xFFFF2D55))
-        }
-    }
+    /*
+     * #1040 — ONE LIST, not a `when` per platform. This returned Compose's named constants for
+     * four of six values (`Color.Red` is #FF0000) where iOS returned SwiftUI's semantic colours
+     * (`.red` is #FF3B30), so an unauthored celebration — the default the editor produces — drew
+     * pure RGB here and Apple's palette there, four of seven values apart on plain confetti. An
+     * earlier pass on this file had already committed to the HIG values in its own comment and
+     * converted only the three explicit hexes.
+     */
+    val effectColors = ai.appdna.sdk.core.CelebrationPalette
+        .colors(effect.type, effect.colors)
+        .map { StyleEngine.parseColor(it) }
 
-    val glyph = glyphForType(effect.type)
+    // #1040 — the shared rule, so "circle or glyph" is one question with one answer.
+    val glyph = ai.appdna.sdk.core.CelebrationPalette.glyph(effect.type)
     val progress = remember { Animatable(0f) }
 
     /*
