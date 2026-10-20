@@ -28,6 +28,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import ai.appdna.sdk.feedback.LikertScaleRule
 import ai.appdna.sdk.feedback.SurveyAnswer
 import ai.appdna.sdk.feedback.SurveyQuestion
 
@@ -56,12 +57,10 @@ fun LikertQuestionView(
     questionTextStyle: TextStyle = TextStyle.Default,
 ) {
     val cfg = question.likertConfig
-    val min = cfg?.min ?: 1
-    val max = cfg?.max ?: 5
-    // Defensive: guarantee a non-empty range even if a malformed config
-    // arrives over the wire (min > max). Mirrors iOS clamp behaviour.
-    val safeMin = if (min <= max) min else max
-    val safeMax = if (min <= max) max else min
+    // Through LikertScaleRule, which the shared fixture drives — never re-stated here (#998).
+    val b = LikertScaleRule.bounds(cfg?.min, cfg?.max)
+    val safeMin = b.lo
+    val safeMax = b.hi
     val selectedScore = answer?.answer as? Int
 
     Column(horizontalAlignment = Alignment.CenterHorizontally) {
@@ -113,7 +112,7 @@ fun LikertQuestionView(
         // bare numeric likert doesn't reserve empty space.
         val low = cfg?.lowLabel
         val high = cfg?.highLabel
-        if (low != null || high != null) {
+        if (LikertScaleRule.showsAnchors(low, high)) {
             Row(
                 modifier = Modifier
                     .fillMaxWidth()

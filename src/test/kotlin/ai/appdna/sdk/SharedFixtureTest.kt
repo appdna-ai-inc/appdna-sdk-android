@@ -281,6 +281,7 @@ class SharedFixtureTest(
             "resolve_celebration_palette" -> runCelebrationPalette(action, spy)
             "resolve_google_mark_chip" -> runGoogleMarkChip(action, spy)
             "resolve_survey_sentiment" -> runSurveySentiment(action, spy)
+            "resolve_likert_bounds" -> runLikertBounds(action, spy)
             // #772 — WHICH copy of content_blocks the real parser resolves, per step shape.
             "resolve_content_blocks" -> runResolveContentBlocks(action, spy)
             "countdown_initial_seconds" -> runCountdownInitialSeconds(action, spy)
@@ -2259,6 +2260,29 @@ class SharedFixtureTest(
                 .resolve(v.optStringOrNull("survey_type"), answer, scale)
                 .name
                 .lowercase()
+        }
+    }
+
+    /**
+     * #998 — a likert scale's bounds and anchor visibility, through the REAL `LikertScaleRule`.
+     *
+     * 🔴 Driven through the production rule, never re-stated: the clamp exists because a reversed
+     * range draws ZERO buttons on this platform and TRAPS on the other, and a driver computing its
+     * own bounds could only ever agree with itself (Rule 25).
+     */
+    private fun runLikertBounds(action: JSONObject, spy: Spy) {
+        val cases = action.optJSONArray("cases") ?: unsupported("resolve_likert_bounds without cases")
+        spy.state["results"] = (0 until cases.length()).map { i ->
+            val v = cases.getJSONObject(i).optJSONObject("value") ?: JSONObject()
+            val min = if (v.has("min")) v.getInt("min") else null
+            val max = if (v.has("max")) v.getInt("max") else null
+            val b = ai.appdna.sdk.feedback.LikertScaleRule.bounds(min, max)
+            val n = ai.appdna.sdk.feedback.LikertScaleRule.count(min, max)
+            val anchors = ai.appdna.sdk.feedback.LikertScaleRule.showsAnchors(
+                v.optStringOrNull("low_label"),
+                v.optStringOrNull("high_label"),
+            )
+            "${b.lo}-${b.hi} n=$n anchors=$anchors"
         }
     }
 
