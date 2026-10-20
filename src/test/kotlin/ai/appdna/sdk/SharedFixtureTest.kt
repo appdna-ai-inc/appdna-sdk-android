@@ -275,6 +275,7 @@ class SharedFixtureTest(
             "parse_blocks_leniently" -> runLenientBlocks(action, spy)
             "resolve_survey_choice_options" -> runSurveyChoiceOptions(action, spy)
             "resolve_button_label_colour" -> runButtonLabelColour(action, spy)
+            "resolve_onboarding_celebration" -> runOnboardingCelebration(action, spy)
             "resolve_survey_sentiment" -> runSurveySentiment(action, spy)
             // #772 — WHICH copy of content_blocks the real parser resolves, per step shape.
             "resolve_content_blocks" -> runResolveContentBlocks(action, spy)
@@ -2114,6 +2115,25 @@ class SharedFixtureTest(
             ai.appdna.sdk.onboarding.ButtonLabelColour.resolve(
                 v.optStringOrNull("text_color"),
                 v.optStringOrNull("style_color"),
+            ) ?: ""
+        }
+    }
+
+
+    /**
+     * WHEN a flow's authored celebration fires, through the REAL `OnboardingCelebration` both
+     * renderers call.
+     *
+     * `""` for "no celebration at this index": the defect being guarded is an effect firing at the
+     * WRONG moment, which only the negative cases can see.
+     */
+    private fun runOnboardingCelebration(action: JSONObject, spy: Spy) {
+        val cases = action.optJSONArray("cases") ?: unsupported("resolve_onboarding_celebration without cases")
+        spy.state["results"] = (0 until cases.length()).map { i ->
+            val v = cases.getJSONObject(i).optJSONObject("value") ?: JSONObject()
+            ai.appdna.sdk.onboarding.OnboardingCelebration.celebratedMoment(
+                v.optStringOrNull("trigger"),
+                v.optInt("step_index", 0),
             ) ?: ""
         }
     }

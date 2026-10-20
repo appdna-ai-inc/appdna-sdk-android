@@ -60,6 +60,8 @@ import androidx.compose.ui.unit.sp
 // (back / close / dismiss). Hosts can override via their own strings.xml.
 import ai.appdna.sdk.Log
 import ai.appdna.sdk.R
+import androidx.compose.ui.zIndex
+import ai.appdna.sdk.core.ConfettiOverlay
 import ai.appdna.sdk.core.HapticEngine
 import ai.appdna.sdk.core.LocalizationEngine
 import ai.appdna.sdk.core.entryAnimation
@@ -1267,6 +1269,43 @@ internal fun OnboardingFlowHost(
     }
 
     Box(modifier = Modifier.fillMaxSize()) {
+        /*
+         * #1026 — THE FLOW'S OWN CELEBRATION, which the console has offered since it shipped.
+         *
+         * `settings.particle_effect` was parsed right here in `OnboardingConfig.kt` and read by no
+         * composable, and iOS did not parse it at all — so the "Celebration Effect" control in the
+         * flow settings panel did nothing on either platform. `ConfettiOverlay` existed the whole
+         * time; onboarding was simply never one of its callers.
+         *
+         * `zIndex` rather than placement order, so this sits over the step content without having
+         * to be the Box's last child in a composable this long.
+         *
+         * A SERIAL, not a Boolean, and `key()` on it: the overlay starts itself when it enters
+         * composition, so a second celebration on an already-composed overlay would draw nothing
+         * and a per-step effect would fire only once. Mirrors iOS's `flowConfettiSerial`.
+         *
+         * `on_flow_complete` is deliberately NOT a moment here: the Activity finishes when the flow
+         * completes, so celebrating there means holding the completion for the effect's duration —
+         * a change to every flow's completion timing, which needs its own proof.
+         */
+        var confettiSerial by remember { mutableIntStateOf(0) }
+        LaunchedEffect(currentIndex) {
+            flow.settings.particle_effect?.let { effect ->
+                if (OnboardingCelebration.celebratedMoment(effect.trigger, currentIndex) != null) {
+                    confettiSerial++
+                }
+            }
+        }
+        if (confettiSerial > 0) {
+            flow.settings.particle_effect?.let { effect ->
+                key(confettiSerial) {
+                    Box(modifier = Modifier.fillMaxSize().zIndex(10f)) {
+                        ConfettiOverlay(effect = effect)
+                    }
+                }
+            }
+        }
+
         // QA-R1 — full-bleed step background painted UNDER the
         // status/nav bars. Mirrors iOS `OnboardingRenderer.swift:112-116`
         // `.background(stepFullScreenBackground.ignoresSafeArea())`.
