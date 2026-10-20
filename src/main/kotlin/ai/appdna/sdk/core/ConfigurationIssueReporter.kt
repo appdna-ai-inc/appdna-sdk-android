@@ -56,6 +56,20 @@ internal object ConfigurationIssueReporter {
         if (detail.isBlank()) return
         if (!seen.add("$surface|$detail")) return
 
+        /*
+         * 🔴 LOG IT, because for its whole life this has been unreadable from a device.
+         *
+         * The detail goes to two places and neither is visible to anyone debugging: an analytics
+         * event property (`coding_path`, which has to reach a warehouse and be queried) and a
+         * host delegate most apps never register. A device walk saw FOUR `sdk_decode_dropped`
+         * events on every config fetch and could not learn which four keys they were.
+         *
+         * WARNING rather than DEBUG, because this is published config that could not be used —
+         * every one of these is an element an author authored and a device threw away. That is
+         * not routine chatter even when it is harmless.
+         */
+        Log.warning("Config dropped [$surface${id?.let { "/" + it } ?: ""}]: $detail")
+
         AppDNA.track(
             "sdk_decode_dropped",
             mapOf(

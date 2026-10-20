@@ -1423,7 +1423,24 @@ internal object PaywallConfigParser {
                 },
                 // Divider section
                 thickness = d.num(SURFACE, path, "thickness")?.toFloat(),
-                line_style = d.str(SURFACE, path, "style"),
+                /*
+                 * 🔴 ONLY FOR A DIVIDER, because `style` means two different things.
+                 *
+                 * This reader runs for EVERY section type, and on a divider `config.style` is a
+                 * string ("solid"/"dashed") while on every other section it is the console's
+                 * `SectionStyleSchema` OBJECT — `{container, elements: {title: {text_style: …}}}`.
+                 * So a type-blind `str()` reported a mismatch for each one, and a real paywall
+                 * emitted FOUR `sdk_decode_dropped` events per config fetch:
+                 *
+                 *     Config dropped [paywall]: sections[header].config.style:
+                 *       expected a string, found LinkedHashMap ({elements={subtitle=…, title=…}})
+                 *
+                 * Nothing was actually dropped — the divider's `line_style` is correctly nil on a
+                 * header — but the SDK was reporting published config as unusable on every
+                 * fetch, for every paywall, which poisons the one signal built to find real drops.
+                 * Measured on a device only once the reporter started logging what it reports.
+                 */
+                line_style = if (type == "divider") d.str(SURFACE, path, "style") else null,
                 margin_top = d.num(SURFACE, path, "margin_top")?.toFloat(),
                 margin_bottom = d.num(SURFACE, path, "margin_bottom")?.toFloat(),
                 margin_horizontal = d.num(SURFACE, path, "margin_horizontal")?.toFloat(),
