@@ -2344,6 +2344,18 @@ internal object OnboardingConfigParser {
             gallery_corner_radius = (bm.num(SURFACE, path, "gallery_corner_radius"))?.toDouble(),
             gallery_spacing = (bm.num(SURFACE, path, "gallery_spacing"))?.toDouble(),
             gallery_align = bm.str(SURFACE, path, "gallery_align"),
+            /*
+             * 🔴 #1021 — DECLARED, RENDERED, AND NEVER PARSED. `ContentBlockRenderer.kt:682/684`
+             * declares both and `MediaGalleryBlock` draws them, so a reader of either file would
+             * say the gallery title works on this platform. It could not: nothing here read the
+             * keys, so the fields were always null and the strip drew with no title at all while
+             * iOS drew one. The gate that found it is `check:template-reach`'s ONE-PLATFORM KEY
+             * leg, and it only spoke up once an unrelated schema change forced the generated key
+             * tables to be rebuilt — which is the argument for running it rather than trusting a
+             * grep of the renderer.
+             */
+            gallery_title = bm.str(SURFACE, path, "gallery_title"),
+            gallery_title_color = bm.str(SURFACE, path, "gallery_title_color"),
 
             // Container/positioning (multiple R-rounds) — column_ratios
             // is a colon-encoded ratio string ("1:2") on both platforms
