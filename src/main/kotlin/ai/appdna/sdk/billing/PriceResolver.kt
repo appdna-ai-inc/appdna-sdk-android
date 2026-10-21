@@ -213,12 +213,16 @@ internal class PriceResolver(
              * what makes a phase a free trial — an introductory PRICE is non-zero and is a
              * different promise, so it is deliberately not treated as one here.
              */
-            val trial = details.subscriptionOfferDetails
-                ?.asSequence()
-                ?.flatMap { it.pricingPhases.pricingPhaseList.asSequence() }
-                ?.firstOrNull { it.priceAmountMicros == 0L }
-                ?.billingPeriod
-            if (!trial.isNullOrBlank()) out[details.productId] = trial
+            // #1062 — the decision itself lives in `StoreTrialPhase` so it can be exercised; this
+            // reduces Play's types to what it reads and nothing more.
+            val trial = StoreTrialPhase.firstFreeTrialPeriod(
+                details.subscriptionOfferDetails.orEmpty().map { offer ->
+                    offer.pricingPhases.pricingPhaseList.map {
+                        StoreTrialPhase.Phase(it.priceAmountMicros, it.billingPeriod)
+                    }
+                },
+            )
+            if (trial != null) out[details.productId] = trial
         }
         return out
     }
