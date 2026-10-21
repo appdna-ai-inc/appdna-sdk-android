@@ -58,6 +58,27 @@ internal class DeferredDeepLinkManager(
     companion object {
         private const val FIRST_LAUNCH_KEY = "ai.appdna.sdk.first_launch_completed"
         private const val EXPIRY_HOURS = 72L
+
+        /** Failed attempts so far, so a transport error does not spend the one chance (#1063). */
+        private const val FAILED_ATTEMPTS_KEY = "ai.appdna.sdk.ddl_failed_attempts"
+
+        /**
+         * 🔴 A TRANSPORT FAILURE IS NOT AN ANSWER. `markLaunched()` used to run on every path out
+         * of the fetch, `addOnFailureListener` included — so a user who installed from a link and
+         * opened the app with no network (a lift, a plane, a carrier handover, or simply before
+         * Firestore's first connection completed) lost the destination and the referrer
+         * PERMANENTLY, and silently: the host got `null`, which is indistinguishable from "this
+         * install did not come from a link".
+         *
+         * The chance survives a failure now, bounded so a permanently offline device does not read
+         * Firestore on every launch for the life of the install. A SUCCESSFUL read — document
+         * present, or genuinely absent — is still an answer and still spends it.
+         *
+         * Four, not one: the link expires after [EXPIRY_HOURS] anyway, so the attempts only need to
+         * cover the launches a user plausibly makes inside three days while something is wrong with
+         * their connection. Matches iOS `maxFailedAttempts`.
+         */
+        internal const val MAX_FAILED_ATTEMPTS = 4
         private const val INSTALL_REFERRER_TIMEOUT_MS = 2_000L
         // Delay before auto-routing to a screen so the
         // host's first Activity is fully resumed and ScreenManager has a
@@ -90,8 +111,8 @@ internal class DeferredDeepLinkManager(
 
             val db = AppDNA.firestoreDB
             if (db == null) {
-                Log.warning("DeferredDeepLink: Firestore not available")
-                markLaunched()
+                // 🔴 NOT an answer either: without a Firestore handle nothing was asked (#1063).
+                recordFailedAttempt("Firestore is not available")
                 callback(null)
                 return@launch
             }
@@ -159,8 +180,8 @@ internal class DeferredDeepLinkManager(
                     callback(deepLink)
                 }
                 .addOnFailureListener { e ->
-                    markLaunched()
-                    Log.error("DeferredDeepLink fetch failed: ${e.message}")
+                    // The fetch never reached the server: keep the chance for the next launch.
+                    recordFailedAttempt(e.message ?: e::class.java.simpleName)
                     callback(null)
                 }
         }
@@ -278,7 +299,27 @@ internal class DeferredDeepLinkManager(
 
     private fun markLaunched() {
         val prefs = context.getSharedPreferences("ai.appdna.sdk", Context.MODE_PRIVATE)
-        prefs.edit().putBoolean(FIRST_LAUNCH_KEY, true).apply()
+        prefs.edit().putBoolean(FIRST_LAUNCH_KEY, true).remove(FAILED_ATTEMPTS_KEY).apply()
+    }
+
+    /**
+     * Count a check that never got an answer, and give up once it has happened
+     * [MAX_FAILED_ATTEMPTS] times — at which point the chance IS spent, so the SDK stops asking
+     * (#1063).
+     */
+    private fun recordFailedAttempt(reason: String) {
+        val prefs = context.getSharedPreferences("ai.appdna.sdk", Context.MODE_PRIVATE)
+        val attempts = prefs.getInt(FAILED_ATTEMPTS_KEY, 0) + 1
+        if (attempts >= MAX_FAILED_ATTEMPTS) {
+            Log.warning(
+                "DeferredDeepLink: giving up after $attempts failed attempts ($reason) — " +
+                    "no deferred link will be resolved for this install",
+            )
+            markLaunched()
+            return
+        }
+        prefs.edit().putInt(FAILED_ATTEMPTS_KEY, attempts).apply()
+        Log.debug("DeferredDeepLink: attempt $attempts of $MAX_FAILED_ATTEMPTS failed ($reason) — will retry next launch")
     }
 
     /**
