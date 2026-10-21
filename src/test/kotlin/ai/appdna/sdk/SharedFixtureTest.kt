@@ -282,6 +282,7 @@ class SharedFixtureTest(
             "resolve_google_mark_chip" -> runGoogleMarkChip(action, spy)
             "resolve_survey_sentiment" -> runSurveySentiment(action, spy)
             "resolve_likert_bounds" -> runLikertBounds(action, spy)
+            "resolve_compact_picker_height" -> runCompactPickerHeight(action, spy)
             // #772 — WHICH copy of content_blocks the real parser resolves, per step shape.
             "resolve_content_blocks" -> runResolveContentBlocks(action, spy)
             "countdown_initial_seconds" -> runCountdownInitialSeconds(action, spy)
@@ -2260,6 +2261,24 @@ class SharedFixtureTest(
                 .resolve(v.optStringOrNull("survey_type"), answer, scale)
                 .name
                 .lowercase()
+        }
+    }
+
+    /**
+     * #1052 — how tall a compact date pill is, through the REAL `CompactPickerHeight`.
+     *
+     * 🔴 Driven through the production rule, never re-stated: the whole point is that this
+     * platform and iOS now agree, and a driver computing its own answer could only agree with
+     * itself (Rule 25).
+     */
+    private fun runCompactPickerHeight(action: JSONObject, spy: Spy) {
+        val cases = action.optJSONArray("cases") ?: unsupported("resolve_compact_picker_height without cases")
+        spy.state["results"] = (0 until cases.length()).map { i ->
+            val v = cases.getJSONObject(i).optJSONObject("value") ?: JSONObject()
+            ai.appdna.sdk.onboarding.CompactPickerHeight.resolve(
+                if (v.has("numeric")) v.getDouble("numeric") else null,
+                v.optStringOrNull("token"),
+            )
         }
     }
 

@@ -10173,7 +10173,32 @@ private fun FormInputDateBlock(
                         "time" -> showTimePicker = true
                     }
                 },
-                modifier = Modifier.fillMaxWidth().then(pickerChromeMod),
+                /*
+                 * #1052 — the compact pill's height. iOS has honoured `field_style.height`
+                 * (sm|md|lg) and the numeric `field_config.input_height` since it shipped; this
+                 * platform honoured neither, so the same authored config produced two different
+                 * pills. Through the shared rule, so the two cannot drift again.
+                 *
+                 * Unauthored stays unauthored: the modifier is only applied when the author set
+                 * something, so every existing flow draws exactly the height it draws today.
+                 */
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .then(
+                        if (block.field_style?.height != null
+                            || (block.field_config?.get("input_height") as? Number) != null
+                        ) {
+                            Modifier.height(
+                                CompactPickerHeight.resolve(
+                                    (block.field_config?.get("input_height") as? Number)?.toDouble(),
+                                    block.field_style?.height,
+                                ).dp,
+                            )
+                        } else {
+                            Modifier
+                        },
+                    )
+                    .then(pickerChromeMod),
                 shape = RoundedCornerShape((block.field_style?.corner_radius ?: 8.0).dp),
                 border = androidx.compose.foundation.BorderStroke(
                     1.dp,
