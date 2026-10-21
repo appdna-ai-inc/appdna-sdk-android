@@ -35,12 +35,41 @@ class DeferredDeepLinkRetryTest {
 
     @Before fun clean() { prefs().edit().clear().commit() }
 
-    /** One check, run to completion. */
+    /**
+     * Put a visitor id where Strategy 1 will find it.
+     *
+     * 🔴 SEEDED, NOT LEFT TO THE FALLBACK. `resolveVisitorId()` ends at
+     * `Settings.Secure.ANDROID_ID`, which Robolectric may not provide — and a null visitor id takes
+     * a DIFFERENT branch that marks launched deliberately (nothing was asked because there was
+     * nothing to ask about). Without this the test would exercise that branch and read as a
+     * failure of the one under test. The clipboard route is also the real first-launch path: the
+     * web page writes it before the store redirect.
+     */
+    private fun seedVisitorId() {
+        val clipboard = ctx.getSystemService(Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
+        clipboard.setPrimaryClip(
+            android.content.ClipData.newPlainText("", "appdna:visitor:v-test-1234"),
+        )
+    }
+
+    /**
+     * One check, driven to its callback.
+     *
+     * 🔴 The manager hops to `Dispatchers.IO` to resolve the visitor id, so the continuation is not
+     * on the main looper's queue yet when the call returns. A single `idleMainLooper()` therefore
+     * sees nothing pending and the callback appears never to fire — which is what the first version
+     * of this test reported. Idle in a loop until the latch trips instead.
+     */
     private fun check(): Boolean {
-        var called = false
-        DeferredDeepLinkManager(ctx, "org", "app", null).checkDeferredDeepLink { called = true }
-        ShadowLooper.idleMainLooper()
-        return called
+        seedVisitorId()
+        val latch = java.util.concurrent.CountDownLatch(1)
+        DeferredDeepLinkManager(ctx, "org", "app", null).checkDeferredDeepLink { latch.countDown() }
+        val deadline = System.currentTimeMillis() + 10_000
+        while (System.currentTimeMillis() < deadline) {
+            ShadowLooper.idleMainLooper()
+            if (latch.await(20, java.util.concurrent.TimeUnit.MILLISECONDS)) return true
+        }
+        return false
     }
 
     @Test fun `a failed check keeps the chance for the next launch, and gives up after four`() {
