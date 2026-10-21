@@ -678,6 +678,10 @@ data class ContentBlock(
     val loading_text_color: String? = null,
     // media_gallery: horizontal row of image tiles.
     val gallery_images: kotlinx.collections.immutable.ImmutableList<String>? = null,
+    /** #1021 — an optional title above the strip, belonging to the element. Unset draws nothing. */
+    val gallery_title: String? = null,
+    /** The title's colour; unset follows the renderer's default. */
+    val gallery_title_color: String? = null,
     val gallery_item_width: Double? = null,
     val gallery_item_height: Double? = null,
     val gallery_corner_radius: Double? = null,
@@ -2377,6 +2381,41 @@ private fun MediaGalleryBlock(block: ContentBlock) {
     // → existing static LazyRow (no infinite animation started when off — non-breaking, zero battery cost).
     val images = block.gallery_images ?: return
     if (images.isEmpty()) return
+
+    /*
+     * #1021 — the title sits INSIDE the empty check, as on iOS: a cleared gallery draws nothing at
+     * all, and a lone title over no images is a worse artefact than no title. Unset draws nothing,
+     * so every gallery authored before this is unchanged.
+     */
+    val galleryTitle = block.gallery_title?.takeIf { it.isNotBlank() }
+    if (galleryTitle != null) {
+        androidx.compose.foundation.layout.Column(
+            horizontalAlignment = when (block.gallery_align) {
+                "start" -> Alignment.Start
+                "end" -> Alignment.End
+                else -> Alignment.CenterHorizontally
+            },
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+            modifier = Modifier.fillMaxWidth(),
+        ) {
+            Text(
+                text = galleryTitle,
+                style = MaterialTheme.typography.titleMedium,
+                color = block.gallery_title_color?.let { StyleEngine.parseColor(it) } ?: Color.Unspecified,
+            )
+            MediaGalleryStrip(block, images)
+        }
+        return
+    }
+    MediaGalleryStrip(block, images)
+}
+
+/**
+ * The strip itself — extracted so the titled and untitled paths draw exactly the same thing
+ * (#1021). Everything below is the body the gallery had before the title existed.
+ */
+@Composable
+private fun MediaGalleryStrip(block: ContentBlock, images: kotlinx.collections.immutable.ImmutableList<String>) {
     val itemH = (block.gallery_item_height ?: 180.0).dp
     val cr = (block.gallery_corner_radius ?: 12.0).dp
     val spacing = (block.gallery_spacing ?: 10.0).dp
