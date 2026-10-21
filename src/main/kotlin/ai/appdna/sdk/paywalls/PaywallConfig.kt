@@ -611,7 +611,13 @@ data class PaywallPlan(
      * authored label.
      */
     val resolvedStoreTrial: String? = null,
-    val sort_order: Int = 0,
+    /**
+     * #1056 — NULLABLE, like iOS's `Int?`. This was `Int = 0`, which cannot tell "no rank" from
+     * "rank 0" — and [PaywallPlanOrder]'s whole rule is `sort_order ?: index`, so collapsing the
+     * two would have given every unranked plan rank 0 and made an explicit 0 indistinguishable from
+     * silence. The parser below stopped coercing a missing value to 0 for the same reason.
+     */
+    val sort_order: Int? = null,
     // Rich plan metadata (iOS parity)
     val trial: PaywallPlanTrial? = null,
     val description: String? = null,
@@ -1840,7 +1846,7 @@ internal object PaywallConfigParser {
             price_display = map.looseStr(SURFACE, path, "price_display") ?: "",
             // #923 — absent means "ask the store", so only an explicit `false` opts out.
             use_store_price = map.bool(SURFACE, path, "use_store_price"),
-            sort_order = (map.num(SURFACE, path, "sort_order"))?.toInt() ?: 0,
+            sort_order = (map.num(SURFACE, path, "sort_order"))?.toInt(),
             //
             trial = trial,
             description = map.str(SURFACE, path, "description"),

@@ -1195,6 +1195,42 @@ internal fun OnboardingFlowHost(
     }
 
     /**
+     * What the progress bar's "Skip" link does — #1056.
+     *
+     * 🔴 `settings.skip_to_step` WAS DECODED BY BOTH PLATFORMS AND READ BY NEITHER. It sits one
+     * field away from `progress_skip_label` in `OnboardingSettings`, and this link was the only
+     * thing it could have meant: Skip advanced ONE step, which is indistinguishable from pressing
+     * the CTA, so a flow that offered "Skip" walked the user through the rest of it anyway.
+     *
+     * With a target set, Skip jumps there through [OnboardingAdvance.skipTo] — the same path a
+     * `skip_to` button action takes, so the jump emits `step_skipped` with its `from`/`to` and the
+     * funnel can tell a step that was jumped over from one the user never reached. An unknown
+     * target falls through to an ordinary advance inside `skipTo`, so a stale step id degrades to
+     * today's behaviour rather than trapping the user.
+     *
+     * Mirrors iOS `skipFromProgress`.
+     */
+    fun skipFromProgress() {
+        val target = ProgressSkipTarget.resolve(flow.settings.skip_to_step, flow.steps.map { it.id })
+        if (target == null) {
+            advanceOrComplete()
+            return
+        }
+        HapticEngine.triggerIfEnabled(
+            hostView, hapticConfig?.triggers?.on_step_advance, hapticConfig,
+        )
+        applyOutcome(
+            OnboardingAdvance.skipTo(
+                flow = flow,
+                currentIndex = currentIndex,
+                targetStepId = target,
+                responses = responses.toMap(),
+                navigationHistory = navigationHistory.toList(),
+            )
+        )
+    }
+
+    /**
      * #1014 — THE STEP'S TAP-ANYWHERE ADVANCE, in one place.
      *
      * 🔴 The guard takes the index it is asked about rather than reading `currentIndex`, because
@@ -1556,7 +1592,7 @@ internal fun OnboardingFlowHost(
                           text = progressSkipLabel,
                           modifier = Modifier
                               .padding(start = 12.dp, end = 16.dp)
-                              .clickable(enabled = !isProcessing) { advanceOrComplete() },
+                              .clickable(enabled = !isProcessing) { skipFromProgress() },
                           color = progressColor,
                           fontSize = 14.sp,
                           fontWeight = FontWeight.Medium,

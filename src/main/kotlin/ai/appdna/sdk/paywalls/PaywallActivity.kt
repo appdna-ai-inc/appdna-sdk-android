@@ -676,7 +676,8 @@ fun PaywallScreen(
             .firstOrNull { it.type == "plans" }
             ?.data?.plans
             ?: emptyList<PaywallPlan>()
-        val plans = if (sectionPlans.isEmpty()) (config.plans ?: emptyList()) else sectionPlans
+        // #1056 — the authored rank, which both platforms decoded and neither read.
+        val plans = PaywallPlanOrder.sorted(if (sectionPlans.isEmpty()) (config.plans ?: emptyList()) else sectionPlans)
         selectedPlanId = plans.firstOrNull { it.is_default == true }?.id
             ?: plans.firstOrNull()?.id
 
@@ -788,7 +789,8 @@ fun PaywallScreen(
                 .firstOrNull { it.type == "plans" }
                 ?.data?.plans
                 ?: emptyList<PaywallPlan>()
-            return if (sectionPlans.isEmpty()) (config.plans ?: emptyList()) else sectionPlans
+            // #1056 — the authored rank, which both platforms decoded and neither read.
+            return PaywallPlanOrder.sorted(if (sectionPlans.isEmpty()) (config.plans ?: emptyList()) else sectionPlans)
         }
         // CTA text resolution chain is now
         // inlined at the CTA section render site (PaywallActivity.kt:~1497)
@@ -1996,7 +1998,8 @@ internal fun PaywallSectionView(
             // `config.plans` when section has no plans (matches iOS
             // PaywallRenderer.swift:511-512 effectivePlans logic).
             val sectionPlansRaw = section.data?.plans ?: emptyList()
-            val plans = if (sectionPlansRaw.isEmpty()) (config.plans ?: emptyList()) else sectionPlansRaw
+            // #1056 — the authored rank, which both platforms decoded and neither read.
+            val plans = PaywallPlanOrder.sorted(if (sectionPlansRaw.isEmpty()) (config.plans ?: emptyList()) else sectionPlansRaw)
 
             // Card styling from config
             val cardRadius = (section.data?.card_corner_radius ?: 12f).dp

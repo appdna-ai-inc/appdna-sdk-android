@@ -284,6 +284,9 @@ class SharedFixtureTest(
             "resolve_likert_bounds" -> runLikertBounds(action, spy)
             "resolve_compact_picker_height" -> runCompactPickerHeight(action, spy)
             "resolve_in_step_visibility" -> runVisibilityInStepScope(action, spy)
+            "resolve_field_input_style" -> runFieldInputStyle(action, spy)
+            "resolve_plan_order" -> runPlanOrder(action, spy)
+            "resolve_progress_skip_target" -> runProgressSkipTarget(action, spy)
             "resolve_segmented_presentation" -> runSegmentedPresentation(action, spy)
             "resolve_rive_input_kind" -> runRiveInputKind(action, spy)
             "track_events_with_observer" -> runEventObserver(action, spy)
@@ -2312,6 +2315,123 @@ class SharedFixtureTest(
      * #1013 — whether a Segmented input draws a segmented control, through the REAL
      * `SegmentedPresentation` the renderer calls.
      */
+
+    /**
+     * #1053 — the three `field_style` keys both natives DECODED, neither drew, and no console
+     control wrote, through the resolvers the renderer actually calls.
+     *
+     * 🔴 The font size is a ladder of THREE spellings of one pixel. The console's two sliders write
+     * `field_config.input_text_size` and `field_config.font_size`, both renderers read that pair,
+     * and `field_style.font_size` — which both DTOs declare — was the one nothing read. A document
+     * carrying it rendered at 14 with no sign an authored value had been dropped.
+     *
+     * 🔴 The colours are MATCHED against the resolver's return value, not re-derived from the
+     * block. A driver that reproduced `fieldBorderColor`'s own ladder could only ever agree with
+     * it — it would report the right hex for a resolver that always returned the default.
+     *
+     * Each case answers `[size, weight-or-null, border when clean, border when in error]`, so the
+     * error swap is measured against its own non-error control in the same row.
+     */
+    private fun runFieldInputStyle(action: JSONObject, spy: Spy) {
+        val cases = action.optJSONArray("cases") ?: unsupported("field_input_style without cases")
+        spy.state["results"] = (0 until cases.length()).map { i ->
+            val raw = cases.getJSONObject(i).optJSONObject("value") ?: JSONObject()
+            /*
+             * Through the REAL step parser, the same path a published document takes — so a number
+             * arrives as the parser coerces it rather than as a Kotlin literal the driver chose.
+             */
+            val step = OnboardingConfigParser.parseStepForTest(
+                mapOf("id" to "s", "type" to "custom", "config" to mapOf("content_blocks" to listOf(raw.asMap()))),
+            ) ?: unsupported("field_input_style case $i did not parse")
+            val block = step.config.content_blocks?.firstOrNull()
+                ?: unsupported("field_input_style case $i parsed to no block")
+            listOf(
+                ai.appdna.sdk.onboarding.fieldInputFontSize(block).value.toDouble(),
+                weightName(ai.appdna.sdk.onboarding.fieldInputFontWeight(block)),
+                matchedHex(ai.appdna.sdk.onboarding.fieldBorderColor(block, hasError = false), block),
+                matchedHex(ai.appdna.sdk.onboarding.fieldBorderColor(block, hasError = true), block),
+            )
+        }
+    }
+
+    /** The authored name for a resolved weight, so both platforms assert the SAME strings. */
+    private fun weightName(weight: androidx.compose.ui.text.font.FontWeight?): String? = when (weight) {
+        null -> null
+        androidx.compose.ui.text.font.FontWeight.Thin -> "thin"
+        androidx.compose.ui.text.font.FontWeight.Light -> "light"
+        androidx.compose.ui.text.font.FontWeight.Normal -> "regular"
+        androidx.compose.ui.text.font.FontWeight.Medium -> "medium"
+        androidx.compose.ui.text.font.FontWeight.SemiBold -> "semibold"
+        androidx.compose.ui.text.font.FontWeight.Bold -> "bold"
+        androidx.compose.ui.text.font.FontWeight.ExtraBold -> "heavy"
+        androidx.compose.ui.text.font.FontWeight.Black -> "black"
+        else -> null
+    }
+
+    /** Which authored string the resolver's colour actually IS — see [runFieldInputStyle]. */
+    private fun matchedHex(
+        resolved: androidx.compose.ui.graphics.Color,
+        block: ai.appdna.sdk.onboarding.ContentBlock,
+    ): String? {
+        val candidates = buildList {
+            add("#D1D5DB")
+            block.field_style?.border_color?.let { add(it) }
+            block.field_style?.error_border_color?.let { add(it) }
+        }
+        return candidates.firstOrNull {
+            ai.appdna.sdk.core.StyleEngine.parseColor(it) == resolved
+        }
+    }
+
+
+    /**
+     * #1056 — the order a paywall's plans draw in, through the REAL [PaywallPlanOrder] the renderer
+     * calls on all three of its plan-resolution sites.
+     *
+     * 🔴 `sort_order` was DECODED by both platforms and read by NEITHER, so order came from the
+     * array's own order and a document carrying an explicit rank drew its plans in whatever order
+     * they happened to be serialised in.
+     */
+    private fun runPlanOrder(action: JSONObject, spy: Spy) {
+        val cases = action.optJSONArray("cases") ?: unsupported("plan_order without cases")
+        spy.state["results"] = (0 until cases.length()).map { i ->
+            val arr = cases.getJSONObject(i).optJSONArray("value") ?: org.json.JSONArray()
+            val plans = (0 until arr.length()).map { j ->
+                val o = arr.getJSONObject(j)
+                ai.appdna.sdk.paywalls.PaywallPlan(
+                    // The DTO's required fields are not what this fixture measures; only `id` is
+                    // read back, and a plan with no product or price is still a plan to order.
+                    id = o.optString("id", ""),
+                    product_id = o.optString("id", ""),
+                    name = o.optString("id", ""),
+                    price = "",
+                    sort_order = if (o.has("sort_order") && !o.isNull("sort_order")) o.optInt("sort_order") else null,
+                )
+            }
+            ai.appdna.sdk.paywalls.PaywallPlanOrder.sorted(plans).map { it.id }
+        }
+    }
+
+
+    /**
+     * #1056 — where the progress bar's "Skip" link goes, through the REAL [ProgressSkipTarget] both
+     * renderers call.
+     *
+     * The three `null` reasons are the point: no target, an empty/whitespace target, and a target
+     * naming a step that is not in the flow. Each must behave the same on both platforms, and a
+     * stale id must degrade to advancing rather than leaving Skip doing nothing.
+     */
+    private fun runProgressSkipTarget(action: JSONObject, spy: Spy) {
+        val cases = action.optJSONArray("cases") ?: unsupported("progress_skip_target without cases")
+        spy.state["results"] = (0 until cases.length()).map { i ->
+            val v = cases.getJSONObject(i).optJSONObject("value") ?: JSONObject()
+            val ids = v.optJSONArray("step_ids")?.let { arr ->
+                (0 until arr.length()).map { arr.getString(it) }
+            } ?: emptyList()
+            ai.appdna.sdk.onboarding.ProgressSkipTarget.resolve(v.optStringOrNull("skip_to_step"), ids)
+        }
+    }
+
     private fun runSegmentedPresentation(action: JSONObject, spy: Spy) {
         val cases = action.optJSONArray("cases") ?: unsupported("segmented_presentation without cases")
         spy.state["results"] = (0 until cases.length()).map { i ->
