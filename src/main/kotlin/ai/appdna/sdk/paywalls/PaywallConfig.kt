@@ -386,7 +386,16 @@ data class PaywallSectionData(
     val label_color_val: String? = null,
     val description_color: String? = null,
     val icon: String? = null,
-    val affects_price: Boolean? = null,
+    /*
+     * #992 — `affects_price` was REMOVED here and from iOS's model. It was declared on both, read
+     * by NEITHER renderer, and written by no console control: a dead key in a PUBLIC model.
+     *
+     * The owner's call (2026-10-22) was to remove rather than build, and the reason is worth
+     * keeping where someone would be tempted to re-add it: unlike the styling keys #1053 built
+     * out, a toggle that recomposes a DISPLAYED PRICE is money. A wrong composition rule misquotes
+     * what a user is charged, and the store-price ladder would have to compose too. It is only a
+     * decode, so it comes back cheaply the day add-on pricing is actually designed.
+     */
 
     // Reviews carousel section
     val reviews: List<PaywallReview>? = null,
@@ -1573,7 +1582,6 @@ internal object PaywallConfigParser {
                 label_color_val = d.str(SURFACE, path, "label_color"),
                 description_color = d.str(SURFACE, path, "description_color"),
                 icon = d.str(SURFACE, path, "icon"),
-                affects_price = d.bool(SURFACE, path, "affects_price"),
                 // Reviews carousel section
                 reviews = (d.list(SURFACE, path, "reviews"))?.mapNotNull { reviewData ->
                     (reviewData as? Map<String, Any>)?.let { rm ->

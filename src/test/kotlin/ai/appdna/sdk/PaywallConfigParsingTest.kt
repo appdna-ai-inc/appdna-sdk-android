@@ -1059,7 +1059,9 @@ class PaywallConfigParsingTest {
         assertEquals("#FFFFFF", d.label_color_val)
         assertEquals("#AAAAAA", d.description_color)
         assertEquals("calendar", d.icon)
-        assertEquals(true, d.affects_price)
+        // #992 — `affects_price` was removed from the model. The wire key STAYS in the input
+        // above on purpose: a published paywall may still carry it, and the parser must ignore
+        // an unknown key rather than refusing the section.
     }
 
     @Test
@@ -1072,7 +1074,6 @@ class PaywallConfigParsingTest {
         val d = pw.sections[0].data!!
         assertEquals("Family Plan", d.label)
         assertEquals(false, d.default_value)
-        assertEquals(false, d.affects_price)
         assertNull(d.description)
         assertNull(d.on_color)
         assertNull(d.off_color)
@@ -1514,7 +1515,6 @@ class PaywallConfigParsingTest {
         assertEquals("digital", pw.sections[3].data!!.variant)
         assertEquals("plans", pw.sections[4].type)
         assertEquals("toggle", pw.sections[5].type)
-        assertEquals(true, pw.sections[5].data!!.affects_price)
         assertEquals("sticky_footer", pw.sections[6].type)
         assertEquals("Subscribe", pw.sections[6].data!!.cta_text)
         assertEquals("legal", pw.sections[7].type)
@@ -1989,7 +1989,6 @@ class PaywallConfigParsingTest {
         assertEquals(2, pw.sections[2].data!!.pages!!.size)
         assertEquals(true, pw.sections[2].data!!.auto_scroll)
         assertEquals(2, pw.sections[3].data!!.table_columns!!.size)
-        assertEquals(true, pw.sections[4].data!!.affects_price)
         assertEquals(2, pw.sections[5].data!!.plans!!.size)
         assertEquals("Best Value", pw.sections[5].data!!.plans!![1].badge)
         assertEquals(2, pw.sections[6].data!!.reviews!!.size)
