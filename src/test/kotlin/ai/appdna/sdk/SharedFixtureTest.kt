@@ -283,6 +283,8 @@ class SharedFixtureTest(
             "resolve_survey_sentiment" -> runSurveySentiment(action, spy)
             "resolve_likert_bounds" -> runLikertBounds(action, spy)
             "resolve_compact_picker_height" -> runCompactPickerHeight(action, spy)
+            "resolve_in_step_visibility" -> runVisibilityInStepScope(action, spy)
+            "resolve_segmented_presentation" -> runSegmentedPresentation(action, spy)
             // #772 — WHICH copy of content_blocks the real parser resolves, per step shape.
             "resolve_content_blocks" -> runResolveContentBlocks(action, spy)
             "countdown_initial_seconds" -> runCountdownInitialSeconds(action, spy)
@@ -2271,6 +2273,51 @@ class SharedFixtureTest(
      * platform and iOS now agree, and a driver computing its own answer could only agree with
      * itself (Rule 25).
      */
+    /**
+     * #1013 — whether a block is drawn, through the REAL `evaluateVisibilityCondition` the renderer
+     * calls, with the step's live inputs in scope.
+     *
+     * 🔴 Driven through the production evaluator, never re-stated: the whole point is that this
+     * platform and iOS now agree on when an in-step condition flips, and a driver computing its own
+     * answer could only ever agree with itself (Rule 25).
+     */
+    private fun runVisibilityInStepScope(action: JSONObject, spy: Spy) {
+        val cases = action.optJSONArray("cases") ?: unsupported("visibility_in_step_scope without cases")
+        spy.state["results"] = (0 until cases.length()).map { i ->
+            val c = cases.getJSONObject(i)
+            val condition = c.optJSONObject("condition")?.let { vc ->
+                ai.appdna.sdk.onboarding.VisibilityCondition(
+                    type = vc.optString("type", "always"),
+                    variable = vc.optStringOrNull("variable"),
+                    value = if (vc.has("value")) vc.get("value") else null,
+                )
+            }
+            val responses = (c.optJSONObject("responses") ?: JSONObject()).asMap()
+                .filterValues { it != null }.mapValues { it.value!! }
+            val stepInputs = c.optJSONObject("step_inputs")?.asMap()
+                ?.filterValues { it != null }?.mapValues { it.value!! }
+            ai.appdna.sdk.onboarding.evaluateVisibilityCondition(
+                condition,
+                responses = responses,
+                hookData = null,
+                stepId = c.optStringOrNull("step_id"),
+                stepInputs = stepInputs,
+            )
+        }
+    }
+
+    /**
+     * #1013 — whether a Segmented input draws a segmented control, through the REAL
+     * `SegmentedPresentation` the renderer calls.
+     */
+    private fun runSegmentedPresentation(action: JSONObject, spy: Spy) {
+        val cases = action.optJSONArray("cases") ?: unsupported("segmented_presentation without cases")
+        spy.state["results"] = (0 until cases.length()).map { i ->
+            val v = cases.getJSONObject(i).optJSONObject("value") ?: JSONObject()
+            ai.appdna.sdk.onboarding.SegmentedPresentation.drawsSegmentedControl(v.optStringOrNull("display_style"))
+        }
+    }
+
     private fun runCompactPickerHeight(action: JSONObject, spy: Spy) {
         val cases = action.optJSONArray("cases") ?: unsupported("resolve_compact_picker_height without cases")
         spy.state["results"] = (0 until cases.length()).map { i ->

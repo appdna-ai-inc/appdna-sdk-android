@@ -2941,6 +2941,9 @@ internal fun ThreeZoneBlockLayout(
     // breaking conditional content rendering on Android.
     responses: Map<String, Any> = emptyMap(),
     hookData: Map<String, Any>? = null,
+    /** #1013 — the presented step's id, so a `visibility_condition` naming a field on THIS step
+     *  evaluates against what the control holds right now ([VisibilityScope]). Empty = no merge. */
+    stepId: String = "",
     modifier: androidx.compose.ui.Modifier = androidx.compose.ui.Modifier,
     // Interactive-element fire closure + per-block field_config override read-layer,
     // threaded to every zone's ContentBlockRendererView.
@@ -2958,8 +2961,10 @@ internal fun ThreeZoneBlockLayout(
     // A block the raw pass hid (`hide_when_empty` at 0 options) takes no zone slot.
     val rawIds = hostDataRawResolvedIds()
     val visibleBlocks = blocks.filter { block ->
-        evaluateVisibilityCondition(block.visibility_condition, responses = responses, hookData = hookData) &&
-            !block.isHiddenByHostData(rawIds)
+        evaluateVisibilityCondition(
+            block.visibility_condition, responses = responses, hookData = hookData,
+            stepId = stepId, stepInputs = inputValues,
+        ) && !block.isHiddenByHostData(rawIds)
     }
     // The consent-CTA gate judges the WHOLE layered step (lifted maps included), not
     // just the column this layout draws.
@@ -3089,6 +3094,7 @@ internal fun ThreeZoneBlockLayout(
                     fieldConfigOverrides = fieldConfigOverrides,
                     fieldOptionsOverrides = fieldOptionsOverrides,
                     stepBlocks = stepGateBlocks,
+                    stepId = stepId,
                 )
                 }
             }
@@ -3139,6 +3145,7 @@ internal fun ThreeZoneBlockLayout(
                     fieldConfigOverrides = fieldConfigOverrides,
                     fieldOptionsOverrides = fieldOptionsOverrides,
                     stepBlocks = stepGateBlocks,
+                    stepId = stepId,
                     scrollOffset = scrolledDp,
                         )
                     }
@@ -3161,6 +3168,7 @@ internal fun ThreeZoneBlockLayout(
                     fieldConfigOverrides = fieldConfigOverrides,
                     fieldOptionsOverrides = fieldOptionsOverrides,
                     stepBlocks = stepGateBlocks,
+                    stepId = stepId,
                     scrollOffset = scrolledDp,
                         )
                     }
@@ -3205,6 +3213,7 @@ internal fun ThreeZoneBlockLayout(
                     fieldConfigOverrides = fieldConfigOverrides,
                     fieldOptionsOverrides = fieldOptionsOverrides,
                     stepBlocks = stepGateBlocks,
+                    stepId = stepId,
                 )
             }
         }
@@ -4056,7 +4065,7 @@ private fun BlockBasedStepView(
                                 .padding(vertical = 20.dp), // Horizontal owned by ThreeZoneBlockLayout (8%) so margins match iOS ~10.4% (was double-padded ~15% → headings wrapped more)
                         ) {
                             Box(modifier = Modifier.weight(1f).fillMaxWidth()) {
-                                ThreeZoneBlockLayout(blocks = blocks, onAction = ::handleAction, onContentTap = onContentTap, toggleValues = toggleValues, inputValues = inputValues, loc = ::loc, responses = responses, hookData = hookData, currentStepIndex = currentStepIndex, totalSteps = totalSteps, onInteract = ::handleInteract, fieldConfigOverrides = fieldConfigOverrides, fieldOptionsOverrides = fieldOptionsOverrides)
+                                ThreeZoneBlockLayout(blocks = blocks, onAction = ::handleAction, onContentTap = onContentTap, toggleValues = toggleValues, inputValues = inputValues, loc = ::loc, responses = responses, hookData = hookData, stepId = stepId, currentStepIndex = currentStepIndex, totalSteps = totalSteps, onInteract = ::handleInteract, fieldConfigOverrides = fieldConfigOverrides, fieldOptionsOverrides = fieldOptionsOverrides)
                             }
                         }
                     }
@@ -4076,7 +4085,7 @@ private fun BlockBasedStepView(
                                 .weight(0.6f)
                                 .padding(16.dp),
                         ) {
-                            ThreeZoneBlockLayout(blocks = blocks, onAction = ::handleAction, onContentTap = onContentTap, toggleValues = toggleValues, inputValues = inputValues, loc = ::loc, responses = responses, hookData = hookData, currentStepIndex = currentStepIndex, totalSteps = totalSteps, onInteract = ::handleInteract, fieldConfigOverrides = fieldConfigOverrides, fieldOptionsOverrides = fieldOptionsOverrides)
+                            ThreeZoneBlockLayout(blocks = blocks, onAction = ::handleAction, onContentTap = onContentTap, toggleValues = toggleValues, inputValues = inputValues, loc = ::loc, responses = responses, hookData = hookData, stepId = stepId, currentStepIndex = currentStepIndex, totalSteps = totalSteps, onInteract = ::handleInteract, fieldConfigOverrides = fieldConfigOverrides, fieldOptionsOverrides = fieldOptionsOverrides)
                         }
                     }
                 }
@@ -4087,7 +4096,7 @@ private fun BlockBasedStepView(
                             .fillMaxSize()
                             .padding(vertical = 20.dp), // Horizontal owned by TZBL (8%) → margins match iOS ~10.4%
                     ) {
-                        ThreeZoneBlockLayout(blocks = blocks, onAction = ::handleAction, onContentTap = onContentTap, toggleValues = toggleValues, inputValues = inputValues, loc = ::loc, responses = responses, hookData = hookData, currentStepIndex = currentStepIndex, totalSteps = totalSteps, onInteract = ::handleInteract, fieldConfigOverrides = fieldConfigOverrides, fieldOptionsOverrides = fieldOptionsOverrides)
+                        ThreeZoneBlockLayout(blocks = blocks, onAction = ::handleAction, onContentTap = onContentTap, toggleValues = toggleValues, inputValues = inputValues, loc = ::loc, responses = responses, hookData = hookData, stepId = stepId, currentStepIndex = currentStepIndex, totalSteps = totalSteps, onInteract = ::handleInteract, fieldConfigOverrides = fieldConfigOverrides, fieldOptionsOverrides = fieldOptionsOverrides)
                         Spacer(Modifier.height(16.dp))
                         ai.appdna.sdk.core.NetworkImage(
                             url = effectiveConfig.image_url,
@@ -4109,7 +4118,7 @@ private fun BlockBasedStepView(
                             contentScale = androidx.compose.ui.layout.ContentScale.Fit,
                         )
                         Spacer(Modifier.height(16.dp))
-                        ThreeZoneBlockLayout(blocks = blocks, onAction = ::handleAction, onContentTap = onContentTap, toggleValues = toggleValues, inputValues = inputValues, loc = ::loc, responses = responses, hookData = hookData, currentStepIndex = currentStepIndex, totalSteps = totalSteps, onInteract = ::handleInteract, fieldConfigOverrides = fieldConfigOverrides, fieldOptionsOverrides = fieldOptionsOverrides)
+                        ThreeZoneBlockLayout(blocks = blocks, onAction = ::handleAction, onContentTap = onContentTap, toggleValues = toggleValues, inputValues = inputValues, loc = ::loc, responses = responses, hookData = hookData, stepId = stepId, currentStepIndex = currentStepIndex, totalSteps = totalSteps, onInteract = ::handleInteract, fieldConfigOverrides = fieldConfigOverrides, fieldOptionsOverrides = fieldOptionsOverrides)
                     }
                 }
                 else -> { // no_image
@@ -4119,7 +4128,7 @@ private fun BlockBasedStepView(
                             .fillMaxSize()
                             .padding(vertical = 20.dp), // Horizontal owned by TZBL (8%) → margins match iOS ~10.4%
                     ) {
-                        ThreeZoneBlockLayout(blocks = blocks, onAction = ::handleAction, onContentTap = onContentTap, toggleValues = toggleValues, inputValues = inputValues, loc = ::loc, responses = responses, hookData = hookData, currentStepIndex = currentStepIndex, totalSteps = totalSteps, onInteract = ::handleInteract, fieldConfigOverrides = fieldConfigOverrides, fieldOptionsOverrides = fieldOptionsOverrides)
+                        ThreeZoneBlockLayout(blocks = blocks, onAction = ::handleAction, onContentTap = onContentTap, toggleValues = toggleValues, inputValues = inputValues, loc = ::loc, responses = responses, hookData = hookData, stepId = stepId, currentStepIndex = currentStepIndex, totalSteps = totalSteps, onInteract = ::handleInteract, fieldConfigOverrides = fieldConfigOverrides, fieldOptionsOverrides = fieldOptionsOverrides)
                     }
                 }
             }

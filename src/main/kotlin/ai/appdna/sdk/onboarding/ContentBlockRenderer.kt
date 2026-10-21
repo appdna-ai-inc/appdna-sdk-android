@@ -1118,35 +1118,54 @@ fun evaluateVisibilityCondition(
     hookData: Map<String, Any>? = null,
     userTraits: Map<String, Any>? = null,
     sessionData: Map<String, Any>? = null,
+    /**
+     * #1013 — the presented step's id and its LIVE input values, which are what make a condition
+     * react while the step is open.
+     *
+     * `responses` holds completed steps only, so "show this when the category above is Modern"
+     * could never be true: the category is chosen while the step is still on screen, which is the
+     * only moment the condition matters. [VisibilityScope] merges the live inputs in under the
+     * step's own id (live winning), so `responses.<thisStep>.<field>` resolves to what the control
+     * holds right now — and `step.<field>` resolves too, the root the template engine and bindings
+     * have always had and a condition never did.
+     *
+     * Both default to null, so every caller that cannot supply them — a Screens surface, an option
+     * sheet — behaves exactly as before.
+     */
+    stepId: String? = null,
+    stepInputs: Map<String, Any>? = null,
 ): Boolean {
     if (condition == null) return true
+
+    @Suppress("NAME_SHADOWING")
+    val responses = VisibilityScope.merge(responses, stepId, stepInputs)
 
     return when (condition.type) {
         "always" -> true
         "when_equals" -> {
-            val resolved = resolveDotPath(condition.variable, responses, hookData, userTraits, sessionData)
+            val resolved = resolveDotPath(condition.variable, responses, hookData, userTraits, sessionData, stepInputs)
             resolved?.toString() == condition.value?.toString()
         }
         "when_not_equals" -> {
-            val resolved = resolveDotPath(condition.variable, responses, hookData, userTraits, sessionData)
+            val resolved = resolveDotPath(condition.variable, responses, hookData, userTraits, sessionData, stepInputs)
             resolved?.toString() != condition.value?.toString()
         }
         "when_not_empty" -> {
-            val resolved = resolveDotPath(condition.variable, responses, hookData, userTraits, sessionData)
+            val resolved = resolveDotPath(condition.variable, responses, hookData, userTraits, sessionData, stepInputs)
             resolved != null && resolved.toString().isNotEmpty()
         }
         "when_empty" -> {
-            val resolved = resolveDotPath(condition.variable, responses, hookData, userTraits, sessionData)
+            val resolved = resolveDotPath(condition.variable, responses, hookData, userTraits, sessionData, stepInputs)
             resolved == null || resolved.toString().isEmpty()
         }
         "when_gt" -> {
-            val resolved = resolveDotPath(condition.variable, responses, hookData, userTraits, sessionData)
+            val resolved = resolveDotPath(condition.variable, responses, hookData, userTraits, sessionData, stepInputs)
             val numA = resolved?.toString()?.toDoubleOrNull() ?: return false
             val numB = condition.value?.toString()?.toDoubleOrNull() ?: return false
             numA > numB
         }
         "when_lt" -> {
-            val resolved = resolveDotPath(condition.variable, responses, hookData, userTraits, sessionData)
+            val resolved = resolveDotPath(condition.variable, responses, hookData, userTraits, sessionData, stepInputs)
             val numA = resolved?.toString()?.toDoubleOrNull() ?: return false
             val numB = condition.value?.toString()?.toDoubleOrNull() ?: return false
             numA < numB
@@ -1787,6 +1806,10 @@ fun ContentBlockRendererView(
      * pass it renders exactly as before.
      */
     scrollOffset: Float = 0f,
+    /** #1013 — the presented step's id, so a `visibility_condition` naming a field on THIS step
+     *  evaluates against what the control holds right now ([VisibilityScope]). Empty = no merge,
+     *  which is what Screens, SDUI and option sheets get. */
+    stepId: String = "",
 ) {
     // Inside an onboarding step the raw host-data pass resolved, every block here is
     // already resolved AND layered (options, patches): the view-level pass must not run again, or it
@@ -1799,6 +1822,8 @@ fun ContentBlockRendererView(
             block.visibility_condition,
             responses = responses,
             hookData = hookData,
+            stepId = stepId,
+            stepInputs = inputValues,
         ) && !block.isHiddenByHostData(rawIds)
     }
     val gateBlocks = stepBlocks ?: blocks
@@ -10819,6 +10844,31 @@ private fun FormInputSelectBlock(
         }
     }
     var selectedValues by remember { mutableStateOf(initialSelected) }
+    /*
+     * #1013 — A CATEGORY ROW OPENS ON ITS FIRST CATEGORY.
+     *
+     * `bubble_scroll` exists to filter the blocks beneath it, so a row with nothing chosen filters
+     * all of them away: the step opens EMPTY, and the author has authored a screen whose first
+     * frame shows a row of pills over nothing. Measured on the iOS device walk — the row drew, all
+     * eight bubbles were there, and the three conditioned selects were correctly absent, which is
+     * right and useless.
+     *
+     * Only this presentation, and only single-select: every other Select still opens unanswered,
+     * which is what a question wants. The rule is [segmentedDefault], the one the segmented control
+     * has always used — a first option is written only when nothing is answered, so a restored
+     * answer and a host-patched value of another type both stand.
+     *
+     * 🔴 It must write to `inputValues`, not only to the view's state: the visibility evaluator
+     * reads the step's live map, and a default that only the view knows about would draw a
+     * selected chip over an empty screen.
+     */
+    LaunchedEffect(displayStyle, options.size) {
+        if (displayStyle != "bubble_scroll" || isMulti || selectedValue.isNotEmpty()) return@LaunchedEffect
+        segmentedDefault(inputValues[fieldId], options)?.let {
+            selectedValue = it
+            inputValues[fieldId] = it
+        }
+    }
     // A selection the step clears from outside (host data arrived and the value is no
     // longer rendered) must leave the view's selected state too, not only `inputValues`.
     val externalValue = inputValues[fieldId]
@@ -10917,6 +10967,8 @@ private fun FormInputSelectBlock(
             "grid" -> style.SelectGridOptions(options, isSelectedFn, pickFn)
             "image_tiles" -> style.SelectImageTileOptions(options, isSelectedFn, pickFn)
             "bubble" -> style.SelectBubbleOptions(options, isSelectedFn, pickFn)
+            // #1013 — the category row: the same pills in ONE horizontally scrolling line.
+            "bubble_scroll" -> style.SelectBubbleOptions(options, isSelectedFn, pickFn, scrolls = true)
             "list" -> style.SelectListOptions(options, isSelectedFn, pickFn)
             else -> style.SelectDropdownOptions(options, fieldId, inputValues, selectedValueState)
         }
@@ -11711,20 +11763,24 @@ private fun SelectOptionStyle.SelectImageTile(
     }
 }
 
-/** display_style "bubble" — wrapping pills. */
+/**
+ * display_style "bubble" — wrapping pills; `scrolls` → "bubble_scroll", ONE row that runs off the
+ * screen edge.
+ *
+ * #1013 — same chip, same colours, same per-option overrides: only the container differs, which is
+ * the whole difference an author asked for when they wanted a category row instead of a block of
+ * tags. A second copy of the chip body is exactly the drift the parity gates exist to catch.
+ */
 @Composable
 private fun SelectOptionStyle.SelectBubbleOptions(
     options: List<InputOption>,
     isOptionSelected: (String) -> Boolean,
     pickOption: (String) -> Unit,
+    scrolls: Boolean = false,
 ) {
     // chips/pills that wrap (FlowRow). Selected = filled accent; unselected =
     // bordered/transparent. Common for interests/tags multi-select.
-    androidx.compose.foundation.layout.FlowRow(
-        modifier = Modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.spacedBy(optionSpacingDp),
-        verticalArrangement = Arrangement.spacedBy(optionSpacingDp),
-    ) {
+    val chips: @Composable () -> Unit = {
         options.forEach { option ->
             val isSelected = isOptionSelected(option.value)
             val chipBg = if (isSelected) (option.selected_bg_color?.let { StyleEngine.parseColor(it) } ?: fillCol)
@@ -11758,6 +11814,21 @@ private fun SelectOptionStyle.SelectBubbleOptions(
                 )
             }
         }
+    }
+
+    if (scrolls) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .horizontalScroll(rememberScrollState()),
+            horizontalArrangement = Arrangement.spacedBy(optionSpacingDp),
+        ) { chips() }
+    } else {
+        androidx.compose.foundation.layout.FlowRow(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(optionSpacingDp),
+            verticalArrangement = Arrangement.spacedBy(optionSpacingDp),
+        ) { chips() }
     }
 }
 
@@ -12334,6 +12405,18 @@ private fun FormInputSegmentedBlock(
     block: ContentBlock,
     inputValues: MutableMap<String, Any>,
 ) {
+    /*
+     * #1013 — the one authored key that decides whether this is a segmented control at all.
+     *
+     * See [SegmentedPresentation]: a Select presentation renders through the Select, which draws
+     * all seven of them; absent / `segmented` / unknown keeps the control, as before.
+     */
+    val displayStyle = block.field_config?.get("display_style") as? String
+    if (!SegmentedPresentation.drawsSegmentedControl(displayStyle)) {
+        FormInputSelectBlock(block, inputValues)
+        return
+    }
+
     val fieldId = block.field_id ?: block.id
     val options = block.field_options ?: emptyList()
     // OB-6 audit follow-up — restore saved value on back nav.
