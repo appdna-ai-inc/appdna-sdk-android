@@ -5112,7 +5112,7 @@ internal fun countdownInitialSeconds(targetType: String?, targetDatetime: String
 }
 
 /**
- * Countdown timer with digital or bar variant.
+ * Countdown timer in any of its four variants: digital, circular, flip or bar.
  * Uses LaunchedEffect with delay(1000) loop to decrement remaining seconds.
  * Supports fixed_duration and fixed_datetime target types.
  */
@@ -5223,7 +5223,19 @@ private fun CountdownTimerBlock(block: ContentBlock, onAction: (String) -> Unit)
 
     when (variant) {
         "circular" -> {
-            // 75% accent ring with joined digits centered.
+            /*
+             * #1066 — the ring SWEEPS. `sweepAngle` was a hardcoded `270f` (= 75%), the console
+             * preview's static mock ported into a renderer: the digits counted down while the ring
+             * never moved, and it was still at 75% when the timer expired. A preview is allowed a
+             * frozen value because it has no clock; a renderer is not, and the `bar` arm below
+             * proves the data was there all along.
+             *
+             * Denominator is the CAPTURED initial value, not `duration_seconds` — a
+             * `fixed_datetime` countdown would otherwise stay pinned at 100%, which is the trap
+             * `initialSeconds` is remembered for.
+             */
+            val ringFraction =
+                CountdownProgress.remainingFraction(remainingSeconds, initialSeconds).toFloat()
             Box(modifier = Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
                 Box(modifier = Modifier.size(80.dp), contentAlignment = Alignment.Center) {
                     Canvas(modifier = Modifier.fillMaxSize()) {
@@ -5240,7 +5252,7 @@ private fun CountdownTimerBlock(block: ContentBlock, onAction: (String) -> Unit)
                         drawArc(
                             color = accentColor,
                             startAngle = -90f,
-                            sweepAngle = 270f,
+                            sweepAngle = 360f * ringFraction,
                             useCenter = false,
                             style = Stroke(width = sw, cap = StrokeCap.Round),
                             topLeft = Offset(sw / 2, sw / 2),
@@ -5295,7 +5307,8 @@ private fun CountdownTimerBlock(block: ContentBlock, onAction: (String) -> Unit)
         }
         "bar" -> {
             // Time + "remaining" label + shrinking accent bar (matches preview).
-            val fraction = if (initialSeconds > 0) remainingSeconds.toFloat() / initialSeconds else 0f
+            // #1066 — the same shared rule the ring uses, so the two indicators cannot disagree.
+            val fraction = CountdownProgress.remainingFraction(remainingSeconds, initialSeconds).toFloat()
             Column(modifier = Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Row(
                     modifier = Modifier.fillMaxWidth(),

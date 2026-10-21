@@ -287,6 +287,7 @@ class SharedFixtureTest(
             "resolve_field_input_style" -> runFieldInputStyle(action, spy)
             "resolve_plan_order" -> runPlanOrder(action, spy)
             "resolve_progress_skip_target" -> runProgressSkipTarget(action, spy)
+            "resolve_countdown_progress" -> runCountdownProgress(action, spy)
             "resolve_segmented_presentation" -> runSegmentedPresentation(action, spy)
             "resolve_rive_input_kind" -> runRiveInputKind(action, spy)
             "track_events_with_observer" -> runEventObserver(action, spy)
@@ -2429,6 +2430,25 @@ class SharedFixtureTest(
                 (0 until arr.length()).map { arr.getString(it) }
             } ?: emptyList()
             ai.appdna.sdk.onboarding.ProgressSkipTarget.resolve(v.optStringOrNull("skip_to_step"), ids)
+        }
+    }
+
+
+    /**
+     * #1066 — how far a countdown has run, through the REAL [CountdownProgress] both indicators
+     * read.
+     *
+     * The ring was frozen at `sweepAngle = 270f` here and `trim(to: 0.75)` on iOS — the preview's
+     * mock in two renderers — so the cases that matter are the ones a frozen value gets wrong:
+     * full, half, expired, and the clamps.
+     */
+    private fun runCountdownProgress(action: JSONObject, spy: Spy) {
+        val cases = action.optJSONArray("cases") ?: unsupported("countdown_progress without cases")
+        spy.state["results"] = (0 until cases.length()).map { i ->
+            val v = cases.getJSONObject(i).optJSONObject("value") ?: JSONObject()
+            ai.appdna.sdk.onboarding.CountdownProgress.remainingFraction(
+                v.optLong("remaining"), v.optLong("initial"),
+            )
         }
     }
 
