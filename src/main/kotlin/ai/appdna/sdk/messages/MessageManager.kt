@@ -1,5 +1,7 @@
 package ai.appdna.sdk.messages
 
+import ai.appdna.sdk.core.TriggerOperator
+
 // Instantiated in AppDNA.kt configure(); track() fans out
 // to onEvent(); reset() calls resetSession(). The configProvider lambda
 // reads from `AppDNA.activeMessages`, a snapshot Map<String, MessageConfig>
@@ -389,47 +391,11 @@ class MessageManager internal constructor(
         return conditions.all { condition ->
             val propValue = properties[condition.field] ?: return@all false
             val condValue = condition.value ?: return@all false
-            evaluateOperator(condition.operator, propValue, condValue)
+            TriggerOperator.matches(condition.operator, propValue, condValue)
         }
     }
 
-    private fun evaluateOperator(op: String, propValue: Any, condValue: Any): Boolean {
-        return when (op) {
-            "eq" -> propValue.toString() == condValue.toString()
-            "gte" -> {
-                val p = toDouble(propValue) ?: return false
-                val c = toDouble(condValue) ?: return false
-                p >= c
-            }
-            "lte" -> {
-                val p = toDouble(propValue) ?: return false
-                val c = toDouble(condValue) ?: return false
-                p <= c
-            }
-            "gt" -> {
-                val p = toDouble(propValue) ?: return false
-                val c = toDouble(condValue) ?: return false
-                p > c
-            }
-            "lt" -> {
-                val p = toDouble(propValue) ?: return false
-                val c = toDouble(condValue) ?: return false
-                p < c
-            }
-            "contains" -> propValue.toString().contains(condValue.toString())
-            else -> false
-        }
-    }
 
-    private fun toDouble(value: Any): Double? = when (value) {
-        is Double -> value
-        is Float -> value.toDouble()
-        is Int -> value.toDouble()
-        is Long -> value.toDouble()
-        is Number -> value.toDouble()
-        is String -> value.toDoubleOrNull()
-        else -> null
-    }
 
     // MARK: - Date range
 

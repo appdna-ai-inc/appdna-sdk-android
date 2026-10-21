@@ -1,5 +1,7 @@
 package ai.appdna.sdk.feedback
 
+import ai.appdna.sdk.core.TriggerOperator
+
 import android.app.Activity
 import android.app.AlertDialog
 import android.content.Context
@@ -558,30 +560,11 @@ internal class SurveyManager(
         if (conditions.isEmpty()) return true
         return conditions.all { condition ->
             val propValue = properties[condition.field] ?: return@all false
-            evaluateOperator(condition.operator, propValue, condition.value)
+            TriggerOperator.matches(condition.operator, propValue, condition.value)
         }
     }
 
-    private fun evaluateOperator(op: String, propValue: Any, condValue: Any?): Boolean {
-        condValue ?: return false
-        return when (op) {
-            "eq" -> "$propValue" == "$condValue"
-            "gte" -> toDouble(propValue)?.let { p -> toDouble(condValue)?.let { c -> p >= c } } ?: false
-            "lte" -> toDouble(propValue)?.let { p -> toDouble(condValue)?.let { c -> p <= c } } ?: false
-            "gt" -> toDouble(propValue)?.let { p -> toDouble(condValue)?.let { c -> p > c } } ?: false
-            "lt" -> toDouble(propValue)?.let { p -> toDouble(condValue)?.let { c -> p < c } } ?: false
-            "contains" -> "$propValue".contains("$condValue")
-            else -> false
-        }
-    }
 
-    private fun toDouble(value: Any): Double? {
-        return when (value) {
-            is Number -> value.toDouble()
-            is String -> value.toDoubleOrNull()
-            else -> null
-        }
-    }
 
     private fun meetsLoveScoreRange(range: ScoreRange?): Boolean {
         range ?: return true
