@@ -285,6 +285,7 @@ class SharedFixtureTest(
             "resolve_compact_picker_height" -> runCompactPickerHeight(action, spy)
             "resolve_in_step_visibility" -> runVisibilityInStepScope(action, spy)
             "resolve_segmented_presentation" -> runSegmentedPresentation(action, spy)
+            "resolve_rive_input_kind" -> runRiveInputKind(action, spy)
             // #772 — WHICH copy of content_blocks the real parser resolves, per step shape.
             "resolve_content_blocks" -> runResolveContentBlocks(action, spy)
             "countdown_initial_seconds" -> runCountdownInitialSeconds(action, spy)
@@ -2315,6 +2316,24 @@ class SharedFixtureTest(
         spy.state["results"] = (0 until cases.length()).map { i ->
             val v = cases.getJSONObject(i).optJSONObject("value") ?: JSONObject()
             ai.appdna.sdk.onboarding.SegmentedPresentation.drawsSegmentedControl(v.optStringOrNull("display_style"))
+        }
+    }
+
+    /**
+     * #1024 — which kind of Rive input an authored value means, through the REAL [RiveInputKind]
+     * the renderer calls.
+     *
+     * 🔴 The values come out of the fixture's JSON, which is the SAME path a published document
+     * takes — so a bool arrives as org.json hands it over rather than as a Kotlin literal the
+     * driver chose.
+     */
+    private fun runRiveInputKind(action: JSONObject, spy: Spy) {
+        val cases = action.optJSONArray("cases") ?: unsupported("resolve_rive_input_kind without cases")
+        spy.state["results"] = (0 until cases.length()).map { i ->
+            val c = cases.getJSONObject(i)
+            // An absent key and an explicit null are the same instruction: none.
+            val raw = if (!c.has("value") || c.isNull("value")) null else c.get("value")
+            ai.appdna.sdk.core.RiveInputKind.of(raw)?.name?.lowercase()
         }
     }
 
