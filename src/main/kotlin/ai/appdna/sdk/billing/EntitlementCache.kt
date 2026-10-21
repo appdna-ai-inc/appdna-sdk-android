@@ -57,8 +57,26 @@ internal class EntitlementCache(
     /** The product type recorded for [productId], or null. */
     internal fun productTypeOf(productId: String): String? = productTypes[productId]
 
-    /** Active product-id set at the last change fan-out — diff-guards spurious callbacks (iOS parity). */
-    @Volatile private var lastNotifiedProductIds: Set<String> = emptySet()
+    /**
+     * The entitlement FINGERPRINT at the last change fan-out — diff-guards spurious callbacks.
+     *
+     * 🔴 THE PRODUCT ID IS NOT ENOUGH, and for a year it was all this compared. iOS compares
+     * `productId|isActive|expiry` per entitlement ([EntitlementFingerprint] in `AppDNA+Modules.swift`),
+     * so a renewal — same product, later expiry — is a change there. Comparing ids alone made the
+     * single most common entitlement change on Android INVISIBLE: a subscription renewing, lapsing
+     * into `grace_period`, or coming back from `billing_retry` all keep their product id, so a host
+     * listening for entitlement changes was told about the first purchase and then nothing, for the
+     * life of the subscription.
+     *
+     * `status` rather than a derived boolean: it is what [Entitlement] actually carries on this
+     * platform, and it distinguishes `active` from `grace_period` / `billing_retry` / `expired`,
+     * which a boolean would flatten.
+     */
+    @Volatile private var lastNotifiedFingerprint: Set<String> = emptySet()
+
+    /** `productId|status|expiresAt` per entitlement — order-independent, so a reordered list is not a change. */
+    private fun fingerprint(items: List<Entitlement>): Set<String> =
+        items.map { "${it.productId}|${it.status}|${it.expiresAt ?: "-"}" }.toSet()
     /** Guards the diff-guard compare-and-set; setEntitlements runs from the Firestore listener thread AND purchase/restore callbacks. */
     private val notifyLock = Any()
 
@@ -334,7 +352,7 @@ internal class EntitlementCache(
             // onEntitlementsChanged. loadFromDisk bypasses setEntitlements, so without this the guard
             // stayed empty and `empty != {persisted}` fired one no-op callback on every cold start.
             // Runs at init (single-threaded, before any listener); @Volatile makes it visible.
-            lastNotifiedProductIds = loaded.map { it.productId }.toSet()
+            lastNotifiedFingerprint = fingerprint(loaded)
             Log.debug("EntitlementCache: loaded ${loaded.size} entitlements from disk")
         } catch (e: Exception) {
             Log.warning("EntitlementCache: failed to load from disk: ${e.message}")
@@ -379,21 +397,21 @@ internal class EntitlementCache(
     private fun setEntitlements(newEntitlements: List<Entitlement>) {
         entitlements = newEntitlements
         saveToDisk(newEntitlements)
-        // Diff-guard the change fan-out (listeners + billing delegate) on the active
-        // product-id set, matching iOS BillingModule.refreshEntitlementCache (posts only when
-        // newIds != lastKnownEntitlementIds). Android previously notified UNCONDITIONALLY on every
+        // Diff-guard the change fan-out (listeners + billing delegate) on the entitlement
+        // FINGERPRINT — product id, status and expiry — matching iOS's EntitlementFingerprint
+        // (`productId|isActive|expiry`, sorted), which posts only on a real change. Android previously notified UNCONDITIONALLY on every
         // update()/replaceAll(), so re-purchasing an already-held entitlement or a restore that
         // returned the already-cached set fired a spurious onEntitlementsChanged that iOS never did.
         // The cache (entitlements + disk) still updates every call so a same-id expiry change persists;
         // only the notification is gated. The compare-and-set runs under `notifyLock`
         // because setEntitlements is reachable from the Firestore listener thread AND purchase/restore
         // callbacks concurrently; notify OUTSIDE the lock (like iOS releases its lock before posting).
-        val newIds = newEntitlements.map { it.productId }.toSet()
+        val newPrint = fingerprint(newEntitlements)
         val changed = synchronized(notifyLock) {
-            if (newIds == lastNotifiedProductIds) {
+            if (newPrint == lastNotifiedFingerprint) {
                 false
             } else {
-                lastNotifiedProductIds = newIds
+                lastNotifiedFingerprint = newPrint
                 true
             }
         }
@@ -412,13 +430,37 @@ internal class EntitlementCache(
         for (listener in changeListeners) listener(values)
     }
 
+    /**
+     * Fire the `AppDNA.billing.onEntitlementsChanged { }` lambdas.
+     *
+     * 🔴 ON THE MAIN THREAD, like the typed delegate beside it. [notifyBillingDelegate] already
+     * posted, for the reason stated there — "so host code never runs on the Firestore listener
+     * thread" — and this path, the one most hosts actually use, did not: it ran the host's lambda
+     * on whichever thread wrote the entitlements, which is the Firestore listener thread for a
+     * server update and a Play callback thread for a purchase. A lambda that touches a View from
+     * there throws `CalledFromWrongThreadException`. iOS delivers both fan-outs on `.main`.
+     *
+     * 🔴 Already-on-main fires DIRECTLY rather than posting. Posting unconditionally would defer
+     * every notification by a loop turn, which under Robolectric's paused looper means it never
+     * arrives unless a test idles the looper — so an unconditional post would have "fixed" the
+     * thread by breaking every existing test's delivery.
+     */
     private fun notifyListeners() {
-        for (listener in changeListeners) {
-            try {
-                listener(entitlements)
-            } catch (e: Throwable) {
-                Log.warning("EntitlementCache: listener threw: ${e.message}")
+        val current = entitlements
+        val fire = {
+            for (listener in changeListeners) {
+                try {
+                    listener(current)
+                } catch (e: Throwable) {
+                    Log.warning("EntitlementCache: listener threw: ${e.message}")
+                }
             }
+        }
+        val main = android.os.Looper.getMainLooper()
+        if (android.os.Looper.myLooper() == main) {
+            fire()
+        } else {
+            android.os.Handler(main).post(fire)
         }
     }
 

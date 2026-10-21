@@ -103,6 +103,70 @@ class EntitlementCacheRulesTest {
     }
 
     /**
+     * A RENEWAL IS A CHANGE. The diff-guard compared product ids alone, so the same subscription with a
+     * later expiry — what a renewal IS — fired nothing, and a host listening for entitlement changes
+     * heard about the first purchase and then silence for the life of the subscription. iOS compares
+     * `productId|isActive|expiry`.
+     *
+     * NEGATIVE CONTROL: the first assertion. Re-applying the IDENTICAL entitlement must still be
+     * silent, or this test would pass against a guard that was simply removed.
+     */
+    @Test fun `a renewal and a status change each fire, an identical re-apply does not`() {
+        val c = cache()
+        c.update(ent("monthly", "2026-11-01T00:00:00Z"), "subs")
+        val seen = mutableListOf<List<Entitlement>>()
+        c.addChangeListener { seen.add(it) }
+
+        // control: the same product, same status, same expiry — no change, no callback.
+        c.update(ent("monthly", "2026-11-01T00:00:00Z"), "subs")
+        assertEquals(0, seen.size)
+
+        // a renewal: same product and status, the expiry moves out a month.
+        c.update(ent("monthly", "2026-12-01T00:00:00Z"), "subs")
+        assertEquals(1, seen.size)
+        assertEquals("2026-12-01T00:00:00Z", seen.last().single().expiresAt)
+
+        // a status change: same product, same expiry, now in its billing grace period.
+        c.update(Entitlement("monthly", "google_play", "grace_period", "2026-12-01T00:00:00Z", false, null), "subs")
+        assertEquals(2, seen.size)
+        assertEquals("grace_period", seen.last().single().status)
+    }
+
+    /**
+     * THE LAMBDA FAN-OUT RUNS ON THE MAIN THREAD. `notifyBillingDelegate` always posted to the main
+     * looper — "so host code never runs on the Firestore listener thread", its own words — and
+     * `notifyListeners`, the path behind the public `onEntitlementsChanged { }` lambda, did not: it
+     * ran the host's lambda on whichever thread wrote the entitlements. That is the Firestore
+     * listener thread for a server update and a Play callback thread for a purchase, and a lambda
+     * touching a View from there throws `CalledFromWrongThreadException`.
+     *
+     * Driven from a real background thread, because that is the only place the two behaviours
+     * differ: on the main thread the fan-out fires directly (deliberately — see `notifyListeners`),
+     * so a test that stayed on the test thread would pass either way.
+     *
+     * NEGATIVE CONTROL: the callback must still ARRIVE. "It did not run on the background thread"
+     * is also true of a fan-out that was dropped entirely.
+     */
+    @Test fun `a listener fires on the main thread even when the write comes from a background thread`() {
+        val c = cache()
+        val threads = java.util.Collections.synchronizedList(mutableListOf<String>())
+        c.addChangeListener { threads.add(Thread.currentThread().name) }
+
+        val worker = Thread({ c.update(ent("monthly", "2026-11-01T00:00:00Z"), "subs") }, "appdna-test-worker")
+        worker.start()
+        worker.join()
+
+        // Nothing ran on the worker: the post is still sitting on the main looper's queue.
+        assertEquals(emptyList<String>(), threads)
+
+        org.robolectric.Shadows.shadowOf(android.os.Looper.getMainLooper()).idle()
+
+        // control: it ARRIVED — and on the main thread, which under Robolectric is the test thread.
+        assertEquals(1, threads.size)
+        assertEquals(Thread.currentThread().name, threads.single())
+    }
+
+    /**
      * `identify(user_a)` → `identify(user_b)` with a snapshot of user_a's entitlement document already handed
      * to the main thread: `stopObserving()` cannot take it back, and it used to land in user_b's cleared cache.
      * NEGATIVE CONTROL: without the identity check at the top of `onSnapshot`, user_a's `monthly` is cached
