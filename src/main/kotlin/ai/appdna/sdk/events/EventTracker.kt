@@ -1,5 +1,6 @@
 package ai.appdna.sdk.events
 
+import ai.appdna.sdk.AppDNA
 import ai.appdna.sdk.IdentityManager
 import ai.appdna.sdk.Log
 import org.json.JSONObject
@@ -153,6 +154,22 @@ internal class EventTracker(
 
         eventQueue?.enqueue(envelope)
         Log.debug { "Tracked event: $event" }
+
+        /*
+         * #1047 — the host's analytics observer, fired from the ONE place every event passes
+         * through, immediately after the event is durable in the queue.
+         *
+         * 🔴 After the enqueue, not before. A host that throws, blocks or re-enters must not be
+         * able to stop an event reaching the queue, which is why the call is last and its result
+         * is ignored. Kotlin has no checked exceptions, so the `runCatching` is what gives the
+         * same guarantee iOS gets from a non-`throws` protocol method.
+         *
+         * 🔴 And NOT for the `_sdk_events_dropped` meta-event: that one is built and enqueued
+         * directly in [emitDroppedMeta] rather than through here, deliberately, to avoid
+         * re-entrancy — so a host observing events never sees the SDK's own loss counter and
+         * cannot mistake it for one of its own.
+         */
+        AppDNA.notifyEventTracked(event, properties ?: emptyMap())
     }
 
     /** Build + enqueue the _sdk_events_dropped meta-event directly (NOT via track(),

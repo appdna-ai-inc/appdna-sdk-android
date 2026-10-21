@@ -112,8 +112,11 @@ interface AppDNAScreenDelegate {
     fun onScreenAction(screenId: String, action: Map<String, Any?>): Boolean = true
 }
 
-/** Backend-driven SDK lock-state observer. Fires once per state transition (idle <-> locked). Hosts use this to surface a custom "service unavailable" banner and trigger a one-shot event-queue retry on unlock. */
+/** SDK-wide observer: backend-driven lock state (idle <-> locked, once per transition), config-decode problems, and every analytics event the SDK tracks. Hosts use the lock pair to surface a custom "service unavailable" banner and trigger a one-shot event-queue retry on unlock, and `onEventTracked` to forward AppDNA analytics into their own pipeline. */
 interface AppDNALifecycleDelegate {
+    /** #1047 - fires for EVERY event the SDK tracks, with the event name and the properties sent with it, immediately after the event is queued. Integrators asked for this to forward AppDNA analytics into their own pipeline without re-instrumenting; it is also the only way a host can observe an event that renders nothing, which is why a survey follow-up branch could be proven on one platform and only inferred on the other. Fires on whatever thread tracked the event - do not block it, and hop to the main thread yourself if your handler touches UI. It is an OBSERVER: returning does not affect whether the event is sent, and a throw from it is swallowed so a host bug cannot lose analytics. */
+    fun onEventTracked(name: String, properties: Map<String, Any?>) = Unit
+
     /** Fires once on idle to locked. reason in {billing_overdue, manual_admin, org_cancelled}. lockedAt is ISO-8601 (raw string for cross-platform parity; host parses if it needs a Date). */
     fun onSdkRuntimeLocked(reason: String, lockedAt: String) = Unit
 

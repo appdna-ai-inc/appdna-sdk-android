@@ -126,6 +126,24 @@ object AppDNA {
         set(value) { lifecycleDelegate = value }
 
     /**
+     * #1047 — hand every tracked event to the host's observer, if it set one.
+     *
+     * 🔴 The `runCatching` is the contract, not caution. `onEventTracked` is an OBSERVER: a host
+     * that throws must not be able to affect whether analytics are sent — and this is called AFTER
+     * the event is already in the queue, so there is nothing left to affect. iOS gets the same
+     * guarantee from a protocol method that is not `throws`; Kotlin has no checked exceptions, so
+     * it is explicit here.
+     *
+     * Internal to the SDK; the delegate and its method are public.
+     */
+    @JvmStatic
+    internal fun notifyEventTracked(name: String, properties: Map<String, Any>) {
+        val delegate = lifecycleDelegate ?: return
+        runCatching { delegate.onEventTracked(name, properties) }
+            .onFailure { Log.warning { "onEventTracked threw: ${it.message}" } }
+    }
+
+    /**
      * Current backend-driven SDK lock state. `null` when active;
      * a non-null `Pair(reason, lockedAtIso)` means the SDK is in locked
      * mode and UI render paths (paywall_trigger, messages, surveys) should

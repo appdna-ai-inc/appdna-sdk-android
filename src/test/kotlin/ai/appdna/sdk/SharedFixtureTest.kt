@@ -286,6 +286,7 @@ class SharedFixtureTest(
             "resolve_in_step_visibility" -> runVisibilityInStepScope(action, spy)
             "resolve_segmented_presentation" -> runSegmentedPresentation(action, spy)
             "resolve_rive_input_kind" -> runRiveInputKind(action, spy)
+            "track_events_with_observer" -> runEventObserver(action, spy)
             // #772 — WHICH copy of content_blocks the real parser resolves, per step shape.
             "resolve_content_blocks" -> runResolveContentBlocks(action, spy)
             "countdown_initial_seconds" -> runCountdownInitialSeconds(action, spy)
@@ -2327,6 +2328,56 @@ class SharedFixtureTest(
      * takes — so a bool arrives as org.json hands it over rather than as a Kotlin literal the
      * driver chose.
      */
+    /**
+     * #1047 — `onEventTracked` fires for every event, through the REAL `EventTracker.track` and the
+     * REAL lifecycle delegate.
+     *
+     * 🔴 Driven through the production chokepoint, never re-stated: the claim is that a host sees
+     * what the SDK queues, and a driver that called the delegate itself would prove only that the
+     * driver can call a delegate.
+     *
+     * 🔴 `observer_throws` really throws here. Kotlin has no checked exceptions, so this platform's
+     * half of the observer guarantee is an explicit `runCatching` in `AppDNA.notifyEventTracked` —
+     * and the case after a throwing one is what proves it held.
+     */
+    private fun runEventObserver(action: JSONObject, spy: Spy) {
+        val cases = action.optJSONArray("cases") ?: unsupported("track_events_with_observer without cases")
+        val names = mutableListOf<String>()
+        val props = mutableListOf<Map<String, String>>()
+        val throwOn = mutableSetOf<String>()
+        for (i in 0 until cases.length()) {
+            val c = cases.getJSONObject(i)
+            if (c.optBoolean("observer_throws", false)) throwOn.add(c.getString("event"))
+        }
+
+        val observer = object : ai.appdna.sdk.generated.AppDNALifecycleDelegate {
+            override fun onEventTracked(name: String, properties: Map<String, Any?>) {
+                names.add(name)
+                props.add(properties.entries.associate { it.key to it.value.toString() })
+                if (name in throwOn) throw IllegalStateException("host handler threw")
+            }
+        }
+
+        val previous = AppDNA.lifecycleDelegateOrNull
+        AppDNA.lifecycleDelegateOrNull = observer
+        try {
+            val p = pipeline ?: Pipeline("evt_observer").also { pipeline = it }
+            for (i in 0 until cases.length()) {
+                val c = cases.getJSONObject(i)
+                val event = c.optStringOrNull("event") ?: continue
+                val raw = c.optJSONObject("properties") ?: JSONObject()
+                val map = raw.asMap().filterValues { it != null }.mapValues { it.value!! }
+                p.tracker.track(event, map)
+            }
+            spy.state["queued"] = p.envelopes().size
+        } finally {
+            AppDNA.lifecycleDelegateOrNull = previous
+        }
+
+        spy.state["observed"] = names
+        spy.state["observed_properties"] = props
+    }
+
     private fun runRiveInputKind(action: JSONObject, spy: Spy) {
         val cases = action.optJSONArray("cases") ?: unsupported("resolve_rive_input_kind without cases")
         spy.state["results"] = (0 until cases.length()).map { i ->
