@@ -982,6 +982,61 @@ data class FormFieldBlockStyle(
 )
 
 /**
+ * The input text's size — `field_style.font_size` first (#1053), then the two `field_config`
+ * spellings the console writes, then 14.
+ *
+ * 🔴 THREE SPELLINGS OF ONE IDEA, and `field_style.font_size` was the one nothing read. The
+ * console's "Font Size" slider writes `field_config.font_size` and its "Input Text Size" slider
+ * writes `field_config.input_text_size`; both renderers read that pair and ignored the `field_style`
+ * key they both DECODE. A document carrying it — a generator's output, an import, a hand-written
+ * flow — rendered at 14 with no sign that an authored value had been dropped. It is the FIRST rung
+ * rather than a fourth control, because a fourth control over the same pixel is how three got here.
+ *
+ * Mirrors iOS `fieldInputFontSize`.
+ */
+internal fun fieldInputFontSize(block: ContentBlock): androidx.compose.ui.unit.TextUnit =
+    (block.field_style?.font_size?.toFloat()
+        ?: (block.field_config?.get("input_text_size") as? Number)?.toFloat()
+        ?: (block.field_config?.get("font_size") as? Number)?.toFloat()
+        ?: 14f).sp
+
+/**
+ * The input text's weight from `field_style.font_weight` (#1053). `null` means "leave the default",
+ * which is not the same as `FontWeight.Normal`.
+ *
+ * Mirrors iOS `fieldInputFontWeight`.
+ */
+internal fun fieldInputFontWeight(block: ContentBlock): androidx.compose.ui.text.font.FontWeight? =
+    when (block.field_style?.font_weight?.lowercase()) {
+        "thin" -> androidx.compose.ui.text.font.FontWeight.Thin
+        "light" -> androidx.compose.ui.text.font.FontWeight.Light
+        "regular", "normal", "400" -> androidx.compose.ui.text.font.FontWeight.Normal
+        "medium", "500" -> androidx.compose.ui.text.font.FontWeight.Medium
+        "semibold", "600" -> androidx.compose.ui.text.font.FontWeight.SemiBold
+        "bold", "700" -> androidx.compose.ui.text.font.FontWeight.Bold
+        "heavy", "800" -> androidx.compose.ui.text.font.FontWeight.ExtraBold
+        "black", "900" -> androidx.compose.ui.text.font.FontWeight.Black
+        else -> null
+    }
+
+/**
+ * A field's border colour, swapping to `field_style.error_border_color` while it is in error
+ * (#1053).
+ *
+ * `error_text_color` was already drawn beside it on both platforms; the border was not, so an
+ * authored error colour showed on the message and not on the field it belonged to.
+ *
+ * Mirrors iOS `fieldBorderColor`.
+ */
+internal fun fieldBorderColor(block: ContentBlock, hasError: Boolean = false): Color {
+    if (hasError) {
+        block.field_style?.error_border_color?.let { return StyleEngine.parseColor(it) }
+    }
+    return StyleEngine.parseColor(block.field_style?.border_color ?: "#D1D5DB")
+}
+
+
+/**
  * Option for select, chips, segmented inputs.
  *
  * 11 Drift 2 — expanded from 3 fields
@@ -9690,8 +9745,7 @@ private fun FormInputTextBlock(
     val cornerRadius = (block.field_style?.corner_radius ?: 8.0).dp
     // Honor field_config.input_text_size (preferred) / font_size
     // (default 14), mirroring preview + iOS precedence. Was no textStyle (M3 default).
-    val inputFontSize = ((block.field_config?.get("input_text_size") as? Number)?.toFloat()
-        ?: (block.field_config?.get("font_size") as? Number)?.toFloat() ?: 14f).sp
+    val inputFontSize = fieldInputFontSize(block)
     // Honor field_config.field_height (editor "Field Height"),
     // mirroring iOS fieldHeight() minHeight. Was ignored on Android.
     val fieldHeightDp = (block.field_config?.get("field_height") as? Number)?.toFloat()
@@ -9772,7 +9826,8 @@ private fun FormInputTextBlock(
                     imeAction = androidx.compose.ui.text.input.ImeAction.Done,
                 ),
                 shape = RoundedCornerShape(cornerRadius),
-                textStyle = TextStyle(fontSize = inputFontSize),
+                // #1053 — size AND weight from the authored field style.
+                textStyle = TextStyle(fontSize = inputFontSize, fontWeight = fieldInputFontWeight(block)),
                 modifier = if (fieldHeightDp != null) Modifier.fillMaxWidth().heightIn(min = fieldHeightDp.dp) else Modifier.fillMaxWidth(),
                 singleLine = true,
                 interactionSource = interactionSource,
@@ -9910,8 +9965,7 @@ private fun FormInputPasswordBlock(
         val placeholderCol = block.field_style?.placeholder_color?.let { StyleEngine.parseColor(it) } ?: Color.White.copy(alpha = 0.5f)
         val cursorCol = focusedBorder
         // Mirror FormInputTextBlock font_size + field_height onto the password sibling.
-        val pwFontSize = ((block.field_config?.get("input_text_size") as? Number)?.toFloat()
-            ?: (block.field_config?.get("font_size") as? Number)?.toFloat() ?: 14f).sp
+        val pwFontSize = fieldInputFontSize(block)
         val pwFieldHeightDp = (block.field_config?.get("field_height") as? Number)?.toFloat()
         androidx.compose.material3.OutlinedTextField(
             value = text,
@@ -9921,7 +9975,8 @@ private fun FormInputPasswordBlock(
             },
             placeholder = { Text(block.field_placeholder ?: "Password", color = placeholderCol) },
             shape = RoundedCornerShape((block.field_style?.corner_radius ?: 8.0).dp),
-            textStyle = androidx.compose.ui.text.TextStyle(fontSize = pwFontSize),
+            // #1053 — size AND weight from the authored field style.
+            textStyle = androidx.compose.ui.text.TextStyle(fontSize = pwFontSize, fontWeight = fieldInputFontWeight(block)),
             // \u2014 Password Autofill keyboard + Done return key.
             modifier = Modifier.fillMaxWidth().let { if (pwFieldHeightDp != null) it.heightIn(min = pwFieldHeightDp.dp) else it },
             singleLine = true,
@@ -10266,7 +10321,10 @@ private fun FormInputDateBlock(
                 shape = RoundedCornerShape((block.field_style?.corner_radius ?: 8.0).dp),
                 border = androidx.compose.foundation.BorderStroke(
                     1.dp,
-                    StyleEngine.parseColor(block.field_style?.border_color ?: "#D1D5DB"),
+                    // #1053 — the error colour reaches the BORDER while the field is in error, not
+                    // only the message below it. `dateError` is the one real per-field error state
+                    // either renderer has; the required-field gate raises a toast instead.
+                    fieldBorderColor(block, hasError = dateError != null),
                 ),
                 // Honor field_style.text_color + wheel/calendar bg.
                 colors = ButtonDefaults.outlinedButtonColors(
