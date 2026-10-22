@@ -1855,8 +1855,19 @@ internal fun PaywallSectionView(
             }
         }
         "features" -> {
+            /*
+             * 🔴 THE PAGE-READABLE INK, NOT WHITE (#1067). This defaulted to `Color.White`, so on a
+             * light paywall every feature line was WHITE ON WHITE — the text was drawn the whole
+             * time and nobody could see it. A device walk read five bullet points with no words
+             * beside them, which looks like missing data rather than a colour.
+             *
+             * It is #946's fix, which every other section on this screen already has (the countdown
+             * and the comparison table both read `PaywallTextDefaults.readable`), and which the
+             * features list never received. iOS has used it since: `FeatureList.swift` draws with
+             * `PaywallTextDefaults.readable(on: pageBackgroundHex)`.
+             */
             val featureItemStyle = StyleEngine.applyTextStyle(
-                TextStyle(color = Color.White, fontSize = 16.sp),
+                TextStyle(color = PaywallTextDefaults.readable(LocalPaywallPageHex.current), fontSize = 16.sp),
                 section.style?.elements?.get("item")?.text_style
             )
             // #910 — the item's authored container, from `item_text` or its `item` alias, resolved
@@ -1930,8 +1941,11 @@ internal fun PaywallSectionView(
                     // be present on an older document, and rendering only one of them would trade
                     // this bug for its mirror image.
                     val richItems = section.data?.items.orEmpty()
+                    // #1067 — the subtitle takes the same readable ink as the line above it,
+                    // at the 70% iOS uses, rather than a white that vanishes on a light page.
                     val subtitleColor = section.data?.item_subtitle_color?.takeIf { it.isNotBlank() }
-                        ?.let { StyleEngine.parseColor(it) } ?: Color.White.copy(alpha = 0.7f)
+                        ?.let { StyleEngine.parseColor(it) }
+                        ?: PaywallTextDefaults.readable(LocalPaywallPageHex.current).copy(alpha = 0.7f)
                     val subtitleSize = (section.data?.item_subtitle_font_size ?: 12f).sp
                     // #591 — `rounded` (default, unchanged), `circle` or `square`. iOS parity:
                     // FeatureList.swift `imageClipShape`.
