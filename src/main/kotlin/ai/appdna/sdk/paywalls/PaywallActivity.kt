@@ -270,7 +270,7 @@ class PaywallActivity : ComponentActivity() {
         val onPromoCodeSubmit = slots.onPromoCodeSubmit
         // Restore lifecycle hook (delegate-fired by PaywallManager)
         val onRestoreCb = slots.onRestore
-        val onCtaTappedCb = slots.onCtaTapped
+        val onActionCb = slots.onAction
 
         // OB-5 audit-2 HIGH-3 — capture onDismiss
         // on the instance so onDestroy can fire it when the regular paths
@@ -291,7 +291,7 @@ class PaywallActivity : ComponentActivity() {
                     onPlanSelected = { plan, metadata ->
                         onPlanSelected?.invoke(plan, metadata)
                     },
-                    onCtaTapped = { onCtaTappedCb?.invoke() },
+                    onAction = { onActionCb?.invoke(it) },
                     onRestore = {
                         // Forward restore taps to the
                         // PaywallManager-supplied lifecycle callback.
@@ -404,14 +404,18 @@ class PaywallActivity : ComponentActivity() {
             val onPromoCodeSubmit: ((String, (Boolean) -> Unit) -> Unit)? = null,
             val onRestore: (() -> Unit)? = null,
             /**
-             * #1074 — the CTA tap itself, reported before anything is decided about it.
+             * #1074 / #1076 — what the USER DID, reported separately from what it achieved.
              *
              * `CTA_TAPPED` used to be emitted by `PaywallManager.onPlanSelected`, which is reached
              * only once the renderer's `plan != null` guard has passed. So a tap that could not
              * proceed told the host nothing, and "the SDK never heard it" and "the store refused"
              * were the same silence (#1072).
+             *
+             * One slot for the whole `PaywallAction` set rather than one per case: the renderer
+             * decides WHICH action happened, and a per-case slot would have to be threaded through
+             * `PaywallSectionView` five times over.
              */
-            val onCtaTapped: (() -> Unit)? = null,
+            val onAction: ((PaywallAction) -> Unit)? = null,
         )
         private val activeLaunches = java.util.concurrent.ConcurrentHashMap<String, LaunchSlots>()
 
@@ -496,7 +500,7 @@ class PaywallActivity : ComponentActivity() {
             onPlanSelected: ((PaywallPlan, Map<String, Any>) -> Unit)? = null,
             onPromoCodeSubmit: ((String, (Boolean) -> Unit) -> Unit)? = null,
             onRestore: (() -> Unit)? = null,
-            onCtaTapped: (() -> Unit)? = null,
+            onAction: ((PaywallAction) -> Unit)? = null,
         ) {
             val token = java.util.UUID.randomUUID().toString()
             activeLaunches[token] = LaunchSlots(
@@ -506,7 +510,7 @@ class PaywallActivity : ComponentActivity() {
                 onPlanSelected = onPlanSelected,
                 onPromoCodeSubmit = onPromoCodeSubmit,
                 onRestore = onRestore,
-                onCtaTapped = onCtaTapped,
+                onAction = onAction,
             )
             val intent = Intent(context, PaywallActivity::class.java).apply {
                 putExtra(EXTRA_PAYWALL_ID, paywallId)
@@ -599,10 +603,10 @@ fun PaywallScreen(
     onRestore: () -> Unit,
     onDismiss: (DismissReason) -> Unit,
     /**
-     * #1074 — fired on EVERY CTA tap, before the selected-plan guard that each tap site applies.
+     * #1074 / #1076 — what the user did, fired BEFORE the guards each tap site applies.
      * Defaulted so existing constructions (previews, tests) keep compiling.
      */
-    onCtaTapped: () -> Unit = {},
+    onAction: (PaywallAction) -> Unit = {},
     // Callback for promo code validation. Returns true if code is valid, false otherwise.
     onPromoCodeSubmit: ((String, (Boolean) -> Unit) -> Unit)? = null,
     // System dark-mode pref. Renderers/blocks may apply
@@ -1023,6 +1027,8 @@ fun PaywallScreen(
                             isPurchasing = isPurchasing,
                             onPlanSelect = { planId ->
                                 selectedPlanId = planId
+                                // #1076 — the user CHOSE this plan (see the sibling sites).
+                                onAction(PaywallAction.PLAN_CHANGED)
                                 // Haptic on plan select
                                 HapticEngine.triggerIfEnabled(
                                     currentView,
@@ -1030,10 +1036,11 @@ fun PaywallScreen(
                                     config.haptic,
                                 )
                             },
+                            onAction = onAction,
                             onCTATap = {
                                 // #1074 — the tap, before the guard below decides whether it can
                                 // become a purchase.
-                                onCtaTapped()
+                                onAction(PaywallAction.CTA_TAPPED)
                                 // PW-2 — top-level plans fallback.
                                 val plans = effectivePlans()
                                 val plan = plans.firstOrNull { p -> p.id == selectedPlanId }
@@ -1101,6 +1108,10 @@ fun PaywallScreen(
                         isPurchasing = isPurchasing,
                         onPlanSelect = { planId ->
                             selectedPlanId = planId
+                            // #1076 — the user CHOSE this plan. Only a tap reaches here; the
+                            // default selection is seeded directly, so it is not reported as a
+                            // change the user made.
+                            onAction(PaywallAction.PLAN_CHANGED)
                             HapticEngine.triggerIfEnabled(currentView, config.haptic?.triggers?.on_plan_select, config.haptic)
                         },
                         onCTATap = {},
@@ -1125,12 +1136,17 @@ fun PaywallScreen(
                         isPurchasing = isPurchasing,
                         onPlanSelect = { planId ->
                             selectedPlanId = planId
+                            // #1076 — the user CHOSE this plan. Only a tap reaches here; the
+                            // default selection is seeded directly, so it is not reported as a
+                            // change the user made.
+                            onAction(PaywallAction.PLAN_CHANGED)
                             HapticEngine.triggerIfEnabled(currentView, config.haptic?.triggers?.on_plan_select, config.haptic)
                         },
+                        onAction = onAction,
                         onCTATap = {
                             // #1074 — the tap, before the guard below decides whether it can
                             // become a purchase. A tap that cannot told the host nothing at all.
-                            onCtaTapped()
+                            onAction(PaywallAction.CTA_TAPPED)
                             val plans = effectivePlans()
                             val plan = plans.firstOrNull { p -> p.id == selectedPlanId }
                             if (plan != null) {
@@ -1200,12 +1216,13 @@ fun PaywallScreen(
                 PaywallStickyFooter(
                     section = stickyFooterSection,
                     isPurchasing = isPurchasing,
+                    onAction = onAction,
                     // Round-MZ — selected plan's per-plan cta_text overrides the footer label.
                     selectedPlanCtaText = effectivePlans().firstOrNull { it.id == selectedPlanId }?.cta_text?.takeIf { it.isNotBlank() },
                     onCTATap = {
                         // #1074 — the tap, before the guard below decides whether it can become a
                         // purchase.
-                        onCtaTapped()
+                        onAction(PaywallAction.CTA_TAPPED)
                         // PW-2 — top-level plans fallback (sticky footer path).
                         val plans = effectivePlans()
                         val plan = plans.firstOrNull { p -> p.id == selectedPlanId }
@@ -1721,6 +1738,8 @@ private fun PaywallExtraButtons(
     onRestore: () -> Unit,
     onDismiss: () -> Unit,
     loc: (String, String) -> String,
+    // #1076 — a link or an unrecognised authored action is reported to the host from here too.
+    onAction: (PaywallAction) -> Unit = {},
 ) {
     val context = androidx.compose.ui.platform.LocalContext.current
     for (button in buttons) {
@@ -1728,11 +1747,22 @@ private fun PaywallExtraButtons(
         if (label.isBlank()) continue
         val size = (button.font_size ?: 16f).sp
         val onTap: () -> Unit = {
-            when (button.action ?: "dismiss") {
+            when (val resolved = button.action ?: "dismiss") {
                 "purchase" -> onCTATap()
                 "restore" -> onRestore()
-                "link" -> button.url?.let { ai.appdna.sdk.core.URLSafety.open(context, it) }
-                else -> onDismiss()
+                "link" -> {
+                    onAction(PaywallAction.LINK_TAPPED)   // #1076
+                    button.url?.let { ai.appdna.sdk.core.URLSafety.open(context, it) }
+                }
+                "dismiss" -> onDismiss()
+                else -> {
+                    // #1076 — an authored action this SDK does not know. It still dismisses, which
+                    // is what the unauthored default has always done, but the host is told: that
+                    // is the only meaning an action "defined in the paywall config" can have.
+                    @Suppress("UNUSED_EXPRESSION") resolved
+                    onAction(PaywallAction.CUSTOM)
+                    onDismiss()
+                }
             }
         }
         if ((button.style ?: "filled") == "text") {
@@ -1785,6 +1815,13 @@ internal fun PaywallSectionView(
     // paywall and so returns the user to the previous screen. Defaulted, so the other
     // call sites of this composable are unaffected.
     onDismiss: () -> Unit = {},
+    /**
+     * #1076 — what the user DID inside this section, reported separately from what it achieved.
+     * A legal link, an authored button with an action this SDK does not know — the host hears
+     * about it even when the renderer's own handling is a no-op. Defaulted, so the call sites
+     * that cannot dispatch an action are unaffected.
+     */
+    onAction: (PaywallAction) -> Unit = {},
     loc: (String, String) -> String,
     toggleStates: MutableMap<String, Boolean> = mutableMapOf(),
     onPromoCodeSubmit: ((String, (Boolean) -> Unit) -> Unit)? = null,
@@ -1970,7 +2007,24 @@ internal fun PaywallSectionView(
                     section.data?.features?.forEachIndexed { index, feature ->
                         Row(
                             verticalAlignment = Alignment.CenterVertically,
-                            modifier = Modifier.padding(vertical = 6.dp)
+                            /*
+                             * #1076 — the row is TAPPABLE and reports `FEATURE_SELECTED`.
+                             *
+                             * 🔴 `clickable`, with no ripple and no visual change: a paywall's
+                             * feature list lives inside a vertical scroll, and this repo has
+                             * already shipped a tap handler that swallowed every gesture on the
+                             * screen. `clickable` yields to the scroll's drag; a `pointerInput`
+                             * that consumed events would not.
+                             *
+                             * The whole row, not just the text — a tap target the width of one
+                             * word is a tap target nobody hits.
+                             */
+                            modifier = Modifier
+                                .clickable(
+                                    interactionSource = remember { androidx.compose.foundation.interaction.MutableInteractionSource() },
+                                    indication = null,
+                                ) { onAction(PaywallAction.FEATURE_SELECTED) }
+                                .padding(vertical = 6.dp)
                         ) {
                             Text(
                                 text = "\u2713",
@@ -4113,8 +4167,17 @@ internal fun PaywallSectionView(
                 when (action ?: default) {
                     "restore" -> onRestore()
                     "dismiss" -> onDismiss()
-                    "link" -> url?.let { ai.appdna.sdk.core.URLSafety.open(ctaCtx, it) }
-                    else -> onCTATap()
+                    "link" -> {
+                        onAction(PaywallAction.LINK_TAPPED)   // #1076
+                        url?.let { ai.appdna.sdk.core.URLSafety.open(ctaCtx, it) }
+                    }
+                    "purchase" -> onCTATap()
+                    // #1076 — an unrecognised authored action still purchases, as every
+                    // unauthored CTA always has, and the host is told it was a custom one.
+                    else -> {
+                        onAction(PaywallAction.CUSTOM)
+                        onCTATap()
+                    }
                 }
             }
 
@@ -4323,6 +4386,7 @@ internal fun PaywallSectionView(
                         // the finding it explains.)
                         cornerRadius = config.cta?.corner_radius?.toFloat() ?: 12f,
                         onCTATap = onCTATap,
+                        onAction = onAction,
                         onRestore = onRestore,
                         onDismiss = onDismiss,
                         loc = loc,
@@ -6202,6 +6266,8 @@ private fun PaywallStickyFooter(
     onCTATap: () -> Unit,
     onRestore: () -> Unit,
     loc: (String, String) -> String,
+    // #1076 — the footer's secondary action can be a link, which the host hears about.
+    onAction: (PaywallAction) -> Unit = {},
     // Round-MZ — selected plan's per-plan cta_text (overrides section cta_text when non-empty).
     selectedPlanCtaText: String? = null,
 ) {
@@ -6270,6 +6336,7 @@ private fun PaywallStickyFooter(
                 when (section.data.secondary_action) {
                     "restore" -> onRestore()
                     "link" -> {
+                        onAction(PaywallAction.LINK_TAPPED)   // #1076
                         // Allowlisted, like every other config-driven URL.
                         ai.appdna.sdk.core.URLSafety.open(context, section.data.secondary_url)
                     }

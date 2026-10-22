@@ -66,7 +66,9 @@ class CtaTapIsReportedBeforeTheGuardTest {
                 onPlanSelected = { plan, _ -> onBuy(plan) },
                 onRestore = {},
                 onDismiss = {},
-                onCtaTapped = onTap,
+                // Only CTA taps are counted here — a plan tap reports PLAN_CHANGED (#1076)
+                // and would otherwise be indistinguishable from the thing under test.
+                onAction = { if (it == PaywallAction.CTA_TAPPED) onTap() },
             )
         }
     }

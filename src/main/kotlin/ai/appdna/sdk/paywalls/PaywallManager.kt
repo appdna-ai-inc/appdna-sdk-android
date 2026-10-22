@@ -322,8 +322,8 @@ internal class PaywallManager(
              * same silence (#1072). The action means "the user tapped the CTA", so it belongs
              * wherever they did.
              */
-            onCtaTapped = {
-                listener?.onPaywallAction(paywallId = id, action = PaywallAction.CTA_TAPPED)
+            onAction = { action ->
+                listener?.onPaywallAction(paywallId = id, action = action)
             },
             onPlanSelected = { plan, metadata ->
                 // Invoke BillingModule + dispatch post-purchase.
