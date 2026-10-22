@@ -313,9 +313,19 @@ internal class PaywallManager(
                 )
                 listener?.onPaywallDismissed(paywallId = id)
             },
-            onPlanSelected = { plan, metadata ->
-                // onPaywallAction(CTA_TAPPED) for the CTA tap.
+            /*
+             * #1074 — CTA_TAPPED MOVED OUT OF HERE, to the tap site.
+             *
+             * It used to fire from this closure, which the renderer reaches only once its
+             * `plan != null` guard has passed — so a tap that could not become a purchase told the
+             * host nothing at all, and "the SDK never heard it" and "the store refused" were the
+             * same silence (#1072). The action means "the user tapped the CTA", so it belongs
+             * wherever they did.
+             */
+            onCtaTapped = {
                 listener?.onPaywallAction(paywallId = id, action = PaywallAction.CTA_TAPPED)
+            },
+            onPlanSelected = { plan, metadata ->
                 // Invoke BillingModule + dispatch post-purchase.
                 handlePurchase(
                     activity = activity,

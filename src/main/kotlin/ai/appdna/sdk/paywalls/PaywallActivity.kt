@@ -270,6 +270,7 @@ class PaywallActivity : ComponentActivity() {
         val onPromoCodeSubmit = slots.onPromoCodeSubmit
         // Restore lifecycle hook (delegate-fired by PaywallManager)
         val onRestoreCb = slots.onRestore
+        val onCtaTappedCb = slots.onCtaTapped
 
         // OB-5 audit-2 HIGH-3 — capture onDismiss
         // on the instance so onDestroy can fire it when the regular paths
@@ -290,6 +291,7 @@ class PaywallActivity : ComponentActivity() {
                     onPlanSelected = { plan, metadata ->
                         onPlanSelected?.invoke(plan, metadata)
                     },
+                    onCtaTapped = { onCtaTappedCb?.invoke() },
                     onRestore = {
                         // Forward restore taps to the
                         // PaywallManager-supplied lifecycle callback.
@@ -401,6 +403,15 @@ class PaywallActivity : ComponentActivity() {
             val onPlanSelected: ((PaywallPlan, Map<String, Any>) -> Unit)? = null,
             val onPromoCodeSubmit: ((String, (Boolean) -> Unit) -> Unit)? = null,
             val onRestore: (() -> Unit)? = null,
+            /**
+             * #1074 — the CTA tap itself, reported before anything is decided about it.
+             *
+             * `CTA_TAPPED` used to be emitted by `PaywallManager.onPlanSelected`, which is reached
+             * only once the renderer's `plan != null` guard has passed. So a tap that could not
+             * proceed told the host nothing, and "the SDK never heard it" and "the store refused"
+             * were the same silence (#1072).
+             */
+            val onCtaTapped: (() -> Unit)? = null,
         )
         private val activeLaunches = java.util.concurrent.ConcurrentHashMap<String, LaunchSlots>()
 
@@ -485,6 +496,7 @@ class PaywallActivity : ComponentActivity() {
             onPlanSelected: ((PaywallPlan, Map<String, Any>) -> Unit)? = null,
             onPromoCodeSubmit: ((String, (Boolean) -> Unit) -> Unit)? = null,
             onRestore: (() -> Unit)? = null,
+            onCtaTapped: (() -> Unit)? = null,
         ) {
             val token = java.util.UUID.randomUUID().toString()
             activeLaunches[token] = LaunchSlots(
@@ -494,6 +506,7 @@ class PaywallActivity : ComponentActivity() {
                 onPlanSelected = onPlanSelected,
                 onPromoCodeSubmit = onPromoCodeSubmit,
                 onRestore = onRestore,
+                onCtaTapped = onCtaTapped,
             )
             val intent = Intent(context, PaywallActivity::class.java).apply {
                 putExtra(EXTRA_PAYWALL_ID, paywallId)
@@ -585,6 +598,11 @@ fun PaywallScreen(
     onPlanSelected: (PaywallPlan, Map<String, Any>) -> Unit,
     onRestore: () -> Unit,
     onDismiss: (DismissReason) -> Unit,
+    /**
+     * #1074 — fired on EVERY CTA tap, before the selected-plan guard that each tap site applies.
+     * Defaulted so existing constructions (previews, tests) keep compiling.
+     */
+    onCtaTapped: () -> Unit = {},
     // Callback for promo code validation. Returns true if code is valid, false otherwise.
     onPromoCodeSubmit: ((String, (Boolean) -> Unit) -> Unit)? = null,
     // System dark-mode pref. Renderers/blocks may apply
@@ -1013,6 +1031,9 @@ fun PaywallScreen(
                                 )
                             },
                             onCTATap = {
+                                // #1074 — the tap, before the guard below decides whether it can
+                                // become a purchase.
+                                onCtaTapped()
                                 // PW-2 — top-level plans fallback.
                                 val plans = effectivePlans()
                                 val plan = plans.firstOrNull { p -> p.id == selectedPlanId }
@@ -1107,6 +1128,9 @@ fun PaywallScreen(
                             HapticEngine.triggerIfEnabled(currentView, config.haptic?.triggers?.on_plan_select, config.haptic)
                         },
                         onCTATap = {
+                            // #1074 — the tap, before the guard below decides whether it can
+                            // become a purchase. A tap that cannot told the host nothing at all.
+                            onCtaTapped()
                             val plans = effectivePlans()
                             val plan = plans.firstOrNull { p -> p.id == selectedPlanId }
                             if (plan != null) {
@@ -1179,6 +1203,9 @@ fun PaywallScreen(
                     // Round-MZ — selected plan's per-plan cta_text overrides the footer label.
                     selectedPlanCtaText = effectivePlans().firstOrNull { it.id == selectedPlanId }?.cta_text?.takeIf { it.isNotBlank() },
                     onCTATap = {
+                        // #1074 — the tap, before the guard below decides whether it can become a
+                        // purchase.
+                        onCtaTapped()
                         // PW-2 — top-level plans fallback (sticky footer path).
                         val plans = effectivePlans()
                         val plan = plans.firstOrNull { p -> p.id == selectedPlanId }
