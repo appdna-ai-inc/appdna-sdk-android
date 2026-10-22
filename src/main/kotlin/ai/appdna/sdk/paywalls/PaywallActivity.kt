@@ -848,7 +848,40 @@ fun PaywallScreen(
             // Exclude the CTA section from the scroll body so it
             // can be PINNED to the bottom zone (iOS safeAreaInset(.bottom),
             // PaywallRenderer.swift:141-230) instead of floating mid-screen.
-            val ctaSection = if (ctaIndex >= 0) config.sections[ctaIndex] else null
+            /*
+             * 🔴 #1073 — A PAYWALL WITH A TOP-LEVEL `cta` AND NO `cta` SECTION HAD NO BUY BUTTON.
+             *
+             * iOS has carried a fallback for this since the renderer was written —
+             * `PaywallRenderer.swift`'s `} else if let cta = config.cta {` draws a pinned button
+             * from the document-root `cta` when the layout holds no `cta` section. Android looked
+             * for the SECTION and stopped, so those paywalls rendered every other section and
+             * then simply ended: the plans were selectable and nothing could buy them.
+             *
+             * Measured on dev: 5 of 42 ACTIVE paywalls are authored that way, and one of them is
+             * what a device walk opened. It is the surface that takes the money, so this is the
+             * worst shape the divergence Rule 8 exists for can take.
+             *
+             * A SYNTHESISED SECTION, not a second button. The `"cta"` arm of `PaywallSectionView`
+             * already resolves the label, colours and radius from `config.cta` when the section's
+             * own data is silent, so handing it an empty `cta` section reuses the renderer the
+             * authored path uses rather than re-implementing it beside it — a copy could only
+             * drift, and would drift on the one screen nobody can afford to have drift.
+             */
+            val ctaSection = when {
+                ctaIndex >= 0 -> config.sections[ctaIndex]
+                config.cta != null && stickyFooterSection == null ->
+                    // `cta_text` carries iOS's own default for this path — its root fallback reads
+                    // `cta.text ?? "Continue"` while the SECTION path defaults to "Subscribe", and
+                    // the two would otherwise disagree on a root cta authored with no text. It
+                    // sits BELOW `config.cta.text` in the arm's resolution chain, so an authored
+                    // label still wins.
+                    PaywallSection(
+                        type = "cta",
+                        id = "__root_cta__",
+                        data = PaywallSectionData(cta_text = "Continue"),
+                    )
+                else -> null
+            }
 
             /*
              * #884 — ANY section can be pinned to the bottom zone, not only the CTA.
