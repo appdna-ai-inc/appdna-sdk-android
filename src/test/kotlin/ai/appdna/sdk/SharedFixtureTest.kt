@@ -289,6 +289,7 @@ class SharedFixtureTest(
             "resolve_progress_skip_target" -> runProgressSkipTarget(action, spy)
             "resolve_countdown_progress" -> runCountdownProgress(action, spy)
             "resolve_countdown_variant" -> runCountdownVariant(action, spy)
+            "resolve_named_icon_library" -> runNamedIconLibrary(action, spy)
             "resolve_segmented_presentation" -> runSegmentedPresentation(action, spy)
             "resolve_rive_input_kind" -> runRiveInputKind(action, spy)
             "track_events_with_observer" -> runEventObserver(action, spy)
@@ -2466,6 +2467,22 @@ class SharedFixtureTest(
             ai.appdna.sdk.paywalls.PaywallCountdownVariant.resolve(
                 v.optStringOrNull("variant"), v.optStringOrNull("timer_variant"),
             )
+        }
+    }
+
+
+    /**
+     * #1067 — which library a BARE icon string belongs to, through the REAL [NamedIcon] both
+     * feature renderers call.
+     *
+     * The unknown-name case is the one that matters: it must answer `lucide` and never `emoji`,
+     * because the emoji arm prints the name as prose — which is the defect this fixes.
+     */
+    private fun runNamedIconLibrary(action: JSONObject, spy: Spy) {
+        val cases = action.optJSONArray("cases") ?: unsupported("named_icon_library without cases")
+        spy.state["results"] = (0 until cases.length()).map { i ->
+            val v = cases.getJSONObject(i).optJSONObject("value") ?: JSONObject()
+            ai.appdna.sdk.core.NamedIcon.reference(v.optStringOrNull("icon"))?.library
         }
     }
 

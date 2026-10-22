@@ -1957,8 +1957,21 @@ internal fun PaywallSectionView(
                                         modifier = featureIconModifier.size(20.dp).clip(imageShape),
                                         contentScale = androidx.compose.ui.layout.ContentScale.Crop,
                                     )
-                                !item.icon.isNullOrEmpty() ->
-                                    Text(text = item.icon, fontSize = 18.sp, modifier = featureIconModifier)
+                                /*
+                                 * #1067 — THROUGH THE RESOLVER, not as raw text. The console
+                                 * writes `icon: "check"`, and drawing the string printed the WORD
+                                 * "check" down the page where the feature list should be. That is
+                                 * right for an emoji and wrong for a NAME, so `NamedIcon` decides
+                                 * which it is and `IconView` draws it through the lucide/material
+                                 * tables — falling back to an emoji and then a visible placeholder,
+                                 * so an unmapped name is seen rather than printed as prose.
+                                 */
+                                ai.appdna.sdk.core.NamedIcon.reference(item.icon) != null ->
+                                    ai.appdna.sdk.core.IconView(
+                                        ref = ai.appdna.sdk.core.NamedIcon.reference(item.icon)!!,
+                                        modifier = featureIconModifier,
+                                        defaultSize = 18f,
+                                    )
                                 // The excluded cross is AUTHORABLE, not a hardcoded red. A colour
                                 // a person sees is a colour a person should be able to set — and a
                                 // fixed red is unreadable on the red-toned paywalls it would land on.
