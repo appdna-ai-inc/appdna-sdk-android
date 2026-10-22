@@ -288,6 +288,7 @@ class SharedFixtureTest(
             "resolve_plan_order" -> runPlanOrder(action, spy)
             "resolve_progress_skip_target" -> runProgressSkipTarget(action, spy)
             "resolve_countdown_progress" -> runCountdownProgress(action, spy)
+            "resolve_countdown_variant" -> runCountdownVariant(action, spy)
             "resolve_segmented_presentation" -> runSegmentedPresentation(action, spy)
             "resolve_rive_input_kind" -> runRiveInputKind(action, spy)
             "track_events_with_observer" -> runEventObserver(action, spy)
@@ -2448,6 +2449,22 @@ class SharedFixtureTest(
             val v = cases.getJSONObject(i).optJSONObject("value") ?: JSONObject()
             ai.appdna.sdk.onboarding.CountdownProgress.remainingFraction(
                 v.optLong("remaining"), v.optLong("initial"),
+            )
+        }
+    }
+
+
+    /**
+     * #980 — which variant a paywall countdown draws, through the REAL [PaywallCountdownVariant]
+     * the renderer dispatches on. The fallback is the part that would diverge between platforms,
+     * so the off-list and empty-string cases carry as much weight as the four real values.
+     */
+    private fun runCountdownVariant(action: JSONObject, spy: Spy) {
+        val cases = action.optJSONArray("cases") ?: unsupported("countdown_variant without cases")
+        spy.state["results"] = (0 until cases.length()).map { i ->
+            val v = cases.getJSONObject(i).optJSONObject("value") ?: JSONObject()
+            ai.appdna.sdk.paywalls.PaywallCountdownVariant.resolve(
+                v.optStringOrNull("variant"), v.optStringOrNull("timer_variant"),
             )
         }
     }

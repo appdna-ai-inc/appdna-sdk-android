@@ -76,6 +76,10 @@ import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.TextStyle
+import androidx.compose.foundation.Canvas
+import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.geometry.Offset
 import kotlinx.coroutines.launch
 // Accessibility string resources (Close / Restore /
 // Purchase). Hosts can override these via their own `strings.xml`.
@@ -4837,6 +4841,8 @@ private fun PaywallCountdownSection(
             onExpireAction = section.data?.on_expire_action,
             expiredText = section.data?.expired_text?.let { loc("countdown.expired_text", it) },
             onExpire = onDismiss,
+            // #980 — the Variant the console offers and no renderer read.
+            variant = section.data?.variant,
         )
     }
 }
@@ -5885,6 +5891,18 @@ private fun CountdownTimer(
     onExpireAction: String? = null,
     expiredText: String? = null,
     onExpire: (() -> Unit)? = null,
+    /*
+     * #980 — `digital` | `circular` | `flip` | `bar`. The console's Variant select offered all four,
+     * `CountdownConfigSchema` persisted all four, the generator wrote one on every countdown it
+     * produced, and NO renderer on any platform read it: every paywall countdown drew `digital`.
+     *
+     * The four designs are ported from the ONBOARDING countdown block, which has implemented them
+     * on both platforms all along — so the same authored value now looks the same on a paywall as
+     * it does in a flow, rather than two surfaces inventing two looks.
+     *
+     * Unset is `digital`, which is what every published paywall drew, so nothing restyles.
+     */
+    variant: String? = null,
 ) {
     // #946 — the readable colour FOR THIS PAGE. Every use below keeps the alpha it had, so a
     // dark paywall draws exactly the pixels it drew before and a light one becomes legible.
@@ -5937,34 +5955,144 @@ private fun CountdownTimer(
         valueTextStyle
     )
 
-    Row(
-        horizontalArrangement = Arrangement.spacedBy(4.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        val shown = buildList {
-            if (uDays) add(days to "d")
-            if (uHours) add(hours to "h")
-            if (uMinutes) add(minutes to "m")
-            if (uSeconds) add(secs to "s")
-        }
-        shown.forEachIndexed { index, (value, label) ->
-            if (index > 0) {
-                Text(":", color = digitInk.copy(alpha = 0.6f), fontSize = 20.sp, fontWeight = FontWeight.Bold)
+    val shown = buildList {
+        if (uDays) add(days to "d")
+        if (uHours) add(hours to "h")
+        if (uMinutes) add(minutes to "m")
+        if (uSeconds) add(secs to "s")
+    }
+    // `Locale.US` keeps the countdown digits ASCII (`05` not `۰۵`) so the paywall countdown reads
+    // the same in every locale. Mirrors iOS NumberFormatter. Every variant uses these.
+    val segments = shown.map { String.format(java.util.Locale.US, "%02d", it.first) }
+    val labels = shown.map { it.second }
+    /*
+     * How much is left, 0..1 — the ring's sweep and the bar's width, from the SAME shared rule iOS
+     * and the onboarding block use (#1066, where this was a frozen 0.75 and the ring never moved).
+     */
+    val fraction = ai.appdna.sdk.onboarding.CountdownProgress
+        .remainingFraction(remaining.toLong(), seconds.toLong()).toFloat()
+
+    // #980 — the authored variant, through the shared rule that owns the fallback.
+    when (PaywallCountdownVariant.resolve(variant)) {
+        "circular" -> {
+            // A ring that empties as the timer runs, with the joined time centred in it.
+            Box(modifier = Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
+                Box(modifier = Modifier.size(80.dp), contentAlignment = Alignment.Center) {
+                    Canvas(modifier = Modifier.fillMaxSize()) {
+                        val sw = 4.dp.toPx()
+                        val arcSize = androidx.compose.ui.geometry.Size(this.size.width - sw, this.size.height - sw)
+                        drawArc(
+                            // The TRACK, from the page-readable ink rather than a hardcoded light
+                            // grey (#946's lesson; `check:authorability` caught the literal).
+                            color = digitInk.copy(alpha = 0.2f),
+                            startAngle = 0f, sweepAngle = 360f, useCenter = false,
+                            style = Stroke(width = sw, cap = StrokeCap.Round),
+                            topLeft = Offset(sw / 2, sw / 2), size = arcSize,
+                        )
+                        drawArc(
+                            color = digitInk,
+                            startAngle = -90f, sweepAngle = 360f * fraction, useCenter = false,
+                            style = Stroke(width = sw, cap = StrokeCap.Round),
+                            topLeft = Offset(sw / 2, sw / 2), size = arcSize,
+                        )
+                    }
+                    Text(
+                        text = segments.joinToString(":"),
+                        fontSize = 14.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = digitInk,
+                        fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace,
+                    )
+                }
             }
-            Column(
-                horizontalAlignment = Alignment.CenterHorizontally,
-                modifier = Modifier
-                    .background(digitInk.copy(alpha = 0.1f), RoundedCornerShape(8.dp))
-                    .padding(horizontal = 12.dp, vertical = 6.dp),
+        }
+        "flip" -> {
+            // Each segment on its own tinted card, with the unit label beneath.
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier.fillMaxWidth(),
             ) {
-                Text(
-                    // `Locale.US` keeps the countdown digits
-                    // ASCII (`05` not `۰۵`) so the paywall countdown reads the
-                    // same in every locale. Mirrors iOS NumberFormatter.
-                    text = String.format(java.util.Locale.US, "%02d", value),
-                    style = digitStyle,
-                )
-                Text(text = label, fontSize = 10.sp, color = digitInk.copy(alpha = 0.6f))
+                segments.forEachIndexed { index, seg ->
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        Box(
+                            modifier = Modifier
+                                .background(digitInk.copy(alpha = 0.1f), RoundedCornerShape(8.dp))
+                                .padding(horizontal = 12.dp, vertical = 8.dp),
+                        ) {
+                            Text(
+                                text = seg,
+                                style = digitStyle.copy(fontSize = (digitFontSize ?: 24f).sp),
+                                fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace,
+                            )
+                        }
+                        Text(
+                            text = labels.getOrElse(index) { "" },
+                            fontSize = 10.sp,
+                            color = digitInk.copy(alpha = 0.6f),
+                        )
+                    }
+                }
+            }
+        }
+        "bar" -> {
+            // The time on one line with a bar beneath it that shrinks as the timer runs.
+            Column(modifier = Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                ) {
+                    Text(
+                        text = segments.joinToString(":"),
+                        fontSize = 15.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        color = digitInk,
+                    )
+                    /*
+                     * Plain text, matching iOS and the onboarding block exactly. There is no
+                     * SDK-wide string table, so localising it HERE would make one of three places
+                     * translatable and leave two in English — worse than three consistent ones.
+                     */
+                    Text(text = "remaining", fontSize = 15.sp, color = digitInk.copy(alpha = 0.6f))
+                }
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(8.dp)
+                        .background(digitInk.copy(alpha = 0.2f), RoundedCornerShape(4.dp)),
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth(fraction)
+                            .height(8.dp)
+                            .background(digitInk, RoundedCornerShape(4.dp)),
+                    )
+                }
+            }
+        }
+        else -> {
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(4.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                segments.forEachIndexed { index, seg ->
+                    if (index > 0) {
+                        Text(":", color = digitInk.copy(alpha = 0.6f), fontSize = 20.sp, fontWeight = FontWeight.Bold)
+                    }
+                    Column(
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        modifier = Modifier
+                            .background(digitInk.copy(alpha = 0.1f), RoundedCornerShape(8.dp))
+                            .padding(horizontal = 12.dp, vertical = 6.dp),
+                    ) {
+                        Text(text = seg, style = digitStyle)
+                        Text(
+                            text = labels.getOrElse(index) { "" },
+                            fontSize = 10.sp,
+                            color = digitInk.copy(alpha = 0.6f),
+                        )
+                    }
+                }
             }
         }
     }
