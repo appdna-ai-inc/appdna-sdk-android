@@ -29,6 +29,13 @@
             android:name="com.google.android.geo.API_KEY"
             android:value="${appdnaMapsKey}" />
 
+        <!-- The base URL a device walk points the SDK at, supplied as `-PappdnaBaseUrl=<url>`.
+             Empty (the committed default) leaves the SDK on the environment's own base URL, and
+             `BaseUrlOverride` honours this only in a DEBUGGABLE build on SANDBOX. -->
+        <meta-data
+            android:name="ai.appdna.sdk.BASE_URL_OVERRIDE"
+            android:value="${appdnaBaseUrl}" />
+
         <activity
             android:name=".MainActivity"
             android:exported="true"

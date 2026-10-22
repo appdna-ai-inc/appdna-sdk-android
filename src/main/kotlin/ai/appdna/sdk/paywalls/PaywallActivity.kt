@@ -6007,9 +6007,17 @@ private fun CountdownTimer(
             }
         }
         "flip" -> {
-            // Each segment on its own tinted card, with the unit label beneath.
+            /*
+             * Each segment on its own tinted card, with the unit label beneath.
+             *
+             * 🔴 CENTRED. `spacedBy(8.dp)` alone left-aligns inside a `fillMaxWidth` Row, and the
+             * device walk caught it: iOS centres (a `.frame(maxWidth: .infinity)` VStack child
+             * does) and Android drew the cards hard against the left margin. The same authored
+             * paywall looked different on the two platforms, which is the divergence this whole
+             * variant work exists to remove.
+             */
             Row(
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterHorizontally),
                 verticalAlignment = Alignment.CenterVertically,
                 modifier = Modifier.fillMaxWidth(),
             ) {

@@ -47,6 +47,23 @@ android {
          */
         manifestPlaceholders["appdnaMapsKey"] =
             (project.findProperty("appdnaMapsKey") as String?) ?: ""
+
+        /*
+         * The base URL a DEVICE WALK points the SDK at, same shape as the maps key above.
+         *
+         * iOS has had this since #908 — `sdk-host-ios.ts --base-url` writes
+         * `APPDNA_BASE_URL_OVERRIDE` into the built .app — and Android had no equivalent, so every
+         * Android walk patched `AndroidManifest.xml` by hand and `sdk:sync` wiped the patch again
+         * (the trap `sdk-sync-wipes-sample-patches` records). A build argument cannot be wiped.
+         *
+         *     ./gradlew :sample:assembleDebug -PappdnaBaseUrl=https://<tunnel>
+         *
+         * Empty (the committed default) means the SDK uses the environment's own base URL, which
+         * is what a stock sample build does. `BaseUrlOverride` honours it only in a DEBUGGABLE
+         * build on SANDBOX, so a release build cannot be pointed anywhere by it.
+         */
+        manifestPlaceholders["appdnaBaseUrl"] =
+            (project.findProperty("appdnaBaseUrl") as String?) ?: ""
     }
 
     buildTypes {
