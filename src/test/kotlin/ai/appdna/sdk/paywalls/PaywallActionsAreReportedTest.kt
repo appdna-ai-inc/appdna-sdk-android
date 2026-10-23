@@ -78,13 +78,22 @@ class PaywallActionsAreReportedTest {
                 onAction = { seen += it },
             )
         }
+        /*
+         🔴 LET THE FIRST FRAME SETTLE, THEN STOP DRIVING THE CLOCK.
+         `PaywallScreen` carries animations that never end, and a Robolectric rule that never
+         reaches idle does not fail here — it poisons the JVM for every test after it. The last
+         time this file's sibling omitted this, an unrelated Espresso test
+         (`HostDataAuditRegressionTest`) died on `AppNotIdleException` and the whole Android suite
+         burned its 900-second budget, which reads as a regression somewhere else entirely.
+         */
+        compose.waitForIdle()
+        compose.mainClock.autoAdvance = false
         return seen
     }
 
     @Test
     fun `the default plan selected on appear reports nothing`() {
         val seen = render()
-        compose.waitForIdle()
         assertEquals("a paywall that has only been LOOKED at reports no user action", emptyList<PaywallAction>(), seen)
     }
 
