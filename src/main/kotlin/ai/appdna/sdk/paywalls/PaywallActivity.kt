@@ -1317,6 +1317,17 @@ fun PaywallScreen(
                 // PaywallRenderer.swift:351-353). When action is null
                 // (success path) or "show_error", show message-only.
                 val isFailure = overlay.action == "retry" || overlay.action == "show_error"
+                /*
+                 * 🔴 #1103 — STOP CELEBRATING on a failure. The CTA tap starts the particle effect
+                 * (`if (config.particle_effect != null) showConfetti = true`, with no trigger check
+                 * at all) and nothing ever set it back, so a user who cancelled or was declined
+                 * watched a congratulatory animation run on top of a payment-failed message,
+                 * indefinitely. iOS clears it in its `onFailure` observer for the same reason.
+                 *
+                 * This removes the user-visible half. Moving the trigger to the success path proper
+                 * is the other half and is recorded on #1103.
+                 */
+                if (isFailure) showConfetti = false
                 Box(
                     modifier = Modifier
                         .fillMaxSize()
