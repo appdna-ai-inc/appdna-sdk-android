@@ -3714,7 +3714,10 @@ private fun BlockBasedStepView(
         }
 
         when (rawAction) {
-            "next" -> {
+            // #1091 — `continue` is an authored SYNONYM of `next`. It used to fall to `else`,
+            // which called `onNext(null)` and threw the step's answers away. The #963 walk flow
+            // authors its CTA exactly that way, and a selected location was lost every time.
+            "next", "continue" -> {
                 // (permission-step-via-"next" is handled above, before validation)
                 // Match iOS OnboardingRenderer.swift:1518-1527.
                 // iOS prefixes every toggle key with `toggle_` so the namespaces
@@ -3857,7 +3860,27 @@ private fun BlockBasedStepView(
              * package name and ignores it.
              */
             "rate_app" -> ai.appdna.sdk.feedback.ReviewPromptManager.openStoreListing(activityCtx)
-            else -> onNext(null)
+            else -> {
+                /*
+                 * 🔴 #1091 — COLLECT, DO NOT DISCARD. This was `onNext(null)`, which advanced the
+                 * step and threw away everything the user had entered on it, because the SDK did
+                 * not recognise the BUTTON's action name. The answers belong to the step, not to
+                 * the button: there is no action for which losing them is right, and advancing
+                 * with the data is otherwise identical.
+                 *
+                 * The structural half of #1091, and the larger one — a new action the console
+                 * ships before an SDK release supports it, an action one platform has and the
+                 * other does not, or a plain typo all took this branch and cost the user their
+                 * answers, silently. Same silence class as #1074 and #1080, so it says so now.
+                 */
+                Log.warning("Onboarding: unrecognised block action \"$rawAction\" — advancing and keeping the step's answers")
+                val merged = mutableMapOf<String, Any>()
+                merged.putAll(inputValues)
+                for ((key, value) in toggleValues) {
+                    merged["toggle_$key"] = value
+                }
+                onNext(if (merged.isEmpty()) null else merged)
+            }
         }
     }
 
