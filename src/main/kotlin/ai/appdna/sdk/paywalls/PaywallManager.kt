@@ -541,6 +541,11 @@ internal class PaywallManager(
         paywallId: String,
         listener: AppDNAPaywallDelegate?,
     ) {
+        // #1103 — the purchase really did succeed, so an authored `on_purchase` effect fires HERE,
+        // before any branch. Every branch reaches this line; only `show_message` sets an overlay
+        // payload, which is why the celebration needs a signal of its own. Mirrors iOS posting
+        // `.paywallPurchaseCelebrate` at the top of its own handler.
+        PaywallActivity.signalPurchaseCelebrate()
         if (config == null) {
             // Legacy: delegate-only behavior — the paywall stays on screen for the host to close, so
             // re-enable its CTA (without this it kept spinning after a success).

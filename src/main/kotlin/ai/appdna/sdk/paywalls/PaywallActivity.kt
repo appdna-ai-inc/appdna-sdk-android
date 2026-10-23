@@ -561,6 +561,23 @@ class PaywallActivity : ComponentActivity() {
         internal fun signalPurchaseEnded() {
             purchaseEndedSignal.incrementAndGet()
         }
+
+        /**
+         * A purchase SUCCEEDED and an authored `particle_effect` should now celebrate it — #1103.
+         *
+         * 🔴 ITS OWN SIGNAL, and the four `on_success` branches are why. The effect used to start on
+         * the CTA TAP (with no trigger check at all here), so a user who cancelled or was declined
+         * watched a congratulatory animation and nothing ever stopped it. Riding on the overlay
+         * payload instead would have covered only `show_message`, because that is the sole branch
+         * that sets one — and `dismiss`, `deep_link` and `next_step` are exactly the branches where
+         * a celebration during `delay_ms` is the point. Mirrors iOS `.paywallPurchaseCelebrate`.
+         */
+        internal val purchaseCelebrateSignal = java.util.concurrent.atomic.AtomicLong(0L)
+
+        @JvmStatic
+        internal fun signalPurchaseCelebrate() {
+            purchaseCelebrateSignal.incrementAndGet()
+        }
     }
 }
 
@@ -641,6 +658,8 @@ fun PaywallScreen(
         // The purchase-ended signal as of this composition; a later bump re-enables
         // the CTA (see [PaywallActivity.signalPurchaseEnded]).
         var seenPurchaseEnded = PaywallActivity.purchaseEndedSignal.get()
+        // #1103 — the celebrate signal, read the same way as the ended one.
+        var seenCelebrate = PaywallActivity.purchaseCelebrateSignal.get()
         // Poll the companion-object slot for new overlay payloads. Cheap
         // (one variable read per frame) — and we only enter this loop while
         // the paywall composition is alive.
@@ -649,6 +668,13 @@ fun PaywallScreen(
             if (purchaseEnded != seenPurchaseEnded) {
                 seenPurchaseEnded = purchaseEnded
                 isPurchasing = false
+            }
+            val celebrate = PaywallActivity.purchaseCelebrateSignal.get()
+            if (celebrate != seenCelebrate) {
+                seenCelebrate = celebrate
+                // The authored trigger is honoured HERE, which it never was at the tap: an effect
+                // authored `on_appear` used to fire on the CTA tap too.
+                if (config.particle_effect?.trigger == "on_purchase") showConfetti = true
             }
             val pending = PaywallActivity.postPurchaseOverlay
             if (pending != null && pending != postPurchaseOverlay) {
@@ -1153,7 +1179,9 @@ fun PaywallScreen(
                             if (plan != null) {
                                 isPurchasing = true
                                 HapticEngine.triggerIfEnabled(currentView, config.haptic?.triggers?.on_button_tap, config.haptic)
-                                if (config.particle_effect != null) showConfetti = true
+                                // #1103 — the celebration no longer starts on the TAP; it starts
+                                // from PaywallActivity.signalPurchaseCelebrate() once the purchase
+                                // has actually succeeded, and it honours `trigger` there.
                                 val md = toggleStates.toMutableMap<String, Any>()
                                 if (promoState == "success" && promoCode.isNotBlank()) md["promo_code"] = promoCode
                                 onPlanSelected(plan, md.toMap())
