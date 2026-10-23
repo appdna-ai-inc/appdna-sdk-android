@@ -3713,6 +3713,30 @@ private fun BlockBasedStepView(
             }
         }
 
+        /*
+         * #1092 — THE ONE COLLECTING ADVANCE. Four callers built this map independently
+         * (`next`/`continue`, the completion-route CTA, the flag CTA and the unrecognised-action
+         * fallback), and #1091 was exactly a case of one advance path carrying the step's answers
+         * while another did not. Three copies of "what an advance carries" is three places to
+         * forget the next key.
+         *
+         * A LOCAL fun, not a method: `inputValues` and `toggleValues` are `remember(step.id)`
+         * inside this composable, so a class-level function cannot see them — the trap that made
+         * the first attempt at #1091's fix uncompilable.
+         *
+         * iOS has had one `advanceCollectingStepData(extra:)` all along; this is the mirror.
+         * `extra` is merged LAST so a form field cannot silently overwrite a flag the CTA recorded.
+         */
+        fun advanceCollectingStepData(extra: Map<String, Any> = emptyMap()) {
+            val merged = mutableMapOf<String, Any>()
+            merged.putAll(inputValues)
+            for ((key, value) in toggleValues) {
+                merged["toggle_$key"] = value
+            }
+            merged.putAll(extra)
+            onNext(if (merged.isEmpty()) null else merged)
+        }
+
         when (rawAction) {
             // #1091 — `continue` is an authored SYNONYM of `next`. It used to fall to `else`,
             // which called `onNext(null)` and threw the step's answers away. The #963 walk flow
@@ -3726,12 +3750,7 @@ private fun BlockBasedStepView(
                 // and any NextStepRule JSON authored against `toggle_<id>`.
                 // Order: inputs first, then toggle_<key> entries — matches iOS
                 // line ordering at 1519-1526.
-                val merged = mutableMapOf<String, Any>()
-                merged.putAll(inputValues)
-                for ((key, value) in toggleValues) {
-                    merged["toggle_$key"] = value
-                }
-                onNext(if (merged.isEmpty()) null else merged)
+                advanceCollectingStepData()
             }
             // A CTA that records WHERE TO GO when the flow finishes and continues — see
             // `PendingCompletionRoute`. Advances exactly like "next": this exists for a cross-sell
@@ -3749,27 +3768,17 @@ private fun BlockBasedStepView(
                 } else {
                     PendingCompletionRoute.record(raw)
                 }
-                val merged = mutableMapOf<String, Any>()
-                merged.putAll(inputValues)
-                for ((key, value) in toggleValues) {
-                    merged["toggle_$key"] = value
-                }
-                onNext(if (merged.isEmpty()) null else merged)
+                advanceCollectingStepData()
             }
             // A CTA that RECORDS A CHOICE and continues — see `OnboardingCTAFlag`. Identical to
             // "next" above plus one key, and deliberately NOT a branch: a flag must not change which
             // step comes next. An author who wants the flow itself to fork already has
             // `next_step_rules`, which can read the very key this writes.
             OnboardingCTAFlag.ACTION_NAME -> {
-                val merged = mutableMapOf<String, Any>()
-                merged.putAll(inputValues)
-                for ((key, value) in toggleValues) {
-                    merged["toggle_$key"] = value
-                }
                 // Merged LAST so a form field cannot silently overwrite the flag.
                 val flag = OnboardingCTAFlag.parse(actionValue)
                 if (flag != null) {
-                    merged[flag.key] = flag.value
+                    advanceCollectingStepData(mapOf(flag.key to flag.value))
                 } else {
                     // An author selected "Flag & continue" and left the key blank. Advancing without
                     // recording anything is the honest behaviour — doing nothing at all would look
@@ -3778,8 +3787,8 @@ private fun BlockBasedStepView(
                         "A CTA is configured to set a flag but has no flag key; " +
                             "it will advance without recording one."
                     )
+                    advanceCollectingStepData()
                 }
-                onNext(if (merged.isEmpty()) null else merged)
             }
             "skip" -> onSkip?.invoke()
             // social_login retains its existing data shape
@@ -3874,12 +3883,7 @@ private fun BlockBasedStepView(
                  * answers, silently. Same silence class as #1074 and #1080, so it says so now.
                  */
                 Log.warning("Onboarding: unrecognised block action \"$rawAction\" — advancing and keeping the step's answers")
-                val merged = mutableMapOf<String, Any>()
-                merged.putAll(inputValues)
-                for ((key, value) in toggleValues) {
-                    merged["toggle_$key"] = value
-                }
-                onNext(if (merged.isEmpty()) null else merged)
+                advanceCollectingStepData()
             }
         }
     }
