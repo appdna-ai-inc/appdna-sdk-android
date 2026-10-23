@@ -1747,7 +1747,7 @@ private fun PaywallExtraButtons(
         if (label.isBlank()) continue
         val size = (button.font_size ?: 16f).sp
         val onTap: () -> Unit = {
-            when (val resolved = button.action ?: "dismiss") {
+            when (button.action ?: "dismiss") {
                 "purchase" -> onCTATap()
                 "restore" -> onRestore()
                 "link" -> {
@@ -1759,7 +1759,6 @@ private fun PaywallExtraButtons(
                     // #1076 — an authored action this SDK does not know. It still dismisses, which
                     // is what the unauthored default has always done, but the host is told: that
                     // is the only meaning an action "defined in the paywall config" can have.
-                    @Suppress("UNUSED_EXPRESSION") resolved
                     onAction(PaywallAction.CUSTOM)
                     onDismiss()
                 }
