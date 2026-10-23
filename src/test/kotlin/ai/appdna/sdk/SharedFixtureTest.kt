@@ -663,8 +663,16 @@ class SharedFixtureTest(
             // completion performs, so the fixture also proves the route is CONSUMED. A peek would let
             // a route leak into the next flow and still pass.
             PendingCompletionRoute.ACTION_NAME -> {
+                /*
+                 * #1096 — the step's own answers travel with this advance, because production
+                 * calls the same collecting advance `next` does. This branch used to pass
+                 * setup-only responses, so no fixture could see the payload half. The payload
+                 * comes from the SDK's own assembly, not a copy.
+                 */
                 PendingCompletionRoute.record(buttonValue)
-                applyAdvance(flow, currentIndex, responsesFromSetup(), StepAdvanceResult.Proceed, spy,
+                val routeResponses = responsesFromSetup().toMutableMap()
+                StepAdvancePayload.build(formData, emptyMap())?.let { routeResponses[step.id] = it }
+                applyAdvance(flow, currentIndex, routeResponses, StepAdvanceResult.Proceed, spy,
                     p.tracker, hookRan = false)
                 spy.state["pending_completion_route"] = PendingCompletionRoute.take()
             }
