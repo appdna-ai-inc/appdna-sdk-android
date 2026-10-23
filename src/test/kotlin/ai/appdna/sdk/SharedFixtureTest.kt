@@ -68,6 +68,7 @@ import ai.appdna.sdk.onboarding.AppDNAOnboardingDelegate
 import ai.appdna.sdk.onboarding.ONBOARDING_HOOK_COMPLETED_EVENT
 import ai.appdna.sdk.onboarding.OnboardingAdvance
 import ai.appdna.sdk.onboarding.OnboardingCTAFlag
+import ai.appdna.sdk.onboarding.StepAdvancePayload
 import ai.appdna.sdk.onboarding.PendingCompletionRoute
 import ai.appdna.sdk.onboarding.OnboardingCompletion
 import ai.appdna.sdk.onboarding.PERMISSION_ACTION
@@ -631,8 +632,21 @@ class SharedFixtureTest(
             // without it. Reimplementing either half here would let the fixture pass with the SDK's
             // copy deleted.
             OnboardingCTAFlag.ACTION_NAME -> {
-                val merged = formData.toMutableMap()
-                OnboardingCTAFlag.parse(buttonValue)?.let { merged[it.key] = it.value }
+                /*
+                 * #1094 — the PAYLOAD comes from the SDK's own `StepAdvancePayload.build`, not from
+                 * a copy assembled here. This branch used to merge the flag into its own map, so
+                 * the fixture passed with the renderer's merge deleted — measured by poisoning it:
+                 * 1878 tests, 0 failures. The runner was driving the real `parse` and `applyTo`
+                 * and nothing about what an advance carries.
+                 */
+                val flag = OnboardingCTAFlag.parse(buttonValue)
+                val merged = (
+                    StepAdvancePayload.build(
+                        inputValues = formData,
+                        toggleValues = emptyMap(),
+                        extra = flag?.let { mapOf(it.key to it.value) } ?: emptyMap(),
+                    ) ?: emptyMap()
+                    ).toMutableMap()
                 val responses = responsesFromSetup().toMutableMap()
                 responses[step.id] = merged
                 responses.putAll(OnboardingCTAFlag.applyTo(responses, step, merged))

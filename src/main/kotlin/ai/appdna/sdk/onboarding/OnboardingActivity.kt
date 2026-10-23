@@ -3728,13 +3728,10 @@ private fun BlockBasedStepView(
          * `extra` is merged LAST so a form field cannot silently overwrite a flag the CTA recorded.
          */
         fun advanceCollectingStepData(extra: Map<String, Any> = emptyMap()) {
-            val merged = mutableMapOf<String, Any>()
-            merged.putAll(inputValues)
-            for ((key, value) in toggleValues) {
-                merged["toggle_$key"] = value
-            }
-            merged.putAll(extra)
-            onNext(if (merged.isEmpty()) null else merged)
+            // #1094 — the assembly itself lives in `StepAdvancePayload` so a unit test can reach
+            // it. It cannot reach this local fun: `inputValues` and `toggleValues` are
+            // `remember(step.id)` inside the composable.
+            onNext(StepAdvancePayload.build(inputValues, toggleValues, extra))
         }
 
         when (rawAction) {
