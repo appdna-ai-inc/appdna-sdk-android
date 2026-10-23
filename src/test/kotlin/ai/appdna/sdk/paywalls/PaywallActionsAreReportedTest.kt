@@ -70,13 +70,19 @@ class PaywallActionsAreReportedTest {
         val config = PaywallConfigParser.parseSinglePaywall("pw_actions", paywallMap())
             ?: error("paywall did not parse")
         compose.setContent {
-            PaywallScreen(
-                config = config,
-                onPlanSelected = { _, _ -> },
-                onRestore = {},
-                onDismiss = {},
-                onAction = { seen += it },
-            )
+            // #1076 — PROVIDED, not passed. The callback travels as a CompositionLocal because one
+            // more parameter on `PaywallScreen` made ART reject the class on a real device
+            // (see LocalPaywallAction) — a VerifyError every JVM test was blind to.
+            androidx.compose.runtime.CompositionLocalProvider(
+                LocalPaywallAction provides { action -> seen += action },
+            ) {
+                PaywallScreen(
+                    config = config,
+                    onPlanSelected = { _, _ -> },
+                    onRestore = {},
+                    onDismiss = {},
+                )
+            }
         }
         /*
          🔴 LET THE FIRST FRAME SETTLE, THEN STOP DRIVING THE CLOCK.

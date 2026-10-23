@@ -61,15 +61,18 @@ class CtaTapIsReportedBeforeTheGuardTest {
         val config = PaywallConfigParser.parseSinglePaywall("pw_cta_report", paywallMap(plans))
             ?: error("paywall did not parse")
         compose.setContent {
-            PaywallScreen(
-                config = config,
-                onPlanSelected = { plan, _ -> onBuy(plan) },
-                onRestore = {},
-                onDismiss = {},
-                // Only CTA taps are counted here — a plan tap reports PLAN_CHANGED (#1076)
-                // and would otherwise be indistinguishable from the thing under test.
-                onAction = { if (it == PaywallAction.CTA_TAPPED) onTap() },
-            )
+            // Only CTA taps are counted here — a plan tap reports PLAN_CHANGED (#1076) and would
+            // otherwise be indistinguishable from the thing under test.
+            androidx.compose.runtime.CompositionLocalProvider(
+                LocalPaywallAction provides { if (it == PaywallAction.CTA_TAPPED) onTap() },
+            ) {
+                PaywallScreen(
+                    config = config,
+                    onPlanSelected = { plan, _ -> onBuy(plan) },
+                    onRestore = {},
+                    onDismiss = {},
+                )
+            }
         }
     }
 

@@ -286,12 +286,16 @@ class PaywallActivity : ComponentActivity() {
             // SurveyActivity pattern landed by Phase D for surveys.
             val isDark = isSystemInDarkTheme()
             MaterialTheme(colorScheme = if (isDark) androidx.compose.material3.darkColorScheme() else androidx.compose.material3.lightColorScheme()) {
+                // #1076 — PROVIDED, not passed: one more parameter on PaywallScreen made ART
+                // reject the class outright (see LocalPaywallAction).
+                androidx.compose.runtime.CompositionLocalProvider(
+                    LocalPaywallAction provides { action -> onActionCb?.invoke(action) },
+                ) {
                 PaywallScreen(
                     config = config,
                     onPlanSelected = { plan, metadata ->
                         onPlanSelected?.invoke(plan, metadata)
                     },
-                    onAction = { onActionCb?.invoke(it) },
                     onRestore = {
                         // Forward restore taps to the
                         // PaywallManager-supplied lifecycle callback.
@@ -305,6 +309,7 @@ class PaywallActivity : ComponentActivity() {
                     onPromoCodeSubmit = onPromoCodeSubmit,
                     isDark = isDark,
                 )
+                }
             }
         }
     }
@@ -602,17 +607,15 @@ fun PaywallScreen(
     onPlanSelected: (PaywallPlan, Map<String, Any>) -> Unit,
     onRestore: () -> Unit,
     onDismiss: (DismissReason) -> Unit,
-    /**
-     * #1074 / #1076 — what the user did, fired BEFORE the guards each tap site applies.
-     * Defaulted so existing constructions (previews, tests) keep compiling.
-     */
-    onAction: (PaywallAction) -> Unit = {},
     // Callback for promo code validation. Returns true if code is valid, false otherwise.
     onPromoCodeSubmit: ((String, (Boolean) -> Unit) -> Unit)? = null,
     // System dark-mode pref. Renderers/blocks may apply
     // `dark` overrides from console-designed paywall content based on this.
     @Suppress("UNUSED_PARAMETER") isDark: Boolean = false,
 ) {
+    // #1076 — out-of-band, because one more PARAMETER on this composable made ART reject it
+    // (see LocalPaywallAction).
+    val onAction = LocalPaywallAction.current
     var selectedPlanId by remember { mutableStateOf<String?>(null) }
     var showDismiss by remember { mutableStateOf(false) }
     // #652 — the Back button has its OWN delay, so it cannot ride on `showDismiss`.
@@ -1036,7 +1039,6 @@ fun PaywallScreen(
                                     config.haptic,
                                 )
                             },
-                            onAction = onAction,
                             onCTATap = {
                                 // #1074 — the tap, before the guard below decides whether it can
                                 // become a purchase.
@@ -1142,7 +1144,6 @@ fun PaywallScreen(
                             onAction(PaywallAction.PLAN_CHANGED)
                             HapticEngine.triggerIfEnabled(currentView, config.haptic?.triggers?.on_plan_select, config.haptic)
                         },
-                        onAction = onAction,
                         onCTATap = {
                             // #1074 — the tap, before the guard below decides whether it can
                             // become a purchase. A tap that cannot told the host nothing at all.
@@ -1216,7 +1217,6 @@ fun PaywallScreen(
                 PaywallStickyFooter(
                     section = stickyFooterSection,
                     isPurchasing = isPurchasing,
-                    onAction = onAction,
                     // Round-MZ — selected plan's per-plan cta_text overrides the footer label.
                     selectedPlanCtaText = effectivePlans().firstOrNull { it.id == selectedPlanId }?.cta_text?.takeIf { it.isNotBlank() },
                     onCTATap = {
@@ -1738,10 +1738,9 @@ private fun PaywallExtraButtons(
     onRestore: () -> Unit,
     onDismiss: () -> Unit,
     loc: (String, String) -> String,
-    // #1076 — a link or an unrecognised authored action is reported to the host from here too.
-    onAction: (PaywallAction) -> Unit = {},
 ) {
     val context = androidx.compose.ui.platform.LocalContext.current
+    val onAction = LocalPaywallAction.current   // #1076
     for (button in buttons) {
         val label = loc("cta.extra.${button.text ?: ""}", button.text ?: "")
         if (label.isBlank()) continue
@@ -1814,13 +1813,6 @@ internal fun PaywallSectionView(
     // paywall and so returns the user to the previous screen. Defaulted, so the other
     // call sites of this composable are unaffected.
     onDismiss: () -> Unit = {},
-    /**
-     * #1076 — what the user DID inside this section, reported separately from what it achieved.
-     * A legal link, an authored button with an action this SDK does not know — the host hears
-     * about it even when the renderer's own handling is a no-op. Defaulted, so the call sites
-     * that cannot dispatch an action are unaffected.
-     */
-    onAction: (PaywallAction) -> Unit = {},
     loc: (String, String) -> String,
     toggleStates: MutableMap<String, Boolean> = mutableMapOf(),
     onPromoCodeSubmit: ((String, (Boolean) -> Unit) -> Unit)? = null,
@@ -1845,6 +1837,7 @@ internal fun PaywallSectionView(
      */
     headerCloseInset: Dp = 0.dp,
 ) {
+    val onAction = LocalPaywallAction.current   // #1076
     /*
      * #946 — the page, published once for every composable beneath this one.
      *
@@ -2073,7 +2066,18 @@ internal fun PaywallSectionView(
                             // `Top`, not `CenterVertically`: with a subtitle the row is two lines,
                             // and centring floats the icon against the gap between them.
                             verticalAlignment = Alignment.Top,
-                            modifier = Modifier.padding(vertical = 6.dp).alpha(if (included) 1f else 0.4f),
+                            // #1076 — a RICH item row is tappable too, and this is the branch a
+                            // real paywall uses: the console writes `config.items`, so the device
+                            // walk found `clickable="false"` on the only rows anybody actually
+                            // renders while the plain-string branch beside it was already wired.
+                            // Same no-indication click as there, so the scroll still wins the drag.
+                            modifier = Modifier
+                                .clickable(
+                                    interactionSource = remember { androidx.compose.foundation.interaction.MutableInteractionSource() },
+                                    indication = null,
+                                ) { onAction(PaywallAction.FEATURE_SELECTED) }
+                                .padding(vertical = 6.dp)
+                                .alpha(if (included) 1f else 0.4f),
                         ) {
                             when {
                                 !item.emoji.isNullOrEmpty() ->
@@ -4385,7 +4389,6 @@ internal fun PaywallSectionView(
                         // the finding it explains.)
                         cornerRadius = config.cta?.corner_radius?.toFloat() ?: 12f,
                         onCTATap = onCTATap,
-                        onAction = onAction,
                         onRestore = onRestore,
                         onDismiss = onDismiss,
                         loc = loc,
@@ -6265,11 +6268,10 @@ private fun PaywallStickyFooter(
     onCTATap: () -> Unit,
     onRestore: () -> Unit,
     loc: (String, String) -> String,
-    // #1076 — the footer's secondary action can be a link, which the host hears about.
-    onAction: (PaywallAction) -> Unit = {},
     // Round-MZ — selected plan's per-plan cta_text (overrides section cta_text when non-empty).
     selectedPlanCtaText: String? = null,
 ) {
+    val onAction = LocalPaywallAction.current   // #1076
     // Default background #FFFFFF matches iOS
     // PaywallRenderer.swift:1054. Was Color.Black 0.95 alpha → light-mode
     // paywalls rendered dark footer.
