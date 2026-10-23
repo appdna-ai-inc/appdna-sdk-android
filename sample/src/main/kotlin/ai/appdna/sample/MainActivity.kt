@@ -45,6 +45,42 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    /*
+     * #1086 — LOG THE STORED LOCATION ANSWER, so a device walk can assert what was PERSISTED
+     * rather than what the dropdown drew.
+     *
+     * A suggestion row proves the provider answered. It says nothing about whether the structured
+     * answer reached the store in the shape both SDKs decode, which is the half most likely to
+     * bite: a wrong assumption about a provider's response shape looks exactly like "no results".
+     *
+     * `onResume` is the moment, because that is when an onboarding flow has been dismissed and the
+     * answer has been persisted (`setOnboardingResponses` writes incrementally on step advance).
+     * The field id comes from the launching intent, so the sample carries no probe-specific id:
+     *
+     *     adb shell am start -n ai.appdna.sample/.MainActivity \
+     *       --es appdnaLocationField probe963_loc_all
+     */
+    override fun onResume() {
+        super.onResume()
+        val fieldId = intent?.getStringExtra("appdnaLocationField") ?: return
+        val d = AppDNA.getLocationData(fieldId)
+        if (d == null) {
+            android.util.Log.i("AppDNA-E2E", "AppDNA-E2E location field=$fieldId UNANSWERED")
+            return
+        }
+        val parts = mutableListOf("field=$fieldId")
+        d.formatted_address.takeIf { it.isNotBlank() }?.let { parts += "addr=$it" }
+        d.city?.takeIf { it.isNotBlank() }?.let { parts += "city=$it" }
+        d.country?.takeIf { it.isNotBlank() }?.let { parts += "country=$it" }
+        d.country_code?.takeIf { it.isNotBlank() }?.let { parts += "cc=$it" }
+        d.latitude?.let { parts += "lat=$it" }
+        d.longitude?.let { parts += "lng=$it" }
+        d.timezone?.takeIf { it.isNotBlank() }?.let { parts += "tz=$it" }
+        d.timezone_offset?.let { parts += "tzoff=$it" }
+        d.raw_query?.takeIf { it.isNotBlank() }?.let { parts += "typed=$it" }
+        android.util.Log.i("AppDNA-E2E", "AppDNA-E2E location " + parts.joinToString(" | "))
+    }
+
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         // Warm-start deep links arrive here; forward to the SDK.
