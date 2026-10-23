@@ -1322,7 +1322,26 @@ fun PaywallScreen(
                         .fillMaxSize()
                         .background(Color.Black.copy(alpha = 0.3f))
                         .let { mod ->
-                            if (overlay.allowDismiss) {
+                            /*
+                             * 🔴 #1101 — A FAILURE OVERLAY IS ALWAYS DISMISSIBLE, whatever
+                             * `allow_dismiss` says.
+                             *
+                             * This Box is `fillMaxSize()` with a scrim, so it covers the whole
+                             * paywall — the CTA included. `allow_dismiss: false` has a legitimate
+                             * meaning for a SUCCESS overlay (hold the celebration, then route) and
+                             * for a paywall itself (forced engagement for N seconds). After a
+                             * payment fails it means "trap the user": the button that buys is
+                             * behind the scrim, the plan rows are behind it, and the only exits
+                             * are the system back button or killing the app. No author intends
+                             * that, and the SDK records nothing to explain it — a tap lands on the
+                             * scrim, so it runs no action, logs nothing and calls no delegate.
+                             *
+                             * iOS has never had the trap: its failure UI is a bottom banner that
+                             * leaves the rest of the paywall reachable. Measured when this was
+                             * found: 0 paywalls set `allow_dismiss: false`, so this makes nothing
+                             * worse today and closes the hole before someone does.
+                             */
+                            if (overlay.allowDismiss || isFailure) {
                                 mod.clickable { postPurchaseOverlay = null }
                             } else mod
                         },
@@ -1512,6 +1531,46 @@ fun PaywallScreen(
             }
         }
     }
+}
+
+/**
+ * Append the selected plan's name to an ALREADY-LOCALISED CTA label — #1100 / #1102.
+ *
+ * 🔴 The order is the whole point. #1100 made a multi-plan CTA name the plan it will buy, because a
+ * plan tap that drifts far enough is claimed by the scrolling container and the CTA then buys the
+ * plan chosen before it (#1081) with nothing on screen saying so. The first version built the whole
+ * string and handed it to `loc("cta.text", …)` as the FALLBACK, so a paywall carrying a translation
+ * got the translation and lost the name — the mitigation disappearing on exactly the paywalls
+ * hardest to check, since a walk in the default locale would never show it.
+ *
+ * Three guards, the same three iOS and the console preview apply:
+ *   - a SINGLE-plan paywall is untouched, because there is no choice to get wrong;
+ *   - a plan carrying its own `cta_text` says it exactly, so nothing is added;
+ *   - a label already containing the plan's name is left alone, so "Start Annual" cannot become
+ *     "Start Annual — Annual" whichever string localisation produced.
+ *
+ * The name goes through `plan.<idx>.name`, the key the plan rows already use, so both halves are
+ * translated.
+ */
+private fun appendPlanName(
+    localised: String,
+    config: PaywallConfig,
+    selectedPlanId: String?,
+    loc: (String, String) -> String,
+): String {
+    // Resolved here rather than passed in, because the caller's list is built inside a `run {}`
+    // block whose scope the argument list cannot see. Same resolution as iOS `resolvedPlans` and
+    // Android's own `effectivePlans()`: the "plans"-type section first, then top-level config.plans.
+    val plans = (config.sections.firstOrNull { it.type == "plans" }?.data?.plans ?: config.plans)
+        .orEmpty()
+    if (plans.size < 2) return localised
+    val idx = plans.indexOfFirst { it.id == selectedPlanId }
+    if (idx < 0) return localised
+    val selected = plans[idx]
+    if (!selected.cta_text.isNullOrBlank()) return localised
+    val name = loc("plan.$idx.name", selected.displayName).trim()
+    if (name.isEmpty() || localised.contains(name, ignoreCase = true)) return localised
+    return "$localised — $name"
 }
 
 @Composable
@@ -4349,7 +4408,14 @@ internal fun PaywallSectionView(
                             // an unauthored paywall read "Continue" on Android vs "Subscribe" on
                             // iOS. Inlined (not via helper) because PaywallSectionView is a
                             // separate @Composable scope from PaywallScreen.
-                            text = loc(
+                            // #1102 — the plan's name is appended AFTER loc(), not handed to it as
+                            // a fallback. Passing the whole string as the fallback meant a paywall
+                            // carrying a translation for `cta.text` got the translation and LOST the
+                            // name, so the mitigation vanished on exactly the paywalls hardest to
+                            // check. The name goes through `plan.<idx>.name` — the key the plan rows
+                            // already use — so both halves are translated. iOS composes in the same
+                            // order (`PaywallRenderer.planNameSuffix` + `CTAButton.displayText`).
+                            text = appendPlanName(loc(
                                 "cta.text",
                                 // Round-MZ — selected plan's per-plan cta_text overrides the
                                 // section/top-level CTA label (mirrors iOS selectedPlanCtaText).
@@ -4388,17 +4454,9 @@ internal fun PaywallSectionView(
                                      * `displayName` is `label.ifBlank { name }` — the short word an
                                      * author typed, not a price.
                                      */
-                                    val planName = selected?.displayName?.trim().orEmpty()
-                                    if (ctaPlans.size < 2 ||
-                                        planName.isEmpty() ||
-                                        authored.contains(planName, ignoreCase = true)
-                                    ) {
-                                        authored
-                                    } else {
-                                        "$authored — $planName"
-                                    }
+                                    authored
                                 },
-                            ),
+                            ), config, selectedPlanId, loc),
                             // QA-R8 — apply resolved CTA text color
                             // (was hardcoded Color.White). An authored white-bg
                             // CTA with black text now actually renders the
