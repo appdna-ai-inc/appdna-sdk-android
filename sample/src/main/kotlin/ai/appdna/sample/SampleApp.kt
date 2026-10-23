@@ -28,6 +28,14 @@ import ai.appdna.sdk.paywalls.AppDNAPaywallDelegate
  * how.
  */
 private object SamplePaywallLog : AppDNAPaywallDelegate {
+    /**
+     * #1076 — what the USER did, which is not a tracked event and so reaches no other log.
+     * A device walk reads this line to prove a feature row, a plan row or a link is live.
+     */
+    override fun onPaywallAction(paywallId: String, action: ai.appdna.sdk.paywalls.PaywallAction) {
+        android.util.Log.i("AppDNA-E2E", "AppDNA-E2E action=${action.value} paywall=$paywallId")
+    }
+
     override fun onPaywallPurchaseStarted(paywallId: String, productId: String) {
         android.util.Log.i("AppDNA-E2E", "AppDNA-E2E purchase_started product_id=$productId paywall=$paywallId")
     }
