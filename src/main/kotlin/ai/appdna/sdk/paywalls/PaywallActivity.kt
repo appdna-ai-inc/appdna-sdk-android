@@ -4358,13 +4358,46 @@ internal fun PaywallSectionView(
                                 // this CTA section's own (normally absent) plans, which made the
                                 // pinned CTA fall through to "Subscribe" when plans lived only in a
                                 // plans section.
-                                (config.sections.firstOrNull { it.type == "plans" }?.data?.plans ?: config.plans)
-                                    ?.firstOrNull { it.id == selectedPlanId }?.cta_text?.takeIf { it.isNotBlank() }
-                                    ?: config.cta?.text?.takeIf { it.isNotBlank() }
-                                    ?: section.data?.cta?.text?.takeIf { it.isNotBlank() }
-                                    ?: section.data?.cta_text?.takeIf { it.isNotBlank() }
-                                    ?: section.data?.text?.takeIf { it.isNotBlank() }
-                                    ?: "Subscribe",
+                                run {
+                                    val ctaPlans = (config.sections.firstOrNull { it.type == "plans" }
+                                        ?.data?.plans ?: config.plans).orEmpty()
+                                    val selected = ctaPlans.firstOrNull { it.id == selectedPlanId }
+                                    selected?.cta_text?.takeIf { it.isNotBlank() }?.let { return@run it }
+                                    val authored = config.cta?.text?.takeIf { it.isNotBlank() }
+                                        ?: section.data?.cta?.text?.takeIf { it.isNotBlank() }
+                                        ?: section.data?.cta_text?.takeIf { it.isNotBlank() }
+                                        ?: section.data?.text?.takeIf { it.isNotBlank() }
+                                        ?: "Subscribe"
+                                    /*
+                                     * #1100 — and when nothing names the plan, the button says it
+                                     * anyway. A plan tap that drifts ~14pt is claimed by the
+                                     * scrolling container, so the selection does not change and the
+                                     * CTA buys the plan chosen before it (#1081, measured on iOS).
+                                     * The platform behaviour is deliberately left alone; what made
+                                     * it a wrong purchase rather than a visible mistake is that
+                                     * nothing named what was about to be bought. Measured on dev:
+                                     * 6 of 129 plans carried a `cta_text` and 27 of 30 ACTIVE
+                                     * multi-plan paywalls had none.
+                                     *
+                                     * Mirrors iOS `PaywallRenderer.ctaLabel` and the console
+                                     * preview's `namePlanOnCta` exactly, including the three
+                                     * guards: a single-plan paywall is untouched (no choice to get
+                                     * wrong), an authored per-plan label wins outright above, and a
+                                     * CTA already containing the plan's name is left alone so
+                                     * "Start Annual" cannot become "Start Annual — Annual".
+                                     * `displayName` is `label.ifBlank { name }` — the short word an
+                                     * author typed, not a price.
+                                     */
+                                    val planName = selected?.displayName?.trim().orEmpty()
+                                    if (ctaPlans.size < 2 ||
+                                        planName.isEmpty() ||
+                                        authored.contains(planName, ignoreCase = true)
+                                    ) {
+                                        authored
+                                    } else {
+                                        "$authored — $planName"
+                                    }
+                                },
                             ),
                             // QA-R8 — apply resolved CTA text color
                             // (was hardcoded Color.White). An authored white-bg

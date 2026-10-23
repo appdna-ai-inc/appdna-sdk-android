@@ -30,6 +30,22 @@ import org.robolectric.annotation.Config
  * parsed perfectly and nothing read it. That is the same gap #959 records: the parse was never the
  * problem, reaching a pixel was.
  */
+/*
+ * 🔴 THE CTA IS MATCHED BY SUBSTRING SINCE #1100, and the change in expectation is deliberate.
+ *
+ * On a paywall with more than one plan where no plan carries a `cta_text`, the CTA now appends the
+ * selected plan's name — a button configured "Start Free Trial" draws "Start Free Trial — Monthly",
+ * and "— Annual" once the annual row is tapped. This fixture is a TWO-plan paywall, so every CTA
+ * lookup here sees the suffix.
+ *
+ * It exists because a plan tap that drifts far enough is claimed by the scrolling container, so the
+ * selection does not change and the CTA buys the plan chosen before it (#1081, measured). Naming the
+ * plan on the button is what makes that visible before the purchase rather than on the receipt
+ * after. The exact-text assertions are what caught the change, which is them working.
+ *
+ * 🔴 Note for anyone locating a plan ROW by its name: the CTA now contains that name too, so a
+ * substring query for "Annual" matches both. The row lookups below stay EXACT for that reason.
+ */
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [34], qualifiers = "w411dp-h891dp-xxhdpi")
 class RootCtaWithoutASectionRendersTest {
@@ -84,7 +100,7 @@ class RootCtaWithoutASectionRendersTest {
     @Test
     fun `the root cta is drawn when the layout has no cta section`() {
         render(listOf(plansSection))
-        compose.onNodeWithText("Start Free Trial").assertIsDisplayed()
+        compose.onNodeWithText("Start Free Trial", substring = true).assertIsDisplayed()
     }
 
     /**
@@ -103,7 +119,7 @@ class RootCtaWithoutASectionRendersTest {
         assertEquals(
             "exactly one CTA must be drawn",
             1,
-            compose.onAllNodesWithText("Start Free Trial").fetchSemanticsNodes().size,
+            compose.onAllNodesWithText("Start Free Trial", substring = true).fetchSemanticsNodes().size,
         )
     }
 
@@ -122,7 +138,7 @@ class RootCtaWithoutASectionRendersTest {
         assertEquals(
             "the root cta must not be drawn beside a sticky footer",
             0,
-            compose.onAllNodesWithText("Start Free Trial").fetchSemanticsNodes().size,
+            compose.onAllNodesWithText("Start Free Trial", substring = true).fetchSemanticsNodes().size,
         )
     }
 
@@ -153,7 +169,7 @@ class RootCtaWithoutASectionRendersTest {
          regression somewhere else entirely.
          */
         compose.mainClock.autoAdvance = false
-        compose.onNodeWithText("Start Free Trial").performClick()
+        compose.onNodeWithText("Start Free Trial", substring = true).performClick()
         return bought?.product_id
     }
 
