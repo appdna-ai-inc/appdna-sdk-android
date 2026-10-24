@@ -615,9 +615,12 @@ internal data class PostPurchaseOverlayState(
  *  - no scrim — only the banner itself is hit-testable, the rest of the paywall stays reachable;
  *  - full width less 16 each side, 20 inner padding, radius 16, red at 0.9 (`Color.red`, #FF3B30);
  *  - 15sp white centred text (iOS `.subheadline`), a translucent-white retry pill (radius 8, 24×10);
- *  - above the MEASURED pinned zone, `max(80, pinnedZoneHeight + 16)`, inside the system-bar inset —
- *    iOS measures its pinned group from the group's top to the window's bottom, so the caller passes
- *    the pinned group's height plus the `footer_padding` that sits below it;
+ *  - 16 above the MEASURED pinned group, `max(80, pinnedZoneHeight + 16)`. The caller passes the
+ *    group's height plus the `footer_padding` below it — the same quantity iOS measures. That height
+ *    already CONTAINS the navigation-bar inset (the CTA column pads itself for it), so the banner adds
+ *    no inset of its own; only the 80 floor is lifted above the bar, as iOS's floor sits above the
+ *    home indicator. Adding `navigationBarsPadding()` here counted the inset twice — a ~40dp gap
+ *    on the api34 emulator where iOS leaves 16;
  *  - tapping the banner dismisses it (iOS #1072): a tap aimed at a CTA it overlaps recovers.
  */
 @Composable
@@ -629,6 +632,7 @@ internal fun PurchaseFailureBanner(
     onDismiss: () -> Unit,
 ) {
     val visible = remember { androidx.compose.animation.core.MutableTransitionState(false).apply { targetState = true } }
+    val navInset = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
     Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.BottomCenter) {
         androidx.compose.animation.AnimatedVisibility(
             visibleState = visible,
@@ -636,8 +640,7 @@ internal fun PurchaseFailureBanner(
         ) {
             Column(
                 modifier = Modifier
-                    .navigationBarsPadding()
-                    .padding(bottom = maxOf(80.dp, pinnedZoneHeight + 16.dp))
+                    .padding(bottom = maxOf(80.dp + navInset, pinnedZoneHeight + 16.dp))
                     .padding(horizontal = 16.dp)
                     .fillMaxWidth()
                     .clip(RoundedCornerShape(16.dp))
@@ -741,7 +744,14 @@ fun PaywallScreen(
                 if (config.particle_effect?.trigger == "on_purchase") showConfetti = true
             }
             val pending = PaywallActivity.postPurchaseOverlay
-            if (pending != null && pending != postPurchaseOverlay) {
+            /*
+             * #1105 — take ANY pending payload. The slot is cleared below on every take, so there is
+             * nothing to de-duplicate, and comparing it to what is on screen was a bug: the state is
+             * a data class, so a second IDENTICAL failure (the same card declined twice) compared
+             * equal, was never taken, and sat in the slot. Tapping the banner away then left the slot
+             * full, and the next poll put the banner straight back — measured on the api34 emulator.
+             */
+            if (pending != null) {
                 postPurchaseOverlay = pending
                 PaywallActivity.postPurchaseOverlay = null
                 // A drained failure overlay (retry / show_error) means the purchase

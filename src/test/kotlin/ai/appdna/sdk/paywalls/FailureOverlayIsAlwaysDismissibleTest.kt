@@ -144,6 +144,38 @@ class FailureOverlayIsAlwaysDismissibleTest {
     }
 
     /**
+     * #1105 — THE SAME FAILURE TWICE, THEN ONE TAP: THE BANNER STAYS GONE.
+     *
+     * Found on the api34 emulator walk: a user whose card is declined, who taps the purchase button
+     * again and is declined again, taps the banner — and it comes straight back. The poller only took
+     * a payload that differed from the one on screen, and the payload is a data class, so the second,
+     * IDENTICAL failure was never taken and waited in the slot until the tap emptied the screen.
+     */
+    @Test
+    fun `a second identical failure does not resurrect the banner after it is tapped away`() {
+        val failure = PostPurchaseOverlayState(message = failureMessage, action = "retry", retryText = "Try Again")
+        PaywallActivity.postPurchaseOverlay = failure
+        render()
+        compose.onNodeWithText(failureMessage, substring = true).assertExists()
+
+        // The same purchase is refused again: an equal payload, a new instance.
+        PaywallActivity.postPurchaseOverlay = failure.copy()
+        compose.mainClock.advanceTimeBy(500)
+        compose.waitForIdle()
+
+        compose.onNodeWithText(failureMessage, substring = true).performClick()
+        // Several poll intervals (100ms each) — long enough for a waiting payload to be taken again.
+        compose.mainClock.advanceTimeBy(1_000)
+        compose.waitForIdle()
+
+        assertTrue(
+            "the banner came back after it was tapped away — a second identical failure was left in " +
+                "the overlay slot and the next poll drew it again (#1105)",
+            compose.onAllNodesWithTextSafe(failureMessage) == 0,
+        )
+    }
+
+    /**
      * #1105 — WITH THE BANNER UP, THE CTA STILL BUYS.
      *
      * This is the behaviour the presentation change exists for: iOS's banner leaves the plan rows
