@@ -44,6 +44,14 @@ Wraps iOS 1.0.83. Adds host-reported paying users.
   red banner above the button and nothing else, so the user can pick another plan or tap the
   purchase button again straight away. Tapping the banner hides it. Successful-purchase messages are
   unchanged.
+- **The banner's retry button is now exactly a second tap on the purchase button.** It used to start
+  the purchase without the button's in-progress state (so the button stayed tappable mid-purchase) and
+  without the purchase metadata (a validated promo code and toggle states were dropped). It now also
+  reports `CTA_TAPPED` to your paywall action listener, as a second tap would. iOS's retry button now
+  starts the purchase too; it used to only hide the banner.
+- **The purchase button behaves the same wherever it is drawn.** A purchase button inside a paywall
+  section or a sticky footer started the paywall's particle effect on the tap rather than after the
+  purchase succeeded — the pinned button already waited for the purchase.
 
 ## [1.0.54]
 

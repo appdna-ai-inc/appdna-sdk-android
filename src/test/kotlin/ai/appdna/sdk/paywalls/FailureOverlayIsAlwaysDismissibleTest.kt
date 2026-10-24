@@ -176,6 +176,32 @@ class FailureOverlayIsAlwaysDismissibleTest {
     }
 
     /**
+     * #1107 — THE RETRY IS A SECOND TAP ON THE CTA: it buys the selected plan AND puts the CTA in its
+     * in-progress state. The old retry was a cut-down copy that bought without it, so the CTA stayed
+     * tappable mid-purchase (seen on the api34 emulator) — buying alone cannot tell the two apart,
+     * which is why "Processing..." is asserted too.
+     */
+    @Test
+    fun `the retry button buys the selected plan through the CTA's own path`() {
+        PaywallActivity.postPurchaseOverlay = PostPurchaseOverlayState(
+            message = failureMessage,
+            action = "retry",
+            retryText = "Try Again",
+        )
+        var bought: String? = null
+        render { bought = it.id }
+        compose.onNodeWithText("Try Again").performClick()
+        compose.waitForIdle()
+
+        assertTrue("the retry bought nothing", bought == "plan_monthly")
+        assertTrue(
+            "the retry bought without the CTA's in-progress state — it is not the CTA's path (#1107)",
+            compose.onAllNodesWithTextSafe("Processing...") > 0,
+        )
+        assertTrue("the banner is still up after the retry", compose.onAllNodesWithTextSafe(failureMessage) == 0)
+    }
+
+    /**
      * #1105 — WITH THE BANNER UP, THE CTA STILL BUYS.
      *
      * This is the behaviour the presentation change exists for: iOS's banner leaves the plan rows

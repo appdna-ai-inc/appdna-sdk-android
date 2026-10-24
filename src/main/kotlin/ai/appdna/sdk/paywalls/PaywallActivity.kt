@@ -921,6 +921,28 @@ fun PaywallScreen(
             // #1056 — the authored rank, which both platforms decoded and neither read.
             return PaywallPlanOrder.sorted(if (sectionPlans.isEmpty()) (config.plans ?: emptyList()) else sectionPlans)
         }
+
+        /*
+         * #1107 — ONE "the CTA buys the selected plan", iOS's `handleCTATap()`. There were three copies
+         * (the pinned CTA, a CTA section in the body or bottom zone, the sticky footer) and fixes kept
+         * landing in one of them: #1103 moved the celebration off the tap in the pinned copy only, so
+         * the other two still started it on the tap (#1109). And the failure banner's retry was a
+         * FOURTH, cut-down copy — no in-progress state, so the CTA stayed tappable mid-purchase, and an
+         * empty metadata map, so a validated promo code and the toggles were dropped from the retry.
+         * The retry now runs this too: retrying IS tapping the CTA again, as on iOS.
+         */
+        fun purchaseSelectedPlan() {
+            // #1074 — the tap, reported before the guard decides whether it can become a purchase.
+            onAction(PaywallAction.CTA_TAPPED)
+            val plan = effectivePlans().firstOrNull { p -> p.id == selectedPlanId } ?: return
+            isPurchasing = true
+            HapticEngine.triggerIfEnabled(currentView, config.haptic?.triggers?.on_button_tap, config.haptic)
+            // #1103 — no celebration here: it starts from PaywallActivity.signalPurchaseCelebrate()
+            // once the purchase has actually succeeded, and it honours `trigger` there.
+            val md = toggleStates.toMutableMap<String, Any>()
+            if (promoState == "success" && promoCode.isNotBlank()) md["promo_code"] = promoCode
+            onPlanSelected(plan, md.toMap())
+        }
         // CTA text resolution chain is now
         // inlined at the CTA section render site (PaywallActivity.kt:~1497)
         // because that site lives inside PaywallSectionView, a separate
@@ -1139,35 +1161,7 @@ fun PaywallScreen(
                                     config.haptic,
                                 )
                             },
-                            onCTATap = {
-                                // #1074 — the tap, before the guard below decides whether it can
-                                // become a purchase.
-                                onAction(PaywallAction.CTA_TAPPED)
-                                // PW-2 — top-level plans fallback.
-                                val plans = effectivePlans()
-                                val plan = plans.firstOrNull { p -> p.id == selectedPlanId }
-                                if (plan != null) {
-                                    isPurchasing = true
-                                    // Haptic on CTA tap
-                                    HapticEngine.triggerIfEnabled(
-                                        currentView,
-                                        config.haptic?.triggers?.on_button_tap,
-                                        config.haptic,
-                                    )
-                                    // Confetti on purchase
-                                    if (config.particle_effect != null) {
-                                        showConfetti = true
-                                    }
-                                    // Fold validated promo
-                                    // code into purchase metadata. Mirrors
-                                    // iOS PaywallRenderer.swift:2160-2167.
-                                    val md = toggleStates.toMutableMap<String, Any>()
-                                    if (promoState == "success" && promoCode.isNotBlank()) {
-                                        md["promo_code"] = promoCode
-                                    }
-                                    onPlanSelected(plan, md.toMap())
-                                }
-                            },
+                            onCTATap = { purchaseSelectedPlan() },
                             onRestore = onRestore,
                             // Lets an authored button leave the paywall.
                             onDismiss = { triggerDismiss() },
@@ -1244,23 +1238,7 @@ fun PaywallScreen(
                             onAction(PaywallAction.PLAN_CHANGED)
                             HapticEngine.triggerIfEnabled(currentView, config.haptic?.triggers?.on_plan_select, config.haptic)
                         },
-                        onCTATap = {
-                            // #1074 — the tap, before the guard below decides whether it can
-                            // become a purchase. A tap that cannot told the host nothing at all.
-                            onAction(PaywallAction.CTA_TAPPED)
-                            val plans = effectivePlans()
-                            val plan = plans.firstOrNull { p -> p.id == selectedPlanId }
-                            if (plan != null) {
-                                isPurchasing = true
-                                HapticEngine.triggerIfEnabled(currentView, config.haptic?.triggers?.on_button_tap, config.haptic)
-                                // #1103 — the celebration no longer starts on the TAP; it starts
-                                // from PaywallActivity.signalPurchaseCelebrate() once the purchase
-                                // has actually succeeded, and it honours `trigger` there.
-                                val md = toggleStates.toMutableMap<String, Any>()
-                                if (promoState == "success" && promoCode.isNotBlank()) md["promo_code"] = promoCode
-                                onPlanSelected(plan, md.toMap())
-                            }
-                        },
+                        onCTATap = { purchaseSelectedPlan() },
                         onRestore = onRestore,
                         // Lets an authored button leave the paywall.
                         onDismiss = { triggerDismiss() },
@@ -1321,32 +1299,7 @@ fun PaywallScreen(
                     isPurchasing = isPurchasing,
                     // Round-MZ — selected plan's per-plan cta_text overrides the footer label.
                     selectedPlanCtaText = effectivePlans().firstOrNull { it.id == selectedPlanId }?.cta_text?.takeIf { it.isNotBlank() },
-                    onCTATap = {
-                        // #1074 — the tap, before the guard below decides whether it can become a
-                        // purchase.
-                        onAction(PaywallAction.CTA_TAPPED)
-                        // PW-2 — top-level plans fallback (sticky footer path).
-                        val plans = effectivePlans()
-                        val plan = plans.firstOrNull { p -> p.id == selectedPlanId }
-                        if (plan != null) {
-                            isPurchasing = true
-                            HapticEngine.triggerIfEnabled(
-                                currentView,
-                                config.haptic?.triggers?.on_button_tap,
-                                config.haptic,
-                            )
-                            if (config.particle_effect != null) {
-                                showConfetti = true
-                            }
-                            // Fold validated promo code
-                            // into purchase metadata (sticky footer path).
-                            val md = toggleStates.toMutableMap<String, Any>()
-                            if (promoState == "success" && promoCode.isNotBlank()) {
-                                md["promo_code"] = promoCode
-                            }
-                            onPlanSelected(plan, md.toMap())
-                        }
-                    },
+                    onCTATap = { purchaseSelectedPlan() },
                     onRestore = onRestore,
                     loc = ::loc,
                 )
@@ -1436,13 +1389,11 @@ fun PaywallScreen(
                         retryText = if (overlay.action == "retry") overlay.retryText ?: "Try Again" else null,
                         pinnedZoneHeight = with(androidx.compose.ui.platform.LocalDensity.current) { pinnedHeightPx.toDp() } +
                             (config.layout.footer_padding ?: 8f).dp,
+                        // #1107 — retrying is tapping the CTA again: the same purchase path, in-progress
+                        // state and metadata (iOS: `showErrorBanner = false; handleCTATap()`).
                         onRetry = {
-                            // Re-fire purchase for currently-selected plan.
-                            // Use effectivePlans() (sections OR top-level) like every
-                            // other selected-plan lookup, so section-scoped plans retry.
-                            val plan = effectivePlans().firstOrNull { it.id == selectedPlanId }
                             postPurchaseOverlay = null
-                            plan?.let { onPlanSelected(it, emptyMap()) }
+                            purchaseSelectedPlan()
                         },
                         onDismiss = { postPurchaseOverlay = null },
                     )
