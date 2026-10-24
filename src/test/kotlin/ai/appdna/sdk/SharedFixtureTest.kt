@@ -1839,6 +1839,14 @@ class SharedFixtureTest(
                 spy.state["parsed_post_purchase_failure_action"] = parsed.post_purchase?.on_failure?.action
                 spy.state["parsed_post_purchase_failure_allow_dismiss"] =
                     parsed.post_purchase?.on_failure?.allow_dismiss
+                // #1109 — the console now persists and publishes these; read off the parsed paywall.
+                spy.state["parsed_particle_effect_type"] = parsed.particle_effect?.type
+                spy.state["parsed_particle_effect_trigger"] = parsed.particle_effect?.trigger
+                spy.state["parsed_particle_effect_intensity"] = parsed.particle_effect?.intensity
+                spy.state["parsed_particle_effect_colors_count"] = parsed.particle_effect?.colors?.size
+                spy.state["parsed_haptic_enabled"] = parsed.haptic?.enabled
+                spy.state["parsed_haptic_on_button_tap"] = parsed.haptic?.triggers?.on_button_tap
+                spy.state["parsed_haptic_on_plan_select"] = parsed.haptic?.triggers?.on_plan_select
                 // The CTA corner radius is REAL and parsed: the console publishes `cta.style.corner_radius`
                 // (CTASchema in paywall.schema.ts) and PaywallConfigParser flattens the nested style map
                 // onto PaywallCTA (PaywallConfig.kt:863-871). An earlier draft of this runner declared it
