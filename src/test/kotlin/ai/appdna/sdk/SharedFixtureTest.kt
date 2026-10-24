@@ -3411,8 +3411,15 @@ class SharedFixtureTest(
             ?: unsupported("setup.config is not a parseable paywall")
         val plan = paywall.plans?.firstOrNull { it.product_id == productId }
             ?: ai.appdna.sdk.paywalls.PaywallPlan(id = productId, product_id = productId, name = productId, price = "")
+        ai.appdna.sdk.paywalls.PaywallActivity.postPurchaseOverlay = null
         manager.handlePurchase(activity, paywallId, plan, paywall, emptyMap(), RecordingPaywallDelegate(spy))
         repeat(10) { idle() }
+        // #1105 — what the authored `on_failure` route hands the renderer: the banner's text.
+        ai.appdna.sdk.paywalls.PaywallActivity.postPurchaseOverlay?.let { overlay ->
+            spy.state["failure_banner_message"] = overlay.message
+            spy.state["failure_banner_retry_text"] = overlay.retryText
+        }
+        ai.appdna.sdk.paywalls.PaywallActivity.postPurchaseOverlay = null
         spy.events += p.envelopes().map { it.toEventPair() }
         AppDNA.billing.ownershipPolicy = ai.appdna.sdk.billing.BillingOwnershipPolicy.NotConfigured
     }

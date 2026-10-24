@@ -602,6 +602,70 @@ internal data class PostPurchaseOverlayState(
     val allowDismiss: Boolean = true,
 )
 
+/**
+ * #1105 — a failed purchase is a BOTTOM BANNER, the same presentation iOS draws
+ * (`PaywallRenderer.swift`, "Post-purchase error banner").
+ *
+ * It used to be a centred card over a full-screen scrim, so one authored `post_purchase.on_failure`
+ * looked like two different products: Android dimmed the whole paywall and put the plan rows and the
+ * CTA behind the scrim; iOS left them visible, so a retry is one tap on the button that buys. The
+ * owner chose the banner (2026-10-24).
+ *
+ * Geometry and styling mirror iOS exactly, because the point is that the two stop differing:
+ *  - no scrim — only the banner itself is hit-testable, the rest of the paywall stays reachable;
+ *  - full width less 16 each side, 20 inner padding, radius 16, red at 0.9 (`Color.red`, #FF3B30);
+ *  - 15sp white centred text (iOS `.subheadline`), a translucent-white retry pill (radius 8, 24×10);
+ *  - above the MEASURED pinned zone, `max(80, pinnedZoneHeight + 16)`, inside the system-bar inset —
+ *    iOS measures its pinned group from the group's top to the window's bottom, so the caller passes
+ *    the pinned group's height plus the `footer_padding` that sits below it;
+ *  - tapping the banner dismisses it (iOS #1072): a tap aimed at a CTA it overlaps recovers.
+ */
+@Composable
+internal fun PurchaseFailureBanner(
+    message: String,
+    retryText: String?,
+    pinnedZoneHeight: Dp,
+    onRetry: () -> Unit,
+    onDismiss: () -> Unit,
+) {
+    val visible = remember { androidx.compose.animation.core.MutableTransitionState(false).apply { targetState = true } }
+    Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.BottomCenter) {
+        androidx.compose.animation.AnimatedVisibility(
+            visibleState = visible,
+            enter = androidx.compose.animation.slideInVertically { it } + androidx.compose.animation.fadeIn(),
+        ) {
+            Column(
+                modifier = Modifier
+                    .navigationBarsPadding()
+                    .padding(bottom = maxOf(80.dp, pinnedZoneHeight + 16.dp))
+                    .padding(horizontal = 16.dp)
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(16.dp))
+                    .background(Color(0xFFFF3B30).copy(alpha = 0.9f))
+                    .clickable { onDismiss() }
+                    .padding(20.dp),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.spacedBy(12.dp),
+            ) {
+                Text(text = message, color = Color.White, fontSize = 15.sp, textAlign = TextAlign.Center)
+                if (retryText != null) {
+                    Text(
+                        text = retryText,
+                        color = Color.White,
+                        fontSize = 15.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(8.dp))
+                            .background(Color.White.copy(alpha = 0.2f))
+                            .clickable { onRetry() }
+                            .padding(horizontal = 24.dp, vertical = 10.dp),
+                    )
+                }
+            }
+        }
+    }
+}
+
 // Parity: maps a console font-weight string (normal | medium | semibold | bold) to a Compose
 // FontWeight. Mirrors iOS resolveCTAFontWeight semantics.
 //
@@ -1338,93 +1402,68 @@ fun PaywallScreen(
                     }
                 }
             } else if (!overlay.message.isNullOrEmpty()) {
-                // Message-only overlay (no lottie configured) — surface
-                // a centered card atop the paywall.
-                // parity audit R6 — when overlay.action == "retry", render
-                // a retry CTA labelled with overlay.retryText (mirrors iOS
-                // PaywallRenderer.swift:351-353). When action is null
-                // (success path) or "show_error", show message-only.
                 val isFailure = overlay.action == "retry" || overlay.action == "show_error"
-                /*
-                 * 🔴 #1103 — STOP CELEBRATING on a failure. The CTA tap starts the particle effect
-                 * (`if (config.particle_effect != null) showConfetti = true`, with no trigger check
-                 * at all) and nothing ever set it back, so a user who cancelled or was declined
-                 * watched a congratulatory animation run on top of a payment-failed message,
-                 * indefinitely. iOS clears it in its `onFailure` observer for the same reason.
-                 *
-                 * This removes the user-visible half. Moving the trigger to the success path proper
-                 * is the other half and is recorded on #1103.
-                 */
-                if (isFailure) showConfetti = false
-                Box(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .background(Color.Black.copy(alpha = 0.3f))
-                        .let { mod ->
-                            /*
-                             * 🔴 #1101 — A FAILURE OVERLAY IS ALWAYS DISMISSIBLE, whatever
-                             * `allow_dismiss` says.
-                             *
-                             * This Box is `fillMaxSize()` with a scrim, so it covers the whole
-                             * paywall — the CTA included. `allow_dismiss: false` has a legitimate
-                             * meaning for a SUCCESS overlay (hold the celebration, then route) and
-                             * for a paywall itself (forced engagement for N seconds). After a
-                             * payment fails it means "trap the user": the button that buys is
-                             * behind the scrim, the plan rows are behind it, and the only exits
-                             * are the system back button or killing the app. No author intends
-                             * that, and the SDK records nothing to explain it — a tap lands on the
-                             * scrim, so it runs no action, logs nothing and calls no delegate.
-                             *
-                             * iOS has never had the trap: its failure UI is a bottom banner that
-                             * leaves the rest of the paywall reachable. Measured when this was
-                             * found: 0 paywalls set `allow_dismiss: false`, so this makes nothing
-                             * worse today and closes the hole before someone does.
-                             */
-                            if (overlay.allowDismiss || isFailure) {
-                                mod.clickable { postPurchaseOverlay = null }
-                            } else mod
+                if (isFailure) {
+                    /*
+                     * 🔴 #1103 — STOP CELEBRATING on a failure. The CTA tap starts the particle effect
+                     * (`if (config.particle_effect != null) showConfetti = true`, with no trigger check
+                     * at all) and nothing ever set it back, so a user who cancelled or was declined
+                     * watched a congratulatory animation run on top of a payment-failed message,
+                     * indefinitely. iOS clears it in its `onFailure` observer for the same reason.
+                     *
+                     * This removes the user-visible half. Moving the trigger to the success path proper
+                     * is the other half and is recorded on #1103.
+                     */
+                    showConfetti = false
+                    /*
+                     * #1105 — the bottom banner iOS draws, not a centred card over a scrim. With no
+                     * scrim there is nothing covering the plan rows or the CTA, so #1101's trap (a
+                     * failure authored `allow_dismiss: false` behind a full-screen scrim) cannot recur:
+                     * the banner is always tap-to-dismiss and everything else stays reachable.
+                     */
+                    PurchaseFailureBanner(
+                        message = overlay.message,
+                        retryText = if (overlay.action == "retry") overlay.retryText ?: "Try Again" else null,
+                        pinnedZoneHeight = with(androidx.compose.ui.platform.LocalDensity.current) { pinnedHeightPx.toDp() } +
+                            (config.layout.footer_padding ?: 8f).dp,
+                        onRetry = {
+                            // Re-fire purchase for currently-selected plan.
+                            // Use effectivePlans() (sections OR top-level) like every
+                            // other selected-plan lookup, so section-scoped plans retry.
+                            val plan = effectivePlans().firstOrNull { it.id == selectedPlanId }
+                            postPurchaseOverlay = null
+                            plan?.let { onPlanSelected(it, emptyMap()) }
                         },
-                    contentAlignment = Alignment.Center,
-                ) {
-                    Card(
-                        shape = RoundedCornerShape(16.dp),
-                        colors = CardDefaults.cardColors(
-                            containerColor = if (isFailure) Color(0xFFD64545) else Color(0xFF2E9E51),
-                        ),
+                        onDismiss = { postPurchaseOverlay = null },
+                    )
+                } else {
+                    // Message-only SUCCESS overlay (no lottie configured) — a centred card atop the
+                    // paywall. `allow_dismiss: false` keeps its meaning here: hold the celebration
+                    // until the success action routes (#1101's control).
+                    Box(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .background(Color.Black.copy(alpha = 0.3f))
+                            .let { mod ->
+                                if (overlay.allowDismiss) mod.clickable { postPurchaseOverlay = null } else mod
+                            },
+                        contentAlignment = Alignment.Center,
                     ) {
-                        Column(
-                            modifier = Modifier.padding(horizontal = 24.dp, vertical = 16.dp),
-                            horizontalAlignment = Alignment.CenterHorizontally,
+                        Card(
+                            shape = RoundedCornerShape(16.dp),
+                            colors = CardDefaults.cardColors(containerColor = Color(0xFF2E9E51)),
                         ) {
-                            Text(
-                                text = overlay.message,
-                                color = Color.White,
-                                fontSize = 16.sp,
-                                fontWeight = FontWeight.SemiBold,
-                                textAlign = TextAlign.Center,
-                            )
-                            // Retry CTA — only when iOS-side action == "retry".
-                            if (overlay.action == "retry") {
-                                Spacer(Modifier.height(12.dp))
-                                Button(
-                                    onClick = {
-                                        // Re-fire purchase for currently-selected plan.
-                                        // Use effectivePlans() (sections OR top-level) like every
-                                        // other selected-plan lookup, so section-scoped plans retry.
-                                        val plan = effectivePlans().firstOrNull { it.id == selectedPlanId }
-                                        postPurchaseOverlay = null
-                                        plan?.let { onPlanSelected(it, emptyMap()) }
-                                    },
-                                    colors = ButtonDefaults.buttonColors(
-                                        containerColor = Color.White,
-                                        contentColor = Color(0xFFD64545),
-                                    ),
-                                ) {
-                                    Text(
-                                        text = overlay.retryText ?: "Try Again",
-                                        fontWeight = FontWeight.SemiBold,
-                                    )
-                                }
+                            Column(
+                                modifier = Modifier.padding(horizontal = 24.dp, vertical = 16.dp),
+                                horizontalAlignment = Alignment.CenterHorizontally,
+                            ) {
+                                Text(
+                                    text = overlay.message,
+                                    color = Color.White,
+                                    fontSize = 16.sp,
+                                    fontWeight = FontWeight.SemiBold,
+                                    textAlign = TextAlign.Center,
+                                )
                             }
                         }
                     }

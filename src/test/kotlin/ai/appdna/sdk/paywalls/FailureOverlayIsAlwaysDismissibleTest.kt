@@ -2,6 +2,7 @@ package ai.appdna.sdk.paywalls
 
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithText
+import androidx.compose.ui.test.onRoot
 import androidx.compose.ui.test.performClick
 import org.junit.Assert.assertTrue
 import org.junit.Rule
@@ -12,7 +13,10 @@ import org.robolectric.annotation.Config
 
 /**
  * #1101 — A FAILED PURCHASE CAN ALWAYS BE DISMISSED, whatever `allow_dismiss` says.
+ * #1105 — and it is a BOTTOM BANNER with no scrim, the presentation iOS draws, so the paywall
+ * behind it stays reachable.
  *
+ * (History, kept because it is why the reachability test below exists:)
  * The post-purchase overlay is a `Box` with `fillMaxSize()` and a scrim, so it covers the whole
  * paywall — the CTA included. It used to be dismissible only when `allowDismiss` was set, and
  * `allow_dismiss: false` on a FAILURE therefore trapped the user: the button that buys is behind the
@@ -66,11 +70,13 @@ class FailureOverlayIsAlwaysDismissibleTest {
         ),
     ) ?: error("paywall did not parse")
 
-    private fun render() {
+    private val ctaText = "Start Free Trial"
+
+    private fun render(onPlanSelected: (PaywallPlan) -> Unit = {}) {
         compose.setContent {
             PaywallScreen(
                 config = paywall(),
-                onPlanSelected = { _, _ -> },
+                onPlanSelected = { plan, _ -> onPlanSelected(plan) },
                 onRestore = {},
                 onDismiss = {},
             )
@@ -101,8 +107,7 @@ class FailureOverlayIsAlwaysDismissibleTest {
         compose.waitForIdle()
 
         assertTrue(
-            "a failure overlay authored allow_dismiss:false did not dismiss, so the paywall's CTA " +
-                "is still behind a full-screen scrim with no way out — that is #1101",
+            "a failure banner authored allow_dismiss:false did not dismiss on tap — that is #1101",
             compose.onAllNodesWithTextSafe(failureMessage) == 0,
         )
     }
@@ -135,6 +140,69 @@ class FailureOverlayIsAlwaysDismissibleTest {
             "a SUCCESS overlay authored allow_dismiss:false dismissed on tap, so #1101's fix was " +
                 "applied too widely and the flag no longer means anything",
             compose.onAllNodesWithTextSafe(successMessage) > 0,
+        )
+    }
+
+    /**
+     * #1105 — WITH THE BANNER UP, THE CTA STILL BUYS.
+     *
+     * This is the behaviour the presentation change exists for: iOS's banner leaves the plan rows
+     * and the button that buys reachable, so a retry is one tap. Android's old centred card sat
+     * on a `fillMaxSize()` scrim, and a tap on the CTA landed on the scrim instead — so this test
+     * fails against it, which is what makes it evidence rather than a description.
+     */
+    @Test
+    fun `the CTA behind a failure banner still buys`() {
+        PaywallActivity.postPurchaseOverlay = PostPurchaseOverlayState(
+            message = failureMessage,
+            action = "show_error",
+            allowDismiss = true,
+        )
+        var bought: String? = null
+        render { bought = it.id }
+        compose.onNodeWithText(failureMessage, substring = true).assertExists()
+
+        compose.onNodeWithText(ctaText).performClick()
+        compose.waitForIdle()
+
+        assertTrue(
+            "the CTA was tapped with the failure banner up and nothing was bought — something " +
+                "still covers the paywall behind the banner (#1105)",
+            bought == "plan_monthly",
+        )
+    }
+
+    /**
+     * #1105 — THE BANNER SITS ABOVE THE CTA, NOT ON IT.
+     *
+     * iOS places it at `max(80, pinnedZoneHeight + 16)` above the bottom, where the pinned zone is
+     * MEASURED, so it clears the CTA however tall the pinned group is. A banner merely anchored to
+     * the bottom would pass the reachability test above whenever the tap point missed it and still
+     * cover the CTA's label, so the geometry is asserted on its own.
+     */
+    @Test
+    fun `the failure banner is at the bottom, and clears the CTA`() {
+        PaywallActivity.postPurchaseOverlay = PostPurchaseOverlayState(
+            message = failureMessage,
+            action = "retry",
+            retryText = "Try Again",
+        )
+        render()
+        compose.waitForIdle()
+        val root = compose.onRoot().fetchSemanticsNode().boundsInRoot
+        val retry = compose.onNodeWithText("Try Again").fetchSemanticsNode().boundsInRoot
+        val message = compose.onNodeWithText(failureMessage, substring = true).fetchSemanticsNode().boundsInRoot
+        val cta = compose.onNodeWithText(ctaText).fetchSemanticsNode().boundsInRoot
+
+        assertTrue(
+            "the failure message is in the top half of the screen (top=${message.top}, " +
+                "screen=${root.height}) — it is still the centred card, not the bottom banner",
+            message.top > root.height / 2,
+        )
+        assertTrue(
+            "the banner's lowest content (retry bottom=${retry.bottom}) overlaps the CTA " +
+                "(top=${cta.top}) — it is not sitting above the measured pinned zone",
+            retry.bottom <= cta.top,
         )
     }
 

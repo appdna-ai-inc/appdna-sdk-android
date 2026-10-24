@@ -36,6 +36,15 @@ Wraps iOS 1.0.83. Adds host-reported paying users.
   gone, and anything registered afterwards belongs to the caller and survives. Registering during or
   after `shutdown()` is unchanged and still works.
 
+### Changed
+
+- **A failed purchase now shows a banner above the purchase button, the same one iOS draws.** For
+  `post_purchase.on_failure` actions `show_error` and `retry`, Android used to draw a centred card
+  over a dimmed, full-screen backdrop that covered the plans and the purchase button. It now draws a
+  red banner above the button and nothing else, so the user can pick another plan or tap the
+  purchase button again straight away. Tapping the banner hides it. Successful-purchase messages are
+  unchanged.
+
 ## [1.0.54]
 
 Wraps iOS 1.0.82. Ships maps and host data (including "Show more").

@@ -636,7 +636,10 @@ internal class PaywallManager(
             }
             "show_error", "retry" -> {
                 PaywallActivity.postPurchaseOverlay = PostPurchaseOverlayState(
-                    message = config.message ?: "Payment failed. Please try again.",
+                    // #1105 — an EMPTY message falls back to the default, as on iOS and in the console
+                    // preview. `?:` alone kept "", and the overlay skips an empty message entirely, so
+                    // this document drew no banner here and an empty one on iOS.
+                    message = config.message?.takeIf { it.isNotEmpty() } ?: "Payment failed. Please try again.",
                     confetti = false,
                     lottieUrl = null,
                     // Propagate
@@ -645,7 +648,9 @@ internal class PaywallManager(
                     // 309-313 + PaywallRenderer.swift:351-353. Without this,
                     // console-configured retry button text + retry-vs-dismiss
                     // action were silently dropped.
-                    retryText = config.retry_text,
+                    // The default is applied HERE, as iOS applies it in its manager, so both hand the
+                    // renderer the same text (#1105's fixture reads it at this boundary).
+                    retryText = config.retry_text?.takeIf { it.isNotEmpty() } ?: "Try Again",
                     action = config.action,
                     allowDismiss = config.allow_dismiss ?: true,
                 )
