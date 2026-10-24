@@ -1299,6 +1299,8 @@ fun PaywallScreen(
                     isPurchasing = isPurchasing,
                     // Round-MZ — selected plan's per-plan cta_text overrides the footer label.
                     selectedPlanCtaText = effectivePlans().firstOrNull { it.id == selectedPlanId }?.cta_text?.takeIf { it.isNotBlank() },
+                    config = config,
+                    selectedPlanId = selectedPlanId,
                     onCTATap = { purchaseSelectedPlan() },
                     onRestore = onRestore,
                     loc = ::loc,
@@ -1597,6 +1599,8 @@ private fun appendPlanName(
     selectedPlanId: String?,
     loc: (String, String) -> String,
 ): String {
+    // #1104 — the author can switch naming off for the whole paywall (it defaults on).
+    if (config.cta?.name_plan == false) return localised
     // Resolved here rather than passed in, because the caller's list is built inside a `run {}`
     // block whose scope the argument list cannot see. Same resolution as iOS `resolvedPlans` and
     // Android's own `effectivePlans()`: the "plans"-type section first, then top-level config.plans.
@@ -1608,8 +1612,9 @@ private fun appendPlanName(
     val selected = plans[idx]
     if (!selected.cta_text.isNullOrBlank()) return localised
     val name = loc("plan.$idx.name", selected.displayName).trim()
-    if (name.isEmpty() || localised.contains(name, ignoreCase = true)) return localised
-    return "$localised — $name"
+    // #1104 — the format is localised too, so a locale can change the separator or the order.
+    val format = loc("cta.plan_format", config.cta?.plan_format ?: CtaPlanName.DEFAULT_FORMAT)
+    return CtaPlanName.compose(localised, name, format)
 }
 
 @Composable
@@ -6400,6 +6405,10 @@ private fun PaywallStickyFooter(
     loc: (String, String) -> String,
     // Round-MZ — selected plan's per-plan cta_text (overrides section cta_text when non-empty).
     selectedPlanCtaText: String? = null,
+    // #1104 — what the sticky CTA needs to name the selected plan, as iOS's sticky CTA always has
+    // (`ctaDisplayText(…, locKey: "sticky_footer.cta", …)`); Android's drew the bare text.
+    config: PaywallConfig? = null,
+    selectedPlanId: String? = null,
 ) {
     val onAction = LocalPaywallAction.current   // #1076
     // Default background #FFFFFF matches iOS
@@ -6451,7 +6460,9 @@ private fun PaywallStickyFooter(
                     CircularProgressIndicator(modifier = Modifier.size(20.dp), color = Color.White, strokeWidth = 2.dp)
                 } else {
                     Text(
-                        text = loc("sticky_footer.cta", ctaText),
+                        text = loc("sticky_footer.cta", ctaText).let { label ->
+                            config?.let { appendPlanName(label, it, selectedPlanId, loc) } ?: label
+                        },
                         fontWeight = resolveCtaWeight(section.data?.cta_font_weight),
                         fontSize = (section.data?.cta_font_size ?: 17f).sp,
                         color = section.data?.cta_text_color?.let { parseHexColor(it) } ?: Color.White,

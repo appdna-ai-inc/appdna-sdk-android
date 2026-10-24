@@ -776,6 +776,10 @@ data class PaywallCTA(
     val height: Double? = null,
     val font_size: Double? = null,
     val padding_vertical: Double? = null,
+    /** #1104 — `false` stops a multi-plan CTA naming the selected plan (default: it does, #1100). */
+    val name_plan: Boolean? = null,
+    /** #1104 — where the CTA text and the plan's name go: `{cta}` / `{plan}`, default `{cta} — {plan}`. */
+    val plan_format: String? = null,
 )
 
 /**
@@ -1283,6 +1287,8 @@ internal object PaywallConfigParser {
                     ?: (styleMap?.get("font_size") as? Number)?.toDouble(),
                 padding_vertical = (ctaMap.num(SURFACE, "cta", "padding_vertical"))?.toDouble()
                     ?: (styleMap?.get("padding_vertical") as? Number)?.toDouble(),
+                name_plan = ctaMap.bool(SURFACE, "cta", "name_plan"),
+                plan_format = ctaMap.str(SURFACE, "cta", "plan_format"),
             )
         }
 

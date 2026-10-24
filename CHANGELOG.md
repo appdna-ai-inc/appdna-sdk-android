@@ -49,6 +49,11 @@ Wraps iOS 1.0.83. Adds host-reported paying users.
   without the purchase metadata (a validated promo code and toggle states were dropped). It now also
   reports `CTA_TAPPED` to your paywall action listener, as a second tap would. iOS's retry button now
   starts the purchase too; it used to only hide the banner.
+- **Naming the selected plan on a multi-plan purchase button is now optional, and its wording is
+  yours.** The paywall's top-level `cta` gains `name_plan` (`false` shows exactly the text you
+  configured; default: the plan is named, as before) and `plan_format` (`{cta}` and `{plan}`, default
+  `{cta} — {plan}`), which is translatable as `cta.plan_format` so a locale can reorder the two.
+  The sticky-footer button now names the plan too, as it already did on iOS.
 - **The purchase button behaves the same wherever it is drawn.** A purchase button inside a paywall
   section or a sticky footer started the paywall's particle effect on the tap rather than after the
   purchase succeeded — the pinned button already waited for the purchase.

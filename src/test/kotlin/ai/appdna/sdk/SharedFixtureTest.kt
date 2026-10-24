@@ -241,6 +241,7 @@ class SharedFixtureTest(
             "refresh_step_interaction" -> runRefreshStepInteraction(action, spy)
             "multi_buttons_layout" -> runMultiButtonsLayout(action, spy)
             "compose_map_url" -> runComposeMapUrl(action, spy)
+            "compose_cta_plan_name" -> runComposeCtaPlanName(action, spy)
             "receive_push" -> runReceivePush(action, spy)
             "tap_push" -> runTapPush(action, spy)
             "dismiss_push" -> runDismissPush(action, spy)
@@ -1544,6 +1545,19 @@ class SharedFixtureTest(
      * drifted underneath it. The token comes from the fixture rather than `AppDNA.mapboxToken` so
      * the expected string is deterministic and no test needs a configured SDK.
      */
+    /** #1104 — REAL: `CtaPlanName.compose`, the one function every Android CTA site names the plan with. */
+    private fun runComposeCtaPlanName(action: JSONObject, spy: Spy) {
+        val cases = action.optJSONArray("cases") ?: unsupported("compose_cta_plan_name needs action.cases")
+        spy.state["labels"] = (0 until cases.length()).map { i ->
+            val c = cases.getJSONObject(i)
+            ai.appdna.sdk.paywalls.CtaPlanName.compose(
+                base = c.optString("base", ""),
+                plan = if (c.isNull("plan")) null else c.optString("plan"),
+                format = if (c.isNull("format")) null else c.optString("format"),
+            )
+        }
+    }
+
     private fun runComposeMapUrl(action: JSONObject, spy: Spy) {
         val cfg = config ?: error("compose_map_url needs setup.config")
         val blockId = action.getString("block_id")
