@@ -4,7 +4,23 @@ All notable changes to the AppDNA Android SDK are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and
 the project uses [Semantic Versioning](https://semver.org/).
 
-## [1.0.55] — unreleased
+## [1.0.56] — unreleased
+
+Wraps iOS 1.0.83. Builds on Play Billing Library 8, which Google Play now requires.
+
+### Changed
+
+- **Play Billing Library 7.0.0 → 8.0.0** (#1112). Google Play refuses to accept an app update built on
+  Play Billing Library 7 ("must update to at least version 8.0.0"), and this SDK is where an integrating
+  app gets it from — so every app on 1.0.55 or earlier is blocked from publishing. Nothing in the public
+  API changes.
+- **The SDK depends on `com.android.billingclient:billing`, no longer on `billing-ktx`.** `billing-ktx` 8.x
+  is compiled with Kotlin 2.1 metadata, which a Kotlin 1.9 toolchain cannot read; the two suspend helpers
+  the SDK used from it are now internal. An app on Kotlin 1.9 keeps building. If your own code uses
+  `billing-ktx`, add it to your app's dependencies directly.
+- 8.0.0 rather than a later 8.x: `billing-ktx` 8.1.0+ requires kotlin-stdlib 2.2.
+
+## [1.0.55] — released
 
 Wraps iOS 1.0.83. Adds host-reported paying users.
 

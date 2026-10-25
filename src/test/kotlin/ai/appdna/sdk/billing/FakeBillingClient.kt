@@ -151,11 +151,6 @@ internal class FakeBillingClient(private val listener: PurchasesUpdatedListener)
         answer()
     }
 
-    @Deprecated("deprecated in Play Billing")
-    override fun queryPurchasesAsync(skuType: String, listener: PurchasesResponseListener) {
-        listener.onQueryPurchasesResponse(result(BillingResponseCode.OK), owned[skuType].orEmpty().toList())
-    }
-
     /**
      * A product query that PARKS: while [productQueryGate] is set and not completed, every
      * `queryProductDetailsAsync` answer is held and delivered on Main once it completes.
@@ -167,7 +162,9 @@ internal class FakeBillingClient(private val listener: PurchasesUpdatedListener)
         val requested = requestedProducts(params)
         val answer = {
             val out = requested.mapNotNull { (id, type) -> productDetails[id]?.takeIf { it.productType == type } }
-            listener.onProductDetailsResponse(result(BillingResponseCode.OK), out)
+            // Play Billing 8 answers with a QueryProductDetailsResult (#1112); nothing is "unfetched"
+            // here — a product the fake does not know is simply absent, as before.
+            listener.onProductDetailsResponse(result(BillingResponseCode.OK), QueryProductDetailsResult.create(out, emptyList()))
         }
         val gate = productQueryGate
         if (gate != null && !gate.isCompleted) {
@@ -217,19 +214,7 @@ internal class FakeBillingClient(private val listener: PurchasesUpdatedListener)
 
     // -- unused surface ------------------------------------------------------------------------
 
-    override fun queryPurchaseHistoryAsync(params: QueryPurchaseHistoryParams, listener: PurchaseHistoryResponseListener) {
-        listener.onPurchaseHistoryResponse(result(BillingResponseCode.OK), emptyList())
-    }
-
-    @Deprecated("deprecated in Play Billing")
-    override fun queryPurchaseHistoryAsync(skuType: String, listener: PurchaseHistoryResponseListener) {
-        listener.onPurchaseHistoryResponse(result(BillingResponseCode.OK), emptyList())
-    }
-
-    @Deprecated("deprecated in Play Billing")
-    override fun querySkuDetailsAsync(params: SkuDetailsParams, listener: SkuDetailsResponseListener) {
-        listener.onSkuDetailsResponse(result(BillingResponseCode.FEATURE_NOT_SUPPORTED), emptyList())
-    }
+    // queryPurchaseHistoryAsync and querySkuDetailsAsync are gone from Play Billing 8 (#1112).
 
     override fun showInAppMessages(activity: Activity, params: InAppMessageParams, listener: InAppMessageResponseListener): BillingResult =
         result(BillingResponseCode.FEATURE_NOT_SUPPORTED)

@@ -21,13 +21,14 @@ plugins {
 
 android {
     namespace = "ai.appdna.sample"
-    // compileSdk/targetSdk 34 → 35 (Play 2025 policy).
-    compileSdk = 35
+    // compileSdk/targetSdk 34 → 35 (Play 2025 policy); 35 → 36 (#1112 — Play refused the sample's first
+    // upload: "must target at least API level 36").
+    compileSdk = 36
 
     defaultConfig {
         applicationId = "ai.appdna.sample"
         minSdk = 24
-        targetSdk = 35
+        targetSdk = 36
         versionCode = 1
         versionName = "1.0"
 
