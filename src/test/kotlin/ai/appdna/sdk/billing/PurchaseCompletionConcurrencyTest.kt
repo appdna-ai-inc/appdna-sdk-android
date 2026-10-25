@@ -477,6 +477,44 @@ class PurchaseCompletionConcurrencyTest {
     }
 
     /**
+     * #1110 — a paywall purchase that COMPLETES through billing raises the celebrate signal, and one
+     * that does not complete never does. `PaywallPurchaseCelebrationDrawsTest` proves what the paywall
+     * draws when the signal rises; this proves the signal rises from a real purchase, through
+     * `handlePurchase` → `AppDNA.billing.purchase` → `handlePostPurchaseSuccess`, with Play faked at
+     * the `BillingClient` boundary (the emulator has no Play billing, so no device purchase succeeds).
+     * NEGATIVE CONTROL: without `PaywallActivity.signalPurchaseCelebrate()` at the top of
+     * `handlePostPurchaseSuccess`, the first assertion fails.
+     */
+    @Test fun `a completed paywall purchase raises the celebrate signal, a pending one does not`() {
+        val s = scenario(inFlightPurchase)
+        s.setDelegate()
+        val paywall = ai.appdna.sdk.paywalls.PaywallConfigParser.parsePaywalls(mapOf("pw_buy" to mapOf(
+            "id" to "pw_buy", "name" to "t", "layout" to mapOf("type" to "stack"), "sections" to emptyList<Any>(),
+        )))["pw_buy"]!!
+        val pm = ai.appdna.sdk.paywalls.PaywallManager(
+            ai.appdna.sdk.config.RemoteConfigManager(null, ai.appdna.sdk.storage.LocalStorage(ctx), 3600L), pipe!!.tracker,
+        )
+        val plan = ai.appdna.sdk.paywalls.PaywallPlan(id = "l", product_id = "lifetime_unlock", name = "L", price = "")
+        val signal = ai.appdna.sdk.paywalls.PaywallActivity.purchaseCelebrateSignal
+        try {
+            // Play has not answered yet: the purchase is in flight, nothing to celebrate.
+            s.fake.autoDeliver = false
+            val before = signal.get()
+            pm.handlePurchase(activity(), "pw_buy", plan, paywall, emptyMap(), object : AppDNAPaywallDelegate {})
+            s.idle()
+            assertEquals("a purchase that has not completed raised the celebrate signal", before, signal.get())
+
+            // Play answers: the purchase completes, and only now does the paywall celebrate.
+            s.fake.deliver(s.fake.listenerPurchase!!, "inapp")
+            s.idle(200)
+            assertEquals(1, events("purchase_completed"))
+            assertEquals("a completed paywall purchase did not raise the celebrate signal (#1110)", before + 1, signal.get())
+        } finally {
+            pm.shutdown()
+        }
+    }
+
+    /**
      * `onPaywallPurchaseCompleted` fires ONCE per paywall purchase. The host's paywall delegate is both
      * `AppDNA.paywall.listener` and the listener the paywall was presented with (the normal setup); the
      * billing manager used to call it too, so it fired twice. NEGATIVE CONTROL: with the paywall-delegate
