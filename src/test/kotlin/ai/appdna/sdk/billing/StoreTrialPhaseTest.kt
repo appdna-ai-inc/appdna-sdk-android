@@ -65,4 +65,20 @@ class StoreTrialPhaseTest {
         val offers = listOf(listOf(phase(0L, "P1W")), listOf(phase(0L, "P1M")))
         assertEquals("P1W", StoreTrialPhase.firstFreeTrialPeriod(offers))
     }
+
+    // #1113 — the OFFER the purchase uses is the one the sentence was read from.
+
+    @Test fun `the trial offer is the one the period came from`() {
+        val offers = listOf(
+            listOf(phase(4_990_000L, "P1M")),
+            listOf(phase(0L, "P1W"), phase(4_990_000L, "P1M")),
+        )
+        assertEquals(1, StoreTrialPhase.firstFreeTrialOffer(offers))
+        assertEquals("P1W", StoreTrialPhase.firstFreeTrialPeriod(offers))
+    }
+
+    @Test fun `no free phase anywhere - no trial offer`() {
+        val offers = listOf(listOf(phase(4_990_000L, "P1M")), listOf(phase(1_000_000L, "P1M"), phase(4_990_000L, "P1M")))
+        assertNull(StoreTrialPhase.firstFreeTrialOffer(offers))
+    }
 }

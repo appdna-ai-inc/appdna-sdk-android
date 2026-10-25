@@ -927,8 +927,21 @@ class NativeBillingManager internal constructor(
                 val token = options?.offerToken
                 val offers = productDetails.subscriptionOfferDetails
                 if (token != null) offers?.find { it.offerToken == token }
-                // With no named offer prefer the base plan (no offerId), never an arbitrary one.
-                else offers?.firstOrNull { it.offerId == null } ?: offers?.firstOrNull()
+                else {
+                    /*
+                     * #1113 — with no named offer, the FREE-TRIAL offer the paywall advertised, when
+                     * Play returned one (it only does for a user who is eligible), chosen by the same
+                     * rule that wrote the paywall's trial sentence. Otherwise the base plan (no
+                     * offerId), never an arbitrary one. This used to be the base plan always, so the
+                     * paywall promised a trial and the sheet charged the full price from day one.
+                     */
+                    val trialAt = offers?.let { list ->
+                        StoreTrialPhase.firstFreeTrialOffer(list.map { offer ->
+                            offer.pricingPhases.pricingPhaseList.map { StoreTrialPhase.Phase(it.priceAmountMicros, it.billingPeriod) }
+                        })
+                    }
+                    trialAt?.let { offers[it] } ?: offers?.firstOrNull { it.offerId == null } ?: offers?.firstOrNull()
+                }
             } else null
 
             val flowParamsBuilder = BillingFlowParams.newBuilder()

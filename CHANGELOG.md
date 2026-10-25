@@ -20,6 +20,15 @@ Wraps iOS 1.0.83. Builds on Play Billing Library 8, which Google Play now requir
   `billing-ktx`, add it to your app's dependencies directly.
 - 8.0.0 rather than a later 8.x: `billing-ktx` 8.1.0+ requires kotlin-stdlib 2.2.
 
+### Fixed
+
+- **A subscription purchase now starts the free trial the paywall shows** (#1113). With no
+  `offerToken`, the purchase used to launch the base plan every time, while the paywall read its
+  "1 week free trial" sentence from Play's eligible offers — so Play's sheet said "Starting today"
+  at the full price. It now uses the same free-trial offer the sentence came from, and the base plan
+  when Play returns none. An explicit `offerToken` is still bought as given; an introductory price is
+  never chosen automatically.
+
 ## [1.0.55] — released
 
 Wraps iOS 1.0.83. Adds host-reported paying users.

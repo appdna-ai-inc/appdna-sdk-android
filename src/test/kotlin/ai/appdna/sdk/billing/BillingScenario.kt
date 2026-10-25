@@ -158,7 +158,14 @@ internal class BillingScenario(
             for (id in pd.keys()) {
                 val d = pd.getJSONObject(id)
                 val type = if (d.optString("product_type") == "subs") BillingClient.ProductType.SUBS else BillingClient.ProductType.INAPP
-                fake.productDetails[id] = FakeBillingClient.productDetails(id, type, d.getLong("price_micros"), d.getString("currency"))
+                val offers = d.optJSONArray("offers")?.objects()?.map { o ->
+                    FakeBillingClient.Companion.Offer(
+                        offerId = o.optStr("offer_id"),
+                        token = o.getString("token"),
+                        phases = o.getJSONArray("phases").objects().map { it.getLong("micros") to it.getString("period") },
+                    )
+                }
+                fake.productDetails[id] = FakeBillingClient.productDetails(id, type, d.getLong("price_micros"), d.getString("currency"), offers)
             }
         }
         setup.optJSONArray("consume_failures").strings().forEach { fake.consumeFailures += it }

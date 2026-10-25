@@ -40,8 +40,19 @@ internal object StoreTrialPhase {
      * sentence with no duration reads as a bug to the user.
      */
     fun firstFreeTrialPeriod(offers: List<List<Phase>>): String? =
-        offers.asSequence()
-            .flatMap { it.asSequence() }
-            .firstOrNull { it.priceAmountMicros == 0L && !it.billingPeriod.isNullOrBlank() }
-            ?.billingPeriod
+        firstFreeTrialOffer(offers)?.let { i -> offers[i].first { it.isFreeTrial() }.billingPeriod }
+
+    /**
+     * #1113 — the index of the offer [firstFreeTrialPeriod] reads its trial from, or null.
+     *
+     * The PURCHASE uses this offer, so the trial the paywall states and the trial the purchase sheet
+     * starts are one decision, not two. They were two: the paywall read a zero-price phase from any
+     * eligible offer, while the purchase always launched the base plan — so Android drew "1 week free
+     * trial" and Play then charged the full price "Starting today". Play applies no offer on its own; a
+     * subscription purchase gets exactly the offer whose token it is handed.
+     */
+    fun firstFreeTrialOffer(offers: List<List<Phase>>): Int? =
+        offers.indexOfFirst { phases -> phases.any { it.isFreeTrial() } }.takeIf { it >= 0 }
+
+    private fun Phase.isFreeTrial(): Boolean = priceAmountMicros == 0L && !billingPeriod.isNullOrBlank()
 }

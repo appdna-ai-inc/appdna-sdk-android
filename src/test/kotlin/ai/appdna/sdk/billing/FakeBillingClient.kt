@@ -177,8 +177,12 @@ internal class FakeBillingClient(private val listener: PurchasesUpdatedListener)
 
     // -- purchase ------------------------------------------------------------------------------
 
+    /** The params of the last `launchBillingFlow` — read with [stringsOf] (Play's getters are obfuscated). */
+    @Volatile var lastFlowParams: BillingFlowParams? = null
+
     override fun launchBillingFlow(activity: Activity, params: BillingFlowParams): BillingResult {
         launchCount++
+        lastFlowParams = params
         val code = launchScript.removeFirstOrNull() ?: BillingResponseCode.OK
         if (code == BillingResponseCode.OK) {
             val p = listenerPurchase
@@ -280,7 +284,16 @@ internal class FakeBillingClient(private val listener: PurchasesUpdatedListener)
         }
 
         /** A [ProductDetails] (its constructor is package-private — reached reflectively). */
-        fun productDetails(productId: String, type: String, priceMicros: Long, currency: String): ProductDetails {
+        /** One subscription offer: its `offerId` (null = the base plan), token, and phases as (micros, period). */
+        data class Offer(val offerId: String?, val token: String, val phases: List<Pair<Long, String>>)
+
+        fun productDetails(
+            productId: String,
+            type: String,
+            priceMicros: Long,
+            currency: String,
+            offers: List<Offer>? = null,
+        ): ProductDetails {
             val price = JSONObject().apply {
                 put("priceAmountMicros", priceMicros)
                 put("priceCurrencyCode", currency)
@@ -294,7 +307,30 @@ internal class FakeBillingClient(private val listener: PurchasesUpdatedListener)
                 put("description", productId)
                 put("localizedIn", JSONArray(listOf("en-US")))
                 put("skuDetailsToken", "sdt_$productId")
-                if (type == ProductType.SUBS) {
+                if (type == ProductType.SUBS && offers != null) {
+                    put("subscriptionOfferDetails", JSONArray().apply {
+                        offers.forEach { o ->
+                            put(JSONObject().apply {
+                                put("offerIdToken", o.token)
+                                put("basePlanId", "base")
+                                o.offerId?.let { put("offerId", it) }
+                                put("offerTags", JSONArray())
+                                put("pricingPhases", JSONArray().apply {
+                                    o.phases.forEach { (micros, period) ->
+                                        put(JSONObject().apply {
+                                            put("priceAmountMicros", micros)
+                                            put("priceCurrencyCode", currency)
+                                            put("formattedPrice", "$currency ${micros / 1_000_000.0}")
+                                            put("billingPeriod", period)
+                                            put("recurrenceMode", if (micros == 0L) 2 else 1)
+                                            put("billingCycleCount", if (micros == 0L) 1 else 0)
+                                        })
+                                    }
+                                })
+                            })
+                        }
+                    })
+                } else if (type == ProductType.SUBS) {
                     put("subscriptionOfferDetails", JSONArray().put(JSONObject().apply {
                         put("offerIdToken", "offer_$productId")
                         put("basePlanId", "base")
