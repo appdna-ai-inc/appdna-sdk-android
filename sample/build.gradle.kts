@@ -29,8 +29,11 @@ android {
         applicationId = "ai.appdna.sample"
         minSdk = 24
         targetSdk = 36
-        versionCode = 1
-        versionName = "1.0"
+        // Play keeps every version code it has received: 1 is the bundle it refused on Billing 7 / API 35
+        // (#1112), 2 the first it accepted, 3 the first carrying a production key (#1062), 4 the first
+        // that buys the free-trial offer it shows (#1113).
+        versionCode = 4
+        versionName = "1.0.3"
 
         /*
          * #951 — a Maps key the sample can be GIVEN, defaulting to empty.
@@ -65,6 +68,24 @@ android {
          */
         manifestPlaceholders["appdnaBaseUrl"] =
             (project.findProperty("appdnaBaseUrl") as String?) ?: ""
+
+        /*
+         * #1062 — the SDK key and the paywall the "Show Paywall" button opens, same shape again.
+         *
+         * A build installed from a Play testing track is a RELEASE build, so the base-URL override
+         * above does not apply to it and it talks to production — which needs a real sandbox key and
+         * a real paywall id, not the demo placeholders. They are supplied at build time and never
+         * committed; the defaults are the placeholders a stock sample has always shipped.
+         *
+         *     ./gradlew :sample:bundleRelease -PappdnaSampleApiKey=adn_test_… -PappdnaSamplePaywallId=<id>
+         */
+        // Empty by default, which `SampleConfig` reads as absent — so a stock build, and a device walk
+        // whose `.ai/bridge/patch-sample.py` rewrites the literals in SampleApp/MainActivity, behave
+        // exactly as before.
+        manifestPlaceholders["appdnaSampleApiKey"] =
+            (project.findProperty("appdnaSampleApiKey") as String?) ?: ""
+        manifestPlaceholders["appdnaSamplePaywallId"] =
+            (project.findProperty("appdnaSamplePaywallId") as String?) ?: ""
     }
 
     buildTypes {

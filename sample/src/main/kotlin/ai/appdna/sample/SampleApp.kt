@@ -70,7 +70,8 @@ class SampleApp : Application() {
         // key issued from the AppDNA console.
         AppDNA.configure(
             context = this,
-            apiKey = "appdna_sandbox_demo_key",
+            // A build-time key wins (see SampleConfig); otherwise this literal, which device walks rewrite.
+            apiKey = "appdna_sandbox_demo_key".let { SampleConfig.apiKey(this) ?: it },
             environment = Environment.SANDBOX,
             /*
              * #1043 — DEBUG, so a device walk can read what the SDK did.

@@ -123,8 +123,10 @@ private fun DemoScreen() {
         Button(
             modifier = Modifier.fillMaxWidth(),
             onClick = {
-                // Replace "demo_paywall" with a paywall id from your console.
-                AppDNA.showPaywall(id = "demo_paywall")
+                // A build-time paywall id wins (`-PappdnaSamplePaywallId`, see SampleConfig); otherwise
+                // replace "demo_paywall" with a paywall id from your console.
+                val fromBuild = activity?.let { SampleConfig.paywallId(it) }
+                if (fromBuild != null) AppDNA.showPaywall(id = fromBuild) else AppDNA.showPaywall(id = "demo_paywall")
             },
         ) { Text("Show Paywall") }
 
