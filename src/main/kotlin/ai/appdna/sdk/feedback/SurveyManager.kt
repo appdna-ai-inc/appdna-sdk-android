@@ -82,16 +82,10 @@ internal class SurveyManager(
             // 3. Frequency
             if (!frequencyTracker.canShow(surveyId, config.triggerRules.frequency, config.triggerRules.maxDisplays)) continue
 
-            // 4. Love score range. No SDK computes a love score yet, so the stored value is always 0 and a
-            // range with min > 0 never passes; the debug line says so instead of skipping silently.
-            if (!meetsLoveScoreRange(config.triggerRules.loveScoreRange)) {
-                ai.appdna.sdk.Log.debug("[Surveys] $surveyId skipped — love_score_range not met (the device has no love score)")
-                continue
-            }
-
-            // 5. Min sessions
-            if (!meetsMinSessions(config.triggerRules.minSessions)) {
-                ai.appdna.sdk.Log.debug("[Surveys] $surveyId skipped — min_sessions not reached")
+            // 4–5. Love score range, min sessions: a skip says why in the debug log.
+            val skipReason = eligibilitySkipReason(surveyId, config.triggerRules)
+            if (skipReason != null) {
+                ai.appdna.sdk.Log.debug(skipReason)
                 continue
             }
 
@@ -572,6 +566,17 @@ internal class SurveyManager(
     }
 
 
+
+    /**
+     * Why a survey whose event matched is not shown, or null when it may be. No SDK computes a love score yet, so the
+     * stored value is always 0 and a `love_score_range` with min > 0 never passes; the reason says so instead of the
+     * survey being skipped silently.
+     */
+    internal fun eligibilitySkipReason(surveyId: String, rules: SurveyTriggerRules): String? = when {
+        !meetsLoveScoreRange(rules.loveScoreRange) -> "[Surveys] $surveyId skipped — love_score_range not met (the device has no love score)"
+        !meetsMinSessions(rules.minSessions) -> "[Surveys] $surveyId skipped — min_sessions not reached"
+        else -> null
+    }
 
     private fun meetsLoveScoreRange(range: ScoreRange?): Boolean {
         range ?: return true
