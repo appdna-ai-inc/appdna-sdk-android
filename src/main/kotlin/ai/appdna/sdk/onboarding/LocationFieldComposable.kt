@@ -296,12 +296,7 @@ internal suspend fun fetchLocationSuggestions(
                 connectTimeout = 10000
                 readTimeout = 10000
                 doOutput = true
-                setRequestProperty("Content-Type", "application/json")
-                if (apiKey != null) setRequestProperty("x-api-key", apiKey)
-                // The server answers null for a missing coordinate / zone only to an SDK that says it
-                // reads null (Android >= 1.0.54); without these headers it sends the legacy 0 / "UTC" shape.
-                setRequestProperty("x-sdk-version", ai.appdna.sdk.AppDNA.sdkVersion)
-                setRequestProperty("x-sdk-platform", "android")
+                locationAutocompleteHeaders(apiKey).forEach { (k, v) -> setRequestProperty(k, v) }
             } ?: return@withContext null
             try {
                 connection.outputStream.use { it.write(requestBody.toByteArray(Charsets.UTF_8)) }
@@ -328,4 +323,16 @@ internal suspend fun fetchLocationSuggestions(
         ai.appdna.sdk.Log.debug("LocationFieldComposable autocomplete failed: ${e.message}")
         emptyList()
     }
+}
+
+/**
+ * The headers of a location autocomplete request. The server answers null for a missing coordinate / zone only to an
+ * SDK that says it reads null (Android >= 1.0.54); without `x-sdk-version` / `x-sdk-platform` it sends the legacy
+ * 0 / "UTC" shape, and it decides from them which builds are shown Google suggestions at all.
+ */
+internal fun locationAutocompleteHeaders(apiKey: String?): Map<String, String> = buildMap {
+    put("Content-Type", "application/json")
+    if (apiKey != null) put("x-api-key", apiKey)
+    put("x-sdk-version", ai.appdna.sdk.AppDNA.sdkVersion)
+    put("x-sdk-platform", "android")
 }
