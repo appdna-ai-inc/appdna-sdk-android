@@ -36,6 +36,9 @@ Wraps iOS 1.0.83. Builds on Play Billing Library 8, which Google Play now requir
   stored as JSON and read back as the `Map` / `List` they were, as on iOS. The same applies to `setSessionData`.
   An answer saved by an earlier version is unchanged and still reads as typed text. A value JSON cannot hold
   (a NaN, an infinity, a non-JSON type) is kept for the session but not persisted, at any depth.
+- **`{{onboarding.<step>.<field>.city}}` now resolves** (#1158). The documented way to use a location answer in
+  copy rendered empty: the token path was split at most three ways, so the field id became `user_location.city`.
+  A token now walks into a structured answer to any depth, on `onboarding.*` and `responses.*`.
 
 ## [1.0.55] — released
 

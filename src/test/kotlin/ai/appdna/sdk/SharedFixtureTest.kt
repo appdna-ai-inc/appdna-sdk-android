@@ -1189,7 +1189,7 @@ class SharedFixtureTest(
             userTraits = userTraits,
             remoteConfig = { null },
             // The `input.*` namespace resolves across the collected step responses.
-            onboardingResponses = if (input.isEmpty()) emptyMap() else mapOf("current_step" to input),
+            onboardingResponses = (if (input.isEmpty()) emptyMap() else mapOf("current_step" to input)) + storedResponses(),
             computedData = emptyMap(),
             sessionData = emptyMap(),
             deviceInfo = device,
@@ -1216,6 +1216,13 @@ class SharedFixtureTest(
             deviceInfo = emptyMap(),
         )
     }
+
+    /** #1158 — `session_data.responses`, the stored step responses the `onboarding.*` / `responses.*` roots read. */
+    @Suppress("UNCHECKED_CAST")
+    private fun storedResponses(): Map<String, Map<String, Any>> =
+        (sessionData.optJSONObject("responses")?.asMap() ?: emptyMap())
+            .mapNotNull { (step, v) -> (v as? Map<String, Any?>)?.let { step to (it.filterValues { x -> x != null } as Map<String, Any>) } }
+            .toMap()
 
     @Suppress("UNCHECKED_CAST")
     private fun sessionMap(key: String): Map<String, Any?>? = sessionData.optJSONObject(key)?.asMap()

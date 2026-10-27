@@ -97,7 +97,14 @@ object TemplateEngine {
                     if (subParts.size < 2) return null
                     context.onboardingResponses[subParts[0]]?.get(subParts[1])?.let(::stringify)
                 } else {
-                    context.onboardingResponses[parts[1]]?.get(parts[2])?.let(::stringify)
+                    val step = context.onboardingResponses[parts[1]] ?: return null
+                    step[parts[2]]?.let { return stringify(it) }
+                    // #1158 — `{{onboarding.<step>.<field>.city}}`: the path is split at most three ways, so a key
+                    // inside a structured answer (a location selection) arrives as `field.city`. Walk it.
+                    val keys = parts[2].split(".")
+                    var value: Any? = step[keys[0]]
+                    for (key in keys.drop(1)) value = (value as? Map<*, *>)?.get(key)
+                    value?.let(::stringify)
                 }
             }
 
