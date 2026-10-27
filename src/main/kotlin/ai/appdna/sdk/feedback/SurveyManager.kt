@@ -82,11 +82,18 @@ internal class SurveyManager(
             // 3. Frequency
             if (!frequencyTracker.canShow(surveyId, config.triggerRules.frequency, config.triggerRules.maxDisplays)) continue
 
-            // 4. Love score range
-            if (!meetsLoveScoreRange(config.triggerRules.loveScoreRange)) continue
+            // 4. Love score range. No SDK computes a love score yet, so the stored value is always 0 and a
+            // range with min > 0 never passes; the debug line says so instead of skipping silently.
+            if (!meetsLoveScoreRange(config.triggerRules.loveScoreRange)) {
+                ai.appdna.sdk.Log.debug("[Surveys] $surveyId skipped — love_score_range not met (the device has no love score)")
+                continue
+            }
 
             // 5. Min sessions
-            if (!meetsMinSessions(config.triggerRules.minSessions)) continue
+            if (!meetsMinSessions(config.triggerRules.minSessions)) {
+                ai.appdna.sdk.Log.debug("[Surveys] $surveyId skipped — min_sessions not reached")
+                continue
+            }
 
             // 5. Present with delay
             val delay = config.triggerRules.delaySeconds?.toLong() ?: 0L
