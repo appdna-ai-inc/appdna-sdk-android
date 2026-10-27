@@ -2933,6 +2933,8 @@ class SharedFixtureTest(
         try {
             @Suppress("UNCHECKED_CAST")
             store.setOnboardingResponses(responses as Map<String, Any>)
+            // #1150 — read it back from the persisted copy, the way a cold start does.
+            if (action.optBoolean("relaunch")) store.reloadFromDisk()
             val loc = AppDNA.getLocationData(fieldId)
             val actual: Map<String, Any?>? = loc?.let {
                 linkedMapOf(

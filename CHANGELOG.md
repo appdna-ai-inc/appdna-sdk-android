@@ -29,6 +29,14 @@ Wraps iOS 1.0.83. Builds on Play Billing Library 8, which Google Play now requir
   when Play returns none. An explicit `offerToken` is still bought as given; an introductory price is
   never chosen automatically.
 
+- **A selected location answer, and any list or map answer, reads back the same after a relaunch** (#1150).
+  The answers were persisted with each nested value written as its `toString()`, so after the app restarted
+  `getLocationData(fieldId)` returned `"{formatted_address=…, city=…}"` as the address and no city, country,
+  coordinates or time zone, and a multi-select answer came back as the text `"[a, b]"`. Nested values are now
+  stored as JSON and read back as the `Map` / `List` they were, as on iOS. The same applies to `setSessionData`.
+  An answer saved by an earlier version is unchanged and still reads as typed text. A value JSON cannot hold
+  (a NaN, an infinity, a non-JSON type) is kept for the session but not persisted, at any depth.
+
 ## [1.0.55] — released
 
 Wraps iOS 1.0.83. Adds host-reported paying users.

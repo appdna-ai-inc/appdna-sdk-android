@@ -3,6 +3,7 @@ package ai.appdna.sdk.core
 import android.content.Context
 import android.content.SharedPreferences
 import ai.appdna.sdk.Log
+import org.json.JSONArray
 import org.json.JSONObject
 
 /**
@@ -129,6 +130,18 @@ class SessionDataStore private constructor(private val prefs: SharedPreferences)
     /**
      * Clear everything (onboarding + computed + session).
      */
+    /**
+     * Re-reads the persisted copy, as a cold start does — `init` runs the same loaders. The shared fixture
+     * `location_data_after_relaunch` (#1150) drives it so both platforms prove an answer survives a relaunch.
+     */
+    internal fun reloadFromDisk() {
+        synchronized(this) {
+            _onboardingResponses = loadNestedMap(KEY_ONBOARDING)
+            _computedData = loadMap(KEY_COMPUTED)
+            _sessionData = loadMap(KEY_SESSION)
+        }
+    }
+
     fun clearAll() {
         synchronized(this) {
             _onboardingResponses = emptyMap()
@@ -205,10 +218,39 @@ class SessionDataStore private constructor(private val prefs: SharedPreferences)
         for (key in obj.keys()) {
             val value = obj.get(key)
             if (value != JSONObject.NULL) {
-                map[key] = value
+                map[key] = fromJsonValue(value)
             }
         }
         return map
+    }
+
+    /**
+     * #1150 — a nested `JSONObject` / `JSONArray` comes back as the `Map` / `List` it was written from, so a stored
+     * location selection or a multi-select answer reads the same after a relaunch as before it. A `null` inside an
+     * object is dropped, as at the top level; one inside an array keeps its place.
+     */
+    private fun fromJsonValue(value: Any): Any = when (value) {
+        is JSONObject -> jsonToFlatMap(value)
+        is JSONArray -> List(value.length()) { i -> value.opt(i)?.takeIf { it != JSONObject.NULL }?.let(::fromJsonValue) }
+        else -> value
+    }
+
+    /**
+     * #1150 — the JSON form of [value], deep. Android's `org.json` stores a `Map` or `List` given to `put` as-is and
+     * writes it as its `toString()`, so a selected location answer used to persist as `"{formatted_address=…}"` and
+     * read back as text. Throws `JSONException` for what JSON cannot hold — a NaN / infinite number or a non-JSON
+     * type, at any depth — so the caller leaves that one entry out, as it already did for a top-level NaN.
+     */
+    private fun toJsonValue(value: Any?): Any = when (value) {
+        null -> JSONObject.NULL
+        is JSONObject, is JSONArray -> value
+        is Map<*, *> -> JSONObject().also { o -> for ((k, v) in value) o.put(k.toString(), toJsonValue(v)) }
+        is Iterable<*> -> JSONArray().also { a -> for (v in value) a.put(toJsonValue(v)) }
+        is Array<*> -> toJsonValue(value.asList())
+        is Double -> if (value.isNaN() || value.isInfinite()) throw org.json.JSONException("non-finite number") else value
+        is Float -> if (value.isNaN() || value.isInfinite()) throw org.json.JSONException("non-finite number") else value
+        is Number, is String, is Boolean -> value
+        else -> throw org.json.JSONException("not a JSON type: ${value.javaClass.simpleName}")
     }
 
     /** One entry per key; a value `JSONObject` refuses (a NaN / infinite number) is skipped and named in [skipped]. */
@@ -216,7 +258,7 @@ class SessionDataStore private constructor(private val prefs: SharedPreferences)
         val obj = JSONObject()
         for ((k, v) in map) {
             try {
-                obj.put(k, v)
+                obj.put(k, toJsonValue(v))
             } catch (_: org.json.JSONException) {
                 skipped += k
             }
@@ -230,7 +272,7 @@ class SessionDataStore private constructor(private val prefs: SharedPreferences)
             val inner = JSONObject()
             for ((ik, iv) in v) {
                 try {
-                    inner.put(ik, iv)
+                    inner.put(ik, toJsonValue(iv))
                 } catch (_: org.json.JSONException) {
                     skipped += "$k.$ik"
                 }
