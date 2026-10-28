@@ -11,6 +11,7 @@ import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performTextInput
+import androidx.compose.ui.test.performTextClearance
 import org.json.JSONArray
 import org.json.JSONObject
 import org.junit.After
@@ -290,5 +291,46 @@ class LocationFieldRestoreComposeTest {
         assertEquals("12 Exa", inputValues["where"])
         assertTrue(fieldShows("12 Exa"))
         assertFalse(rowShown())
+    }
+
+    // ---- What the block stores while resolving, and after a clear ---------------------------------
+
+    /** A resolve held in flight: nothing is stored for the field, so a required field keeps Continue gated. */
+    @Test
+    fun theBlockStoresNothingWhileAResolveIsInFlight() {
+        val release = kotlinx.coroutines.CompletableDeferred<Unit>()
+        val held = object : GeocodeTransport {
+            override suspend fun post(url: String, headers: Map<String, String>, body: String): GeocodeHttpReply {
+                if (url.endsWith("/resolve")) { release.await(); return resolvedReply }
+                return Stub(resolvedReply).post(url, headers, body)
+            }
+        }
+        locationGeocodeTransport = held
+        val inputValues = mutableStateMapOf<String, Any>()
+        compose.setContent {
+            ContentBlockRendererView(blocks = locationBlock(), onAction = {}, toggleValues = mutableMapOf(), inputValues = inputValues)
+        }
+        compose.waitForIdle()
+        typeAndTapTheRow("12 Exa")
+        assertFalse("nothing stored while the resolve is in flight", inputValues.containsKey("where"))
+        release.complete(Unit)
+        compose.mainClock.advanceTimeBy(1_000)
+        compose.waitForIdle()
+    }
+
+    /** Emptying the field removes its answer (an empty field is unanswered, not `""`). */
+    @Test
+    fun clearingTheBlockRemovesItsAnswer() {
+        val inputValues = mutableStateMapOf<String, Any>()
+        compose.setContent {
+            ContentBlockRendererView(blocks = locationBlock(), onAction = {}, toggleValues = mutableMapOf(), inputValues = inputValues)
+        }
+        compose.waitForIdle()
+        compose.onAllNodes(hasSetTextAction())[0].performTextInput("Po")
+        compose.waitForIdle()
+        assertEquals("Po", inputValues["where"])
+        compose.onAllNodes(hasSetTextAction())[0].performTextClearance()
+        compose.waitForIdle()
+        assertFalse("a cleared field has no answer", inputValues.containsKey("where"))
     }
 }
