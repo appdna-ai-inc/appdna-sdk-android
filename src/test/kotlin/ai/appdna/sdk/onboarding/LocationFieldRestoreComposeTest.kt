@@ -333,4 +333,49 @@ class LocationFieldRestoreComposeTest {
         compose.waitForIdle()
         assertFalse("a cleared field has no answer", inputValues.containsKey("where"))
     }
+
+    // ---- What the form step stores while resolving, and after a clear ------------------------------
+
+    /** The form step's answer is the step's `values`: while a resolve is in flight it holds nothing, so Continue
+     *  on this required field does not advance; once the reply lands, Continue submits the resolved answer. */
+    @Test
+    fun theFormStepHoldsContinueWhileAResolveIsInFlight() {
+        val release = kotlinx.coroutines.CompletableDeferred<Unit>()
+        locationGeocodeTransport = object : GeocodeTransport {
+            override suspend fun post(url: String, headers: Map<String, String>, body: String): GeocodeHttpReply {
+                if (url.endsWith("/resolve")) { release.await(); return resolvedReply }
+                return Stub(resolvedReply).post(url, headers, body)
+            }
+        }
+        var advanced: Map<String, Any>? = null
+        compose.setContent { FormStep(config = formStep().config, onNext = { advanced = it }, savedValues = null) }
+        compose.waitForIdle()
+        typeAndTapTheRow("12 Exa")
+        compose.onAllNodes(hasClickAction() and hasText("Continue", ignoreCase = true))[0].performClick()
+        compose.waitForIdle()
+        assertNull("Continue advanced with nothing stored while the resolve was in flight", advanced)
+        release.complete(Unit)
+        compose.mainClock.advanceTimeBy(1_000)
+        compose.waitForIdle()
+        compose.onAllNodes(hasClickAction() and hasText("Continue", ignoreCase = true))[0].performClick()
+        compose.waitForIdle()
+        @Suppress("UNCHECKED_CAST")
+        val answer = advanced?.get("where") as? Map<String, Any> ?: error("Continue submitted ${advanced}")
+        assertEquals("synthetic-resolved-id", answer["mapbox_id"])
+    }
+
+    /** Emptying the form-step field removes its answer, so Continue on the required field does not advance. */
+    @Test
+    fun clearingTheFormStepFieldRemovesItsAnswer() {
+        var advanced: Map<String, Any>? = null
+        compose.setContent { FormStep(config = formStep().config, onNext = { advanced = it }, savedValues = null) }
+        compose.waitForIdle()
+        compose.onAllNodes(hasSetTextAction())[0].performTextInput("Po")
+        compose.waitForIdle()
+        compose.onAllNodes(hasSetTextAction())[0].performTextClearance()
+        compose.waitForIdle()
+        compose.onAllNodes(hasClickAction() and hasText("Continue", ignoreCase = true))[0].performClick()
+        compose.waitForIdle()
+        assertNull("Continue advanced on a cleared required field", advanced)
+    }
 }
