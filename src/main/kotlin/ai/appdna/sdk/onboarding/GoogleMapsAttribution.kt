@@ -4,11 +4,11 @@ import ai.appdna.sdk.R
 import ai.appdna.sdk.core.BackgroundStyleConfig
 import ai.appdna.sdk.core.GoogleMarkChip
 import androidx.compose.foundation.Image
-import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.Box
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.compositionLocalOf
@@ -16,6 +16,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shadow
+import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.painterResource
@@ -91,8 +92,10 @@ internal object GoogleMapsAttribution {
     /** What is behind the attribution. */
     sealed class Backdrop {
         /**
-         * A solid surface. [hex] is its colour when known (an authored dropdown colour, a colour
-         * background); null means the system background, which follows the appearance.
+         * A solid surface. [hex] is the colour drawn there (an authored colour, or the theme colour a
+         * view fills with — [hexOf]); null means the theme's background, which the attribution reads
+         * from `MaterialTheme` where it draws. Never the system appearance: a host's theme need not
+         * follow it (a Screen is hosted in a light theme on a dark device).
          */
         data class Plain(val hex: String?) : Backdrop()
 
@@ -114,8 +117,38 @@ internal object GoogleMapsAttribution {
     }
 
     /**
-     * The variant for a backdrop. A known plain colour decides by its own luminance; the system
-     * background and a busy one follow the appearance.
+     * What the onboarding host draws behind a step (`StepFullScreenBackground`), in its order: the
+     * step's background; a chat step's own colour; a chat step's dark default; else the theme's
+     * background. A chat step is dark in a light theme, so the attribution decides from THIS.
+     */
+    fun backdrop(ofStep: ai.appdna.sdk.onboarding.StepConfig, type: OnboardingStep.StepType): Backdrop {
+        ofStep.background?.let { return backdrop(it) }
+        ofStep.chat_config?.style?.background_color?.let { return Backdrop.Plain(it) }
+        if (type == OnboardingStep.StepType.INTERACTIVE_CHAT) return Backdrop.Plain(INTERACTIVE_CHAT_BACKGROUND)
+        return Backdrop.Plain(null)
+    }
+
+    /** The onboarding host's default behind an `interactive_chat` step. */
+    const val INTERACTIVE_CHAT_BACKGROUND = "#0F172A"
+
+    /** What a Screen draws behind its sections: its background colour, else the theme's. */
+    fun backdrop(ofScreen: ai.appdna.sdk.screens.BackgroundConfig?): Backdrop = Backdrop.Plain(ofScreen?.color)
+
+    /** What a Screen section draws behind its content: its own fill, else what is behind it. */
+    fun backdrop(ofSection: ai.appdna.sdk.screens.SectionStyle?, behind: Backdrop): Backdrop {
+        val style = ofSection ?: return behind
+        val gradient = style.backgroundGradient
+        if (gradient?.start != null && gradient.end != null) return Backdrop.Busy
+        style.backgroundColor?.let { return Backdrop.Plain(it) }
+        return behind
+    }
+
+    /** `#RRGGBB` of a colour a view fills with, for [Backdrop.Plain]. */
+    fun hexOf(color: Color): String = String.format("#%06X", 0xFFFFFF and color.toArgb())
+
+    /**
+     * The variant for a backdrop. A known plain colour decides by its own luminance; the theme's
+     * background (and a busy surface) by whether that background is dark.
      */
     fun variant(on: Backdrop, darkAppearance: Boolean): Variant = when (on) {
         is Backdrop.Plain -> {
@@ -146,9 +179,20 @@ internal val LocalGoogleAttributionBackdrop =
     compositionLocalOf<GoogleMapsAttribution.Backdrop> { GoogleMapsAttribution.Backdrop.Plain(null) }
 
 /** The "Google Maps" logo with Google's clear space. */
+/**
+ * Whether the theme's background is dark: what [GoogleMapsAttribution.Backdrop.Plain] with no colour,
+ * and a busy surface, are decided by. Read from the colour the theme fills with, not from the system
+ * appearance — a host's theme need not follow it.
+ */
+@Composable
+internal fun googleAttributionThemeIsDark(): Boolean {
+    val l = ai.appdna.sdk.core.GoogleMarkChip.luminance(GoogleMapsAttribution.hexOf(MaterialTheme.colorScheme.background))
+    return l != null && l < ai.appdna.sdk.core.GoogleMarkChip.LIGHT_ENOUGH
+}
+
 @Composable
 internal fun GoogleMapsLogo(backdrop: GoogleMapsAttribution.Backdrop, modifier: Modifier = Modifier) {
-    val variant = GoogleMapsAttribution.variant(backdrop, isSystemInDarkTheme())
+    val variant = GoogleMapsAttribution.variant(backdrop, googleAttributionThemeIsDark())
     val painter = painterResource(variant.drawable)
     val size = painter.intrinsicSize
     val ratio = if (size.width > 0f && size.height > 0f) size.width / size.height else 1f
@@ -177,7 +221,7 @@ internal fun GoogleMapsLogo(backdrop: GoogleMapsAttribution.Backdrop, modifier: 
 /** The text attribution: "Google Maps", small, in one of the colours Google names. */
 @Composable
 internal fun GoogleMapsTextAttribution(backdrop: GoogleMapsAttribution.Backdrop, modifier: Modifier = Modifier) {
-    val hex = GoogleMapsAttribution.textColorHex(backdrop, isSystemInDarkTheme())
+    val hex = GoogleMapsAttribution.textColorHex(backdrop, googleAttributionThemeIsDark())
     Text(
         text = GoogleMapsAttribution.LABEL,
         style = TextStyle(

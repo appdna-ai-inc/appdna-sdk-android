@@ -243,12 +243,6 @@ data class OnboardingStep(
      * today's view-level pass.
      */
     val rawContentBlocks: RawContentBlocks? = null,
-    /**
-     * The step exactly as published, kept for the one reader that must see every string the author
-     * wrote: the Google attribution credit ([GoogleCredit]), which decides from the step's SOURCE
-     * whether its text templates a Google location answer. Null for a step built in code.
-     */
-    val rawSource: RawStepSource? = null,
 ) {
     enum class StepType(val value: String) {
         WELCOME("welcome"),
@@ -286,16 +280,6 @@ data class OnboardingStep(
 class RawContentBlocks internal constructor(
     /** Stamped raw top-level blocks, index-aligned with the published array (non-objects kept). */
     val blocks: List<Any?>,
-)
-
-/**
- * The published step map carried on [OnboardingStep.rawSource]. NOT a data class, for the reason
- * [RawContentBlocks] is not one: equality is IDENTITY, so Compose never deep-compares the map. Never
- * mutated.
- */
-@Immutable
-class RawStepSource internal constructor(
-    val map: Map<String, Any?>,
 )
 
 /**
@@ -1615,7 +1599,6 @@ internal object OnboardingConfigParser {
             next_step_rules = nextStepRules,
             name = map.str(SURFACE, path, "name"),
             rawContentBlocks = stampedRaw,
-            rawSource = RawStepSource(map),
         )
     }
 

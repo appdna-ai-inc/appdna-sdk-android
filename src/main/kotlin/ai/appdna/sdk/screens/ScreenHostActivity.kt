@@ -151,6 +151,10 @@ class ScreenHostActivity : ComponentActivity() {
         setContent {
             val isDark = isSystemInDarkTheme()
             MaterialTheme {
+              androidx.compose.runtime.CompositionLocalProvider(
+                ai.appdna.sdk.onboarding.LocalGoogleAttributionBackdrop provides
+                    ai.appdna.sdk.onboarding.GoogleMapsAttribution.backdrop(ofScreen = config.background),
+              ) {
                 ScreenHostBody(
                     config = config,
                     isDark = isDark,
@@ -166,6 +170,7 @@ class ScreenHostActivity : ComponentActivity() {
                         cleanup()
                     },
                 )
+              }
             }
         }
     }
@@ -199,6 +204,10 @@ class ScreenHostActivity : ComponentActivity() {
                     // The start screen's config was never cached — the flow cannot render.
                     androidx.compose.runtime.LaunchedEffect(Unit) { manager.dismissFlow() }
                 } else {
+                  androidx.compose.runtime.CompositionLocalProvider(
+                    ai.appdna.sdk.onboarding.LocalGoogleAttributionBackdrop provides
+                        ai.appdna.sdk.onboarding.GoogleMapsAttribution.backdrop(ofScreen = config.background),
+                  ) {
                     ScreenHostBody(
                         config = config,
                         isDark = isDark,
@@ -209,6 +218,7 @@ class ScreenHostActivity : ComponentActivity() {
                         responses = manager.responses,
                         onAction = { action -> manager.handleAction(action) },
                     )
+                  }
                 }
             }
         }

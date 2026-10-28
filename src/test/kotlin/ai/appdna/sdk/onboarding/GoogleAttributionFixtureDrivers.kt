@@ -11,7 +11,8 @@ package ai.appdna.sdk.onboarding
  *                               flow), the override's options through `StepConfigOverride.decodeFieldOptions`
  *                               (the decoder every bridge uses), then `GoogleCredit.shows(step, …)` — the
  *                               call `OnboardingStepView` makes — and, for an option sheet,
- *                               `GoogleCreditSheetContext.shows`, the call the sheet makes.
+ *                               `GoogleCreditSheetContext.shows`, the call the sheet makes, handed the
+ *                               option's sheet blocks as the REAL pipeline resolved them.
  *
  * The dropdown's logo and the field's attribution through a tap are asserted by the
  * `location_resolve_request` kind (`list_google_logo` / `field_google_attribution` observables).
@@ -74,10 +75,23 @@ internal object GoogleAttributionFixtureDrivers {
                 sources = { GoogleCredit.stepSources(step, override, fieldConfigOverrides, fieldOptionsOverrides) },
                 answers = answers,
             )
-            // The presented option, as the sheet receives it: from the typed blocks.
-            val presented = step.config.content_blocks.orEmpty()
-                .firstOrNull { it.id == blockId }?.field_options.orEmpty()
-                .firstOrNull { (it.id ?: it.value) == optionId }?.sheet_blocks.orEmpty()
+            // The presented option, as the sheet receives it in production: from the step the REAL
+            // pipeline resolved (raw pass → decode → override → interaction layering), so its sheet
+            // blocks have every non-`step` token substituted and a `repeat` has generated its options.
+            val resolved = HostDataStepPipeline(step, legacyContext = { null }).resolve(
+                HostDataInputs(
+                    responses = accumulated,
+                    stepInputs = stepInputs,
+                    stepOverride = override,
+                    fieldConfigOverrides = fieldConfigOverrides,
+                    fieldOptionsOverrides = fieldOptionsOverrides,
+                ),
+            )
+            val option = resolved.blocks.firstOrNull { it.id == blockId }?.field_options.orEmpty()
+                .firstOrNull { (it.id ?: it.value) == optionId }
+                ?: throw AssertionError("the resolved step has no option $optionId on $blockId")
+            val presented = option.sheet_blocks.orEmpty()
+            out["presented_sheet_text"] = presented.mapNotNull { it.text }
             out["sheet_credit"] = context.shows(blockId, optionId, presented, inputs)
         }
         return out

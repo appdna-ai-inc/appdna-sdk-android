@@ -19,12 +19,21 @@ internal object SectionRegistry {
      */
     @Composable
     fun Render(section: ScreenSection, context: SectionContext) {
+        // What the section draws behind its content, for a Google logo kept beside a location field.
+        val backdrop = ai.appdna.sdk.onboarding.GoogleMapsAttribution.backdrop(
+            ofSection = section.style,
+            behind = ai.appdna.sdk.onboarding.LocalGoogleAttributionBackdrop.current,
+        )
         androidx.compose.foundation.layout.Box(
             modifier = androidx.compose.ui.Modifier
                 .fillMaxWidth()
                 .applySectionStyle(section.style),
         ) {
-            RenderUnstyled(section, context)
+            androidx.compose.runtime.CompositionLocalProvider(
+                ai.appdna.sdk.onboarding.LocalGoogleAttributionBackdrop provides backdrop,
+            ) {
+                RenderUnstyled(section, context)
+            }
         }
     }
 

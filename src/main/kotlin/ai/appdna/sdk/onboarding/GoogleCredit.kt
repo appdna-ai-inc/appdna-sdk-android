@@ -28,10 +28,16 @@ import androidx.compose.runtime.compositionLocalOf
  * walks its own, drawing the credit inside the sheet; a sheet resolves its `step` root against its own
  * inputs, as the sheet renderer does.
  *
- * The step's source is the step as published ([OnboardingStep.rawSource], with its id-stamped raw
- * blocks). What a host or an interaction hands over as TYPED values (an override's options, a
- * replacement option list) has no published source; each typed option or block is walked through its
- * data-class rendering, which lists every property it holds, so every string in it is scanned too.
+ * Only what can be DRAWN is walked, so a key or an entry nothing renders never credits — the same rule
+ * as the Swift twin, which the `onboarding_google_credit` fixtures hold the pair to:
+ * - the step's config as the SDK parses it (a key the parser drops is never drawn), walked through its
+ *   data-class rendering, which lists every property it holds;
+ * - each content block as published ([OnboardingStep.rawContentBlocks], id-stamped), because the raw
+ *   host-data pass resolves the published block before it is decoded (`data_templates` render from
+ *   keys the typed block does not hold);
+ * - the config after the host's override is merged, as the step merges it: an override's options for
+ *   a block the step does not hold are dropped;
+ * - the interaction patches, for the blocks they are layered onto — the step's top-level blocks.
  */
 internal object GoogleCredit {
 
@@ -68,11 +74,7 @@ internal object GoogleCredit {
 
     // ---- The step -------------------------------------------------------------------------------
 
-    /**
-     * The step's source, as the walk reads it: the step as published (and its id-stamped raw blocks,
-     * so an option sheet is filed under the id the renderer knows it by), the host's override, and the
-     * interaction patches the step layers on (`fieldConfigOverrides` / `fieldOptionsOverrides`).
-     */
+    /** The step's source, as the walk reads it (see the class comment for what is walked and why). */
     fun stepSources(
         step: OnboardingStep,
         override: StepConfigOverride?,
@@ -80,21 +82,21 @@ internal object GoogleCredit {
         fieldOptionsOverrides: Map<String, List<InputOption>>,
     ): List<Any> {
         val sources = mutableListOf<Any>()
-        val published = step.rawSource?.map
-        if (published != null) {
-            sources.add(published)
-            step.rawContentBlocks?.blocks?.let { sources.add(it) }
-        } else {
-            // A step built in code has no published source: its typed config instead.
-            sources.add(typedStepSource(step))
-        }
-        override?.let { sources.add(overrideSource(it)) }
-        if (fieldConfigOverrides.isNotEmpty()) sources.add(fieldConfigOverrides)
-        if (fieldOptionsOverrides.isNotEmpty()) {
+        sources.add(typedConfigSource(step.config))
+        step.rawContentBlocks?.blocks?.let { sources.add(it) }
+        // Without an override the merged config IS the step's, already walked.
+        val merged = override?.let { step.config.applyingOverride(it) }
+        merged?.let { sources.add(typedConfigSource(it)) }
+        // A patch reaches the screen only through a block the step draws.
+        val drawn = (merged ?: step.config).content_blocks.orEmpty().map { it.id }.toSet()
+        val patches = fieldConfigOverrides.filterKeys { it in drawn }
+        if (patches.isNotEmpty()) sources.add(patches)
+        val options = fieldOptionsOverrides.filterKeys { it in drawn }
+        if (options.isNotEmpty()) {
             // Keyed by block id, as the step keys them; kept as `{id, field_options}` objects so the
             // sheet index below files each option's sheet under its block.
-            sources.add(fieldOptionsOverrides.map { (blockId, options) ->
-                mapOf("id" to blockId, "field_options" to options.map(::optionSource))
+            sources.add(options.map { (blockId, opts) ->
+                mapOf("id" to blockId, "field_options" to opts.map(::optionSource))
             })
         }
         return sources
@@ -132,6 +134,20 @@ internal object GoogleCredit {
     }
 
     fun sheetKey(blockId: String, optionId: String): String = "$blockId\u001F$optionId"
+
+    /**
+     * The source of the sheet [optionId] opens on [blockId]. An option a `repeat` generated is
+     * `<template id>__<n>`, and it opens its TEMPLATE's sheet: the index holds that one, filed under the
+     * template's id, as authored.
+     */
+    fun sheetSource(index: Map<String, List<Any?>>, blockId: String, optionId: String): List<Any?>? {
+        index[sheetKey(blockId, optionId)]?.let { return it }
+        val cut = optionId.lastIndexOf("__")
+        if (cut < 0) return null
+        val n = optionId.substring(cut + 2)
+        if (n.isEmpty() || !n.all { it.isDigit() }) return null
+        return index[sheetKey(blockId, optionId.substring(0, cut))]
+    }
 
     /** A sheet's credit: its own blocks, its `step` root its own inputs, every other root the step's. */
     fun sheetShows(sheetBlocks: List<Any?>, sheetInputs: Map<String, Any?>, answers: Answers): Boolean {
@@ -223,17 +239,6 @@ internal object GoogleCredit {
 
     // ---- Typed values ---------------------------------------------------------------------------
 
-    /** The host's override: its text, its field defaults, and its options filed under their blocks. */
-    private fun overrideSource(o: StepConfigOverride): Map<String, Any?> = mapOf(
-        "title" to o.title,
-        "subtitle" to o.subtitle,
-        "cta_text" to o.ctaText,
-        "field_defaults" to o.fieldDefaults,
-        "content_blocks" to o.fieldOptions?.map { (blockId, options) ->
-            mapOf("id" to blockId, "field_options" to options.map(::optionSource))
-        },
-    )
-
     /**
      * A typed option: every property but its sheet as one string, its id as the sheet index reads it
      * (`id`, else `value`), and its sheet's blocks.
@@ -257,9 +262,10 @@ internal object GoogleCredit {
         "field_options" to b.field_options?.map(::optionSource),
     )
 
-    private fun typedStepSource(step: OnboardingStep): Map<String, Any?> = mapOf(
-        "config" to step.config.copy(content_blocks = null).toString(),
-        "content_blocks" to step.config.content_blocks?.map(::blockSource),
+    /** A typed config: every property but its blocks as one string, and its blocks walked as blocks. */
+    private fun typedConfigSource(config: StepConfig): Map<String, Any?> = mapOf(
+        "config" to config.copy(content_blocks = null).toString(),
+        "content_blocks" to config.content_blocks?.map(::blockSource),
     )
 
     private fun indexSheets(value: Any?, out: MutableMap<String, MutableList<Any?>>) {
@@ -292,8 +298,10 @@ internal class GoogleCreditSheetContext(
     val answers: GoogleCredit.Answers,
 ) {
     /**
-     * The credit for the sheet of [optionId] on [blockId]. A sheet whose source is not found (an option
-     * a `repeat` template generated) walks the presented blocks instead.
+     * The credit for the sheet of [optionId] on [blockId], from the sheet's SOURCE: the presented
+     * blocks of a raw-resolved sheet have already had every token but its `step` ones substituted, so
+     * they no longer say what they show. An option a `repeat` generated finds its template's sheet.
+     * Only a sheet no source holds (an Option Set's option) walks the blocks it presents.
      */
     fun shows(
         blockId: String?,
@@ -302,8 +310,9 @@ internal class GoogleCreditSheetContext(
         sheetInputs: Map<String, Any?>,
     ): Boolean {
         if (!answers.withStepInputs(sheetInputs).holdAGoogleAnswer) return false
-        val index = GoogleCredit.sheetSources(sources())
-        val source = if (blockId != null && optionId != null) index[GoogleCredit.sheetKey(blockId, optionId)] else null
+        val source = if (blockId != null && optionId != null) {
+            GoogleCredit.sheetSource(GoogleCredit.sheetSources(sources()), blockId, optionId)
+        } else null
         if (source != null) return GoogleCredit.sheetShows(source, sheetInputs, answers)
         return GoogleCredit.sheetShows(presentedSheetBlocks.map(GoogleCredit::blockSource), sheetInputs, answers)
     }

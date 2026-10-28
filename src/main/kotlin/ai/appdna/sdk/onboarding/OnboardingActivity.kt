@@ -2499,7 +2499,7 @@ private fun StepFullScreenBackground(currentStep: OnboardingStep?) {
         currentStep?.type == OnboardingStep.StepType.INTERACTIVE_CHAT -> Box(
             Modifier
                 .fillMaxSize()
-                .background(Color(0xFF0F172A))
+                .background(ai.appdna.sdk.core.StyleEngine.parseColor(GoogleMapsAttribution.INTERACTIVE_CHAT_BACKGROUND))
         )
         else -> Box(
             Modifier
@@ -2603,18 +2603,21 @@ fun OnboardingStepView(
         stepInputs = inputValues,
         sessionStore = ai.appdna.sdk.core.SessionDataStore.instance?.onboardingResponses ?: emptyMap(),
     )
-    val showsGoogleCredit by remember(step, stepOverride, accumulatedResponses) {
+    // Keyed on the override maps too: they are re-created per presentation (above), and a decision
+    // that captured the previous presentation's maps would never see this one's patches.
+    val showsGoogleCredit by remember(step, stepOverride, accumulatedResponses, fieldConfigOverrides, fieldOptionsOverrides) {
         derivedStateOf {
             GoogleCredit.shows(step, stepOverride, fieldConfigOverrides, fieldOptionsOverrides, creditAnswers)
         }
     }
-    val creditSheetContext = remember(step, stepOverride, accumulatedResponses) {
+    val creditSheetContext = remember(step, stepOverride, accumulatedResponses, fieldConfigOverrides, fieldOptionsOverrides) {
         GoogleCreditSheetContext(
             sources = { GoogleCredit.stepSources(step, stepOverride, fieldConfigOverrides, fieldOptionsOverrides) },
             answers = creditAnswers,
         )
     }
-    val attributionBackdrop = GoogleMapsAttribution.backdrop(effectiveConfig.background)
+    // What the host actually draws behind the step (a chat step's own dark fill included).
+    val attributionBackdrop = GoogleMapsAttribution.backdrop(ofStep = effectiveConfig, type = step.type)
 
     // ONE container for both branches, always present, so the credit appearing never changes the
     // content's identity (a field's state would be rebuilt if it did).

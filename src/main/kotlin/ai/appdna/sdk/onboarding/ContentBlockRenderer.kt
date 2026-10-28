@@ -13210,15 +13210,16 @@ private fun FormInputLocationPlaceholder(
                         HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant, thickness = 0.5.dp)
                     }
                 }
-                // Google's attribution under Google suggestions, inside the dropdown. The authored
-                // dropdown colour decides the plain variant; a translucent dropdown lets the step show
-                // through, which is a busy surface.
+                // Google's attribution under Google suggestions, inside the dropdown. The colour the
+                // dropdown is filled with decides the plain variant — the authored one, else the theme's
+                // surface (never the system appearance: a Screen's theme is light on a dark device). A
+                // translucent dropdown lets the step show through, which is a busy surface.
                 if (holder.showsGoogleLogo) {
                     GoogleMapsLogo(
                         backdrop = if (ddOpacity < 1f) {
                             GoogleMapsAttribution.Backdrop.Busy
                         } else {
-                            GoogleMapsAttribution.Backdrop.Plain((cfg?.get("dropdown_bg_color") as? String)?.takeIf { it.isNotEmpty() })
+                            GoogleMapsAttribution.Backdrop.Plain(GoogleMapsAttribution.hexOf(ddBgColor ?: MaterialTheme.colorScheme.surface))
                         },
                     )
                 }
@@ -13590,7 +13591,8 @@ private fun OptionBottomSheet(option: InputOption, parentBlockId: String, onDism
         presentedSheetBlocks = option.sheet_blocks.orEmpty(),
         sheetInputs = sheetInputs,
     ) ?: false
-    androidx.compose.material3.ModalBottomSheet(onDismissRequest = onDismiss) {
+    val sheetContainerColor = androidx.compose.material3.BottomSheetDefaults.ContainerColor
+    androidx.compose.material3.ModalBottomSheet(onDismissRequest = onDismiss, containerColor = sheetContainerColor) {
         Column(
             modifier = Modifier
                 .fillMaxWidth()
@@ -13615,10 +13617,11 @@ private fun OptionBottomSheet(option: InputOption, parentBlockId: String, onDism
                 inputValues = sheetInputs,
             )
             }
-            // Google's attribution inside the sheet, the container its text is drawn in.
+            // Google's attribution inside the sheet, the container its text is drawn in, on the
+            // colour the sheet is filled with.
             if (showsGoogleCredit) {
                 GoogleMapsTextAttribution(
-                    backdrop = GoogleMapsAttribution.Backdrop.Plain(null),
+                    backdrop = GoogleMapsAttribution.Backdrop.Plain(GoogleMapsAttribution.hexOf(sheetContainerColor)),
                     modifier = Modifier.align(Alignment.CenterHorizontally).padding(top = 12.dp),
                 )
             }

@@ -164,6 +164,30 @@ class GoogleAttributionRenderTest {
     }
 
     /**
+     * What each host actually draws behind the attribution. A chat step is dark in a light theme; a
+     * Screen draws its own colour; a Screen section draws its own fill over the screen's.
+     */
+    @Test
+    fun theBackdropIsWhatTheHostDraws() {
+        val chat = OnboardingConfigParser.parseStepForTest(mapOf("id" to "chat", "type" to "interactive_chat", "config" to emptyMap<String, Any>()))!!
+        val chatBackdrop = GoogleMapsAttribution.backdrop(ofStep = chat.config, type = chat.type)
+        assertEquals(GoogleMapsAttribution.Backdrop.Plain("#0F172A"), chatBackdrop)
+        assertEquals(GoogleMapsAttribution.Variant.WHITE, GoogleMapsAttribution.variant(chatBackdrop, darkAppearance = false))
+        val welcome = OnboardingConfigParser.parseStepForTest(mapOf("id" to "w", "type" to "welcome", "config" to mapOf("title" to "Hi")))!!
+        assertEquals("the theme's background", GoogleMapsAttribution.Backdrop.Plain(null), GoogleMapsAttribution.backdrop(ofStep = welcome.config, type = welcome.type))
+
+        val screen = GoogleMapsAttribution.backdrop(ofScreen = ai.appdna.sdk.screens.BackgroundConfig(color = "#101828"))
+        assertEquals(GoogleMapsAttribution.Variant.WHITE, GoogleMapsAttribution.variant(screen, darkAppearance = false))
+        assertEquals(GoogleMapsAttribution.Backdrop.Plain(null), GoogleMapsAttribution.backdrop(ofScreen = null))
+        val light = ai.appdna.sdk.screens.SectionStyle(backgroundColor = "#FFFFFF")
+        assertEquals(GoogleMapsAttribution.Variant.GRAY, GoogleMapsAttribution.variant(GoogleMapsAttribution.backdrop(ofSection = light, behind = screen), darkAppearance = true))
+        val gradient = ai.appdna.sdk.screens.SectionStyle(backgroundGradient = ai.appdna.sdk.screens.GradientConfig(start = "#000000", end = "#FFFFFF"))
+        assertEquals(GoogleMapsAttribution.Backdrop.Busy, GoogleMapsAttribution.backdrop(ofSection = gradient, behind = screen))
+        assertEquals("no fill: what is behind", screen, GoogleMapsAttribution.backdrop(ofSection = ai.appdna.sdk.screens.SectionStyle(), behind = screen))
+        assertEquals("#FFFFFF", GoogleMapsAttribution.hexOf(Color.White))
+    }
+
+    /**
      * The logo DRAWS: a frame with it against the same frame with an empty box of the same place. The
      * control renders the empty box twice and must find no difference, or the harness measures itself.
      */
@@ -295,8 +319,8 @@ class GoogleAttributionRenderTest {
     }
 
     /**
-     * Each step renders through the REAL step view — a legacy welcome heading, a legacy question option
-     * and a content block — with a Google answer and then a Mapbox answer whose text is identical. Only
+     * Each step renders through the REAL step view — a legacy welcome heading, a legacy form title, a
+     * legacy question option and a content block — with a Google answer and then a Mapbox answer whose text is identical. Only
      * the Google one draws the credit, below the step's content.
      * RED CONTROL: the credit removed from the step container → the Google cases fail.
      */
@@ -304,6 +328,14 @@ class GoogleAttributionRenderTest {
     fun aStepTemplatingAGoogleAnswerDrawsTheCredit() {
         val steps = listOf(
             mapOf("id" to "w", "type" to "welcome", "config" to mapOf("title" to "Hello from {{responses.places.home.city}}", "cta_text" to "Start")) to "Start",
+            // A legacy FORM step's title, through `FormStep`'s own `interpolated()`.
+            mapOf(
+                "id" to "f", "type" to "form",
+                "config" to mapOf(
+                    "title" to "Home: {{responses.places.home.city}}",
+                    "fields" to listOf(mapOf("id" to "n", "type" to "text", "label" to "Nick", "required" to false)),
+                ),
+            ) to "Continue",
             mapOf(
                 "id" to "q", "type" to "question",
                 "config" to mapOf("title" to "Next?", "options" to listOf(mapOf("id" to "a", "label" to "Stay in {{input.home.city}}"), mapOf("id" to "b", "label" to "Go"))),
@@ -318,18 +350,22 @@ class GoogleAttributionRenderTest {
                 ),
             ) to "Continue",
         )
+        // Every step is walked before anything is asserted, so a failure names EVERY step it hits.
+        val misses = mutableListOf<String>()
         for ((json, lastText) in steps) {
+            val id = json["id"]
             val step = OnboardingConfigParser.parseStepForTest(json)!!
             renderStep(step, mapbox)
-            assertTrue("${json["id"]}: the step's text resolved", compose.onAllNodes(hasText("Springfield", substring = true)).fetchSemanticsNodes().isNotEmpty())
-            assertFalse("${json["id"]}: mapbox draws no credit", creditShown())
+            if (compose.onAllNodes(hasText("Springfield", substring = true)).fetchSemanticsNodes().isEmpty()) misses += "$id: the step's text did not resolve"
+            if (creditShown()) misses += "$id: mapbox drew a credit"
 
             renderStep(step, google)
-            assertTrue("${json["id"]}: google draws the credit", creditShown())
+            if (!creditShown()) { misses += "$id: google drew no credit"; continue }
             val credit = compose.onAllNodes(hasTestTag(GoogleMapsAttribution.TEXT_TAG)).fetchSemanticsNodes().single().boundsInRoot
             val last = compose.onAllNodes(hasText(lastText, ignoreCase = true)).fetchSemanticsNodes().maxOf { it.boundsInRoot.bottom }
-            assertTrue("${json["id"]}: the credit is below the step's content", credit.top >= last)
+            if (credit.top < last) misses += "$id: the credit is not below the step's content"
         }
+        assertTrue("every step credits a Google answer and only a Google answer: $misses", misses.isEmpty())
     }
 
     /** A token inside an option's sheet credits INSIDE the sheet when it opens, not on the step. */
@@ -363,6 +399,120 @@ class GoogleAttributionRenderTest {
         compose.waitForIdle()
         assertTrue("the sheet opened", compose.onAllNodes(hasText("Close to", substring = true)).fetchSemanticsNodes().isNotEmpty())
         assertTrue("the sheet draws the credit", creditShown())
+    }
+
+    // ---- The variant follows the colour drawn, not the system appearance ---------------------------
+
+    /** The `input_location` block with no authored dropdown colour: the dropdown takes the theme's. */
+    private fun unstyledLocationBlocks(): List<ContentBlock> = OnboardingConfigParser.parseStepForTest(
+        mapOf(
+            "id" to "s_plain", "type" to "custom",
+            "config" to mapOf(
+                "content_blocks" to listOf(
+                    mapOf("id" to "b_loc", "type" to "input_location", "field_id" to "where", "field_config" to mapOf("location_min_chars" to 3)),
+                ),
+            ),
+        ),
+    )!!.config.content_blocks!!.toList()
+
+    /** Pixels inside the logo's bounds darker than mid-gray: the gray logo's letters on a light fill. */
+    private fun darkPixelsInLogo(frame: android.graphics.Bitmap): Int {
+        val b = logoBounds()
+        var n = 0
+        for (y in b.top.toInt() until b.bottom.toInt().coerceAtMost(frame.height)) {
+            for (x in b.left.toInt() until b.right.toInt().coerceAtMost(frame.width)) {
+                val c = frame.getPixel(x, y)
+                val l = 0.2126 * android.graphics.Color.red(c) + 0.7152 * android.graphics.Color.green(c) + 0.0722 * android.graphics.Color.blue(c)
+                if (l < 160) n += 1
+            }
+        }
+        return n
+    }
+
+    /**
+     * The Screens host's shape: a bare light `MaterialTheme {}` on a device in dark mode. The dropdown is
+     * filled with the light theme's surface, so Google's logo there is the GRAY variant — its letters
+     * draw dark on the light fill. Deciding from the system appearance drew the WHITE variant: white on
+     * near-white, no letters at all. The same for the logo kept beside the field once the dropdown
+     * closes, drawn on the theme's background. RED CONTROL: `isSystemInDarkTheme()` for the variant →
+     * no dark pixels in the logo.
+     */
+    @Test
+    @Config(qualifiers = "+night")
+    fun aLightThemeOnADarkDeviceDrawsTheGrayLogo() {
+        locationGeocodeTransport = Stub("google")
+        var systemDark = false
+        val inputValues = mutableStateMapOf<String, Any>()
+        show {
+            systemDark = androidx.compose.foundation.isSystemInDarkTheme()
+            androidx.compose.material3.MaterialTheme {
+                Box(Modifier.background(androidx.compose.material3.MaterialTheme.colorScheme.background)) {
+                    ContentBlockRendererView(blocks = unstyledLocationBlocks(), onAction = {}, toggleValues = mutableMapOf(), inputValues = inputValues)
+                }
+            }
+        }
+        compose.waitForIdle()
+        assertTrue("control: the device is in dark mode", systemDark)
+        typeAndList()
+        assertTrue("the Google list draws the logo", logoShown())
+        val listed = darkPixelsInLogo(capture("dark-device-dropdown"))
+        assertTrue("the dropdown's logo draws dark letters on the light fill ($listed px)", listed > 100)
+
+        tapTheRow()
+        assertTrue("the field keeps the logo after the tap", logoShown())
+        val kept = darkPixelsInLogo(capture("dark-device-field"))
+        assertTrue("the field's logo draws dark letters on the light background ($kept px)", kept > 100)
+    }
+
+    /**
+     * A re-presentation of the same step, with the same override and answers, reads THIS presentation's
+     * interaction patches. The step is shown under the flow host's wiring; a refresh reply patches a
+     * Select with a Google token, and the credit appears. The same composition then gets a new
+     * presentation (0→1→0 inside the exit tween), whose patch maps start empty: the credit must go with
+     * them. RED CONTROL: the decision remembered on (step, override, answers) alone keeps reading the
+     * previous presentation's patch, and the credit stays.
+     */
+    @Test
+    fun aNewPresentationReadsItsOwnPatches() {
+        val step = OnboardingConfigParser.parseStepForTest(
+            mapOf(
+                "id" to "p", "type" to "custom",
+                "config" to mapOf(
+                    "content_blocks" to listOf(
+                        mapOf("id" to "sel", "type" to "input_select", "field_id" to "pick", "field_config" to mapOf("display_style" to "list"),
+                            "field_options" to listOf(mapOf("id" to "a", "label" to "First"))),
+                        mapOf("id" to "more", "type" to "button", "text" to "More", "action" to "refresh_step", "action_value" to "more"),
+                    ),
+                ),
+            ),
+        )!!
+        val other = OnboardingConfigParser.parseStepForTest(mapOf("id" to "o", "type" to "custom", "config" to emptyMap<String, Any>()))!!
+        val presentations = HostDataPresentations()
+        val access = HostDataInteractionAccess(mutableMapOf(), HostDataInteractionStore(), presentations)
+        val reply = ElementInteractionResult(fieldConfigPatches = mapOf("sel" to mapOf("search_placeholder" to "Near {{responses.places.home.city}}")))
+        val call: ElementInteractionCall = { _, _, _, _, _ -> reply }
+        val p1 = presentations.presentationFor(step, 0, hasDelegate = true, hasCachedOverride = false)
+        var wiring by mutableStateOf(StepHostDataWiring(access, p1, call) { true })
+        val answers = home(google)
+        seedStore(google)
+        show {
+            androidx.compose.runtime.CompositionLocalProvider(LocalStepHostDataWiring provides wiring) {
+                OnboardingStepView(step = step, effectiveConfig = step.config, onNext = {}, onSkip = {}, accumulatedResponses = answers)
+            }
+        }
+        compose.waitForIdle()
+        assertFalse("control: nothing on the step templates a Google answer yet", creditShown())
+        compose.onNodeWithText("More").performClick()
+        compose.mainClock.advanceTimeBy(1_000)
+        compose.waitForIdle()
+        assertTrue("the patch templates a Google answer: the credit", creditShown())
+
+        presentations.presentationFor(other, 1, hasDelegate = true, hasCachedOverride = false)
+        val p2 = presentations.presentationFor(step, 0, hasDelegate = true, hasCachedOverride = false)
+        wiring = StepHostDataWiring(access, p2, call) { true }
+        compose.mainClock.advanceTimeBy(500)
+        compose.waitForIdle()
+        assertFalse("the new presentation has no patch: no credit", creditShown())
     }
 
     // ---- Frames ----------------------------------------------------------------------------------

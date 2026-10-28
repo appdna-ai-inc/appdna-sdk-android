@@ -261,10 +261,10 @@ fun LocationFieldComposable(
                     }
                 }
                 // Google's attribution under Google suggestions, inside the dropdown: the list is
-                // Google content shown without a Google map. The dropdown's surface is the theme's,
-                // so the plain variant follows the appearance.
+                // Google content shown without a Google map. The variant is decided by the colour the
+                // card is filled with, the theme's surface.
                 if (holder.showsGoogleLogo) {
-                    GoogleMapsLogo(backdrop = GoogleMapsAttribution.Backdrop.Plain(null))
+                    GoogleMapsLogo(backdrop = GoogleMapsAttribution.Backdrop.Plain(GoogleMapsAttribution.hexOf(MaterialTheme.colorScheme.surface)))
                 }
             } }
         } else if (LocationAnswer.carriesPlaceId(values[field.id])) {
