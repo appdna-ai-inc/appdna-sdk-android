@@ -158,7 +158,9 @@ class GoogleAttributionRenderTest {
         assertEquals(GoogleMapsAttribution.Variant.LIGHT_OUTLINE, GoogleMapsAttribution.variant(GoogleMapsAttribution.Backdrop.Busy, darkAppearance = false))
         assertEquals(GoogleMapsAttribution.Variant.DARK_OUTLINE, GoogleMapsAttribution.variant(GoogleMapsAttribution.Backdrop.Busy, darkAppearance = true))
         assertEquals(GoogleMapsAttribution.Backdrop.Busy, GoogleMapsAttribution.backdrop(ai.appdna.sdk.core.BackgroundStyleConfig(type = "image", image_url = "https://x")))
-        assertEquals(GoogleMapsAttribution.Backdrop.Plain("#000000"), GoogleMapsAttribution.backdrop(ai.appdna.sdk.core.BackgroundStyleConfig(color = "#000000")))
+        // A colour with no `type` draws nothing of its own (the host paints the theme background), so it is
+        // the theme's, not the colour's.
+        assertEquals(GoogleMapsAttribution.Backdrop.Plain(null), GoogleMapsAttribution.backdrop(ai.appdna.sdk.core.BackgroundStyleConfig(color = "#000000")))
         assertEquals("#5E5E5E", GoogleMapsAttribution.textColorHex(GoogleMapsAttribution.Backdrop.Plain(null), darkAppearance = false))
         assertEquals("#FFFFFF", GoogleMapsAttribution.textColorHex(GoogleMapsAttribution.Backdrop.Busy, darkAppearance = false))
     }
@@ -513,6 +515,128 @@ class GoogleAttributionRenderTest {
         compose.mainClock.advanceTimeBy(500)
         compose.waitForIdle()
         assertFalse("the new presentation has no patch: no credit", creditShown())
+    }
+
+    /**
+     * Typing into the step does not rebuild the step's credit sources. The Google answer is THIS step's
+     * own (a location field on the step answered from Google), so the decision reads the step's live
+     * inputs and re-runs on every keystroke into any field; through the memo a keystroke into a field
+     * holding no Google answer re-reads only where the Google answers sit. RED CONTROL: the decision
+     * re-run straight through `GoogleCredit.shows` builds the sources once per keystroke.
+     */
+    @Test
+    fun aKeystrokeDoesNotRebuildTheCreditSources() {
+        val step = OnboardingConfigParser.parseStepForTest(
+            mapOf(
+                "id" to "s_type", "type" to "custom",
+                "config" to mapOf(
+                    "content_blocks" to listOf(
+                        mapOf("id" to "t", "type" to "text", "text" to "Near {{step.home.city}}"),
+                        mapOf("id" to "nick", "type" to "input_text", "field_id" to "nick"),
+                    ),
+                ),
+            ),
+        )!!
+        show {
+            OnboardingStepView(
+                step = step, effectiveConfig = step.config, onNext = {}, onSkip = {},
+                savedResponses = mapOf("home" to google),
+            )
+        }
+        compose.mainClock.advanceTimeBy(2_000)
+        compose.waitForIdle()
+        assertTrue("control: the step credits", creditShown())
+        val start = GoogleCredit.sourcesBuilt
+        val field = compose.onAllNodes(hasSetTextAction())[0]
+        for (c in listOf("a", "b", "c", "d")) {
+            field.performTextInput(c)
+            compose.waitForIdle()
+        }
+        assertEquals("four keystrokes, no rebuild of the step's sources", 0, GoogleCredit.sourcesBuilt - start)
+        assertTrue("the credit is still drawn", creditShown())
+    }
+
+    // ---- What is behind a field ------------------------------------------------------------------
+
+    /** The variant each Google logo on screen draws, sheets included. */
+    private fun logoVariants(): List<GoogleMapsAttribution.Variant> =
+        compose.onAllNodes(hasTestTag(GoogleMapsAttribution.LOGO_TAG)).fetchSemanticsNodes().map { it.config[GoogleLogoVariantKey] }
+
+    /**
+     * A field inside an option's sheet draws its logo on the SHEET, not on the step under it. The step
+     * is dark; the user opens the sheet, types into its location field and taps a Google suggestion.
+     * The sheet is filled with its light container colour, so the logo beside the field is the GRAY
+     * variant. RED CONTROL: a sheet that provides no backdrop of its own hands the dark step's down,
+     * and the WHITE logo is drawn on the light sheet.
+     */
+    @Test
+    fun aFieldInASheetPicksItsLogoFromTheSheet() {
+        locationGeocodeTransport = Stub("google")
+        val step = OnboardingConfigParser.parseStepForTest(
+            mapOf(
+                "id" to "s_sheet", "type" to "custom",
+                "config" to mapOf(
+                    "background" to mapOf("type" to "color", "color" to "#0F172A"),
+                    "content_blocks" to listOf(
+                        mapOf(
+                            "id" to "sel", "type" to "input_select", "field_id" to "pick",
+                            "field_config" to mapOf("display_style" to "list"),
+                            "field_options" to listOf(
+                                mapOf(
+                                    "id" to "trip", "label" to "Plan a trip",
+                                    "sheet_blocks" to listOf(
+                                        mapOf("id" to "where", "type" to "input_location", "field_id" to "where",
+                                            "field_config" to mapOf("location_min_chars" to 3)),
+                                    ),
+                                ),
+                            ),
+                        ),
+                    ),
+                ),
+            ),
+        )!!
+        renderStep(step, mapbox)
+        compose.onNodeWithText("Plan a trip").performClick()
+        compose.mainClock.advanceTimeBy(2_000)
+        compose.waitForIdle()
+        typeAndList()
+        tapTheRow()
+        assertEquals("the field in the sheet keeps Google's logo, on the sheet's light fill",
+            listOf(GoogleMapsAttribution.Variant.GRAY), logoVariants())
+    }
+
+    /**
+     * A field inside a filled container draws its logo on the container's fill, not on the step's. The
+     * step is dark and the stack is white. RED CONTROL: a block that provides nothing of its own hands the
+     * dark step's backdrop down, and the WHITE logo is drawn on the white stack.
+     */
+    @Test
+    fun aFieldInAFilledContainerPicksItsLogoFromTheFill() {
+        val blocks = OnboardingConfigParser.parseStepForTest(
+            mapOf(
+                "id" to "s_stack", "type" to "custom",
+                "config" to mapOf(
+                    "content_blocks" to listOf(
+                        mapOf(
+                            "id" to "st", "type" to "stack", "height" to 160,
+                            "block_style" to mapOf("background_color" to "#FFFFFF"),
+                            "children" to listOf(mapOf("id" to "loc", "type" to "input_location", "field_id" to "home")),
+                        ),
+                    ),
+                ),
+            ),
+        )!!.config.content_blocks!!.toList()
+        val inputValues = mutableStateMapOf<String, Any>("home" to google)
+        show {
+            androidx.compose.runtime.CompositionLocalProvider(
+                LocalGoogleAttributionBackdrop provides GoogleMapsAttribution.Backdrop.Plain("#0F172A"),
+            ) {
+                ContentBlockRendererView(blocks = blocks, onAction = {}, toggleValues = mutableMapOf(), inputValues = inputValues)
+            }
+        }
+        compose.waitForIdle()
+        assertEquals("the field in the white stack draws the gray logo",
+            listOf(GoogleMapsAttribution.Variant.GRAY), logoVariants())
     }
 
     // ---- Frames ----------------------------------------------------------------------------------

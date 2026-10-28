@@ -313,4 +313,31 @@ class GoogleAttributionTest {
         assertFalse(LocationAnswer.carriesPlaceId("Springf"))
         assertFalse(LocationAnswer.carriesPlaceId(null))
     }
+
+    // ---- The step view's memo --------------------------------------------------------------------
+
+    /**
+     * The memo: a keystroke into a field holding no Google answer reuses the sources and the answer; a
+     * Google answer that moves re-walks; a changed patch rebuilds. The Swift twin is
+     * `testTheMemoRebuildsOnlyWhatChanged`.
+     */
+    @Test
+    fun theMemoRebuildsOnlyWhatChanged() {
+        val s = blockStep(
+            mapOf("id" to "t", "type" to "text", "text" to "Hi {{responses.places.home.city}}"),
+            mapOf("id" to "sel", "type" to "input_select", "field_id" to "pick", "field_options" to listOf(mapOf("id" to "a", "label" to "A"))),
+        )
+        val memo = GoogleCreditMemo()
+        fun shows(inputs: Map<String, Any?>, accumulated: Map<String, Any?>, patches: Map<String, Map<String, Any>> = emptyMap()) =
+            memo.shows(s, null, patches, emptyMap(), answers(accumulated = accumulated, step = inputs))
+        val start = GoogleCredit.sourcesBuilt
+        assertTrue(shows(mapOf("nick" to "A"), home(google)))
+        assertTrue(shows(mapOf("nick" to "Ab"), home(google)))
+        assertEquals("a keystroke reuses the sources", 1, GoogleCredit.sourcesBuilt - start)
+        assertFalse("the Google answer moved where no token reads it: re-walked, no credit",
+            shows(emptyMap(), mapOf("places" to mapOf("work" to google))))
+        assertFalse("no Google answer: no credit", shows(emptyMap(), emptyMap()))
+        assertTrue(shows(emptyMap(), home(google), patches = mapOf("sel" to mapOf("search_placeholder" to "x"))))
+        assertEquals("a new patch rebuilds", 2, GoogleCredit.sourcesBuilt - start)
+    }
 }

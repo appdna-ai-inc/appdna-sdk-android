@@ -93,6 +93,16 @@ internal object SelectedOptionStore {
         option.category?.let { out["category"] = it }
         option.image_url?.let { out["image_url"] = it }
         option.icon?.let { out["icon"] = it }
+        // The keys whose text is a Google answer's content, so a later step that shows them draws
+        // Google's attribution ([GoogleCredit]).
+        option.googleKeys?.takeIf { it.isNotEmpty() }?.let { out[GOOGLE_KEYS_KEY] = it }
         return out
     }
+
+    /** Where a recorded option keeps its Google keys ([InputOption.googleKeys]). */
+    const val GOOGLE_KEYS_KEY = "google_keys"
+
+    /** The recorded option's keys whose text is a Google answer's content. */
+    fun googleKeys(record: Any?): List<String> =
+        ((record as? Map<*, *>)?.get(GOOGLE_KEYS_KEY) as? List<*>)?.filterIsInstance<String>().orEmpty()
 }

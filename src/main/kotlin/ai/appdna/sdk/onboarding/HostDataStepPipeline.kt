@@ -217,6 +217,10 @@ internal class HostDataStepPipeline(
         // resolves one) pays for `TemplateEngine.buildContext()`.
         val tctx: TemplateContext? by lazy { legacyContextBuilds++; legacyContext() }
         val legacy: (String) -> String? = { path: String -> tctx?.let { TemplateEngine.resolveToken(path, it) } }
+        // A stored value (an option's value, a field default, a URL action) leaves the screen, so a
+        // Google answer resolves there as it does on every other surface: to its typed text.
+        val storedContext: TemplateContext? by lazy { tctx?.copy(surface = ai.appdna.sdk.core.TemplateSurface.OTHER) }
+        val legacyStored: (String) -> String? = { path: String -> storedContext?.let { TemplateEngine.resolveToken(path, it) } }
         val stepLocs = step.config.localizations
         val scope = HostDataResolver.Scope(
             mapOf(
@@ -232,6 +236,12 @@ internal class HostDataStepPipeline(
                 inputs.pending, inputs.locale,
                 d.paths.map { HostDataResolver.deepCopy(HostDataResolver.resolveScopePath(it, scope)) },
                 d.legacyPaths.map { legacy(it) },
+                // What a stored value resolves the same paths to: a Google answer's typed text can
+                // change while the drawn value does not.
+                d.paths.map { HostDataResolver.resolveScopePath(it, scope, typedText = true) },
+                d.legacyPaths.map { legacyStored(it) },
+                // Whether a drawn path takes a Google answer's content (an option's Google keys).
+                d.paths.map { HostDataResolver.readsGoogleAnswer(it, scope) },
             )
         }
 
@@ -262,11 +272,20 @@ internal class HostDataStepPipeline(
                     localizations = stepLocs,
                     locale = inputs.locale,
                     legacyToken = legacy.takeIf { tctx != null },
+                    legacyTokenStored = legacyStored.takeIf { tctx != null },
                 )
                 val r = HostDataResolver.resolveRawBlock(b, ctx)
                 reverting = mutableListOf()
                 decodeFellBack = false
-                val d = decodeWithRevert(r)
+                val d = decodeWithRevert(r).let { block ->
+                    // Which option keys show a Google answer's content, for a later `selected` path.
+                    if (r.googleOptionKeys.isEmpty()) block
+                    else block.copy(
+                        field_options = block.field_options?.map { o ->
+                            o.copy(googleKeys = r.googleOptionKeys[o.id ?: o.value])
+                        }?.toImmutableList(),
+                    )
+                }
                 Memo(memoKey, r, d, reverting.toList(), rawResolved = !r.skipped && !decodeFellBack).also { memo[i] = it }
             }
             val result = entry.result
@@ -303,6 +322,7 @@ internal class HostDataStepPipeline(
                 stepId = step.id, hookData = inputs.hookData, responses = inputs.responses, step = inputs.stepInputs,
                 user = inputs.user, session = inputs.session, selected = inputs.selected,
                 legacyToken = legacy.takeIf { tctx != null },
+                legacyTokenStored = legacyStored.takeIf { tctx != null },
             )
             blocks = blocks.map { blk -> layerInteraction(blk, inputs, patchCtx) }
         }

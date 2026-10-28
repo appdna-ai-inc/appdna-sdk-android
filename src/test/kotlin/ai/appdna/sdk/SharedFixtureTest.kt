@@ -311,6 +311,7 @@ class SharedFixtureTest(
             // Google's attribution: the field's, and an onboarding step's credit
             // (onboarding/GoogleAttributionFixtureDrivers.kt).
             "location_field_attribution" -> runLocationFieldAttribution(action, spy)
+            "google_attribution_backdrop" -> runGoogleAttributionBackdrop(action, spy)
             "onboarding_google_credit" -> runOnboardingGoogleCredit(action, spy)
             // The core rule every wrapper bridge's auth gate and decoder use.
             "bridge_step_advance_reply" -> runBridgeStepAdvanceReply(action, spy)
@@ -3143,6 +3144,9 @@ class SharedFixtureTest(
             // beside a field whose answer came from Google.
             "list_google_logo" -> holder.showsGoogleLogo
             "field_google_attribution" -> ai.appdna.sdk.onboarding.LocationAnswer.carriesPlaceId(rig.stored)
+            // Every typed text the field stored, in order: a Google line must never be one of them.
+            "stored_texts" -> rig.storedTexts.toList()
+            "stored_raw_query" -> (rig.stored as? Map<*, *>)?.get("raw_query")
             else -> unsupported("location_resolve_request observable '$key'")
         }
     }
@@ -3179,6 +3183,15 @@ class SharedFixtureTest(
             ?: unsupported("location_field_attribution without action.cases")
         spy.state["results"] = ai.appdna.sdk.onboarding.GoogleAttributionFixtureDrivers
             .locationFieldAttribution(cases.asList().map { it as Map<String, Any?> })
+    }
+
+    /** `google_attribution_backdrop` — the REAL backdrop rules over steps the SDK's parser built. */
+    @Suppress("UNCHECKED_CAST")
+    private fun runGoogleAttributionBackdrop(action: JSONObject, spy: Spy) {
+        val cases = action.optJSONArray("cases")?.takeIf { it.length() > 0 }
+            ?: unsupported("google_attribution_backdrop without action.cases")
+        spy.state["results"] = ai.appdna.sdk.onboarding.GoogleAttributionFixtureDrivers
+            .googleAttributionBackdrop(cases.asList().map { it as Map<String, Any?> })
     }
 
     /** `onboarding_google_credit` — REAL `GoogleCredit` over a step the SDK's parser built. */

@@ -72,10 +72,14 @@ internal class LocationSearchRig(
     /** The last text `textChanged` was given — what SwiftUI's `.onChange` compares against. */
     private var lastDelivered: String = holder.text
 
+    /** Every typed text (a String answer) the holder stored, in order. */
+    val storedTexts = mutableListOf<String>()
+
     init {
         holder.attach { value ->
             stored = value
             storeWrites += 1
+            (value as? String)?.let { storedTexts += it }
         }
     }
 

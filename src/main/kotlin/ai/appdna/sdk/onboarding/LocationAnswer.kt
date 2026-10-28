@@ -135,6 +135,22 @@ internal object LocationAnswer {
     fun carriesPlaceId(value: Any?): Boolean =
         ((value as? Map<*, *>)?.get("place_id") as? String)?.isNotBlank() == true
 
+    /**
+     * The text the first edit of a field showing a Google answer restarts from. The field shows
+     * Google's line ([shown]), which must never be stored or sent, so the edit goes back to the user's
+     * own words, the answer's `raw_query`: characters appended at the END of Google's line are appended
+     * to it, and any other edit (a deletion, a replacement, a paste inside the line) leaves the typed
+     * text alone. The result is ordinary typed text from then on. The Swift twin is
+     * `LocationAnswer.editRestart`.
+     */
+    fun editRestart(rawQuery: String, shown: String, edited: String): String =
+        if (edited.length > shown.length && edited.startsWith(shown)) rawQuery + edited.substring(shown.length)
+        else rawQuery
+
+    /** A Google answer's `raw_query` ("" when it has none); null for anything that is not a Google answer. */
+    fun googleRawQuery(value: Any?): String? =
+        if (!carriesPlaceId(value)) null else ((value as Map<*, *>)["raw_query"] as? String) ?: ""
+
     fun fieldText(stored: Any?): String? = when (stored) {
         is String -> stored.ifEmpty { null }
         is Map<*, *> -> (stored["formatted_address"] as? String)?.ifEmpty { null }

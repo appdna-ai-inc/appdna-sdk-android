@@ -104,16 +104,52 @@ internal object GoogleMapsAttribution {
     }
 
     /**
-     * A step's background as a backdrop: a colour is plain, anything else authored is busy, and no
-     * background is the system one.
+     * A step's background as a backdrop: what the step host actually draws for it
+     * (`StepFullScreenBackground`). A colour is plain; an image, gradient or animation is busy. A
+     * background with no `type` (even one holding a colour) and a transparent one paint the theme's
+     * background, so: plain, with no colour of its own.
      */
     fun backdrop(of: BackgroundStyleConfig?): Backdrop {
         val background = of ?: return Backdrop.Plain(null)
-        return when (background.type ?: (if (background.color != null) "color" else null)) {
+        return when (background.type) {
             "color" -> Backdrop.Plain(background.color)
-            null -> Backdrop.Plain(null)
+            null, "transparent", "clear", "none" -> Backdrop.Plain(null)
             else -> Backdrop.Busy
         }
+    }
+
+    /**
+     * What a content block draws behind its own content: its own fill, else [behind]. In order from
+     * the content outwards — a row's `bg_color`, the block's `block_style` fill, its container fill
+     * (`container_bg_color`, `blur_background`). A gradient, a blur or a translucent fill is busy. A
+     * field inside a filled container, or a filled field, picks its logo from THIS. The Swift twin is
+     * `GoogleMapsAttribution.backdrop(ofBlock:behind:)`.
+     */
+    fun backdrop(ofBlock: ContentBlock, behind: Backdrop): Backdrop {
+        val cfg = ofBlock.field_config
+        fun double(key: String): Double? = (cfg?.get(key) as? Number)?.toDouble()
+        fun visible(hex: String?): String? {
+            if (hex.isNullOrBlank()) return null
+            val l = hex.lowercase()
+            return if (l == "transparent" || l == "clear") null else hex
+        }
+        if (ofBlock.type == "row") {
+            visible(cfg?.get("bg_color") as? String)?.let { bg ->
+                return if ((double("background_opacity") ?: 1.0) < 1.0) Backdrop.Busy else Backdrop.Plain(bg)
+            }
+        }
+        ofBlock.block_style?.let { style ->
+            if (style.background_gradient != null) return Backdrop.Busy
+            visible(style.background_color)?.let { bg ->
+                return if ((style.opacity ?: 1.0) < 1.0) Backdrop.Busy else Backdrop.Plain(bg)
+            }
+        }
+        if (cfg?.get("blur_background") == true) return Backdrop.Busy
+        visible(cfg?.get("container_bg_color") as? String)?.takeIf { !it.equals("#ffffff", true) }?.let { bg ->
+            val opacity = double("container_opacity") ?: double("background_opacity") ?: 1.0
+            return if (opacity < 1.0) Backdrop.Busy else Backdrop.Plain(bg)
+        }
+        return behind
     }
 
     /**
@@ -178,6 +214,13 @@ internal object GoogleMapsAttribution {
 internal val LocalGoogleAttributionBackdrop =
     compositionLocalOf<GoogleMapsAttribution.Backdrop> { GoogleMapsAttribution.Backdrop.Plain(null) }
 
+/**
+ * The variant a logo draws, readable from the semantics tree (a custom key: accessibility services are
+ * not told). It lets a test read the variant where pixels cannot be captured, inside a sheet's window.
+ */
+internal val GoogleLogoVariantKey =
+    androidx.compose.ui.semantics.SemanticsPropertyKey<GoogleMapsAttribution.Variant>("AppDNAGoogleLogoVariant")
+
 /** The "Google Maps" logo with Google's clear space. */
 /**
  * Whether the theme's background is dark: what [GoogleMapsAttribution.Backdrop.Plain] with no colour,
@@ -205,7 +248,10 @@ internal fun GoogleMapsLogo(backdrop: GoogleMapsAttribution.Backdrop, modifier: 
                 bottom = GoogleMapsAttribution.CLEAR_SPACE_BOTTOM_DP.dp,
             )
             .testTag(GoogleMapsAttribution.LOGO_TAG)
-            .clearAndSetSemantics { contentDescription = GoogleMapsAttribution.LABEL },
+            .clearAndSetSemantics {
+                contentDescription = GoogleMapsAttribution.LABEL
+                this[GoogleLogoVariantKey] = variant
+            },
     ) {
         Image(
             painter = painter,

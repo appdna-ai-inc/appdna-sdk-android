@@ -69,25 +69,39 @@ internal object GoogleCredit {
          * ([repeatItems]).
          */
         val items: List<Any> = emptyList(),
+        /**
+         * `selected`: the options picked on earlier steps ([SelectedOptionStore.snapshot]). A recorded
+         * option names the keys whose text was a Google answer's content ([SelectedOptionStore.googleKeys]).
+         */
+        val selected: Map<String, Any?> = emptyMap(),
     ) {
         constructor(
             accumulated: Map<String, Any?>,
             stepInputs: Map<String, Any?>,
             sessionStore: Map<String, Any?>,
-        ) : this(listOf(accumulated, sessionStore), stepInputs, sessionStore)
+            selected: Map<String, Any?> = emptyMap(),
+        ) : this(listOf(accumulated, sessionStore), stepInputs, sessionStore, emptyList(), selected)
 
         /** The same answers, with the `step` root reading [inputs] (an option sheet's own). */
-        fun withStepInputs(inputs: Map<String, Any?>): Answers = Answers(responses, inputs, onboarding, items)
+        fun withStepInputs(inputs: Map<String, Any?>): Answers = Answers(responses, inputs, onboarding, items, selected)
 
         /** The same answers, with the `item` root standing on [items]. */
-        fun withItems(items: List<Any>): Answers = Answers(responses, step, onboarding, items)
+        fun withItems(items: List<Any>): Answers = Answers(responses, step, onboarding, items, selected)
 
-        /** Whether any answer a root can read is a Google one. Nothing can credit otherwise. */
+        /** Whether any answer a root can read — `item` included — is a Google one. Nothing can credit otherwise. */
         val holdAGoogleAnswer: Boolean
-            get() = responses.any { holdsGoogleAnswer(it) } || holdsGoogleAnswer(step) || holdsGoogleAnswer(onboarding)
+            get() = responses.any { holdsGoogleAnswer(it) } || holdsGoogleAnswer(step) || holdsGoogleAnswer(onboarding) ||
+                items.any { holdsGoogleAnswer(it) } || selectedGooglePlaces(selected).isNotEmpty()
     }
 
     // ---- The step -------------------------------------------------------------------------------
+
+    /**
+     * How many times [stepSources] has built a step's sources. Read by the tests that hold the step
+     * view to one build per change of what the step draws, not one per recomposition.
+     */
+    @Volatile
+    var sourcesBuilt = 0
 
     /** The step's source, as the walk reads it (see the class comment for what is walked and why). */
     fun stepSources(
@@ -96,6 +110,7 @@ internal object GoogleCredit {
         fieldConfigOverrides: Map<String, Map<String, Any>>,
         fieldOptionsOverrides: Map<String, List<InputOption>>,
     ): List<Any> {
+        sourcesBuilt += 1
         val sources = mutableListOf<Any>()
         sources.add(typedConfigSource(step.config))
         step.rawContentBlocks?.blocks?.let { sources.add(it) }
@@ -311,10 +326,16 @@ internal object GoogleCredit {
         else -> false
     }
 
-    /** The `{{…}}` tokens of one string. */
+    /**
+     * The `{{…}}` tokens of one string: every token any renderer resolves — the raw pass's scanner and
+     * the TemplateEngine's wider one (a legacy field id may hold a space, which only the latter reads),
+     * so a token one of them substitutes is never missed.
+     */
     private fun tokensCredit(s: String, answers: Answers): Boolean {
         if (!s.contains("{{")) return false
-        return HostDataResolver.extractTemplateTokens(s).any { pathCredits(it.path, answers) }
+        val paths = HostDataResolver.extractTemplateTokens(s).map { it.path }.toSet() +
+            ai.appdna.sdk.core.TemplateEngine.tokenPaths(s)
+        return paths.any { pathCredits(it, answers) }
     }
 
     /** Every string under a `bindings` object is a bare path. */
@@ -334,6 +355,7 @@ internal object GoogleCredit {
         val root = segments.first()
         val rest = segments.drop(1)
         if (root == "item") return answers.items.any { reaches(rest, it) }
+        if (root == "selected") return selectedCredits(rest, answers.selected)
         if (root !in ROOTS) return false
         return when (root) {
             "responses" -> answers.responses.any { reaches(rest, it) }
@@ -368,6 +390,66 @@ internal object GoogleCredit {
         return holdsGoogleAnswer(current)
     }
 
+    /**
+     * A `selected` path: `<field>.<key>` for a single pick, `<field>.<n>.<key>` for a multi pick. It
+     * credits when the picked option's `key` was drawn from a Google answer; a path that stops at the
+     * option (or at the list) credits when any of its keys was.
+     */
+    private fun selectedCredits(rest: List<String>, selected: Map<String, Any?>): Boolean {
+        val field = rest.firstOrNull() ?: return false
+        var current: Any = selected[field] ?: return false
+        var next = 1
+        if (current is List<*>) {
+            val list: List<*> = current
+            val element = rest.getOrNull(next)?.toIntOrNull()?.let { list.getOrNull(it) }
+                ?: return rest.size <= next && list.any { SelectedOptionStore.googleKeys(it).isNotEmpty() }
+            current = element
+            next += 1
+        }
+        val keys = SelectedOptionStore.googleKeys(current)
+        if (rest.size <= next) return keys.isNotEmpty()
+        return rest[next] in keys
+    }
+
+    /** Where each recorded option with Google keys sits in `selected`, one entry per key. */
+    fun selectedGooglePlaces(selected: Map<String, Any?>): List<String> {
+        val out = mutableListOf<String>()
+        for ((field, record) in selected) {
+            if (record is List<*>) {
+                record.forEachIndexed { i, r ->
+                    SelectedOptionStore.googleKeys(r).forEach { out += "selected\u001F$field\u001F[$i]\u001F$it" }
+                }
+            } else {
+                SelectedOptionStore.googleKeys(record).forEach { out += "selected\u001F$field\u001F$it" }
+            }
+        }
+        return out
+    }
+
+    /**
+     * Where each Google answer sits among the answers, one path per answer (root first, segments joined
+     * by a unit separator): [pathCredits] reaches a Google answer exactly when its path and one of these
+     * is a prefix of the other, so the walk's answer depends on the answers only through these. An array
+     * index is marked as one (`[n]`): a repeat generates options only from an ARRAY, so `item` credits
+     * from `[G]` and not from `{"0": G}`, and the two must not share a place. Empty when no Google answer
+     * is held. The Swift twin is `GoogleCredit.googlePaths`.
+     */
+    fun googlePaths(answers: Answers): List<String> {
+        val out = mutableListOf<String>()
+        fun collect(value: Any?, path: String) {
+            if (LocationAnswer.carriesPlaceId(value)) { out += path; return }
+            when (value) {
+                is Map<*, *> -> for ((k, v) in value) collect(v, "$path\u001F$k")
+                is List<*> -> value.forEachIndexed { i, v -> collect(v, "$path\u001F[$i]") }
+            }
+        }
+        answers.responses.forEachIndexed { i, r -> collect(r, "responses$i") }
+        collect(answers.step, "step")
+        collect(answers.onboarding, "onboarding")
+        out += selectedGooglePlaces(answers.selected)
+        return out.sorted()
+    }
+
     /** Whether [value] is, or holds at any depth, a Google answer. */
     fun holdsGoogleAnswer(value: Any?): Boolean = when {
         LocationAnswer.carriesPlaceId(value) -> true
@@ -389,21 +471,37 @@ internal object GoogleCredit {
     )
 
     /**
-     * A typed block: every property but its child blocks and options as one string, its `bindings`,
-     * and its children and options walked the same way.
+     * A typed block: every scalar property as one string; its free-form maps (`field_config`,
+     * `custom_config`, `rive_inputs`, `icon_ref`) and its `bindings` kept as structure, so a `bindings`
+     * or `sheet_blocks` key inside one reads as it does in the Swift twin's encoded block; and its
+     * children and options walked the same way.
      */
     internal fun blockSource(b: ContentBlock): Map<String, Any?> = mapOf(
         "id" to b.id,
-        "text" to b.copy(children = null, stack_children = null, field_options = null, bindings = null).toString(),
+        "text" to b.copy(
+            children = null, stack_children = null, field_options = null, bindings = null,
+            field_config = null, custom_config = null, rive_inputs = null, icon_ref = null,
+        ).toString(),
         "bindings" to b.bindings,
+        "field_config" to b.field_config,
+        "custom_config" to b.custom_config,
+        "rive_inputs" to b.rive_inputs,
+        "icon_ref" to b.icon_ref,
         "children" to b.children?.map(::blockSource),
         "stack_children" to b.stack_children?.map(::blockSource),
         "field_options" to b.field_options?.map(::optionSource),
     )
 
-    /** A typed config: every property but its blocks as one string, and its blocks walked as blocks. */
+    /**
+     * A typed config: every scalar property as one string; its free-form maps (`layout`,
+     * `field_defaults`, `localizations`) kept as structure, as the Swift twin encodes them; and its
+     * blocks walked as blocks.
+     */
     private fun typedConfigSource(config: StepConfig): Map<String, Any?> = mapOf(
-        "config" to config.copy(content_blocks = null).toString(),
+        "config" to config.copy(content_blocks = null, layout = null, field_defaults = null, localizations = null).toString(),
+        "layout" to config.layout,
+        "field_defaults" to config.field_defaults,
+        "localizations" to config.localizations,
         "content_blocks" to config.content_blocks?.map(::blockSource),
     )
 
@@ -435,6 +533,8 @@ internal object GoogleCredit {
 internal class GoogleCreditSheetContext(
     val sources: () -> List<Any>,
     val answers: GoogleCredit.Answers,
+    /** The sheet index of [sources], when a memo keeps one ([GoogleCreditMemo.sheetIndex]); else built per call. */
+    val index: (() -> GoogleCredit.SheetIndex)? = null,
 ) {
     /**
      * The credit for the sheet of [optionId] on [blockId], from the sheet's SOURCE: the presented
@@ -449,12 +549,88 @@ internal class GoogleCreditSheetContext(
         presentedSheetBlocks: List<ContentBlock>,
         sheetInputs: Map<String, Any?>,
     ): Boolean {
-        if (!answers.withStepInputs(sheetInputs).holdAGoogleAnswer) return false
+        // A sheet's `item` stands on what the STEP's answers hold, which the sheet's own inputs replace:
+        // either may hold the Google answer.
+        if (!answers.withStepInputs(sheetInputs).holdAGoogleAnswer && !answers.holdAGoogleAnswer) return false
         val source = if (blockId != null && optionId != null) {
-            GoogleCredit.sheetSource(GoogleCredit.sheetSources(sources()), blockId, optionId, answers)
+            GoogleCredit.sheetSource(index?.invoke() ?: GoogleCredit.sheetSources(sources()), blockId, optionId, answers)
         } else null
         if (source != null) return GoogleCredit.sheetShows(source.blocks, sheetInputs, answers, source.items)
         return GoogleCredit.sheetShows(presentedSheetBlocks.map(GoogleCredit::blockSource), sheetInputs, answers)
+    }
+}
+
+/**
+ * The step's credit, kept across recompositions. Building the step's sources is the cost (every typed
+ * property rendered and walked), and the step view re-evaluates its credit on every keystroke once a
+ * Google answer is held; so the sources (and the sheet index) are rebuilt only when what the step draws
+ * changes — the step, the host's override, an interaction patch — and the walk re-runs only when,
+ * besides, the PLACE of a Google answer among the answers changes. The walk's answer depends on the
+ * answers only through those places ([GoogleCredit.googlePaths]), so typing into a field that holds no
+ * Google answer re-runs nothing. One instance per step presentation. The Swift twin is
+ * `GoogleCreditMemo`.
+ */
+internal class GoogleCreditMemo {
+    private var step: OnboardingStep? = null
+    private var override: StepConfigOverride? = null
+    private var patches: Map<String, Map<String, Any>>? = null
+    private var options: Map<String, List<InputOption>>? = null
+    private var sources: List<Any> = emptyList()
+    private var sheetIndex: GoogleCredit.SheetIndex? = null
+    private var shownFor: List<String>? = null
+    private var shown = false
+
+    /** The step's sources ([GoogleCredit.stepSources]), rebuilt only when what the step draws changed. */
+    @Synchronized
+    fun sources(
+        step: OnboardingStep,
+        override: StepConfigOverride?,
+        fieldConfigOverrides: Map<String, Map<String, Any>>,
+        fieldOptionsOverrides: Map<String, List<InputOption>>,
+    ): List<Any> {
+        // Copies: the step keeps its patches in snapshot maps it mutates in place.
+        val patches = fieldConfigOverrides.toMap()
+        val options = fieldOptionsOverrides.toMap()
+        if (this.step != step || this.override != override || this.patches != patches || this.options != options) {
+            sources = GoogleCredit.stepSources(step, override, patches, options)
+            this.step = step
+            this.override = override
+            this.patches = patches
+            this.options = options
+            sheetIndex = null
+            shownFor = null
+        }
+        return sources
+    }
+
+    /** The step's credit ([GoogleCredit.shows]). */
+    @Synchronized
+    fun shows(
+        step: OnboardingStep,
+        override: StepConfigOverride?,
+        fieldConfigOverrides: Map<String, Map<String, Any>>,
+        fieldOptionsOverrides: Map<String, List<InputOption>>,
+        answers: GoogleCredit.Answers,
+    ): Boolean {
+        val places = GoogleCredit.googlePaths(answers)
+        if (places.isEmpty()) return false
+        val s = sources(step, override, fieldConfigOverrides, fieldOptionsOverrides)
+        if (shownFor == places) return shown
+        shown = GoogleCredit.shows(s, answers)
+        shownFor = places
+        return shown
+    }
+
+    /** The option sheets' index ([GoogleCredit.sheetSources]), from the same sources. */
+    @Synchronized
+    fun sheetIndex(
+        step: OnboardingStep,
+        override: StepConfigOverride?,
+        fieldConfigOverrides: Map<String, Map<String, Any>>,
+        fieldOptionsOverrides: Map<String, List<InputOption>>,
+    ): GoogleCredit.SheetIndex {
+        val s = sources(step, override, fieldConfigOverrides, fieldOptionsOverrides)
+        return sheetIndex ?: GoogleCredit.sheetSources(s).also { sheetIndex = it }
     }
 }
 

@@ -202,8 +202,15 @@ internal class LocationSuggestionSearch(
      */
     private var resolvingTyped: String? = null
 
+    /**
+     * While the field shows a Google answer's line: that line and the answer's `raw_query`. Google's
+     * line must never be stored or sent, so the first edit restarts from the raw query
+     * ([LocationAnswer.editRestart]) and clears this; null once the field holds typed text.
+     */
+    private var shownGoogle: Pair<String, String>? = null
+
     init {
-        LocationAnswer.fieldText(storedAnswer)?.let { setTextProgrammatically(it) }
+        LocationAnswer.fieldText(storedAnswer)?.let { showAnswer(it, storedAnswer) }
     }
 
     // ---- Binding to a composable ---------------------------------------------------------------
@@ -256,7 +263,7 @@ internal class LocationSuggestionSearch(
         val wasPresent = LocationAnswer.fieldText(storedAnswer) != null
         storedAnswer = value
         if (wasPresent || text.isNotEmpty()) return
-        LocationAnswer.fieldText(value)?.let { setTextProgrammatically(it) }
+        LocationAnswer.fieldText(value)?.let { showAnswer(it, value) }
     }
 
     // ---- Text ----------------------------------------------------------------------------------
@@ -266,6 +273,9 @@ internal class LocationSuggestionSearch(
      * own set is skipped (a Compose text field sends none, so on Android the expectation is consumed by
      * the user's next edit, which never equals the text it replaces); anything else is the user typing:
      * it drops a resolve in flight, stores the typed text, and searches.
+     *
+     * The first edit of a field showing a Google answer's line restarts from the user's own text
+     * ([LocationAnswer.editRestart]), so the line itself is never stored as typed text or searched.
      */
     fun textChanged(newText: String, settings: LocationSearchSettings) {
         pendingEcho?.let { echo ->
@@ -274,8 +284,14 @@ internal class LocationSuggestionSearch(
         }
         if (text != newText) text = newText
         dropResolveInFlight()
-        storeTyped(newText)
-        search(newText, settings)
+        var typed = newText
+        shownGoogle?.let { (line, rawQuery) ->
+            shownGoogle = null
+            typed = LocationAnswer.editRestart(rawQuery = rawQuery, shown = line, edited = newText)
+            setTextProgrammatically(typed)
+        }
+        storeTyped(typed)
+        search(typed, settings)
     }
 
     /** Typing without selecting stores the typed text (an empty field stores nothing). */
@@ -297,6 +313,15 @@ internal class LocationSuggestionSearch(
         if (newText == text) return
         pendingEcho = newText
         text = newText
+    }
+
+    /**
+     * Shows a stored answer's line; for a Google answer, remembers the line and the user's own text
+     * for the first edit.
+     */
+    private fun showAnswer(line: String, answer: Any?) {
+        setTextProgrammatically(line)
+        shownGoogle = LocationAnswer.googleRawQuery(answer)?.let { line to it }
     }
 
     // ---- Search --------------------------------------------------------------------------------
@@ -352,6 +377,7 @@ internal class LocationSuggestionSearch(
         results = emptyList()
         isDropdownOpen = false
         write(null)
+        shownGoogle = null
         setTextProgrammatically("")
     }
 
@@ -372,8 +398,9 @@ internal class LocationSuggestionSearch(
         isDropdownOpen = false
         results = emptyList()
         dropResolveInFlight()
-        // The text the user typed to find this place, read before anything changes it.
-        val typed = text
+        // The text the user typed to find this place, read before anything changes it — never a
+        // Google line the field still shows.
+        val typed = shownGoogle?.second ?: text
         val typedAnswer: Any? = typed.ifEmpty { null }?.let { LocationAnswer.typed(it) }
 
         val body = resolveRequest(listed)
@@ -394,7 +421,7 @@ internal class LocationSuggestionSearch(
                 is LocationResolveOutcome.Resolved -> {
                     val answer = LocationAnswer.selection(outcome.location, typed)
                     write(answer)
-                    setTextProgrammatically(LocationAnswer.fieldText(answer) ?: listed.suggestion.address)
+                    showAnswer(LocationAnswer.fieldText(answer) ?: listed.suggestion.address, answer)
                     // Never log the place itself.
                     ai.appdna.sdk.Log.debug("Location suggestion resolved")
                 }

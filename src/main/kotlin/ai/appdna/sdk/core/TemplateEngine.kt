@@ -44,6 +44,13 @@ object TemplateEngine {
     private val regex = Regex("\\{\\{([^}|]+)(?:\\|([^}]*))?\\}\\}")
 
     /**
+     * The variable path of every `{{…}}` token [interpolate] resolves in [value], trimmed as it trims
+     * them. Wider than the raw host-data pass's scanner: a path may hold a space.
+     */
+    internal fun tokenPaths(value: String): List<String> =
+        if (!value.contains("{{")) emptyList() else regex.findAll(value).map { it.groupValues[1].trim() }.toList()
+
+    /**
      * Build a TemplateContext from current SDK state.
      *
      * [surface] has no default on purpose: every caller states where its text goes. Only an

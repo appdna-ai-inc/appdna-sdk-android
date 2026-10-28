@@ -2598,22 +2598,31 @@ fun OnboardingStepView(
     // content: decided here, from the step's own source and the answers, before anything renders —
     // so there is no child-to-parent report and no stale first frame. A derived state, so typing into
     // a field recomposes this view only when the answer to "does it credit?" changes.
-    val creditAnswers = GoogleCredit.Answers(
+    // The answers each root reads, read when the credit is decided: the step's live inputs, the
+    // session store, and the options picked on earlier steps (`selected`).
+    fun creditAnswers() = GoogleCredit.Answers(
         accumulated = accumulatedResponses,
         stepInputs = inputValues,
         sessionStore = ai.appdna.sdk.core.SessionDataStore.instance?.onboardingResponses ?: emptyMap(),
+        selected = SelectedOptionStore.snapshot(),
     )
+    // Memoised: the derived state below re-runs on every keystroke once a Google answer is held, and
+    // building the step's sources is the cost. Keyed by presentation, as the patch maps are.
+    val creditMemo = remember(step.id, presentation) { GoogleCreditMemo() }
     // Keyed on the override maps too: they are re-created per presentation (above), and a decision
     // that captured the previous presentation's maps would never see this one's patches.
     val showsGoogleCredit by remember(step, stepOverride, accumulatedResponses, fieldConfigOverrides, fieldOptionsOverrides) {
         derivedStateOf {
-            GoogleCredit.shows(step, stepOverride, fieldConfigOverrides, fieldOptionsOverrides, creditAnswers)
+            // A pick on an earlier step is a `selected` answer: re-decide when one is recorded.
+            SelectedOptionStore.revision.intValue
+            creditMemo.shows(step, stepOverride, fieldConfigOverrides, fieldOptionsOverrides, creditAnswers())
         }
     }
     val creditSheetContext = remember(step, stepOverride, accumulatedResponses, fieldConfigOverrides, fieldOptionsOverrides) {
         GoogleCreditSheetContext(
-            sources = { GoogleCredit.stepSources(step, stepOverride, fieldConfigOverrides, fieldOptionsOverrides) },
-            answers = creditAnswers,
+            sources = { creditMemo.sources(step, stepOverride, fieldConfigOverrides, fieldOptionsOverrides) },
+            answers = creditAnswers(),
+            index = { creditMemo.sheetIndex(step, stepOverride, fieldConfigOverrides, fieldOptionsOverrides) },
         )
     }
     // What the host actually draws behind the step (a chat step's own dark fill included).

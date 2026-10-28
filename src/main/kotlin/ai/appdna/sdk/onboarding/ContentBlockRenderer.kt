@@ -1111,6 +1111,13 @@ data class InputOption(
     val text_alignment: String? = null,
     /** Per-option badge straddling the row top border. */
     val badge: OptionBadge? = null,
+    /**
+     * The keys of this option whose drawn text took a Google location answer's content, as the raw
+     * host-data pass resolved them ([HostDataResolveResult.googleOptionKeys]). Never parsed from JSON:
+     * a pick records it with the option, so a later `{{selected.<field>.<key>}}` showing that text
+     * draws Google's attribution. The Swift twin is `InputOption.googleKeys`.
+     */
+    val googleKeys: List<String>? = null,
 ) {
     /** Mirrors iOS `resolvedImageURL(isSelected:)` — selected/unselected variant first, default image_url last. */
     fun resolvedImageURL(isSelected: Boolean): String? {
@@ -2068,18 +2075,23 @@ internal fun RenderBlock(
             .applyBlockContainerStyle(block.field_config)
     }
 
-    if (blockAlignment != null) {
-        Box(
-            modifier = Modifier.fillMaxWidth(),
-            contentAlignment = blockAlignment,
-        ) {
+    // What the block draws behind its own content, for a Google logo inside it — read at the block's
+    // own place, so a container's children see the container's fill.
+    val attributionBackdrop = GoogleMapsAttribution.backdrop(ofBlock = block, behind = LocalGoogleAttributionBackdrop.current)
+    androidx.compose.runtime.CompositionLocalProvider(LocalGoogleAttributionBackdrop provides attributionBackdrop) {
+        if (blockAlignment != null) {
+            Box(
+                modifier = Modifier.fillMaxWidth(),
+                contentAlignment = blockAlignment,
+            ) {
+                Box(modifier = contentModifier) {
+                    RenderBlockContent(block, onAction, toggleValues, inputValues, loc, currentStepIndex, totalSteps, onInteract, stepBlocks)
+                }
+            }
+        } else {
             Box(modifier = contentModifier) {
                 RenderBlockContent(block, onAction, toggleValues, inputValues, loc, currentStepIndex, totalSteps, onInteract, stepBlocks)
             }
-        }
-    } else {
-        Box(modifier = contentModifier) {
-            RenderBlockContent(block, onAction, toggleValues, inputValues, loc, currentStepIndex, totalSteps, onInteract, stepBlocks)
         }
     }
 }
@@ -13600,6 +13612,7 @@ private fun OptionBottomSheet(option: InputOption, parentBlockId: String, onDism
         sheetInputs = sheetInputs,
     ) ?: false
     val sheetContainerColor = androidx.compose.material3.BottomSheetDefaults.ContainerColor
+    val sheetBackdrop = GoogleMapsAttribution.Backdrop.Plain(GoogleMapsAttribution.hexOf(sheetContainerColor))
     androidx.compose.material3.ModalBottomSheet(onDismissRequest = onDismiss, containerColor = sheetContainerColor) {
         Column(
             modifier = Modifier
@@ -13613,6 +13626,9 @@ private fun OptionBottomSheet(option: InputOption, parentBlockId: String, onDism
             androidx.compose.runtime.CompositionLocalProvider(
                 LocalHostDataRawResolved provides (rawSheet != null),
                 LocalStepInteraction provides null,
+                // The sheet is filled with its own container colour, whatever the step underneath
+                // draws: a Google logo inside the sheet picks its variant from the sheet.
+                LocalGoogleAttributionBackdrop provides sheetBackdrop,
             ) {
             ContentBlockRendererView(
                 blocks = sheetBlocks,
@@ -13629,7 +13645,7 @@ private fun OptionBottomSheet(option: InputOption, parentBlockId: String, onDism
             // colour the sheet is filled with.
             if (showsGoogleCredit) {
                 GoogleMapsTextAttribution(
-                    backdrop = GoogleMapsAttribution.Backdrop.Plain(GoogleMapsAttribution.hexOf(sheetContainerColor)),
+                    backdrop = sheetBackdrop,
                     modifier = Modifier.align(Alignment.CenterHorizontally).padding(top = 12.dp),
                 )
             }
