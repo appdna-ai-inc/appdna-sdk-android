@@ -2412,7 +2412,8 @@ private fun StepFullScreenBackground(currentStep: OnboardingStep?) {
     when {
         bg != null -> {
             when (bg.type) {
-                "color" -> bg.color?.let {
+                // No colour authored: white, as iOS draws it (`StyleEngine.backgroundView`).
+                "color" -> (bg.color ?: GoogleMapsAttribution.DEFAULT_COLOR_BACKGROUND).let {
                     Box(
                         Modifier
                             .fillMaxSize()
@@ -2618,7 +2619,11 @@ fun OnboardingStepView(
             creditMemo.shows(step, stepOverride, fieldConfigOverrides, fieldOptionsOverrides, creditAnswers())
         }
     }
-    val creditSheetContext = remember(step, stepOverride, accumulatedResponses, fieldConfigOverrides, fieldOptionsOverrides) {
+    // Keyed on the `selected` store's revision too: a sheet's credit reads the options picked so far —
+    // a pick that opens the sheet, or one made inside it — not the ones picked when the step appeared.
+    val creditSheetContext = remember(
+        step, stepOverride, accumulatedResponses, fieldConfigOverrides, fieldOptionsOverrides, SelectedOptionStore.revision.intValue,
+    ) {
         GoogleCreditSheetContext(
             sources = { creditMemo.sources(step, stepOverride, fieldConfigOverrides, fieldOptionsOverrides) },
             answers = creditAnswers(),
@@ -2633,6 +2638,8 @@ fun OnboardingStepView(
     CompositionLocalProvider(
         LocalGoogleAttributionBackdrop provides attributionBackdrop,
         LocalGoogleCreditSheetContext provides creditSheetContext,
+        // The step's container credits Google, so its blocks draw a Google answer's content.
+        LocalTemplateSurface provides ai.appdna.sdk.core.TemplateSurface.ONBOARDING,
     ) {
         Column(modifier = Modifier.fillMaxSize()) {
             Box(modifier = Modifier.weight(1f).fillMaxWidth()) {

@@ -209,6 +209,29 @@ internal class LocationSuggestionSearch(
      */
     private var shownGoogle: Pair<String, String>? = null
 
+    /**
+     * The first edit of a Google answer's line arrived while the input method was composing: it is
+     * applied when the composition commits, not before.
+     */
+    private var awaitingCommit = false
+
+    /**
+     * Whether the text field's input method has a composition in progress (its composing span), as the
+     * field reported it with its latest value ([compositionChanged]). The Swift twin is
+     * `LocationSuggestionSearch.composing`.
+     */
+    var composing = false
+        private set
+
+    /**
+     * The text field reports whether the input method is composing, with each value it delivers and
+     * before that value reaches [textChanged]. A commit arrives as a value with no composing span, even
+     * when it leaves the text as it was.
+     */
+    fun compositionChanged(composing: Boolean) {
+        this.composing = composing
+    }
+
     init {
         LocationAnswer.fieldText(storedAnswer)?.let { showAnswer(it, storedAnswer) }
     }
@@ -283,6 +306,15 @@ internal class LocationSuggestionSearch(
             if (newText == echo) return
         }
         if (text != newText) text = newText
+        // [composing]: the input method has a composition in progress (the field's composing span). That
+        // is not the first edit yet: Google's line with composing text after it is neither stored nor
+        // searched. The edit applies when the composition commits — the text field delivers the commit
+        // even when it leaves the text as it was.
+        if (composing && shownGoogle != null) {
+            awaitingCommit = true
+            return
+        }
+        awaitingCommit = false
         dropResolveInFlight()
         var typed = newText
         shownGoogle?.let { (line, rawQuery) ->

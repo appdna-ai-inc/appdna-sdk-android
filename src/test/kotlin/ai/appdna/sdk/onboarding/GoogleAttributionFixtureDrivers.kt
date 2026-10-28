@@ -55,6 +55,17 @@ internal object GoogleAttributionFixtureDrivers {
                 val path = chain(blockId, step.config.content_blocks.orEmpty())
                     ?: throw AssertionError("$name: no block $blockId")
                 for (b in path) backdrop = GoogleMapsAttribution.backdrop(ofBlock = b, behind = backdrop)
+                // `dropdown`: what is behind the logo under the block's location dropdown, the call the
+                // block's composable makes with what is behind the dropdown.
+                if (c["dropdown"] == true) {
+                    val cfg = path.last().field_config
+                    backdrop = GoogleMapsAttribution.backdrop(
+                        ofDropdownFill = cfg?.get("dropdown_bg_color") as? String,
+                        opacity = (cfg?.get("dropdown_opacity") as? Number)?.toFloat() ?: 1f,
+                        behind = backdrop,
+                        unstyled = GoogleMapsAttribution.Backdrop.Plain(null),
+                    )
+                }
             }
             val described = when (val b = backdrop) {
                 is GoogleMapsAttribution.Backdrop.Plain -> b.hex?.let { "plain:$it" } ?: "plain"
@@ -66,6 +77,23 @@ internal object GoogleAttributionFixtureDrivers {
                 "variant_light" to GoogleMapsAttribution.variant(backdrop, darkAppearance = false).name.lowercase(),
             )
         }
+    }
+
+    /**
+     * `action.cases[] = {name, markdown}` → `[{name, links: [{text, url}]}]`: each line through
+     * `parseMarkdownToAnnotatedString` — the parser rich text and an agreement's copy draw with — and the
+     * spans carrying a URL annotation.
+     */
+    fun markdownLinks(cases: List<Map<String, Any?>>): List<Map<String, Any?>> = cases.map { c ->
+        val name = c["name"] as? String ?: throw AssertionError("a case needs a name")
+        val md = c["markdown"] as? String ?: throw AssertionError("case $name needs markdown")
+        val drawn = parseMarkdownToAnnotatedString(
+            md, androidx.compose.ui.text.TextStyle(), androidx.compose.ui.graphics.Color.Blue,
+        )
+        val links = drawn.getStringAnnotations("URL", 0, drawn.length).map { a ->
+            linkedMapOf<String, Any?>("text" to drawn.text.substring(a.start, a.end), "url" to a.item)
+        }
+        linkedMapOf("name" to name, "links" to links)
     }
 
     /**
@@ -86,16 +114,43 @@ internal object GoogleAttributionFixtureDrivers {
         val accumulated = (session["responses"] as? Map<String, Any?>).orEmpty()
         val stepInputs = (session["step"] as? Map<String, Any?>).orEmpty()
         val store = (session["session_store"] as? Map<String, Any?>).orEmpty()
-        // `action.select = {step, block_id, option_id}`: an EARLIER step, resolved through the REAL
-        // pipeline with the same answers, and the option the user picked there, recorded by the REAL
-        // `SelectedOptionStore` — the `selected` root this step reads.
+        // The TemplateEngine roots (`input`, `onboarding`) read the session store, on the onboarding
+        // surface — as the step's context does.
+        val templateContext = ai.appdna.sdk.core.TemplateContext(
+            userTraits = null,
+            remoteConfig = { null },
+            onboardingResponses = (stripNulls(store) as Map<String, Any>)
+                .mapNotNull { (k, v) -> (v as? Map<String, Any>)?.let { k to it } }.toMap(),
+            computedData = emptyMap(),
+            sessionData = emptyMap(),
+            deviceInfo = emptyMap(),
+            surface = ai.appdna.sdk.core.TemplateSurface.ONBOARDING,
+        )
+        // `action.select = {step, block_id, option_id | option_ids, in_sheet?, override?,
+        // field_options_overrides?}` (or a list of them, picked in order): an EARLIER step, resolved
+        // through the REAL pipeline with the same answers and the picks before it, and the option(s) the
+        // user picked there, recorded by the REAL `SelectedOptionStore` — the `selected` root this step
+        // reads.
         var selected: Map<String, Any?> = emptyMap()
         var selectedLabel: String? = null
-        (action["select"] as? Map<String, Any?>)?.let { pick ->
+        val picks: List<Map<String, Any?>> = when (val sel = action["select"]) {
+            is List<*> -> sel.filterIsInstance<Map<String, Any?>>()
+            is Map<*, *> -> listOf(sel as Map<String, Any?>)
+            else -> emptyList()
+        }
+        SelectedOptionStore.resetForTesting()
+        try {
+        for (pick in picks) {
             val pickStep = OnboardingConfigParser.parseStepForTest(stripNulls(pick["step"]) as Map<String, Any>)
                 ?: throw AssertionError("the SDK's parser refused action.select.step")
-            val resolvedPick = HostDataStepPipeline(pickStep, legacyContext = { null }).resolve(
-                HostDataInputs(responses = accumulated, stepInputs = emptyMap()),
+            val pickOverride = (pick["override"] as? Map<String, Any?>)?.let { o ->
+                StepConfigOverride(fieldOptions = StepConfigOverride.decodeFieldOptions(stripNulls(o["field_options"])))
+            }
+            val resolvedPick = HostDataStepPipeline(pickStep, legacyContext = { templateContext }).resolve(
+                HostDataInputs(
+                    responses = accumulated, stepInputs = emptyMap(), selected = selected, stepOverride = pickOverride,
+                    fieldOptionsOverrides = StepConfigOverride.decodeFieldOptions(stripNulls(pick["field_options_overrides"])).orEmpty(),
+                ),
             )
             // The picked Select at any depth: a container's child records its pick like a top-level one.
             // `in_sheet = {block_id, option_id}`: the Select is drawn in that option's sheet, as the
@@ -110,16 +165,25 @@ internal object GoogleAttributionFixtureDrivers {
             } ?: resolvedPick.blocks
             val block = findBlock(pick["block_id"] as? String, pickBlocks)
                 ?: throw AssertionError("the picked block is not on the resolved step")
-            val option = block.field_options.orEmpty().firstOrNull { (it.id ?: it.value) == pick["option_id"] }
-                ?: throw AssertionError("the picked option is not on the resolved step")
-            SelectedOptionStore.resetForTesting()
-            try {
-                SelectedOptionStore.record(block.field_id ?: block.id, option)
-                selected = SelectedOptionStore.snapshot()
-            } finally {
-                SelectedOptionStore.resetForTesting()
+            val fieldId = block.field_id ?: block.id
+            val ids = (pick["option_ids"] as? List<*>)?.filterIsInstance<String>()
+            if (ids != null) {
+                val options = ids.map { id ->
+                    block.field_options.orEmpty().firstOrNull { (it.id ?: it.value) == id }
+                        ?: throw AssertionError("the picked option $id is not on the resolved step")
+                }
+                SelectedOptionStore.record(fieldId, options)
+                selectedLabel = options.lastOrNull()?.label
+            } else {
+                val option = block.field_options.orEmpty().firstOrNull { (it.id ?: it.value) == pick["option_id"] }
+                    ?: throw AssertionError("the picked option is not on the resolved step")
+                SelectedOptionStore.record(fieldId, option)
+                selectedLabel = option.label
             }
-            selectedLabel = option.label
+            selected = SelectedOptionStore.snapshot()
+        }
+        } finally {
+            SelectedOptionStore.resetForTesting()
         }
         val answers = GoogleCredit.Answers(
             accumulated = accumulated, stepInputs = stepInputs, sessionStore = store, selected = selected,
@@ -147,10 +211,11 @@ internal object GoogleAttributionFixtureDrivers {
         // The step as the REAL pipeline resolves it (raw pass → decode → override → interaction
         // layering) — what the step draws, and what it stores.
         val resolveStep = {
-            HostDataStepPipeline(step, legacyContext = { null }).resolve(
+            HostDataStepPipeline(step, legacyContext = { templateContext }).resolve(
                 HostDataInputs(
                     responses = accumulated,
                     stepInputs = stepInputs,
+                    selected = selected,
                     stepOverride = override,
                     fieldConfigOverrides = fieldConfigOverrides,
                     fieldOptionsOverrides = fieldOptionsOverrides,
@@ -185,13 +250,18 @@ internal object GoogleAttributionFixtureDrivers {
             val cache = HashMap<String, List<ContentBlock>>()
             fun blocks(via: String): List<ContentBlock> = cache.getOrPut(via) {
                 when (via) {
-                    "view_pass" -> {
+                    // The view-level pass reads the `selected` root from the shared store.
+                    "view_pass", "screen" -> withShared(selected) {
                         val bare = step.copy(rawContentBlocks = null)
                         bare.config.content_blocks.orEmpty().map {
                             resolveBlockBindings(
                                 it, hookData = null,
                                 responses = stripNulls(accumulated) as Map<String, Any>,
                                 stepInputs = stripNulls(stepInputs) as Map<String, Any>,
+                                // A Screen draws the same blocks with the surface a renderer outside an
+                                // onboarding step has (`LocalTemplateSurface`'s default): no credit there.
+                                surface = if (via == "screen") ai.appdna.sdk.core.TemplateSurface.OTHER
+                                else ai.appdna.sdk.core.TemplateSurface.ONBOARDING,
                             )
                         }
                     }
@@ -199,16 +269,7 @@ internal object GoogleAttributionFixtureDrivers {
                     else -> resolveStep().blocks
                 }
             }
-            val legacyContext = ai.appdna.sdk.core.TemplateContext(
-                userTraits = null,
-                remoteConfig = { null },
-                onboardingResponses = (stripNulls(store) as Map<String, Any>)
-                    .mapNotNull { (k, v) -> (v as? Map<String, Any>)?.let { k to it } }.toMap(),
-                computedData = emptyMap(),
-                sessionData = emptyMap(),
-                deviceInfo = emptyMap(),
-                surface = ai.appdna.sdk.core.TemplateSurface.ONBOARDING,
-            )
+            val legacyContext = templateContext
             out["read"] = reads.associate { r ->
                 val name = r["name"] as? String ?: throw AssertionError("a read needs a name")
                 val key = r["key"] as? String ?: throw AssertionError("read $name needs a key")
@@ -224,7 +285,12 @@ internal object GoogleAttributionFixtureDrivers {
                 }
                 val block = findBlock(r["block_id"] as? String, blocks(via))
                 val optionId = r["option_id"] as? String
-                val value: Any? = if (optionId != null) {
+                val planId = r["plan_id"] as? String
+                val value: Any? = if (planId != null) {
+                    // What a pick of the plan stores (`selected_plan_label`).
+                    if (key != "stored_plan_label") throw AssertionError("read $name: unknown plan key $key")
+                    block?.pricing_plans.orEmpty().firstOrNull { it.id == planId }?.storedLabel
+                } else if (optionId != null) {
                     val option = block?.field_options.orEmpty().firstOrNull { (it.id ?: it.value) == optionId }
                     when (key) {
                         "label" -> option?.label
@@ -267,6 +333,20 @@ internal object GoogleAttributionFixtureDrivers {
             out["sheet_credit"] = context.shows(blockId, optionId, presented, inputs)
         }
         return out
+    }
+
+    /**
+     * [body] run with the shared `SelectedOptionStore` holding [selected] — the store the view-level pass
+     * reads the `selected` root from — and emptied after.
+     */
+    private fun <T> withShared(selected: Map<String, Any?>, body: () -> T): T {
+        SelectedOptionStore.resetForTesting()
+        for ((field, value) in selected) if (value != null) SelectedOptionStore.seedForTesting(field, value)
+        try {
+            return body()
+        } finally {
+            SelectedOptionStore.resetForTesting()
+        }
     }
 
     /** The block with [id] among [blocks] at any depth: `children`, `stack_children` and option sheets. */

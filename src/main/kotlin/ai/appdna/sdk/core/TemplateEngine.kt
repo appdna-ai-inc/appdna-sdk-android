@@ -264,9 +264,11 @@ object TemplateEngine {
 }
 
 /**
- * Convenience extension to interpolate {{variables}} in onboarding text fields.
+ * Convenience extension to interpolate {{variables}} in onboarding text fields. Internal: it draws on
+ * the onboarding surface, where the step's container credits Google, so no host code may call it for
+ * text drawn anywhere else.
  */
-fun String.interpolated(): String = interpolated(key = null)
+internal fun String.interpolated(): String = interpolated(key = null)
 
 /**
  * [key]: the field this text is, for the typed-text rule; null for drawn text, where only a markdown

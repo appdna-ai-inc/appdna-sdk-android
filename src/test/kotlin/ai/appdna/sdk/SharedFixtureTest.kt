@@ -312,6 +312,7 @@ class SharedFixtureTest(
             // (onboarding/GoogleAttributionFixtureDrivers.kt).
             "location_field_attribution" -> runLocationFieldAttribution(action, spy)
             "google_attribution_backdrop" -> runGoogleAttributionBackdrop(action, spy)
+            "markdown_links" -> runMarkdownLinks(action, spy)
             "onboarding_google_credit" -> runOnboardingGoogleCredit(action, spy)
             // The core rule every wrapper bridge's auth gate and decoder use.
             "bridge_step_advance_reply" -> runBridgeStepAdvanceReply(action, spy)
@@ -3093,7 +3094,11 @@ class SharedFixtureTest(
             for (i in 0 until script.length()) {
                 val op = script.getJSONObject(i)
                 when (val name = op.getString("op")) {
-                    "type" -> rig.type(op.getString("text"))
+                    "type" ->
+                        if (op.has("composing")) rig.typeComposing(op.getString("text"), op.getBoolean("composing"))
+                        else rig.type(op.getString("text"))
+                    // The input method commits the composition without changing the text.
+                    "commit" -> rig.commit()
                     "echo" -> rig.echo()
                     "advance_clock_ms" -> rig.advance(op.getLong("ms"))
                     "tap" -> rig.tap(op.optInt("index", 0))
@@ -3192,6 +3197,15 @@ class SharedFixtureTest(
             ?: unsupported("google_attribution_backdrop without action.cases")
         spy.state["results"] = ai.appdna.sdk.onboarding.GoogleAttributionFixtureDrivers
             .googleAttributionBackdrop(cases.asList().map { it as Map<String, Any?> })
+    }
+
+    /** `markdown_links` — the links the REAL rich-text parser draws. */
+    @Suppress("UNCHECKED_CAST")
+    private fun runMarkdownLinks(action: JSONObject, spy: Spy) {
+        val cases = action.optJSONArray("cases")?.takeIf { it.length() > 0 }
+            ?: unsupported("markdown_links without action.cases")
+        spy.state["results"] = ai.appdna.sdk.onboarding.GoogleAttributionFixtureDrivers
+            .markdownLinks(cases.asList().map { it as Map<String, Any?> })
     }
 
     /** `onboarding_google_credit` — REAL `GoogleCredit` over a step the SDK's parser built. */

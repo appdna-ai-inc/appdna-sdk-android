@@ -105,14 +105,17 @@ internal object GoogleMapsAttribution {
 
     /**
      * A step's background as a backdrop: what the step host actually draws for it
-     * (`StepFullScreenBackground`). A colour is plain; an image, gradient or animation is busy. A
-     * background with no `type` (even one holding a colour) and a transparent one paint the theme's
-     * background, so: plain, with no colour of its own.
+     * (`StepFullScreenBackground`). A colour is plain — `#FFFFFF` when none is authored, which is what
+     * the host draws then, as on iOS; an image, gradient or animation is busy. A background with no
+     * `type` (even one holding a colour) and a transparent one paint the theme's background, so: plain,
+     * with no colour of its own.
      */
     fun backdrop(of: BackgroundStyleConfig?): Backdrop {
         val background = of ?: return Backdrop.Plain(null)
         return when (background.type) {
-            "color" -> Backdrop.Plain(background.color)
+            "color" -> (background.color ?: DEFAULT_COLOR_BACKGROUND).let {
+                if (it == "transparent" || it == "clear") Backdrop.Plain(null) else Backdrop.Plain(it)
+            }
             null, "transparent", "clear", "none" -> Backdrop.Plain(null)
             else -> Backdrop.Busy
         }
@@ -181,6 +184,28 @@ internal object GoogleMapsAttribution {
 
     /** `#RRGGBB` of a colour a view fills with, for [Backdrop.Plain]. */
     fun hexOf(color: Color): String = String.format("#%06X", 0xFFFFFF and color.toArgb())
+
+    /** What a `color` step background with no colour draws, on both platforms. */
+    const val DEFAULT_COLOR_BACKGROUND = "#FFFFFF"
+
+    /**
+     * What a location dropdown draws behind its rows, and so behind the logo under them: its authored
+     * fill (`dropdown_bg_color`), else [unstyled] (what an unstyled dropdown draws). A fill drawn
+     * translucent (`dropdown_opacity` below 1, or an alpha below `FF`) is busy. A fill that draws nothing
+     * — `transparent`, `clear`, a fully transparent colour, or a value no colour parser reads (both
+     * platforms draw those clear) — shows what is [behind] the dropdown. The Swift twin is
+     * `GoogleMapsAttribution.backdrop(ofDropdownFill:opacity:behind:unstyled:)`.
+     */
+    fun backdrop(ofDropdownFill: String?, opacity: Float, behind: Backdrop, unstyled: Backdrop): Backdrop {
+        val raw = ofDropdownFill?.trim()
+        if (raw.isNullOrEmpty()) return if (opacity < 1f) Backdrop.Busy else unstyled
+        val digits = raw.removePrefix("#")
+        val isHex = (digits.length == 6 || digits.length == 8) && digits.all { it in '0'..'9' || it in 'a'..'f' || it in 'A'..'F' }
+        if (!isHex) return behind
+        val alpha = if (digits.length == 8) digits.substring(6, 8).toInt(16) else 255
+        if (alpha == 0) return behind
+        return if (opacity < 1f || alpha < 255) Backdrop.Busy else Backdrop.Plain(raw)
+    }
 
     /**
      * The variant for a backdrop. A known plain colour decides by its own luminance; the theme's

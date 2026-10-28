@@ -403,6 +403,51 @@ class GoogleAttributionRenderTest {
         assertTrue("the sheet draws the credit", creditShown())
     }
 
+    /**
+     * A sheet's credit reads the options picked so far, not the ones picked when the step appeared. The
+     * pick that opens the sheet records a label drawn from a Google answer, and the sheet's text shows
+     * that pick ({{selected.stop.label}}): the sheet draws its own credit, under the step's.
+     * RED CONTROL: the sheet context remembered without the `selected` store's revision keeps the
+     * snapshot from the step's first frame, and the sheet draws no credit of its own.
+     */
+    @Test
+    fun anOptionSheetsCreditReadsThePickThatOpenedIt() {
+        SelectedOptionStore.resetForTesting()
+        try {
+            val step = OnboardingConfigParser.parseStepForTest(
+                mapOf(
+                    "id" to "s", "type" to "custom",
+                    "config" to mapOf(
+                        "content_blocks" to listOf(
+                            mapOf(
+                                "id" to "sel", "type" to "input_select", "field_id" to "stop",
+                                "field_config" to mapOf("display_style" to "list"),
+                                "field_options" to listOf(
+                                    mapOf(
+                                        "id" to "home", "label" to "{{responses.places.home.city}}", "value" to "home",
+                                        "sheet_blocks" to listOf(mapOf("id" to "sh", "type" to "text", "text" to "You chose {{selected.stop.label}}")),
+                                    ),
+                                    mapOf("id" to "far", "label" to "Far away", "value" to "far"),
+                                ),
+                            ),
+                        ),
+                    ),
+                ),
+            )!!
+            renderStep(step, google)
+            fun credits() = compose.onAllNodes(hasTestTag(GoogleMapsAttribution.TEXT_TAG)).fetchSemanticsNodes().size
+            assertEquals("control: the step credits the Google label it draws, once", 1, credits())
+            compose.onNodeWithText("Springfield").performClick()
+            compose.mainClock.advanceTimeBy(2_000)
+            compose.waitForIdle()
+            assertTrue("the pick was recorded", SelectedOptionStore.googleKeys(SelectedOptionStore.snapshot()["stop"]).contains("label"))
+            assertTrue("the sheet opened", compose.onAllNodes(hasText("You chose", substring = true)).fetchSemanticsNodes().isNotEmpty())
+            assertEquals("the sheet draws its own credit, under the step's", 2, credits())
+        } finally {
+            SelectedOptionStore.resetForTesting()
+        }
+    }
+
     // ---- The variant follows the colour drawn, not the system appearance ---------------------------
 
     /** The `input_location` block with no authored dropdown colour: the dropdown takes the theme's. */

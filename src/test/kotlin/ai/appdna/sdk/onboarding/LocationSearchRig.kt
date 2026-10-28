@@ -89,6 +89,23 @@ internal class LocationSearchRig(
         holder.textChanged(text, settings)
     }
 
+    /**
+     * An edit while the input method composes (or, with [composing] false, a commit that changed the
+     * text): Compose delivers the value with its composing span.
+     */
+    fun typeComposing(text: String, composing: Boolean) {
+        lastDelivered = text
+        holder.compositionChanged(composing)
+        holder.textChanged(text, settings)
+    }
+
+    /** The input method commits without changing the text: Compose delivers the same text, no composing span. */
+    fun commit() {
+        lastDelivered = holder.text
+        holder.compositionChanged(false)
+        holder.textChanged(holder.text, settings)
+    }
+
     /** SwiftUI's `.onChange` after the holder set its own text. No-op when the text is unchanged. */
     fun echo() {
         if (holder.text == lastDelivered) return

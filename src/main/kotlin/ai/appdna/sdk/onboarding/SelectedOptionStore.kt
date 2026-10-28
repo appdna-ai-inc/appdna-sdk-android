@@ -1,7 +1,7 @@
 package ai.appdna.sdk.onboarding
 
 /**
- * §"The selected item" — what the user actually picked, addressable as
+ * "The selected item" — what the user actually picked, addressable as
  * `{{selected.<field_id>.subtitle}}` on a later screen. Mirrors iOS `SelectedOptionStore`.
  *
  * 🔴 Deliberately NOT stored in `responses`, and that is an acceptance criterion rather than a
@@ -93,16 +93,21 @@ internal object SelectedOptionStore {
         option.category?.let { out["category"] = it }
         option.image_url?.let { out["image_url"] = it }
         option.icon?.let { out["icon"] = it }
-        // The keys whose text is a Google answer's content, so a later step that shows them draws
-        // Google's attribution ([GoogleCredit]).
+        // The keys whose text is a Google answer's content, each with that text as the user typed it:
+        // a later step that DRAWS one draws Google's attribution ([GoogleCredit]); one that STORES or
+        // SENDS it (an option value, a field default, a link or media URL) takes the typed text.
         option.googleKeys?.takeIf { it.isNotEmpty() }?.let { out[GOOGLE_KEYS_KEY] = it }
         return out
     }
 
-    /** Where a recorded option keeps its Google keys ([InputOption.googleKeys]). */
+    /** Where a recorded option keeps its Google keys ([InputOption.googleKeys]): key → typed text. */
     const val GOOGLE_KEYS_KEY = "google_keys"
 
     /** The recorded option's keys whose text is a Google answer's content. */
     fun googleKeys(record: Any?): List<String> =
-        ((record as? Map<*, *>)?.get(GOOGLE_KEYS_KEY) as? List<*>)?.filterIsInstance<String>().orEmpty()
+        ((record as? Map<*, *>)?.get(GOOGLE_KEYS_KEY) as? Map<*, *>)?.keys?.mapNotNull { it as? String }?.sorted().orEmpty()
+
+    /** The recorded option's text for [key] with every Google answer as the user typed it; null when [key] is not a Google key. */
+    fun typedText(record: Any?, key: String): String? =
+        ((record as? Map<*, *>)?.get(GOOGLE_KEYS_KEY) as? Map<*, *>)?.get(key) as? String
 }

@@ -74,6 +74,12 @@ internal data class HostDataContext(
      * falls back to [legacyToken].
      */
     val legacyTokenStored: ((path: String) -> String?)? = null,
+    /**
+     * Whether a TemplateEngine root's path (`input.*`, `onboarding.*`) reads a Google answer's content
+     * when drawn, so an option whose text it fills records the key ([InputOption.googleKeys]). Null:
+     * none does.
+     */
+    val legacyReadsGoogle: ((path: String) -> Boolean)? = null,
 )
 
 internal data class HostDataResolveResult(
@@ -97,10 +103,11 @@ internal data class HostDataResolveResult(
     val stamped: JsonObj,
     /**
      * The options whose drawn keys took a Google location answer's content, in this block and every
-     * block inside it (children, stack_children, option sheets): block id → option id → those keys
-     * ([InputOption.googleKeys]). Empty when none did.
+     * block inside it (children, stack_children, option sheets): block id → option id → each such key
+     * and its text with every Google answer as the user typed it ([InputOption.googleKeys]). Empty
+     * when none did.
      */
-    val googleOptionKeys: Map<String, Map<String, List<String>>> = emptyMap(),
+    val googleOptionKeys: Map<String, Map<String, Map<String, String>>> = emptyMap(),
 )
 
 internal object HostDataResolver {
@@ -161,28 +168,31 @@ internal object HostDataResolver {
     fun isStoredValueKey(key: String, isOption: Boolean): Boolean =
         (isOption && key == "value") || (key.startsWith("default_") && key.endsWith("value"))
 
-    private val MARKDOWN_LINK_RE = Regex("\\]\\(([^)]*)\\)")
-
     /**
-     * The targets of the markdown links in [text] (`[label](target)`), as index ranges. A token inside
-     * one is part of a URL a tap opens, so its value leaves the device: it resolves as a stored value.
-     * The Swift twin is `HostDataResolver.markdownLinkTargets`.
+     * Every link destination in the template [text] that the markdown renderer turns into a tappable
+     * link, as index ranges ([MarkdownLinks.destinationsInTemplate]): an inline link's destination in
+     * any of its forms, and an autolink. A token inside one is part of a URL a tap opens, so its value
+     * leaves the device: it resolves as a stored value. The Swift twin is
+     * `HostDataResolver.markdownLinkTargets`.
      */
-    fun markdownLinkTargets(text: String): List<IntRange> =
-        if (!text.contains("](")) emptyList() else MARKDOWN_LINK_RE.findAll(text).mapNotNull { it.groups[1]?.range }.toList()
+    fun markdownLinkTargets(text: String): List<IntRange> = MarkdownLinks.destinationsInTemplate(text)
 
     /** Whether [key] holds a media URL the device fetches: a `*_url` key, or an element of `gallery_images`. */
     fun isMediaUrlKey(key: String): Boolean = isUrlKey(key) || key == "gallery_images"
 
-    /** The hosts whose own URLs may carry a Google answer's content (a static map, say): Google's. */
-    private val GOOGLE_HOST_SUFFIXES = listOf("googleapis.com", "google.com", "gstatic.com")
+    /**
+     * The hosts whose own URLs may carry a Google answer's content (a static map, say): Google's Maps
+     * hosts, exactly. Not every Google host: a storage bucket, a form, an Apps Script or a page that
+     * fetches any URL (Translate, the Docs viewer) would carry the place to whoever controls it.
+     */
+    val GOOGLE_MAPS_HOSTS: Set<String> = setOf("maps.googleapis.com", "maps.google.com", "maps.gstatic.com")
 
     /**
-     * Whether the host of the URL [template] builds is Google's own, decided from the literal text
-     * before its first token, so a substituted value can never choose the host. The host counts only
-     * when the literal prefix ends it (a `/`, `?` or `#` follows it), it is plain (letters, digits, dots
-     * and dashes, an optional port, no user info), and it is one of [GOOGLE_HOST_SUFFIXES] or a
-     * subdomain of one. The Swift twin is `HostDataResolver.templateHostIsGoogle`.
+     * Whether the host of the URL [template] builds is one of Google's Maps hosts, decided from the
+     * literal text before its first token, so a substituted value can never choose the host. The host
+     * counts only when the literal prefix ends it (a `/`, `?` or `#` follows it), it is plain (letters,
+     * digits, dots and dashes, an optional port, no user info), and it is exactly one of
+     * [GOOGLE_MAPS_HOSTS]. The Swift twin is `HostDataResolver.templateHostIsGoogle`.
      */
     fun templateHostIsGoogle(template: String): Boolean {
         val prefix = template.indexOf("{{").let { if (it >= 0) template.substring(0, it) else template }
@@ -199,7 +209,7 @@ internal object HostDataResolver {
             host = host.substring(0, colon)
         }
         if (host.isEmpty() || !host.all { it in 'a'..'z' || it in '0'..'9' || it == '.' || it == '-' }) return false
-        return GOOGLE_HOST_SUFFIXES.any { host == it || host.endsWith(".$it") }
+        return host in GOOGLE_MAPS_HOSTS
     }
 
     /**
@@ -220,7 +230,7 @@ internal object HostDataResolver {
 
     /**
      * The rule for [template], the value of [key] (null for text with no key, such as a translation):
-     * a stored value ([isStoredValueKey]) and a media URL ([isMediaUrlKey]) off Google's hosts
+     * a stored value ([isStoredValueKey]) and a media URL ([isMediaUrlKey]) off Google's Maps hosts
      * ([templateHostIsGoogle]) take the typed text in every token; any other text takes it inside its
      * markdown links' targets, because a tap sends that URL off the device. Every resolver that
      * substitutes an onboarding answer applies this one rule. The Swift twin is
@@ -353,7 +363,11 @@ internal object HostDataResolver {
     // Scope and path resolution
     // ─────────────────────────────────────────────────────────────────────────────────────────────
 
-    internal class ItemScope(val value: Any?, val index: Int)
+    /**
+     * The element a repeat generated the option from. [fromSelected]: the repeat's source is under
+     * `selected`, so the element is a picked option's record.
+     */
+    internal class ItemScope(val value: Any?, val index: Int, val fromSelected: Boolean = false)
 
     internal class Scope(val roots: Map<String, Any?>, val item: ItemScope? = null) {
         fun withItem(i: ItemScope) = Scope(roots, i)
@@ -375,16 +389,19 @@ internal object HostDataResolver {
      * Resolve a dot path against a scope: any depth, numeric array index, miss → null. Two or
      * more segments are required except for exactly `item` and `index`. [typedText]: a stored value's
      * path — a Google answer it reaches or passes through resolves to the answer's typed text
-     * ([isStoredValueKey]).
+     * ([isStoredValueKey]), and so does a picked option's key that came from one ([recordTypedText]),
+     * under `selected` or the `item` of a repeat over it.
      */
     internal fun resolveScopePath(path: String, scope: Scope, typedText: Boolean = false): Any? {
         val parts = path.split('.')
         val root = parts[0]
         var current: Any?
+        var records = root == "selected"
         when (root) {
             "item" -> {
                 val item = scope.item ?: return null
                 current = item.value
+                records = item.fromSelected
             }
             "index" -> {
                 val item = scope.item ?: return null
@@ -398,6 +415,7 @@ internal object HostDataResolver {
         }
         for (part in parts.drop(1)) {
             if (typedText && LocationAnswer.carriesPlaceId(current)) return typedTextOfGoogleAnswer(current)
+            if (typedText && records) recordTypedText(current, part)?.let { return it }
             current = when {
                 current is Map<*, *> && current.containsKey(part) -> current[part]
                 current is List<*> && part.isNotEmpty() && part.all { it in '0'..'9' } -> {
@@ -408,6 +426,37 @@ internal object HostDataResolver {
             }
         }
         return if (typedText) typedTextForGoogleAnswers(current) else current
+    }
+
+    /** The keys a picked option's record took from a Google answer ([SelectedOptionStore.GOOGLE_KEYS_KEY]). */
+    internal fun recordGoogleKeys(record: Any?): List<String> = SelectedOptionStore.googleKeys(record)
+
+    /**
+     * The text a picked option's record keeps for [key] with every Google answer as the user typed it;
+     * null when [key] did not come from a Google answer.
+     */
+    internal fun recordTypedText(record: Any?, key: String): String? = SelectedOptionStore.typedText(record, key)
+
+    /**
+     * The rest of a path under one `selected` field (`<key>`, or `<n>.<key>` for a multi pick), or under
+     * the `item` a repeat over `selected` generated from: whether it reads a key the picked option took
+     * from a Google answer. A path that stops at the option (or at the list) reads one when any of its
+     * keys was. The Swift twin is `HostDataResolver.recordReadsGoogle`.
+     */
+    internal fun recordReadsGoogle(rest: List<String>, value: Any?): Boolean {
+        var current = value
+        var r = rest
+        if (current is List<*>) {
+            val list: List<*> = current
+            val first = r.firstOrNull()
+            val i = first?.takeIf { it.isNotEmpty() && it.all { c -> c in '0'..'9' } }?.toIntOrNull()
+            if (i == null || i >= list.size) return r.isEmpty() && list.any { recordGoogleKeys(it).isNotEmpty() }
+            current = list[i]
+            r = r.drop(1)
+        }
+        val keys = recordGoogleKeys(current)
+        val key = r.firstOrNull() ?: return keys.isNotEmpty()
+        return key in keys
     }
 
     /**
@@ -447,14 +496,25 @@ internal object HostDataResolver {
 
     /**
      * Whether a drawn token's path takes a Google answer's content: under `responses`, `step` or
-     * `item`, it reaches or passes through a Google answer, or ends on a value holding one. A
-     * host-supplied root (`hook_data`, `user`, `session`, `selected`) never does — that content is the
-     * host's to attribute. The Swift twin is `HostDataResolver.readsGoogleAnswer`.
+     * `item`, it reaches or passes through a Google answer, or ends on a value holding one; under
+     * `selected` (or the `item` of a repeat over it), it reads a key the picked option took from a
+     * Google answer ([recordReadsGoogle]). A host-supplied root (`hook_data`, `user`, `session`) never
+     * does — that content is the host's to attribute. The Swift twin is
+     * `HostDataResolver.readsGoogleAnswer`.
      */
     internal fun readsGoogleAnswer(path: String, scope: Scope): Boolean {
         val parts = path.split('.')
         var current: Any? = when (parts[0]) {
-            "item" -> (scope.item ?: return false).value
+            "selected" -> {
+                if (parts.size < 2) return false
+                val field = (scope.roots["selected"] as? Map<*, *>)?.get(parts[1]) ?: return false
+                return recordReadsGoogle(parts.drop(2), field)
+            }
+            "item" -> {
+                val item = scope.item ?: return false
+                if (item.fromSelected) return recordReadsGoogle(parts.drop(1), item.value)
+                item.value
+            }
             "responses", "step" -> if (parts.size < 2) return false else scope.roots[parts[0]] ?: return false
             else -> return false
         }
@@ -474,7 +534,9 @@ internal object HostDataResolver {
 
     /**
      * [key] / [isOption]: where the string sits, for [typedTextRule] — a token it covers resolves a
-     * Google answer to its typed text, through [storedLegacy] for a TemplateEngine root.
+     * Google answer to its typed text, through [storedLegacy] for a TemplateEngine root. [allTyped]:
+     * every token does (the text an option keeps for a Google key, [InputOption.googleKeys]).
+     * [legacyReadsGoogle]: whether a drawn TemplateEngine-root token reads a Google answer.
      */
     private fun resolveString(
         text: String,
@@ -485,9 +547,12 @@ internal object HostDataResolver {
         storedLegacy: ((String) -> String?)? = null,
         key: String? = null,
         isOption: Boolean = false,
+        allTyped: Boolean = false,
+        legacyReadsGoogle: ((String) -> Boolean)? = null,
+        wholeLocationAnswer: Boolean = false,
     ): StringResult {
         val tokens = extractTemplateTokens(text)
-        val rule = typedTextRule(text, key, isOption)
+        val rule = if (allTyped) TypedTextRule.ALL else typedTextRule(text, key, isOption)
         val res = StringResult(value = text, hadToken = tokens.isNotEmpty())
         if (tokens.isEmpty()) return res
         val whole = tokens.size == 1 && tokens[0].raw == text
@@ -507,10 +572,13 @@ internal object HostDataResolver {
                 val resolver = if (typed) storedLegacy ?: legacy else legacy
                 if (resolver == null) { out.append(t.raw); continue }
                 val v = resolver(t.path) ?: t.fallback ?: ""
+                if (!typed && legacyReadsGoogle?.invoke(t.path) == true) res.readGoogle = true
                 out.append(if (url && !whole) percentEncodeUrlComponent(v, encodeQuery) else v)
                 continue
             }
-            val s = stringifyTemplateValue(resolveScopePath(t.path, scope, typedText = typed))
+            val v = resolveScopePath(t.path, scope, typedText = typed)
+            // A whole location answer, where asked, draws its line rather than nothing.
+            val s = stringifyTemplateValue(v) ?: if (wholeLocationAnswer && v is Map<*, *>) LocationAnswer.fieldText(v) else null
             if (s != null && !typed && readsGoogleAnswer(t.path, scope)) res.readGoogle = true
             if (s != null) {
                 out.append(if (url && !whole) percentEncodeUrlComponent(s, encodeQuery) else s)
@@ -541,10 +609,18 @@ internal object HostDataResolver {
      * One inline string resolved in block scope, no URL encoding — the step localizations' walker, and a
      * sheet's deferred `step` tokens. [key] / [isOption]: where the string sits ([typedTextRule]).
      */
-    internal fun resolvePlainString(text: String, ctx: HostDataContext, key: String? = null, isOption: Boolean = false): String =
+    internal fun resolvePlainString(
+        text: String,
+        ctx: HostDataContext,
+        key: String? = null,
+        isOption: Boolean = false,
+        /** A token naming a whole location answer draws its line (a sheet's late `{{step.<field>}}`). */
+        wholeLocationAnswer: Boolean = false,
+    ): String =
         resolveString(
             text, rootScope(ctx), url = false, deferStep = false,
             legacy = ctx.legacyToken, storedLegacy = ctx.legacyTokenStored, key = key, isOption = isOption,
+            wholeLocationAnswer = wholeLocationAnswer,
         ).value
 
     // ─────────────────────────────────────────────────────────────────────────────────────────────
@@ -699,22 +775,32 @@ internal object HostDataResolver {
         private val optionState = IdentityHashMap<Any, OptionState>()
         private val itemScope = IdentityHashMap<Any, ItemScope>()
         private val unresolvedKeys = IdentityHashMap<Any, MutableSet<String>>()
+        /**
+         * The entries of a block's `pricing_plans`: a pick stores a plan's label, so its Google keys are
+         * recorded like an option's.
+         */
+        private val plans = IdentityHashMap<Any, Boolean>()
         /** Localization keys a `data_templates` result displaced ("Translations"). */
         val displacedLocKeys = mutableSetOf<String>()
         /** Count of options the hide rule removed, per block. */
         val hiddenCount = IdentityHashMap<Any, Int>()
-        /** Per option: the drawn keys that took a Google answer's content. */
-        private val googleOptionKeys = IdentityHashMap<Any, MutableSet<String>>()
+        /** Per option: the drawn keys that took a Google answer's content, each with its text as the user typed it. */
+        private val googleOptionKeys = IdentityHashMap<Any, LinkedHashMap<String, String>>()
 
-        fun googleKeys(o: Any): Set<String>? = googleOptionKeys[o]
+        fun googleKeys(o: Any): Map<String, String>? = googleOptionKeys[o]
 
         /**
          * An option's [key] took a Google answer's content: a later `{{selected.<field>.<key>}}` shows
-         * it, so the pick records which keys did.
+         * it, so the pick records which keys did — and, for where a later step stores or sends it, the
+         * same [template] with every Google answer as the user typed it.
          */
-        private fun noteGoogle(o: Any, key: String, r: StringResult) {
-            if (!r.readGoogle || !optionState.containsKey(o)) return
-            googleOptionKeys.getOrPut(o) { mutableSetOf() }.add(key)
+        private fun noteGoogle(o: Any, key: String, r: StringResult, template: String, scope: Scope, url: Boolean, deferStep: Boolean = false) {
+            if (!r.readGoogle || !(optionState.containsKey(o) || plans.containsKey(o))) return
+            val typed = resolveString(
+                template, scope, url, deferStep,
+                legacy = ctx.legacyToken, storedLegacy = ctx.legacyTokenStored, allTyped = true,
+            )
+            googleOptionKeys.getOrPut(o) { LinkedHashMap() }[key] = typed.value
         }
 
         // ── Bindings ───────────────────────────────────────────────────────────────────────
@@ -817,6 +903,8 @@ internal object HostDataResolver {
             val source = rep["source"] as? String ?: ""
             val root = source.split('.')[0]
             val arr = if (root == "item" || root == "index") null else resolveScopePath(source, scope)
+            // A repeat over picked options: each element is an option's record, with its Google keys.
+            val fromSelected = root == "selected"
             val generated = mutableListOf<Any?>()
             if (template is Map<*, *>) {
                 if (arr is List<*>) {
@@ -830,7 +918,7 @@ internal object HostDataResolver {
                     arr.take(max).forEachIndexed { i, el ->
                         val copy = obj(cloneWithState(template))!!
                         copy["id"] = "${tid as String}__$i"
-                        itemScope[copy] = ItemScope(el, i)
+                        itemScope[copy] = ItemScope(el, i, fromSelected)
                         optionState[copy] = OptionState(generated = true)
                         generated += copy
                     }
@@ -929,6 +1017,7 @@ internal object HostDataResolver {
                             continue
                         }
                         val elOwner = childOwnerOf(owner, key)
+                        if (o === env.block && key == "pricing_plans") v.forEach { el -> obj(el)?.let { plans[it] = true } }
                         val kept = mutableListOf<Any?>()
                         var changed = false
                         v.forEachIndexed { i, el ->
@@ -963,9 +1052,12 @@ internal object HostDataResolver {
         private fun resolveKey(o: JsonObj, key: String, v: String, scope: Scope, env: WalkEnv, path: List<Any>) {
             if (!v.contains("{{")) return
             val url = isUrlKey(key)
-            val r = resolveString(v, scope, url, env.inSheet, ctx.legacyToken, ctx.legacyTokenStored, key, optionState.containsKey(o))
+            val r = resolveString(
+                v, scope, url, env.inSheet, ctx.legacyToken, ctx.legacyTokenStored, key, optionState.containsKey(o),
+                legacyReadsGoogle = ctx.legacyReadsGoogle,
+            )
             if (r.deferredStep) addSheetPath(env.block, SheetStepPath(path.joinToString("."), "token"))
-            noteGoogle(o, key, r)
+            noteGoogle(o, key, r, v, scope, url, env.inSheet)
             val flags = optionState[o]
             if (flags != null && key == "label") {
                 flags.labelUnresolved = r.unresolved
@@ -1020,6 +1112,7 @@ internal object HostDataResolver {
                 val r = resolveString(
                     tmpl, scope, url, deferStep = false,
                     legacy = ctx.legacyToken, storedLegacy = ctx.legacyTokenStored, key = key, isOption = optionState.containsKey(o),
+                    legacyReadsGoogle = ctx.legacyReadsGoogle,
                 )
                 val flags = optionState[o]
                 var resolved = !r.unresolved && r.value.trim().isNotEmpty()
@@ -1029,7 +1122,7 @@ internal object HostDataResolver {
                     continue
                 }
                 o[key] = r.value
-                noteGoogle(o, key, r)
+                noteGoogle(o, key, r, tmpl, scope, url)
                 if (flags != null && key == "label") { flags.labelUnresolved = false; flags.labelUnresolvedHookData = false }
                 if (flags?.generated == true && key == "value") flags.valueUnresolved = false
                 unresolvedKeys[o]?.remove(key)
@@ -1303,14 +1396,20 @@ internal object HostDataResolver {
             }
         }
 
-        val googleOptionKeys = LinkedHashMap<String, LinkedHashMap<String, List<String>>>()
+        val googleOptionKeys = LinkedHashMap<String, LinkedHashMap<String, Map<String, String>>>()
         forEachBlock(block, "") { b, _, _ ->
             val blockId = b["id"] as? String ?: return@forEachBlock
             for (option in (b["field_options"] as? List<*>).orEmpty()) {
                 val o = option as? Map<*, *> ?: continue
                 val keys = pass.googleKeys(o)?.takeIf { it.isNotEmpty() } ?: continue
                 val id = (o["id"] as? String) ?: (o["value"] as? String) ?: continue
-                googleOptionKeys.getOrPut(blockId) { LinkedHashMap() }[id] = keys.sorted()
+                googleOptionKeys.getOrPut(blockId) { LinkedHashMap() }[id] = keys.toSortedMap()
+            }
+            for (plan in (b["pricing_plans"] as? List<*>).orEmpty()) {
+                val o = plan as? Map<*, *> ?: continue
+                val keys = pass.googleKeys(o)?.takeIf { it.isNotEmpty() } ?: continue
+                val id = o["id"] as? String ?: continue
+                googleOptionKeys.getOrPut(blockId) { LinkedHashMap() }[planKey(id)] = keys.toSortedMap()
             }
         }
         return HostDataResolveResult(

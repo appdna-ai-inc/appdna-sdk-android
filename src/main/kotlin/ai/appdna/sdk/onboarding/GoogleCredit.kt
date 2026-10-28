@@ -39,12 +39,17 @@ import androidx.compose.runtime.compositionLocalOf
  *   a block the step does not hold are dropped;
  * - the interaction patches, for the blocks they are layered onto — the step's top-level blocks.
  *
+ * The `selected` root reads the options the user picked on earlier steps. A picked option's record
+ * names each key whose text was a Google answer's content ([SelectedOptionStore.googleKeys]), so a path
+ * reading one credits, like a path into an answer.
+ *
  * The `item` root reads the element a `repeat` generated an option from. The raw pass expands a
  * `repeat` on a top-level `input_select` only, so the walk gives `item` a value only inside such a
  * block's template option (and that option's sheet): the elements of the array its `source` reaches
- * among the answers the source's root reads. A `source` under `hook_data` (or `user`, `session`,
- * `selected`) is host-supplied, which makes the host responsible for its attribution, and a block with
- * an Option Set never expands — so neither gives `item` anything to credit.
+ * among the answers the source's root reads — a `selected` source's elements being picked options'
+ * records. A `source` under `hook_data` (or `user`, `session`) is host-supplied, which makes the host
+ * responsible for its attribution, and a block with an Option Set never expands — so neither gives
+ * `item` anything to credit.
  */
 internal object GoogleCredit {
 
@@ -262,19 +267,27 @@ internal object GoogleCredit {
     }
 
     /**
+     * An element a `repeat` over `selected` generated an option from: a picked option's record, whose
+     * Google keys decide what an `item` path credits.
+     */
+    class PickedRecord(val record: Any)
+
+    /**
      * What `item` stands on in the options [rep] generates: each element, up to its `max`, of the array
      * its `source` reaches among the answers the source's root reads — only element [n] when [n] is
      * given. A source that passes through a Google answer stands `item` on that answer, since everything
-     * it generates is a part of it. Only `responses` and `step` sources read onboarding answers; any
-     * other root gives nothing.
+     * it generates is a part of it. `responses`, `step` and `selected` sources read onboarding answers (a
+     * `selected` source's elements are [PickedRecord]s); any other root gives nothing.
      */
     fun repeatItems(rep: Map<*, *>, answers: Answers, n: Int? = null): List<Any> {
         val source = rep["source"] as? String ?: return emptyList()
         val segments = source.split(".")
         if (segments.size < 2) return emptyList()
+        val picked = segments[0] == "selected"
         val roots: List<Any> = when (segments[0]) {
             "responses" -> answers.responses
             "step" -> listOf(answers.step)
+            "selected" -> listOf(answers.selected)
             else -> return emptyList()
         }
         val max = repeatMax(rep["max"])
@@ -296,7 +309,7 @@ internal object GoogleCredit {
             }
             val a = current as? List<*>
             if (!reached || a == null) continue
-            val drawn = a.take(max)
+            val drawn = a.take(max).map { if (picked && it != null) PickedRecord(it) else it }
             if (n != null) drawn.getOrNull(n)?.let { out.add(it) } else drawn.filterNotNullTo(out)
         }
         return out
@@ -354,7 +367,7 @@ internal object GoogleCredit {
         val segments = path.split(".")
         val root = segments.first()
         val rest = segments.drop(1)
-        if (root == "item") return answers.items.any { reaches(rest, it) }
+        if (root == "item") return answers.items.any { if (it is PickedRecord) recordCredits(rest, it.record) else reaches(rest, it) }
         if (root == "selected") return selectedCredits(rest, answers.selected)
         if (root !in ROOTS) return false
         return when (root) {
@@ -406,9 +419,17 @@ internal object GoogleCredit {
             current = element
             next += 1
         }
-        val keys = SelectedOptionStore.googleKeys(current)
-        if (rest.size <= next) return keys.isNotEmpty()
-        return rest[next] in keys
+        return recordCredits(rest.drop(next), current)
+    }
+
+    /**
+     * One picked option's record: a path reading one of its Google keys credits; a path that stops at
+     * the record credits when it has any.
+     */
+    private fun recordCredits(rest: List<String>, record: Any?): Boolean {
+        val keys = SelectedOptionStore.googleKeys(record)
+        val key = rest.firstOrNull() ?: return keys.isNotEmpty()
+        return key in keys
     }
 
     /** Where each recorded option with Google keys sits in `selected`, one entry per key. */
@@ -636,3 +657,11 @@ internal class GoogleCreditMemo {
 
 /** The onboarding step's sheet credit context; null outside an onboarding step. */
 internal val LocalGoogleCreditSheetContext = compositionLocalOf<GoogleCreditSheetContext?> { null }
+
+/**
+ * Where the blocks below are drawn. Only an onboarding step's container credits Google, so only it
+ * provides [ai.appdna.sdk.core.TemplateSurface.ONBOARDING]; anywhere else the view-level pass resolves a
+ * Google answer — and a picked option's Google key — to the text the user typed. The Swift twin is
+ * `EnvironmentValues.appdnaTemplateSurface`.
+ */
+internal val LocalTemplateSurface = compositionLocalOf { ai.appdna.sdk.core.TemplateSurface.OTHER }

@@ -917,7 +917,17 @@ data class PricingPlan(
     val period: String,
     val badge: String? = null,
     val is_highlighted: Boolean = false,
-)
+    /**
+     * The keys of this plan whose drawn text took a Google location answer's content, each with that
+     * text as the user typed it — as [InputOption.googleKeys]. Never parsed from JSON: a pick stores the
+     * plan's label (`selected_plan_label`), and a stored label takes the typed text. The Swift twin is
+     * `PricingPlanConfig.googleKeys`.
+     */
+    val googleKeys: Map<String, String>? = null,
+) {
+    /** The label a pick stores: the text the user typed where the drawn label came from a Google answer. */
+    val storedLabel: String get() = googleKeys?.get("label") ?: label
+}
 
 /** Date wheel column config.
  *
@@ -1112,12 +1122,14 @@ data class InputOption(
     /** Per-option badge straddling the row top border. */
     val badge: OptionBadge? = null,
     /**
-     * The keys of this option whose drawn text took a Google location answer's content, as the raw
-     * host-data pass resolved them ([HostDataResolveResult.googleOptionKeys]). Never parsed from JSON:
-     * a pick records it with the option, so a later `{{selected.<field>.<key>}}` showing that text
-     * draws Google's attribution. The Swift twin is `InputOption.googleKeys`.
+     * The keys of this option whose drawn text took a Google location answer's content, each with that
+     * text as the user typed it (every Google answer in it replaced by its `raw_query`), as the resolver
+     * that filled the option found them ([HostDataResolveResult.googleOptionKeys]). Never parsed from
+     * JSON: a pick records it with the option, so a later `{{selected.<field>.<key>}}` showing that text
+     * draws Google's attribution, and one storing or sending it takes the typed text. The Swift twin is
+     * `InputOption.googleKeys`.
      */
-    val googleKeys: List<String>? = null,
+    val googleKeys: Map<String, String>? = null,
 ) {
     /** Mirrors iOS `resolvedImageURL(isSelected:)` — selected/unselected variant first, default image_url last. */
     fun resolvedImageURL(isSelected: Boolean): String? {
@@ -1255,7 +1267,7 @@ private fun resolveDotPath(
 ): Any? {
     if (path.isNullOrEmpty()) return null
     val parts = path.split(".")
-    if (parts.size < 2) return null
+    if (parts.size < 2 || parts.any { it.isEmpty() }) return null
 
     val root: Map<String, Any>? = when (parts[0]) {
         "responses" -> responses
@@ -1275,6 +1287,8 @@ private fun resolveDotPath(
     var current: Any? = root ?: return null
     for (part in parts.drop(1)) {
         if (typedText && LocationAnswer.carriesPlaceId(current)) return HostDataResolver.typedTextOfGoogleAnswer(current)
+        // A picked option's key that came from a Google answer: the text as the user typed it.
+        if (typedText && parts[0] == "selected") SelectedOptionStore.typedText(current, part)?.let { return it }
         val next = when {
             current is Map<*, *> -> (current as Map<*, *>)[part]
             // Numeric step into a list — `{{selected.tags.0.label}}`. Multi-select records a list
@@ -1304,8 +1318,11 @@ fun resolveTemplateString(
      *  answer to its typed text. Null: drawn text, where only a markdown link's target does. */
     key: String? = null,
     isOption: Boolean = false,
+    /** Every token takes the typed text: text drawn where no Google credit is (off an onboarding step),
+     *  or the text an option keeps for a Google key ([InputOption.googleKeys]). */
+    allTyped: Boolean = false,
 ): String {
-    val rule = HostDataResolver.typedTextRule(text, key, isOption)
+    val rule = if (allTyped) HostDataResolver.TypedTextRule.ALL else HostDataResolver.typedTextRule(text, key, isOption)
     // `{{var | fallback}}`. The console's picker advertises this syntax and the web
     // preview implements it; neither native did, so the whole literal (pipe included) rendered on
     // the user's screen when an author followed our own instruction.
@@ -1324,6 +1341,15 @@ fun resolveTemplateString(
 }
 
 /**
+ * Whether drawing [text] through [resolveTemplateString] shows a Google answer's content: a token whose
+ * path reaches one under `responses` / `step`, or reads a picked option's Google key under `selected`
+ * ([GoogleCredit.pathCredits] over [answers]). An option filled with such text records the key
+ * ([InputOption.googleKeys]). The Swift twin is `templateReadsGoogle`.
+ */
+internal fun templateReadsGoogle(text: String, answers: GoogleCredit.Answers): Boolean =
+    text.contains("{{") && HostDataResolver.extractTemplateTokens(text).any { GoogleCredit.pathCredits(it.path, answers) }
+
+/**
  * Resolves dynamic bindings and template strings on a block.
  * Returns a new ContentBlock with resolved text fields and binding property overrides.
  */
@@ -1339,7 +1365,11 @@ internal fun resolveBlockBindings(
     // ever passed one, so the console's "This Step (live)" picker group offered authors a namespace
     // that resolved to nothing on device. Declaring the parameter is not wiring it.
     stepInputs: Map<String, Any>? = null,
+    /** Where the block is drawn. Off an onboarding step nothing credits Google, so every token resolves a
+     *  Google answer — and a picked option's Google key — to the text the user typed. */
+    surface: ai.appdna.sdk.core.TemplateSurface = ai.appdna.sdk.core.TemplateSurface.ONBOARDING,
 ): ContentBlock {
+    val allTyped = surface == ai.appdna.sdk.core.TemplateSurface.OTHER
     val hasBindings = !block.bindings.isNullOrEmpty()
     val hasTemplates = (block.text?.contains("{{") == true)
         || (block.field_label?.contains("{{") == true)
@@ -1379,7 +1409,7 @@ internal fun resolveBlockBindings(
         block.bindings?.forEach { (property, path) ->
             // A stored value or a media URL takes a Google answer's typed text, as in the raw pass.
             val value = resolveDotPath(
-                path, responses, hookData, null, null, stepInputs, typedText = HostDataResolver.bindingTakesTypedText(property),
+                path, responses, hookData, null, null, stepInputs, typedText = allTyped || HostDataResolver.bindingTakesTypedText(property),
             )
             if (value != null) {
                 resolved = applyBindingProperty(resolved, property, value)
@@ -1407,13 +1437,13 @@ internal fun resolveBlockBindings(
     // Resolve template strings in text fields
     if (hasTemplates) {
         resolved = resolved.copy(
-            text = resolved.text?.let { if (it.contains("{{")) resolveTemplateString(it, hookData, responses, stepInputs = stepInputs) else it },
-            field_label = resolved.field_label?.let { if (it.contains("{{")) resolveTemplateString(it, hookData, responses, stepInputs = stepInputs) else it },
-            field_placeholder = resolved.field_placeholder?.let { if (it.contains("{{")) resolveTemplateString(it, hookData, responses, stepInputs = stepInputs) else it },
-            badge_text = resolved.badge_text?.let { if (it.contains("{{")) resolveTemplateString(it, hookData, responses, stepInputs = stepInputs) else it },
-            toggle_label = resolved.toggle_label?.let { if (it.contains("{{")) resolveTemplateString(it, hookData, responses, stepInputs = stepInputs) else it },
-            label = resolved.label?.let { if (it.contains("{{")) resolveTemplateString(it, hookData, responses, stepInputs = stepInputs) else it },
-            markdown_content = resolved.markdown_content?.let { if (it.contains("{{")) resolveTemplateString(it, hookData, responses, stepInputs = stepInputs) else it },
+            text = resolved.text?.let { if (it.contains("{{")) resolveTemplateString(it, hookData, responses, stepInputs = stepInputs, allTyped = allTyped) else it },
+            field_label = resolved.field_label?.let { if (it.contains("{{")) resolveTemplateString(it, hookData, responses, stepInputs = stepInputs, allTyped = allTyped) else it },
+            field_placeholder = resolved.field_placeholder?.let { if (it.contains("{{")) resolveTemplateString(it, hookData, responses, stepInputs = stepInputs, allTyped = allTyped) else it },
+            badge_text = resolved.badge_text?.let { if (it.contains("{{")) resolveTemplateString(it, hookData, responses, stepInputs = stepInputs, allTyped = allTyped) else it },
+            toggle_label = resolved.toggle_label?.let { if (it.contains("{{")) resolveTemplateString(it, hookData, responses, stepInputs = stepInputs, allTyped = allTyped) else it },
+            label = resolved.label?.let { if (it.contains("{{")) resolveTemplateString(it, hookData, responses, stepInputs = stepInputs, allTyped = allTyped) else it },
+            markdown_content = resolved.markdown_content?.let { if (it.contains("{{")) resolveTemplateString(it, hookData, responses, stepInputs = stepInputs, allTyped = allTyped) else it },
         )
 
         // OPTION text. `{{var}}` in a select/image-tile option was resolved by NOTHING
@@ -1422,20 +1452,29 @@ internal fun resolveBlockBindings(
         // was a raw token on screen on BOTH platforms rather than a cross-platform difference — which
         // is why symmetric fixtures never noticed it.
         val opts = resolved.field_options
+        val googleAnswers = GoogleCredit.Answers(
+            accumulated = responses, stepInputs = stepInputs.orEmpty(), sessionStore = emptyMap(),
+            selected = SelectedOptionStore.snapshot(),
+        )
         if (opts != null) {
             var optChanged = false
             val nextOpts = opts.map { o ->
                 var next = o
                 if (o.label?.contains("{{") == true) {
-                    next = next.copy(label = resolveTemplateString(o.label, hookData, responses, stepInputs = stepInputs)); optChanged = true
+                    next = next.copy(label = resolveTemplateString(o.label, hookData, responses, stepInputs = stepInputs, allTyped = allTyped)); optChanged = true
                 }
                 if (o.subtitle?.contains("{{") == true) {
-                    next = next.copy(subtitle = resolveTemplateString(o.subtitle, hookData, responses, stepInputs = stepInputs)); optChanged = true
+                    next = next.copy(subtitle = resolveTemplateString(o.subtitle, hookData, responses, stepInputs = stepInputs, allTyped = allTyped)); optChanged = true
                 }
                 if (o.leading_text?.contains("{{") == true) {
-                    next = next.copy(leading_text = resolveTemplateString(o.leading_text, hookData, responses, stepInputs = stepInputs)); optChanged = true
+                    next = next.copy(leading_text = resolveTemplateString(o.leading_text, hookData, responses, stepInputs = stepInputs, allTyped = allTyped)); optChanged = true
                 }
-                next
+                // A key whose text takes a Google answer's content records it with the text as the user
+                // typed it ([InputOption.googleKeys]), as the raw pass records an authored option's — so a
+                // host's options, and a step drawn without raw capture, carry it to a later `selected` path.
+                if (allTyped) next else next.withGoogleKeysOf(o, googleAnswers) {
+                    resolveTemplateString(it, hookData, responses, stepInputs = stepInputs, allTyped = true)
+                }
             }
             if (optChanged) resolved = resolved.copy(field_options = nextOpts.toImmutableList())
         }
@@ -1453,7 +1492,7 @@ internal fun resolveBlockBindings(
                 for (key in listOf("value", "label")) {
                     val s = stat[key] as? String ?: continue
                     if (s.contains("{{")) {
-                        next[key] = resolveTemplateString(s, hookData, responses, stepInputs = stepInputs)
+                        next[key] = resolveTemplateString(s, hookData, responses, stepInputs = stepInputs, allTyped = allTyped)
                         changed = true
                     }
                 }
@@ -1505,13 +1544,13 @@ internal fun resolveBlockBindings(
     // all get it, and iOS/Android keep an identical reachable surface.
     block.children?.let { kids ->
         resolved = resolved.copy(
-            children = kids.map { resolveBlockBindings(it, hookData, responses, stepInputs) }
+            children = kids.map { resolveBlockBindings(it, hookData, responses, stepInputs, surface) }
                 .toImmutableList(),
         )
     }
     block.stack_children?.let { kids ->
         resolved = resolved.copy(
-            stack_children = kids.map { resolveBlockBindings(it, hookData, responses, stepInputs) }
+            stack_children = kids.map { resolveBlockBindings(it, hookData, responses, stepInputs, surface) }
                 .toImmutableList(),
         )
     }
@@ -1917,7 +1956,10 @@ fun ContentBlockRendererView(
             // every element, so the merge can't live inside it). Empty overrides → no change.
             val block = if (rawResolved) rawBlock else resolvedFieldOptions(
                 resolvedFieldConfig(
-                    resolveBlockBindings(rawBlock, hookData = hookData, responses = responses, stepInputs = inputValues),
+                    resolveBlockBindings(
+                        rawBlock, hookData = hookData, responses = responses, stepInputs = inputValues,
+                        surface = LocalTemplateSurface.current,
+                    ),
                     fieldConfigOverrides,
                 ),
                 fieldOptionsOverrides,
@@ -5681,9 +5723,14 @@ private fun RichTextBlock(block: ContentBlock, loc: ((String, String) -> String)
  * Supported patterns:
  * - **bold** → SpanStyle(fontWeight = Bold)
  * - *italic* → SpanStyle(fontStyle = Italic)
- * - [text](url) → SpanStyle(color = linkColor, underline) + URL annotation
+ * - ++underline++ → SpanStyle(textDecoration = Underline)
+ * - every link form iOS's markdown parser follows ([MarkdownLinks.find]): an inline link in any of
+ *   its destination forms, an angle-bracket autolink, and a bare URL or email address → SpanStyle(color
+ *   = linkColor, underline) + URL annotation
+ *
+ * `internal` so the shared-fixture runner reads the links THIS draws.
  */
-private fun parseMarkdownToAnnotatedString(
+internal fun parseMarkdownToAnnotatedString(
     markdown: String,
     baseStyle: TextStyle,
     linkColor: Color,
@@ -5694,22 +5741,32 @@ private fun parseMarkdownToAnnotatedString(
     val boldRegex = Regex("""\*\*(.+?)\*\*""")
     val italicRegex = Regex("""\*(.+?)\*""")
     val underlineRegex = Regex("""\+\+(.+?)\+\+""")
-    val linkRegex = Regex("""\[(.+?)]\((.+?)\)""")
-
-    data class StyledRange(val start: Int, val end: Int, val style: SpanStyle, val tag: String? = null, val annotation: String? = null)
-
-    // First pass: find all link ranges in the original text and build a clean string
-    val linkMatches = linkRegex.findAll(markdown).toList()
-    val boldMatches = boldRegex.findAll(markdown).toList()
-    val italicMatches = italicRegex.findAll(markdown).toList()
 
     return buildAnnotatedString {
+        /** [text] with its links drawn as links, the rest as it is. */
+        fun appendLinked(text: String) {
+            var at = 0
+            for (link in MarkdownLinks.find(text)) {
+                if (link.start > at) append(text.substring(at, link.start))
+                pushStringAnnotation(tag = "URL", annotation = link.url)
+                withStyle(SpanStyle(
+                    color = linkColor,
+                    textDecoration = androidx.compose.ui.text.style.TextDecoration.Underline,
+                )) {
+                    append(link.text)
+                }
+                pop()
+                at = link.end
+            }
+            if (at < text.length) append(text.substring(at))
+        }
+
         // Simple iterative parser: process the string character by character,
         // replacing markdown tokens as we go
         var remaining = markdown
         while (remaining.isNotEmpty()) {
             // Find the earliest markdown match
-            val linkMatch = linkRegex.find(remaining)
+            val link = MarkdownLinks.find(remaining).firstOrNull()
             val boldMatch = boldRegex.find(remaining)
             val underlineMatch = underlineRegex.find(remaining)
             // Only match italic if it's not part of a bold marker
@@ -5721,19 +5778,34 @@ private fun parseMarkdownToAnnotatedString(
             }
 
             val matches = listOfNotNull(
-                linkMatch?.let { it to "link" },
                 boldMatch?.let { it to "bold" },
                 underlineMatch?.let { it to "underline" },
                 italicMatch?.let { it to "italic" },
             ).sortedBy { it.first.range.first }
+            val first = matches.firstOrNull()
 
-            if (matches.isEmpty()) {
+            if (link != null && (first == null || link.start <= first.first.range.first)) {
+                // A link starts first: draw what precedes it, then the link.
+                if (link.start > 0) append(remaining.substring(0, link.start))
+                pushStringAnnotation(tag = "URL", annotation = link.url)
+                withStyle(SpanStyle(
+                    color = linkColor,
+                    textDecoration = androidx.compose.ui.text.style.TextDecoration.Underline,
+                )) {
+                    append(link.text)
+                }
+                pop()
+                remaining = remaining.substring(link.end)
+                continue
+            }
+
+            if (first == null) {
                 // No more markdown — append rest as plain text
                 append(remaining)
                 break
             }
 
-            val (match, type) = matches.firstOrNull() ?: break
+            val (match, type) = first
 
             // Append text before the match
             if (match.range.first > 0) {
@@ -5741,31 +5813,19 @@ private fun parseMarkdownToAnnotatedString(
             }
 
             when (type) {
-                "link" -> {
-                    val linkText = match.groupValues[1]
-                    val url = match.groupValues[2]
-                    pushStringAnnotation(tag = "URL", annotation = url)
-                    withStyle(SpanStyle(
-                        color = linkColor,
-                        textDecoration = androidx.compose.ui.text.style.TextDecoration.Underline,
-                    )) {
-                        append(linkText)
-                    }
-                    pop()
-                }
                 "bold" -> {
                     withStyle(SpanStyle(fontWeight = FontWeight.Bold)) {
-                        append(match.groupValues[1])
+                        appendLinked(match.groupValues[1])
                     }
                 }
                 "underline" -> {
                     withStyle(SpanStyle(textDecoration = androidx.compose.ui.text.style.TextDecoration.Underline)) {
-                        append(match.groupValues[1])
+                        appendLinked(match.groupValues[1])
                     }
                 }
                 "italic" -> {
                     withStyle(SpanStyle(fontStyle = FontStyle.Italic)) {
-                        append(match.groupValues[1])
+                        appendLinked(match.groupValues[1])
                     }
                 }
             }
@@ -9492,7 +9552,8 @@ private fun PricingCardBlock(
             onClick = {
                 selectedPlanId = plan.id
                 inputValues["selected_plan_id"] = plan.id
-                inputValues["selected_plan_label"] = plan.label
+                // A stored value: a label drawn from a Google answer is stored as the text the user typed.
+                inputValues["selected_plan_label"] = plan.storedLabel
                 // Match iOS contract:
                 // onAction("select_plan", planId) — host parses an
                 // ACTION + VALUE, NOT a colon-embedded string. The
@@ -13081,6 +13142,14 @@ private fun FormInputLocationPlaceholder(
     @Suppress("UNUSED_EXPRESSION")
     holderVersion
     val text = holder.text
+    // The field's value with its cursor and composing span. The holder owns the text; when it sets the
+    // text itself (a resolve, a restore, an edit that restarts from the user's own text) the cursor
+    // goes to the end.
+    var fieldValue by remember(holder) {
+        mutableStateOf(androidx.compose.ui.text.input.TextFieldValue(text, androidx.compose.ui.text.TextRange(text.length)))
+    }
+    val shownValue = if (fieldValue.text == text) fieldValue
+    else androidx.compose.ui.text.input.TextFieldValue(text, androidx.compose.ui.text.TextRange(text.length))
     val suggestions = holder.results
 
     // Honor field_style.text_color, show_prefix_icon,
@@ -13120,10 +13189,13 @@ private fun FormInputLocationPlaceholder(
         FormFieldLabel(block)
 
         OutlinedTextField(
-            value = text,
-            onValueChange = { newText ->
-                // Stores the typed text, drops a resolve in flight, and debounces the search (300 ms).
-                holder.textChanged(newText, search)
+            value = shownValue,
+            onValueChange = { newValue ->
+                fieldValue = newValue
+                // Stores the typed text, drops a resolve in flight, and debounces the search (300 ms). A
+                // composition in progress is reported, so the first edit of Google's line waits for it.
+                holder.compositionChanged(newValue.composition != null)
+                holder.textChanged(newValue.text, search)
             },
             // Drop hardcoded Color.Gray placeholder color so
             // Material3 OutlinedTextFieldDefaults adaptive placeholder color
@@ -13250,11 +13322,12 @@ private fun FormInputLocationPlaceholder(
                 // translucent dropdown lets the step show through, which is a busy surface.
                 if (holder.showsGoogleLogo) {
                     GoogleMapsLogo(
-                        backdrop = if (ddOpacity < 1f) {
-                            GoogleMapsAttribution.Backdrop.Busy
-                        } else {
-                            GoogleMapsAttribution.Backdrop.Plain(GoogleMapsAttribution.hexOf(ddBgColor ?: MaterialTheme.colorScheme.surface))
-                        },
+                        backdrop = GoogleMapsAttribution.backdrop(
+                            ofDropdownFill = cfg?.get("dropdown_bg_color") as? String,
+                            opacity = ddOpacity,
+                            behind = LocalGoogleAttributionBackdrop.current,
+                            unstyled = GoogleMapsAttribution.Backdrop.Plain(GoogleMapsAttribution.hexOf(MaterialTheme.colorScheme.surface)),
+                        ),
                     )
                 }
             }

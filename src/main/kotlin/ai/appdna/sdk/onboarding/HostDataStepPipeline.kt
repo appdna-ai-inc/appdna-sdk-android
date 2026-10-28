@@ -221,6 +221,15 @@ internal class HostDataStepPipeline(
         // Google answer resolves there as it does on every other surface: to its typed text.
         val storedContext: TemplateContext? by lazy { tctx?.copy(surface = ai.appdna.sdk.core.TemplateSurface.OTHER) }
         val legacyStored: (String) -> String? = { path: String -> storedContext?.let { TemplateEngine.resolveToken(path, it) } }
+        // `input.*` / `onboarding.*` read the session store's answers: an option whose text one fills
+        // with a Google answer's content records the key, as a `responses` path does.
+        val legacyAnswers: GoogleCredit.Answers? by lazy {
+            tctx?.let { GoogleCredit.Answers(accumulated = emptyMap(), stepInputs = emptyMap(), sessionStore = it.onboardingResponses) }
+        }
+        val legacyReadsGoogle: (String) -> Boolean = { path: String ->
+            val root = path.substringBefore('.')
+            (root == "input" || root == "onboarding") && legacyAnswers?.let { GoogleCredit.pathCredits(path, it) } == true
+        }
         val stepLocs = step.config.localizations
         val scope = HostDataResolver.Scope(
             mapOf(
@@ -242,6 +251,7 @@ internal class HostDataStepPipeline(
                 d.legacyPaths.map { legacyStored(it) },
                 // Whether a drawn path takes a Google answer's content (an option's Google keys).
                 d.paths.map { HostDataResolver.readsGoogleAnswer(it, scope) },
+                d.legacyPaths.map { legacyReadsGoogle(it) },
             )
         }
 
@@ -273,6 +283,7 @@ internal class HostDataStepPipeline(
                     locale = inputs.locale,
                     legacyToken = legacy.takeIf { tctx != null },
                     legacyTokenStored = legacyStored.takeIf { tctx != null },
+                    legacyReadsGoogle = legacyReadsGoogle.takeIf { tctx != null },
                 )
                 val r = HostDataResolver.resolveRawBlock(b, ctx)
                 reverting = mutableListOf()
@@ -319,6 +330,7 @@ internal class HostDataStepPipeline(
                 user = inputs.user, session = inputs.session, selected = inputs.selected,
                 legacyToken = legacy.takeIf { tctx != null },
                 legacyTokenStored = legacyStored.takeIf { tctx != null },
+                legacyReadsGoogle = legacyReadsGoogle.takeIf { tctx != null },
             )
             blocks = blocks.map { blk -> layerInteraction(blk, inputs, patchCtx) }
         }
@@ -446,6 +458,8 @@ internal class HostDataStepPipeline(
     /**
      * Host `fieldOptions` are host data already: no expansion, no structural pass — only
      * `label`, `subtitle`, `leading_text` are resolved, with today's semantics (a miss keeps the literal).
+     * A key whose text takes a Google answer's content records it ([InputOption.googleKeys]), as an
+     * authored option's does in the raw pass.
      */
     @Suppress("UNCHECKED_CAST")
     private fun resolveHostOptionText(block: ContentBlock, inputs: HostDataInputs): ContentBlock {
@@ -455,8 +469,12 @@ internal class HostDataStepPipeline(
         val session = inputs.session?.filterValues { it != null } as Map<String, Any>?
         val user = inputs.user?.filterValues { it != null } as Map<String, Any>?
         val stepIn = inputs.stepInputs.filterValues { it != null } as Map<String, Any>
+        val answers = GoogleCredit.Answers(
+            accumulated = inputs.responses, stepInputs = inputs.stepInputs, sessionStore = emptyMap(), selected = inputs.selected,
+        )
         fun r(s: String): String = if (s.contains("{{")) resolveTemplateString(s, hook, responses, session, user, stepIn) else s
-        return block.withFieldOptions(opts.map { o -> o.withResolvedText(::r) }.toImmutableList())
+        fun typed(s: String): String = resolveTemplateString(s, hook, responses, session, user, stepIn, allTyped = true)
+        return block.withFieldOptions(opts.map { o -> o.withResolvedText(::r).withGoogleKeysOf(o, answers, ::typed) }.toImmutableList())
     }
 
     companion object {
@@ -533,6 +551,21 @@ internal fun ContentBlock.withFieldConfig(config: Map<String, Any>?): ContentBlo
 
 internal fun InputOption.withResolvedText(r: (String) -> String): InputOption =
     copy(label = r(label), subtitle = subtitle?.let(r), leading_text = leading_text?.let(r))
+
+/**
+ * This option (already filled) with the Google keys of [authored]'s `label` / `subtitle` /
+ * `leading_text`: each key whose template takes a Google answer's content ([templateReadsGoogle]), with
+ * its text as the user typed it ([typed]), merged over the keys it already carries.
+ */
+internal fun InputOption.withGoogleKeysOf(authored: InputOption, answers: GoogleCredit.Answers, typed: (String) -> String): InputOption {
+    val found = LinkedHashMap<String, String>()
+    for ((key, text) in listOf("label" to authored.label, "subtitle" to authored.subtitle, "leading_text" to authored.leading_text)) {
+        if (text != null && templateReadsGoogle(text, answers)) found[key] = typed(text)
+    }
+    return if (found.isEmpty()) this else withGoogleKeys((googleKeys.orEmpty() + found).toSortedMap())
+}
+
+internal fun InputOption.withGoogleKeys(keys: Map<String, String>?): InputOption = copy(googleKeys = keys)
 
 // ─────────────────────────────────────────────────────────────────────────────────────────────────
 // Readers of the markers
@@ -731,30 +764,45 @@ internal val LocalStepGateBlocks = compositionLocalOf<List<ContentBlock>?> { nul
 internal val LocalHostDataSheets = compositionLocalOf<Map<String, List<Map<String, Any?>>>> { emptyMap() }
 
 /**
- * [block] with every option's `googleKeys` set from [keys] (block id → option id → keys), at every
- * depth the raw pass records them: the block, its `children` / `stack_children`, and its options'
- * sheets. A pick records an option's keys with it, so a nested Select credits like a top-level one.
- * The Swift twin is `OnboardingStepPipeline.stampGoogleKeys`.
+ * [block] with every option named in [keys] (block id → option id → its Google keys) given those keys,
+ * at every depth a resolver records them: the block, its `children` / `stack_children`, and its options'
+ * sheets. A pick records an option's keys with it, so a nested Select credits like a top-level one. An
+ * option [keys] does not name keeps its own. The Swift twin is `OnboardingStepPipeline.stampGoogleKeys`.
  */
-internal fun stampGoogleKeys(block: ContentBlock, keys: Map<String, Map<String, List<String>>>): ContentBlock {
+internal fun stampGoogleKeys(block: ContentBlock, keys: Map<String, Map<String, Map<String, String>>>): ContentBlock {
     val own = keys[block.id]
     return block.copy(
         field_options = block.field_options?.map { option ->
-            val o = if (own != null) option.copy(googleKeys = own[option.id ?: option.value]) else option
+            val k = own?.get(option.id ?: option.value)
+            val o = if (k != null) option.copy(googleKeys = k) else option
             val sheet = o.sheet_blocks ?: return@map o
             o.copy(sheet_blocks = sheet.map { stampGoogleKeys(it, keys) }.toImmutableList())
         }?.toImmutableList(),
         children = block.children?.map { stampGoogleKeys(it, keys) }?.toImmutableList(),
         stack_children = block.stack_children?.map { stampGoogleKeys(it, keys) }?.toImmutableList(),
-    )
+    ).withPlanGoogleKeys(own)
 }
+
+/** [this] with every pricing plan [own] names given its keys ([planKey]). */
+internal fun ContentBlock.withPlanGoogleKeys(own: Map<String, Map<String, String>>?): ContentBlock {
+    if (own == null || pricing_plans.isNullOrEmpty()) return this
+    return copy(pricing_plans = pricing_plans.map { p -> own[planKey(p.id)]?.let { p.withGoogleKeys(it) } ?: p }.toImmutableList())
+}
+
+internal fun PricingPlan.withGoogleKeys(keys: Map<String, String>): PricingPlan = copy(googleKeys = keys)
+
+/**
+ * Where a pricing plan's Google keys sit among a block's option keys: its id, marked so it can never
+ * meet an option's. The Swift twin is `OnboardingStepPipeline.planKey`.
+ */
+internal fun planKey(id: String): String = "plan\u001F$id"
 
 /**
  * The `googleKeys` the block trees [blocks] carry, keyed as [stampGoogleKeys] takes them — so blocks
  * decoded afresh from raw JSON, which never holds them, can be given them back.
  */
-internal fun googleKeysOf(blocks: List<ContentBlock>): Map<String, Map<String, List<String>>> {
-    val out = LinkedHashMap<String, LinkedHashMap<String, List<String>>>()
+internal fun googleKeysOf(blocks: List<ContentBlock>): Map<String, Map<String, Map<String, String>>> {
+    val out = LinkedHashMap<String, LinkedHashMap<String, Map<String, String>>>()
     fun visit(b: ContentBlock) {
         for (o in b.field_options.orEmpty()) {
             o.googleKeys?.takeIf { it.isNotEmpty() }?.let { k ->
@@ -762,6 +810,9 @@ internal fun googleKeysOf(blocks: List<ContentBlock>): Map<String, Map<String, L
                 out.getOrPut(b.id) { LinkedHashMap() }[id] = k
             }
             o.sheet_blocks?.forEach(::visit)
+        }
+        for (p in b.pricing_plans.orEmpty()) {
+            p.googleKeys?.takeIf { it.isNotEmpty() }?.let { out.getOrPut(b.id) { LinkedHashMap() }[planKey(p.id)] = it }
         }
         b.children?.forEach(::visit)
         b.stack_children?.forEach(::visit)
@@ -822,12 +873,15 @@ private fun applySheetStepPaths(block: MutableMap<String, Any?>, sheetInputs: Ma
                 val last = segs.last()
                 val target = cur
                 when (target) {
+                    // A whole location answer (`{{step.home}}`) draws its line, as iOS's sheet does.
                     is MutableMap<*, *> -> (target[last] as? String)?.let {
-                        (target as MutableMap<String, Any?>)[last] = HostDataResolver.resolvePlainString(it, ctx, key, isOption)
+                        (target as MutableMap<String, Any?>)[last] =
+                            HostDataResolver.resolvePlainString(it, ctx, key, isOption, wholeLocationAnswer = true)
                     }
                     is MutableList<*> -> last.toIntOrNull()?.let { i ->
                         (target.getOrNull(i) as? String)?.let {
-                            (target as MutableList<Any?>)[i] = HostDataResolver.resolvePlainString(it, ctx, key, isOption)
+                            (target as MutableList<Any?>)[i] =
+                                HostDataResolver.resolvePlainString(it, ctx, key, isOption, wholeLocationAnswer = true)
                         }
                     }
                     else -> {}

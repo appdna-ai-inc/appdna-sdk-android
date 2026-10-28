@@ -16,7 +16,9 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -125,17 +127,25 @@ fun LocationFieldComposable(
     holderVersion
     val text = holder.text
     val suggestions = holder.results
+    // The field's value with its cursor and composing span. The holder owns the text; when it sets the
+    // text itself (a resolve, a restore, an edit that restarts from the user's own text) the cursor
+    // goes to the end.
+    var fieldValue by remember(holder) { mutableStateOf(TextFieldValue(text, TextRange(text.length))) }
+    val shownValue = if (fieldValue.text == text) fieldValue else TextFieldValue(text, TextRange(text.length))
 
     Column(
         modifier = modifier.fillMaxWidth(),
         verticalArrangement = Arrangement.spacedBy(6.dp),
     ) {
         OutlinedTextField(
-            value = text,
-            onValueChange = { newText ->
+            value = shownValue,
+            onValueChange = { newValue ->
+                fieldValue = newValue
                 errors.remove(field.id)
-                // Stores the typed text, drops a resolve in flight, and debounces the search.
-                holder.textChanged(newText, search)
+                // Stores the typed text, drops a resolve in flight, and debounces the search. A
+                // composition in progress is reported, so the first edit of Google's line waits for it.
+                holder.compositionChanged(newValue.composition != null)
+                holder.textChanged(newValue.text, search)
             },
             label = { Text(field.label) },
             placeholder = { Text(placeholder) },
