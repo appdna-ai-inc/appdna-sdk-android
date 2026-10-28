@@ -866,7 +866,7 @@ fun PaywallScreen(
     }
 
     // Localization helper: Template variable interpolation
-    val templateContext = ai.appdna.sdk.core.TemplateEngine.buildContext()
+    val templateContext = ai.appdna.sdk.core.TemplateEngine.buildContext(ai.appdna.sdk.core.TemplateSurface.OTHER)
     fun loc(key: String, fallback: String): String {
         val localized = LocalizationEngine.resolve(key, config.localizations, config.default_locale, fallback)
         return ai.appdna.sdk.core.TemplateEngine.interpolate(localized, templateContext)

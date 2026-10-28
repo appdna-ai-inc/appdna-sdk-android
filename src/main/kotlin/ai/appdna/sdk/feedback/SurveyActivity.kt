@@ -507,7 +507,7 @@ fun SurveyScreen(
             }
 
             // Interpolate question text, option text, NPS labels
-            val tCtx = ai.appdna.sdk.core.TemplateEngine.buildContext()
+            val tCtx = ai.appdna.sdk.core.TemplateEngine.buildContext(ai.appdna.sdk.core.TemplateSurface.OTHER)
             val te = ai.appdna.sdk.core.TemplateEngine
             val q = question.copy(
                 text = te.interpolate(question.text, tCtx),
@@ -709,7 +709,7 @@ fun SurveyScreen(
                     )
                 )
             }
-            val thankCtx = ai.appdna.sdk.core.TemplateEngine.buildContext()
+            val thankCtx = ai.appdna.sdk.core.TemplateEngine.buildContext(ai.appdna.sdk.core.TemplateSurface.OTHER)
             val thankText = ai.appdna.sdk.core.TemplateEngine.interpolate(
                 config.appearance.thankYouText ?: "Thank you!", thankCtx
             )

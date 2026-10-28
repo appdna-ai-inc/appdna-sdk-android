@@ -157,7 +157,7 @@ internal object AppDNANotificationPoster {
         val soundChannel = PushSoundChannels.ensureChannel(context, data)
         val channelId = soundChannel ?: data["channel_id"]?.takeIf { it.isNotBlank() } ?: AppDNAMessagingService.DEFAULT_CHANNEL_ID
         // Interpolate push title and body via TemplateEngine
-        val pushCtx = ai.appdna.sdk.core.TemplateEngine.buildContext()
+        val pushCtx = ai.appdna.sdk.core.TemplateEngine.buildContext(ai.appdna.sdk.core.TemplateSurface.OTHER)
         val title = ai.appdna.sdk.core.TemplateEngine.interpolate(
             data["title"] ?: notifTitle ?: "", pushCtx
         )

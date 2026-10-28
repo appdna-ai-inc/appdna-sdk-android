@@ -125,6 +125,16 @@ internal object LocationAnswer {
      * (null). `LocationAnswer.fieldText(forStored:)` in `LocationAnswer.swift` is the Swift twin, and
      * the `location_field_text` fixtures pin the pair.
      */
+    /**
+     * Whether a stored answer came from Google: a selection carrying a non-blank `place_id`, which
+     * only a Google resolve reply fills. Google's terms require attribution wherever such an answer's
+     * content is shown without a Google map, so this one rule decides the logo kept beside a field,
+     * the credit an onboarding step draws for text templating the answer, and the typed text every
+     * other surface's templates show in its place. `LocationAnswer.carriesPlaceId` is the Swift twin.
+     */
+    fun carriesPlaceId(value: Any?): Boolean =
+        ((value as? Map<*, *>)?.get("place_id") as? String)?.isNotBlank() == true
+
     fun fieldText(stored: Any?): String? = when (stored) {
         is String -> stored.ifEmpty { null }
         is Map<*, *> -> (stored["formatted_address"] as? String)?.ifEmpty { null }

@@ -1,6 +1,25 @@
 package ai.appdna.sdk.core
 
 import ai.appdna.sdk.AppDNA
+import ai.appdna.sdk.onboarding.LocationAnswer
+
+/**
+ * Which surface a template is drawn on. It decides what a Google location answer resolves to.
+ *
+ * Google's terms require attribution in the same visual container wherever a Google answer's content
+ * is shown without a Google map. An onboarding step draws that attribution itself, in its container
+ * (`GoogleCredit`), so onboarding keeps the answer's values. No other surface can: a push has no
+ * container at all, and a paywall, message or survey would need attribution UI of its own. So
+ * everywhere else a Google answer resolves to `raw_query`, the text the user typed, which is not
+ * Google content.
+ */
+enum class TemplateSurface {
+    /** An onboarding step's own text: the answer's values, with the step's credit. */
+    ONBOARDING,
+
+    /** Every other surface, and anything sent off the device: a Google answer's typed text. */
+    OTHER,
+}
 
 /**
  * Context for variable resolution across all SDK modules.
@@ -11,7 +30,9 @@ data class TemplateContext(
     val onboardingResponses: Map<String, Map<String, Any>>,
     val computedData: Map<String, Any>,
     val sessionData: Map<String, Any>,
-    val deviceInfo: Map<String, String>
+    val deviceInfo: Map<String, String>,
+    /** Where the template is drawn. A context built by hand defaults to the restrictive surface. */
+    val surface: TemplateSurface = TemplateSurface.OTHER,
 )
 
 /**
@@ -24,8 +45,12 @@ object TemplateEngine {
 
     /**
      * Build a TemplateContext from current SDK state.
+     *
+     * [surface] has no default on purpose: every caller states where its text goes. Only an
+     * onboarding step's own text passes [TemplateSurface.ONBOARDING]; a paywall, message, survey,
+     * push, or a value sent to the customer's server (a hook header) passes [TemplateSurface.OTHER].
      */
-    fun buildContext(): TemplateContext {
+    fun buildContext(surface: TemplateSurface): TemplateContext {
         val identity = AppDNA.getIdentityRef()
         val sessionStore = SessionDataStore.instance
 
@@ -35,7 +60,8 @@ object TemplateEngine {
             onboardingResponses = sessionStore?.onboardingResponses ?: emptyMap(),
             computedData = sessionStore?.computedData ?: emptyMap(),
             sessionData = sessionStore?.sessionData ?: emptyMap(),
-            deviceInfo = deviceInfo()
+            deviceInfo = deviceInfo(),
+            surface = surface,
         )
     }
 
@@ -95,16 +121,22 @@ object TemplateEngine {
                     val remaining = path.removePrefix("onboarding.")
                     val subParts = remaining.split(".", limit = 2)
                     if (subParts.size < 2) return null
-                    context.onboardingResponses[subParts[0]]?.get(subParts[1])?.let(::stringify)
+                    context.onboardingResponses[subParts[0]]?.get(subParts[1])?.let { answerText(it, context) }
                 } else {
                     val step = context.onboardingResponses[parts[1]] ?: return null
-                    step[parts[2]]?.let { return stringify(it) }
+                    step[parts[2]]?.let { return answerText(it, context) }
                     // #1158 — `{{onboarding.<step>.<field>.city}}`: the path is split at most three ways, so a key
                     // inside a structured answer (a location selection) arrives as `field.city`. Walk it.
                     val keys = parts[2].split(".")
                     var value: Any? = step[keys[0]]
-                    for (key in keys.drop(1)) value = (value as? Map<*, *>)?.get(key)
-                    value?.let(::stringify)
+                    for (key in keys.drop(1)) {
+                        // A key inside a Google answer, off onboarding: the user's typed text instead.
+                        if (context.surface == TemplateSurface.OTHER && LocationAnswer.carriesPlaceId(value)) {
+                            return typedText(value)
+                        }
+                        value = (value as? Map<*, *>)?.get(key)
+                    }
+                    value?.let { answerText(it, context) }
                 }
             }
 
@@ -133,7 +165,7 @@ object TemplateEngine {
                 if (parts.size < 2) return null
                 val fieldId = parts[1]
                 for ((_, stepData) in context.onboardingResponses) {
-                    stepData[fieldId]?.let { return stringify(it) }
+                    stepData[fieldId]?.let { return answerText(it, context) }
                 }
                 null
             }
@@ -146,6 +178,29 @@ object TemplateEngine {
     }
 
     // MARK: - Helpers
+
+    /**
+     * An onboarding answer as template text. Off onboarding, a Google answer (one carrying
+     * `place_id`) is its `raw_query`, and a step or list holding one has it replaced the same way
+     * before it is stringified — so the whole-answer token never prints Google content either.
+     */
+    private fun answerText(value: Any, context: TemplateContext): String? {
+        if (context.surface != TemplateSurface.OTHER) return stringify(value)
+        if (LocationAnswer.carriesPlaceId(value)) return typedText(value)
+        return stringify(typedTextForGoogleAnswers(value))
+    }
+
+    /** A Google answer's `raw_query`, or null when it has none (the token then takes its fallback). */
+    internal fun typedText(answer: Any?): String? =
+        ((answer as? Map<*, *>)?.get("raw_query") as? String)?.takeIf { it.isNotEmpty() }
+
+    /** [value] with every Google answer inside it, at any depth, replaced by its `raw_query`. */
+    internal fun typedTextForGoogleAnswers(value: Any): Any = when {
+        LocationAnswer.carriesPlaceId(value) -> typedText(value) ?: ""
+        value is Map<*, *> -> value.mapValues { (_, v) -> v?.let { typedTextForGoogleAnswers(it) } }
+        value is List<*> -> value.map { v -> v?.let { typedTextForGoogleAnswers(it) } }
+        else -> value
+    }
 
     private fun stringify(value: Any): String {
         return when (value) {
@@ -195,6 +250,7 @@ object TemplateEngine {
  */
 fun String.interpolated(): String {
     if (!this.contains("{{")) return this
-    val ctx = TemplateEngine.buildContext()
+    // An onboarding step's own text: the step's container draws the Google credit (`GoogleCredit`).
+    val ctx = TemplateEngine.buildContext(TemplateSurface.ONBOARDING)
     return TemplateEngine.interpolate(this, ctx)
 }

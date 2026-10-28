@@ -2358,8 +2358,10 @@ internal fun parseWebhookResponse(responseBody: String, hookConfig: StepHookConf
 }
 
 private fun interpolateVariables(value: String): String {
-    // Delegate to shared TemplateEngine
-    val ctx = ai.appdna.sdk.core.TemplateEngine.buildContext()
+    // Delegate to shared TemplateEngine. The hook's headers go to the customer's server, not to this
+    // screen, so nothing here can carry the step's Google credit: a Google answer is its typed text,
+    // as on every surface other than an onboarding step's own text.
+    val ctx = ai.appdna.sdk.core.TemplateEngine.buildContext(ai.appdna.sdk.core.TemplateSurface.OTHER)
     return ai.appdna.sdk.core.TemplateEngine.interpolate(value, ctx)
 }
 
@@ -2581,6 +2583,108 @@ fun OnboardingStepView(
         }
     }
 
+    // Per-block field_config overrides pushed by the host delegate (blockId -> key ->
+    // value). Snapshot-observable so a merged override recomposes the affected block.
+    // Keyed by PRESENTATION: a composition reused for a new presentation (0→1→0 inside
+    // the exit tween) starts clean, like a normal revisit. Created here, not in the block view,
+    // because the step's Google credit walks them too.
+    val presentation = LocalStepHostDataWiring.current?.presentation
+    val fieldConfigOverrides = remember(step.id, presentation) { mutableStateMapOf<String, Map<String, Any>>() }
+    // Per-block replacement options from a refresh interaction. Same read-time override
+    // shape as the config overrides above, and keyed the same way.
+    val fieldOptionsOverrides = remember(step.id, presentation) { mutableStateMapOf<String, List<InputOption>>() }
+
+    // Google's attribution, in the step's own container, when its text shows a Google answer's
+    // content: decided here, from the step's own source and the answers, before anything renders —
+    // so there is no child-to-parent report and no stale first frame. A derived state, so typing into
+    // a field recomposes this view only when the answer to "does it credit?" changes.
+    val creditAnswers = GoogleCredit.Answers(
+        accumulated = accumulatedResponses,
+        stepInputs = inputValues,
+        sessionStore = ai.appdna.sdk.core.SessionDataStore.instance?.onboardingResponses ?: emptyMap(),
+    )
+    val showsGoogleCredit by remember(step, stepOverride, accumulatedResponses) {
+        derivedStateOf {
+            GoogleCredit.shows(step, stepOverride, fieldConfigOverrides, fieldOptionsOverrides, creditAnswers)
+        }
+    }
+    val creditSheetContext = remember(step, stepOverride, accumulatedResponses) {
+        GoogleCreditSheetContext(
+            sources = { GoogleCredit.stepSources(step, stepOverride, fieldConfigOverrides, fieldOptionsOverrides) },
+            answers = creditAnswers,
+        )
+    }
+    val attributionBackdrop = GoogleMapsAttribution.backdrop(effectiveConfig.background)
+
+    // ONE container for both branches, always present, so the credit appearing never changes the
+    // content's identity (a field's state would be rebuilt if it did).
+    CompositionLocalProvider(
+        LocalGoogleAttributionBackdrop provides attributionBackdrop,
+        LocalGoogleCreditSheetContext provides creditSheetContext,
+    ) {
+        Column(modifier = Modifier.fillMaxSize()) {
+            Box(modifier = Modifier.weight(1f).fillMaxWidth()) {
+                OnboardingStepBody(
+                    step = step,
+                    effectiveConfig = effectiveConfig,
+                    onNext = onNext,
+                    onSkip = onSkip,
+                    onContentTap = onContentTap,
+                    modifier = modifier,
+                    flowId = flowId,
+                    delegate = delegate,
+                    currentStepIndex = currentStepIndex,
+                    totalSteps = totalSteps,
+                    savedResponses = savedResponses,
+                    accumulatedResponses = accumulatedResponses,
+                    hookData = hookData,
+                    performInteraction = performInteraction,
+                    stepOverride = stepOverride,
+                    hostDataPending = hostDataPending,
+                    hostDataIsCurrent = hostDataIsCurrent,
+                    toggleValues = toggleValues,
+                    inputValues = inputValues,
+                    fieldConfigOverrides = fieldConfigOverrides,
+                    fieldOptionsOverrides = fieldOptionsOverrides,
+                )
+            }
+            if (showsGoogleCredit) {
+                GoogleMapsTextAttribution(
+                    backdrop = attributionBackdrop,
+                    modifier = Modifier
+                        .align(Alignment.CenterHorizontally)
+                        .padding(top = 4.dp, bottom = 8.dp),
+                )
+            }
+        }
+    }
+}
+
+/** The step's content, block-based or legacy. [OnboardingStepView] owns its state and its container. */
+@Composable
+private fun OnboardingStepBody(
+    step: OnboardingStep,
+    effectiveConfig: StepConfig,
+    onNext: (Map<String, Any>?) -> Unit,
+    onSkip: () -> Unit,
+    onContentTap: () -> Unit,
+    modifier: Modifier,
+    flowId: String,
+    delegate: AppDNAOnboardingDelegate?,
+    currentStepIndex: Int,
+    totalSteps: Int,
+    savedResponses: Map<String, Any>?,
+    accumulatedResponses: Map<String, Any>,
+    hookData: Map<String, Any>?,
+    performInteraction: suspend (String, String, String?, Map<String, Any>) -> AppliedInteraction?,
+    stepOverride: StepConfigOverride?,
+    hostDataPending: Boolean,
+    hostDataIsCurrent: Boolean,
+    toggleValues: MutableMap<String, Boolean>,
+    inputValues: SnapshotStateMap<String, Any>,
+    fieldConfigOverrides: SnapshotStateMap<String, Map<String, Any>>,
+    fieldOptionsOverrides: SnapshotStateMap<String, List<InputOption>>,
+) {
     // Block-based vs legacy rendering
     val blocks = effectiveConfig.content_blocks
     if (!blocks.isNullOrEmpty()) {
@@ -2628,6 +2732,8 @@ fun OnboardingStepView(
                 stepOverride = stepOverride,
                 hostDataPending = hostDataPending,
                 hostDataIsCurrent = hostDataIsCurrent,
+                fieldConfigOverrides = fieldConfigOverrides,
+                fieldOptionsOverrides = fieldOptionsOverrides,
             )
         }
     } else {
@@ -3394,20 +3500,21 @@ private fun BlockBasedStepView(
     stepOverride: StepConfigOverride? = null,
     hostDataPending: Boolean = false,
     hostDataIsCurrent: Boolean = true,
+    /**
+     * Per-block field_config overrides pushed by the host delegate (blockId -> key -> value), and
+     * per-block replacement options from a refresh interaction. Owned by [OnboardingStepView], which
+     * also walks them for the step's Google credit.
+     */
+    fieldConfigOverrides: SnapshotStateMap<String, Map<String, Any>>,
+    fieldOptionsOverrides: SnapshotStateMap<String, List<InputOption>>,
 ) {
     val variant = effectiveConfig.layout_variant ?: "no_image"
 
     // The flow host's holder + THIS composition's presentation (null outside the host).
     val hostDataWiring = LocalStepHostDataWiring.current
     val myPresentation = hostDataWiring?.presentation
-    // Per-block field_config overrides pushed by the host delegate (blockId -> key ->
-    // value). Snapshot-observable so a merged override recomposes the affected block.
-    // Keyed by PRESENTATION: a composition reused for a new presentation (0→1→0 inside
-    // the exit tween) starts clean, like a normal revisit.
-    val fieldConfigOverrides = remember(stepId, myPresentation) { mutableStateMapOf<String, Map<String, Any>>() }
-    // #657 — per-block replacement options from a refresh interaction. Same read-time override
-    // shape as the config overrides above, and keyed the same way.
-    val fieldOptionsOverrides = remember(stepId, myPresentation) { mutableStateMapOf<String, List<InputOption>>() }
+    // `fieldConfigOverrides` / `fieldOptionsOverrides` are created by OnboardingStepView, keyed by the
+    // same presentation (see there).
 
     // ONE layered block list for every reader: raw pass → typed decode (per-key
     // revert) → StepConfigOverride merge → interaction layering. Rendering, the required gate, the

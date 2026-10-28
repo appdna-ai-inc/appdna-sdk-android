@@ -138,7 +138,7 @@ internal class ResolvedHostDataStep(
 internal class HostDataStepPipeline(
     val step: OnboardingStep,
     /** TemplateEngine's context for non-block roots; read once per resolve. */
-    private val legacyContext: () -> TemplateContext? = { runCatching { TemplateEngine.buildContext() }.getOrNull() },
+    private val legacyContext: () -> TemplateContext? = { runCatching { TemplateEngine.buildContext(ai.appdna.sdk.core.TemplateSurface.ONBOARDING) }.getOrNull() },
     private val decode: (Map<String, Any?>) -> ContentBlock = { OnboardingConfigParser.decodeRawBlock(it) },
 ) {
     /**

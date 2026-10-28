@@ -68,7 +68,7 @@ fun InAppMessageView(
     isDark: Boolean = isSystemInDarkTheme(),
 ) {
     // Interpolate text fields via TemplateEngine before rendering
-    val ctx = ai.appdna.sdk.core.TemplateEngine.buildContext()
+    val ctx = ai.appdna.sdk.core.TemplateEngine.buildContext(ai.appdna.sdk.core.TemplateSurface.OTHER)
     val e = ai.appdna.sdk.core.TemplateEngine
     val interpolated = config.content.copy(
         title = config.content.title?.let { e.interpolate(it, ctx) },

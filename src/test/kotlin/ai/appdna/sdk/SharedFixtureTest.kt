@@ -308,6 +308,10 @@ class SharedFixtureTest(
             // The ONE location state holder both surfaces bind to: search, tap → resolve, field text.
             "location_resolve_request" -> runLocationResolveRequest(action, spy)
             "location_field_text" -> runLocationFieldText(action, spy)
+            // Google's attribution: the field's, and an onboarding step's credit
+            // (onboarding/GoogleAttributionFixtureDrivers.kt).
+            "location_field_attribution" -> runLocationFieldAttribution(action, spy)
+            "onboarding_google_credit" -> runOnboardingGoogleCredit(action, spy)
             // The core rule every wrapper bridge's auth gate and decoder use.
             "bridge_step_advance_reply" -> runBridgeStepAdvanceReply(action, spy)
             // Billing — the REAL billing core, FakeBillingClient-driven.
@@ -1196,6 +1200,14 @@ class SharedFixtureTest(
             computedData = emptyMap(),
             sessionData = emptyMap(),
             deviceInfo = device,
+            // The surface the template is drawn on — what a Google answer resolves to. `buildContext`
+            // takes the same value; only this hand-built context needs it read from the fixture.
+            surface = when (val surface = action.optStringOrNull("surface")) {
+                null -> ai.appdna.sdk.core.TemplateSurface.OTHER
+                "onboarding" -> ai.appdna.sdk.core.TemplateSurface.ONBOARDING
+                "other" -> ai.appdna.sdk.core.TemplateSurface.OTHER
+                else -> unsupported("interpolate_template surface '$surface'")
+            },
         )
         spy.state["interpolated"] = TemplateEngine.interpolate(action.getString("template"), context)
         action.optStringOrNull("missing_key")?.let {
@@ -3127,6 +3139,10 @@ class SharedFixtureTest(
             "autocomplete_queries" -> rig.autocompleteQueries
             "autocomplete_calls" -> rig.autocompleteQueries.size
             "resolve_bodies" -> rig.resolveBodies.toList()
+            // What the two location composables read to draw Google's logo: under a Google list, and
+            // beside a field whose answer came from Google.
+            "list_google_logo" -> holder.showsGoogleLogo
+            "field_google_attribution" -> ai.appdna.sdk.onboarding.LocationAnswer.carriesPlaceId(rig.stored)
             else -> unsupported("location_resolve_request observable '$key'")
         }
     }
@@ -3154,6 +3170,27 @@ class SharedFixtureTest(
             linkedMapOf<String, Any?>("name" to c.getString("name"), "field_text" to rig.holder.text)
         }
         spy.state["results"] = results
+    }
+
+    /** `location_field_attribution` — REAL `LocationAnswer.carriesPlaceId` per case. */
+    @Suppress("UNCHECKED_CAST")
+    private fun runLocationFieldAttribution(action: JSONObject, spy: Spy) {
+        val cases = action.optJSONArray("cases")?.takeIf { it.length() > 0 }
+            ?: unsupported("location_field_attribution without action.cases")
+        spy.state["results"] = ai.appdna.sdk.onboarding.GoogleAttributionFixtureDrivers
+            .locationFieldAttribution(cases.asList().map { it as Map<String, Any?> })
+    }
+
+    /** `onboarding_google_credit` — REAL `GoogleCredit` over a step the SDK's parser built. */
+    @Suppress("UNCHECKED_CAST")
+    private fun runOnboardingGoogleCredit(action: JSONObject, spy: Spy) {
+        val step = config?.optJSONObject("step") ?: unsupported("onboarding_google_credit without setup.config.step")
+        val state = ai.appdna.sdk.onboarding.GoogleAttributionFixtureDrivers.onboardingGoogleCredit(
+            stepJson = step.asMap(),
+            session = sessionData.asMap(),
+            action = action.asMap(),
+        )
+        spy.state.putAll(state)
     }
 
     /** A fixture's stored answer → what a location field holds: a String, a Map, or null. */

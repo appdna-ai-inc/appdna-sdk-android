@@ -260,7 +260,17 @@ fun LocationFieldComposable(
                         HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant, thickness = 0.5.dp)
                     }
                 }
+                // Google's attribution under Google suggestions, inside the dropdown: the list is
+                // Google content shown without a Google map. The dropdown's surface is the theme's,
+                // so the plain variant follows the appearance.
+                if (holder.showsGoogleLogo) {
+                    GoogleMapsLogo(backdrop = GoogleMapsAttribution.Backdrop.Plain(null))
+                }
             } }
+        } else if (LocationAnswer.carriesPlaceId(values[field.id])) {
+            // A Google answer keeps its attribution after the dropdown closes, and when it is restored
+            // on returning to the step: the field shows Google content.
+            GoogleMapsLogo(backdrop = LocalGoogleAttributionBackdrop.current)
         }
     }
 }

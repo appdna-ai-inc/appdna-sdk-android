@@ -13210,7 +13210,23 @@ private fun FormInputLocationPlaceholder(
                         HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant, thickness = 0.5.dp)
                     }
                 }
+                // Google's attribution under Google suggestions, inside the dropdown. The authored
+                // dropdown colour decides the plain variant; a translucent dropdown lets the step show
+                // through, which is a busy surface.
+                if (holder.showsGoogleLogo) {
+                    GoogleMapsLogo(
+                        backdrop = if (ddOpacity < 1f) {
+                            GoogleMapsAttribution.Backdrop.Busy
+                        } else {
+                            GoogleMapsAttribution.Backdrop.Plain((cfg?.get("dropdown_bg_color") as? String)?.takeIf { it.isNotEmpty() })
+                        },
+                    )
+                }
             }
+        } else if (LocationAnswer.carriesPlaceId(inputValues[fieldId])) {
+            // A Google answer keeps its attribution after the dropdown closes, and when it is restored
+            // on returning to the step: the field shows Google content.
+            GoogleMapsLogo(backdrop = LocalGoogleAttributionBackdrop.current)
         }
     }
 }
@@ -13565,6 +13581,15 @@ private fun OptionBottomSheet(option: InputOption, parentBlockId: String, onDism
         LocalHostDataSheets.current["$parentBlockId|${option.id ?: option.value}"]
     } else null
     val sheetBlocks = if (rawSheet != null) resolveSheetBlocks(rawSheet, sheetInputs.toMap()) else option.sheet_blocks.orEmpty()
+    // The step's credit context. The sheet is a modal above the step, so it draws its own credit when
+    // its own blocks template a Google answer — their `step` root read against the sheet's own inputs.
+    val creditContext = LocalGoogleCreditSheetContext.current
+    val showsGoogleCredit = creditContext?.shows(
+        blockId = parentBlockId,
+        optionId = option.id ?: option.value,
+        presentedSheetBlocks = option.sheet_blocks.orEmpty(),
+        sheetInputs = sheetInputs,
+    ) ?: false
     androidx.compose.material3.ModalBottomSheet(onDismissRequest = onDismiss) {
         Column(
             modifier = Modifier
@@ -13589,6 +13614,13 @@ private fun OptionBottomSheet(option: InputOption, parentBlockId: String, onDism
                 toggleValues = sheetToggles,
                 inputValues = sheetInputs,
             )
+            }
+            // Google's attribution inside the sheet, the container its text is drawn in.
+            if (showsGoogleCredit) {
+                GoogleMapsTextAttribution(
+                    backdrop = GoogleMapsAttribution.Backdrop.Plain(null),
+                    modifier = Modifier.align(Alignment.CenterHorizontally).padding(top = 12.dp),
+                )
             }
         }
     }

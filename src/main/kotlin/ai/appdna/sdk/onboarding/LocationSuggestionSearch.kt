@@ -133,6 +133,14 @@ internal class LocationSuggestionSearch(
             onChange?.invoke()
         }
 
+    /**
+     * Whether the list on screen holds Google suggestions: the dropdown then draws Google's logo under
+     * the rows. Read from each suggestion's own `provider`, so a list replaced by a newer search decides
+     * for itself.
+     */
+    val showsGoogleLogo: Boolean
+        get() = results.any { it.suggestion.provider == "google" }
+
     /** The field text. The composables show it and forward every user edit to [textChanged]. */
     var text: String = ""
         private set(value) {
