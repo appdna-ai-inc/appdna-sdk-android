@@ -425,6 +425,23 @@ class LocationSuggestionSearchTest {
     }
 
     /**
+     * The one state where the text guard decides: a tap's resolve is in flight, so nothing is stored while the
+     * field still shows what the user typed. A parent seeding an answer then must not replace the typed text.
+     * Red control: drop `text.isNotEmpty()` from the restore guard and this fails.
+     */
+    @Test
+    fun anAnswerSeededWhileAResolveIsInFlightDoesNotReplaceTheTypedText() {
+        val rig = addressRig()
+        rig.type("12 Example")
+        rig.advance(300)
+        rig.tap(0)
+        assertTrue(rig.holder.isResolving)
+        assertNull("nothing is stored while the resolve is in flight", rig.stored)
+        rig.storeFromOutside(mapOf("formatted_address" to "California, United States", "mapbox_id" to "m"))
+        assertEquals("the typed text was replaced by a seeded answer", "12 Example", rig.holder.text)
+    }
+
+    /**
      * A configuration change (rotation) rebuilds the composition: a new holder is constructed from the
      * answer the ViewModel kept, and shows the resolved line, not the containing city.
      */
