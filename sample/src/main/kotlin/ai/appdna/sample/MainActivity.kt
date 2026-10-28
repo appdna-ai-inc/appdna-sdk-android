@@ -63,7 +63,7 @@ class MainActivity : ComponentActivity() {
     override fun onResume() {
         super.onResume()
         val fieldId = intent?.getStringExtra("appdnaLocationField") ?: return
-        // SPEC-507 §8 — the RAW stored responses, so a walk reads every key persisted (`mapbox_id` included)
+        // The RAW stored responses, so a walk reads every key persisted (`mapbox_id` included)
         // whatever `LocationData` version the sample is built against.
         android.util.Log.i(
             "AppDNA-E2E",
