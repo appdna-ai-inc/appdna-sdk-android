@@ -305,6 +305,9 @@ class SharedFixtureTest(
             // What a location field stores (the one rule both writers use), read back.
             "location_answer_from_input" -> runLocationAnswerFromInput(action, spy)
             "location_suggestion_display" -> runLocationSuggestionDisplay(action, spy)
+            // The ONE location state holder both surfaces bind to: search, tap → resolve, field text.
+            "location_resolve_request" -> runLocationResolveRequest(action, spy)
+            "location_field_text" -> runLocationFieldText(action, spy)
             // The core rule every wrapper bridge's auth gate and decoder use.
             "bridge_step_advance_reply" -> runBridgeStepAdvanceReply(action, spy)
             // Billing — the REAL billing core, FakeBillingClient-driven.
@@ -2943,22 +2946,7 @@ class SharedFixtureTest(
             // #1150 — read it back from the persisted copy, the way a cold start does.
             if (action.optBoolean("relaunch")) store.reloadFromDisk()
             val loc = AppDNA.getLocationData(fieldId)
-            val actual: Map<String, Any?>? = loc?.let {
-                linkedMapOf(
-                    "formatted_address" to it.formatted_address,
-                    "city" to it.city,
-                    "state" to it.state,
-                    "state_code" to it.state_code,
-                    "country" to it.country,
-                    "country_code" to it.country_code,
-                    "latitude" to it.latitude,
-                    "longitude" to it.longitude,
-                    "timezone" to it.timezone,
-                    "timezone_offset" to it.timezone_offset,
-                    "postal_code" to it.postal_code,
-                    "raw_query" to it.raw_query,
-                )
-            }
+            val actual: Map<String, Any?>? = loc?.let { locationDataProjection(it) }
             val expected = fixtureJson.getJSONObject("expect").optJSONObject("state_after")?.opt("location_data")
             assertStrictJson("[$fixtureName] location_data", expected, actual, "$")
             spy.state["location_data"] = actual
@@ -3001,6 +2989,18 @@ class SharedFixtureTest(
                 ai.appdna.sdk.onboarding.parseLocationSuggestion(input.getJSONObject("suggestion")),
                 if (input.isNull("typed_query")) null else input.optString("typed_query"),
             )
+            // The resolve route's reply, through the REAL parser the tap path uses, then the same
+            // selection builder. The provenance id the reply carries must reach the store.
+            "resolved" -> {
+                val reply = input.optJSONObject("reply") ?: error("input.kind resolved needs input.reply")
+                val outcome = ai.appdna.sdk.onboarding.LocationResolve.outcome(200, reply.toString())
+                val location = (outcome as? ai.appdna.sdk.onboarding.LocationResolveOutcome.Resolved)?.location
+                    ?: throw AssertionError("[$fixtureName] the resolve reply did not parse as resolved: $outcome")
+                ai.appdna.sdk.onboarding.LocationAnswer.selection(
+                    location,
+                    if (input.isNull("typed_query")) null else input.optString("typed_query"),
+                )
+            }
             else -> unsupported("location_answer_from_input input.kind $kind")
         }
         val stateAfter = fixtureJson.getJSONObject("expect").optJSONObject("state_after")
@@ -3011,28 +3011,151 @@ class SharedFixtureTest(
         val store = ai.appdna.sdk.core.SessionDataStore.instance!!
         try {
             store.setOnboardingResponses(mapOf("step_location" to mapOf(fieldId to stored)))
+            // Read it back from the persisted copy, the way a cold start does.
+            if (action.optBoolean("relaunch")) store.reloadFromDisk()
             val loc = AppDNA.getLocationData(fieldId)
-            val actual: Map<String, Any?>? = loc?.let {
-                linkedMapOf(
-                    "formatted_address" to it.formatted_address,
-                    "city" to it.city,
-                    "state" to it.state,
-                    "state_code" to it.state_code,
-                    "country" to it.country,
-                    "country_code" to it.country_code,
-                    "latitude" to it.latitude,
-                    "longitude" to it.longitude,
-                    "timezone" to it.timezone,
-                    "timezone_offset" to it.timezone_offset,
-                    "postal_code" to it.postal_code,
-                    "raw_query" to it.raw_query,
-                )
-            }
+            val actual: Map<String, Any?>? = loc?.let { locationDataProjection(it) }
             assertStrictJson("[$fixtureName] location_data", stateAfter?.opt("location_data"), actual, "$")
             spy.state["location_data"] = actual
         } finally {
             store.clearAll()
         }
+    }
+
+    /**
+     * `getLocationData`'s result as the location kinds assert it: every key, absent ones as null — and
+     * the provenance ids (`mapbox_id`, `place_id`) ONLY when the answer carries them, so every fixture
+     * written before the ids existed keeps its exact shape on both platforms.
+     */
+    private fun locationDataProjection(it: ai.appdna.sdk.onboarding.LocationData): Map<String, Any?> =
+        linkedMapOf<String, Any?>(
+            "formatted_address" to it.formatted_address,
+            "city" to it.city,
+            "state" to it.state,
+            "state_code" to it.state_code,
+            "country" to it.country,
+            "country_code" to it.country_code,
+            "latitude" to it.latitude,
+            "longitude" to it.longitude,
+            "timezone" to it.timezone,
+            "timezone_offset" to it.timezone_offset,
+            "postal_code" to it.postal_code,
+            "raw_query" to it.raw_query,
+        ).apply {
+            it.mapbox_id?.let { v -> put("mapbox_id", v) }
+            it.place_id?.let { v -> put("place_id", v) }
+        }
+
+    /**
+     * `location_resolve_request` — REAL: `LocationSuggestionSearch`, the ONE holder the form-step
+     * Location field and the `input_location` block bind to, with `LocationSearchSettings` resolving the
+     * authored settings (the block resolver, default Min characters 3), `decodeLocationSuggestions`
+     * decoding the stubbed list, `resolveRequest` building the body and `LocationResolve.outcome` parsing
+     * the stubbed reply. Only the socket and the clock are replaced (`LocationSearchRig`).
+     *
+     * Each leg runs its script on a fresh rig; every checkpoint's observables are asserted strictly here,
+     * and recorded under `checkpoints["<leg>/<name>"]`. The `echo` op delivers what SwiftUI's `.onChange`
+     * sends after a programmatic set (only when the text changed since the last delivery); a Compose
+     * field never sends one, and a leg without the op is that shape.
+     */
+    private fun runLocationResolveRequest(action: JSONObject, spy: Spy) {
+        val legs = action.optJSONArray("legs")?.takeIf { it.length() > 0 }
+            ?: unsupported("location_resolve_request without action.legs")
+        val settings = ai.appdna.sdk.onboarding.LocationSearchSettings.from(
+            action.optJSONObject("settings")?.asMap(),
+            defaultMinChars = 3,
+        )
+        val autocompleteJson = action.optJSONObject("autocomplete") ?: JSONObject()
+        val autocomplete = autocompleteJson.keys().asSequence().associateWith { autocompleteJson.getJSONArray(it) }
+        val expected = fixtureJson.getJSONObject("expect").optJSONObject("state_after")?.optJSONObject("checkpoints")
+            ?: error("location_resolve_request needs expect.state_after.checkpoints")
+        val actualCheckpoints = linkedMapOf<String, Any?>()
+
+        for (l in 0 until legs.length()) {
+            val leg = legs.getJSONObject(l)
+            val legName = leg.getString("name")
+            val script = leg.getJSONArray("script")
+            val initial: Any? = if (leg.has("stored_answer")) jsonToStored(leg.opt("stored_answer")) else null
+            val rig = ai.appdna.sdk.onboarding.LocationSearchRig(settings, initial, autocomplete)
+            for (i in 0 until script.length()) {
+                val op = script.getJSONObject(i)
+                when (val name = op.getString("op")) {
+                    "type" -> rig.type(op.getString("text"))
+                    "echo" -> rig.echo()
+                    "advance_clock_ms" -> rig.advance(op.getLong("ms"))
+                    "tap" -> rig.tap(op.optInt("index", 0))
+                    "resolve_reply" ->
+                        if (op.optBoolean("network_error")) rig.replyNetworkError()
+                        else rig.reply(op.getInt("status"), op.opt("body"))
+                    "store_answer" -> rig.storeFromOutside(jsonToStored(op.opt("value")))
+                    "checkpoint" -> {
+                        val key = "$legName/${op.getString("name")}"
+                        val exp = expected.optJSONObject(key)
+                            ?: throw AssertionError("[$fixtureName] checkpoint '$key' has no expectation")
+                        val actual = linkedMapOf<String, Any?>()
+                        for (k in exp.keys()) {
+                            val value = observeLocationRig(rig, k)
+                            actual[k] = value
+                            assertStrictJson("[$fixtureName] checkpoint '$key'.$k", exp.opt(k), value, "$")
+                        }
+                        actualCheckpoints[key] = actual
+                    }
+                    else -> unsupported("location_resolve_request op '$name'")
+                }
+            }
+        }
+        for (key in expected.keys()) {
+            assertTrue("[$fixtureName] checkpoint '$key' was never reached", actualCheckpoints.containsKey(key))
+        }
+        spy.state["checkpoints"] = actualCheckpoints
+    }
+
+    /** The observables a checkpoint may name; an unknown one is a driver hole, so it fails. */
+    private fun observeLocationRig(rig: ai.appdna.sdk.onboarding.LocationSearchRig, key: String): Any? {
+        val holder = rig.holder
+        return when (key) {
+            "field_text" -> holder.text
+            "dropdown_open" -> holder.isDropdownOpen
+            "suggestions" -> holder.results.size
+            "resolving" -> holder.isResolving
+            "stored_answer" -> rig.stored
+            "autocomplete_queries" -> rig.autocompleteQueries
+            "autocomplete_calls" -> rig.autocompleteQueries.size
+            "resolve_bodies" -> rig.resolveBodies.toList()
+            else -> unsupported("location_resolve_request observable '$key'")
+        }
+    }
+
+    /**
+     * `location_field_text` — REAL: the same holder, built with the stored answer (`seed: construction`,
+     * a re-entered step or a rotation) or told about it after construction (`seed: after_construction`,
+     * `FormStep` filling its values after the field's first composition); its `text` is what both
+     * composables show.
+     */
+    private fun runLocationFieldText(action: JSONObject, spy: Spy) {
+        val cases = action.optJSONArray("cases")?.takeIf { it.length() > 0 }
+            ?: unsupported("location_field_text without action.cases")
+        val settings = ai.appdna.sdk.onboarding.LocationSearchSettings.from(null as Map<String, Any?>?, defaultMinChars = 3)
+        val results = (0 until cases.length()).map { i ->
+            val c = cases.getJSONObject(i)
+            val answer = jsonToStored(c.opt("stored_answer"))
+            val rig = when (val seed = c.optString("seed", "construction")) {
+                "construction" -> ai.appdna.sdk.onboarding.LocationSearchRig(settings, answer)
+                "after_construction" -> ai.appdna.sdk.onboarding.LocationSearchRig(settings, null).also {
+                    it.storeFromOutside(answer)
+                }
+                else -> unsupported("location_field_text seed '$seed'")
+            }
+            linkedMapOf<String, Any?>("name" to c.getString("name"), "field_text" to rig.holder.text)
+        }
+        spy.state["results"] = results
+    }
+
+    /** A fixture's stored answer → what a location field holds: a String, a Map, or null. */
+    private fun jsonToStored(v: Any?): Any? = when (v) {
+        null, JSONObject.NULL -> null
+        is JSONObject -> v.asMap()
+        else -> v
     }
 
     /** `StepAdvanceResult.isExplicitBridgeDecision` / `bridgeSkipTarget` per case — the wrappers' one rule. */

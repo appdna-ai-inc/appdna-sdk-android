@@ -422,6 +422,11 @@ enum class FormFieldType(val value: String) {
  * Every field except [formatted_address] is optional: a stored answer may be a
  * typed string (no coordinates, no city) or a partial selection, and a missing value is `null`, never
  * a made-up `0.0` / `""` / `"UTC"`. (Source change for hosts that read these unwrapped.)
+ *
+ * [mapbox_id] / [place_id] are set only for an answer the SDK resolved when the user picked a
+ * suggestion: [mapbox_id] marks a permanent Mapbox answer (an opaque marker — for an interpolated
+ * address it encodes the request that produced it, so it is not a stable place id to look up), and
+ * [place_id] a Google answer. A typed answer, or one stored by an older SDK, has neither.
  */
 data class LocationData(
     val formatted_address: String = "",
@@ -436,6 +441,8 @@ data class LocationData(
     val timezone_offset: Int? = null,
     val postal_code: String? = null,
     val raw_query: String? = null,
+    val mapbox_id: String? = null,
+    val place_id: String? = null,
 )
 
 /**
@@ -468,6 +475,10 @@ internal fun locationDataFromAnswer(value: Any?): LocationData? {
                 timezone_offset = (value["timezone_offset"] as? Number)?.toInt(),
                 postal_code = str(value["postal_code"]),
                 raw_query = str(value["raw_query"]),
+                // The provenance ids, as stored. A suggestion's own `id` is never stored, so it can
+                // never be read into them.
+                mapbox_id = str(value["mapbox_id"]),
+                place_id = str(value["place_id"]),
             )
         }
         else -> null

@@ -20,9 +20,6 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.Job
-import kotlinx.coroutines.delay
-import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.json.JSONObject
 
@@ -62,7 +59,6 @@ fun LocationFieldComposable(
     // #963 — resolved by the shared LocationSearchSettings, the same one the `input_location`
     // content block uses, so the two surfaces cannot drift apart again.
     val search = LocationSearchSettings.from(config, defaultMinChars = 2)
-    val minChars = search.minChars
     val placeholder = config?.location_placeholder
         ?: field.placeholder
         ?: "Search for a location..."
@@ -88,20 +84,36 @@ fun LocationFieldComposable(
      * explicitly (`StepContentEditor.tsx`) and is therefore truthful already.
      *
      * To reverse: restore `?: "address"` here and change the Console's unauthored display back.
-     * Both halves move together or the surfaces disagree again.
+     * Both halves move together or the surfaces disagree again. (`search.type` is what the holder
+     * sends, null when unauthored.)
      */
-    val locationType = search.type
-    val biasCountry = search.biasCountry
-    val language = search.language
 
-    val initialText = (values[field.id] as? Map<*, *>)?.get("address") as? String
-        ?: values[field.id]?.toString().orEmpty()
-    var text by remember { mutableStateOf(initialText) }
-    var suggestions by remember { mutableStateOf<List<LocationSuggestion>>(emptyList()) }
-    var showSuggestions by remember { mutableStateOf(false) }
-    var isSearching by remember { mutableStateOf(false) }
+    // The ONE location state holder, shared with the `input_location` content block: it owns the field
+    // text, the list (each row with the request that listed it), the dropdown, the tap → resolve and the
+    // answer it writes into `values`.
     val coroutineScope = rememberCoroutineScope()
-    var debounceJob by remember { mutableStateOf<Job?>(null) }
+    val holder = remember(field.id) { LocationSuggestionSearch.live(values[field.id], coroutineScope) }
+    // The restore is reactive: `FormStep` fills `values` in a `LaunchedEffect` AFTER this field's first
+    // composition (a key-less `remember` of the text read it as "" and never looked again), so every
+    // composition reports the stored answer and the holder restores it on its absent → present change.
+    // The holder is a plain class: it bumps this counter when it changes, and reading it below is what
+    // recomposes the field. Keyed on the holder only: a map key could compare by content and restart
+    // on every write.
+    var holderVersion by remember(holder) { mutableIntStateOf(0) }
+    DisposableEffect(holder) {
+        holder.onChange = { holderVersion++ }
+        holder.attach { answer -> values[field.id] = answer }
+        onDispose {
+            holder.onChange = null
+            holder.detach()
+        }
+    }
+    val stored = values[field.id]
+    SideEffect { holder.storedAnswerChanged(stored) }
+    @Suppress("UNUSED_EXPRESSION")
+    holderVersion
+    val text = holder.text
+    val suggestions = holder.results
 
     Column(
         modifier = modifier.fillMaxWidth(),
@@ -110,27 +122,9 @@ fun LocationFieldComposable(
         OutlinedTextField(
             value = text,
             onValueChange = { newText ->
-                text = newText
-                values[field.id] = LocationAnswer.typed(newText)
                 errors.remove(field.id)
-                debounceJob?.cancel()
-                if (newText.length >= minChars) {
-                    debounceJob = coroutineScope.launch {
-                        delay(300)
-                        isSearching = true
-                        suggestions = fetchLocationSuggestions(
-                            query = newText,
-                            locationType = locationType,
-                            biasCountry = biasCountry,
-                            language = language,
-                        )
-                        showSuggestions = suggestions.isNotEmpty()
-                        isSearching = false
-                    }
-                } else {
-                    suggestions = emptyList()
-                    showSuggestions = false
-                }
+                // Stores the typed text, drops a resolve in flight, and debounces the search.
+                holder.textChanged(newText, search)
             },
             label = { Text(field.label) },
             placeholder = { Text(placeholder) },
@@ -155,16 +149,14 @@ fun LocationFieldComposable(
                 // user can't clear after select except by manually deleting
                 // every char of the formatted address.
                 when {
-                    isSearching -> CircularProgressIndicator(
+                    // A search, or a tap's resolve, is in flight.
+                    holder.isSearching || holder.isResolving -> CircularProgressIndicator(
                         modifier = Modifier.size(18.dp),
                         strokeWidth = 2.dp,
                     )
                     values[field.id] is Map<*, *> -> IconButton(
                         onClick = {
-                            text = ""
-                            values[field.id] = null
-                            suggestions = emptyList()
-                            showSuggestions = false
+                            holder.clear()
                             errors.remove(field.id)
                         },
                     ) {
@@ -187,7 +179,7 @@ fun LocationFieldComposable(
             isError = errors.containsKey(field.id),
         )
 
-        if (showSuggestions) {
+        if (holder.isDropdownOpen) {
             // Material3 Card elevation replaces the
             // 1px border. Elevation is the natural Android cue for a
             // floating menu, matching iOS `LocationFieldView.swift:55`'s
@@ -198,7 +190,8 @@ fun LocationFieldComposable(
                 elevation = CardDefaults.cardElevation(defaultElevation = 4.dp),
                 colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
             ) { Column(modifier = Modifier.fillMaxWidth()) {
-                suggestions.forEachIndexed { index, suggestion ->
+                suggestions.forEachIndexed { index, listed ->
+                    val suggestion = listed.suggestion
                     // Material3 ListItem primary/secondary
                     // text hierarchy parity with iOS LocationFieldView's
                     // two-line cells. Primary = first comma-segment of the
@@ -213,12 +206,9 @@ fun LocationFieldComposable(
                         modifier = Modifier
                             .fillMaxWidth()
                             .clickable {
-                                // The one stored shape on both platforms and
-                                // both writers (LocationAnswer); the typed text is the raw_query.
-                                val typed = text
-                                text = suggestion.address
-                                showSuggestions = false
-                                values[field.id] = LocationAnswer.selection(suggestion, typed)
+                                // A tap ends the search (the pending one is cancelled, the dropdown
+                                // closes) and resolves the suggestion; the holder stores the answer.
+                                holder.select(listed)
                             },
                         leadingContent = {
                             Icon(
@@ -257,78 +247,134 @@ fun LocationFieldComposable(
     }
 }
 
+/** One geocode proxy reply: the HTTP status and the body text (the error body for a non-2xx). */
+internal class GeocodeHttpReply(val status: Int, val body: String)
+
 /**
- * Calls `/api/v1/sdk/geocode/autocomplete?q=…` (host comes from the
- * configured environment) and forwards the SDK API key via `x-api-key`.
- * The ONLY location-autocomplete call in the SDK: the form-step Location field and the
- * `input_location` content block both go through here (#963 deleted the content block's own copy,
- * which dropped every parameter below).
+ * The socket under both geocode requests (autocomplete and resolve). A test seam: production always uses
+ * [LiveGeocodeTransport]; a test answers from a stub and reads what was sent.
  */
-internal suspend fun fetchLocationSuggestions(
-    query: String,
-    /** Null or blank = the author chose none, and the server must not be told one. */
-    locationType: String?,
-    biasCountry: String?,
-    language: String?,
-): List<LocationSuggestion> {
-    return try {
-        val baseUrl = ai.appdna.sdk.AppDNA.getApiBaseUrl()
-        val apiKey = ai.appdna.sdk.AppDNA.getApiKey()
-        val url = java.net.URL("$baseUrl/api/v1/sdk/geocode/autocomplete")
-        // Backend route at
-        // `src/app/api/v1/sdk/geocode/autocomplete/route.ts:27` exports
-        // ONLY POST (Zod-validated body with `query`/`bias_country`).
-        // Android was sending GET with `?q=…` query params → 405 Method
-        // Not Allowed → silent emptyList → suggestions never appeared on
-        // Android while iOS rendered them correctly. Now matches iOS
-        // `LocationFieldView.swift:197-234` which POSTs the JSON body
-        // `{query, limit, type, bias_country, language}`.
-        val requestBody = org.json.JSONObject().apply {
-            put("query", query)
-            put("limit", 5)
-            if (!locationType.isNullOrBlank()) put("type", locationType)
-            if (!biasCountry.isNullOrBlank()) put("bias_country", biasCountry)
-            if (!language.isNullOrBlank()) put("language", language)
-        }.toString()
-        val body: String? = withContext(Dispatchers.IO) {
-            val connection = (url.openConnection() as? java.net.HttpURLConnection)?.apply {
-                requestMethod = "POST"
-                connectTimeout = 10000
-                readTimeout = 10000
-                doOutput = true
-                locationAutocompleteHeaders(apiKey).forEach { (k, v) -> setRequestProperty(k, v) }
-            } ?: return@withContext null
+internal fun interface GeocodeTransport {
+    /** POSTs [body] to [url] with [headers]. Throws on a network failure. */
+    suspend fun post(url: String, headers: Map<String, String>, body: String): GeocodeHttpReply
+}
+
+/** [GeocodeTransport] over `HttpURLConnection`, on the IO dispatcher. */
+internal object LiveGeocodeTransport : GeocodeTransport {
+    override suspend fun post(url: String, headers: Map<String, String>, body: String): GeocodeHttpReply =
+        withContext(Dispatchers.IO) {
+            val connection = java.net.URL(url).openConnection() as java.net.HttpURLConnection
+            connection.requestMethod = "POST"
+            connection.connectTimeout = 10000
+            connection.readTimeout = 10000
+            connection.doOutput = true
+            headers.forEach { (k, v) -> connection.setRequestProperty(k, v) }
             try {
-                connection.outputStream.use { it.write(requestBody.toByteArray(Charsets.UTF_8)) }
-                if (connection.responseCode != 200) return@withContext null
-                connection.inputStream.bufferedReader().readText()
+                connection.outputStream.use { it.write(body.toByteArray(Charsets.UTF_8)) }
+                val status = connection.responseCode
+                val stream = if (status in 200..299) connection.inputStream else connection.errorStream
+                GeocodeHttpReply(status, stream?.bufferedReader()?.use { it.readText() }.orEmpty())
             } finally {
                 runCatching { connection.disconnect() }
             }
         }
-        if (body == null) return emptyList()
-        // Backend wraps suggestions in
-        // `{data: {suggestions: [...]}}` (route.ts:65); iOS reads
-        // `json.data.suggestions` (LocationFieldView.swift:220-221).
-        // Android was reading `json.data` as JSONArray which yields null
-        // because `data` is an object. Now matches iOS shape.
-        val json = JSONObject(body)
-        val results = json.optJSONObject("data")?.optJSONArray("suggestions") ?: return emptyList()
-        (0 until minOf(results.length(), 5)).mapNotNull { i ->
-            val item = results.optJSONObject(i) ?: return@mapNotNull null
-            // Same parser as the content block; `raw_query` comes from the typed text at selection.
-            parseLocationSuggestion(item)
-        }
+}
+
+/**
+ * The transport both location composables' requests use. Always [LiveGeocodeTransport] in production; a
+ * rendered-composable test points it at a stub (and resets it) to drive a real tap through the view.
+ */
+@Volatile
+internal var locationGeocodeTransport: GeocodeTransport = LiveGeocodeTransport
+
+/** A geocode proxy route on the configured environment's host. */
+internal fun geocodeUrl(path: String): String = "${ai.appdna.sdk.AppDNA.getApiBaseUrl()}$path"
+
+/**
+ * `POST /api/v1/sdk/geocode/autocomplete` → at most five suggestions, each keeping its own `id` /
+ * `provider` for the tap. A failure is an empty list, never a throw: an autocomplete that cannot reach
+ * the server must leave the field typable rather than break the step.
+ *
+ * The ONLY location-autocomplete call in the SDK: the form-step Location field and the `input_location`
+ * content block both reach it through [LocationSuggestionSearch]. The body is `listing` exactly as built
+ * ([LocationListingRequest.autocompleteBody]: `{query, limit, type?, bias_country?, language?}`), so the
+ * holder can keep it with the list it produced. The proxy wraps the list as `{data: {suggestions: [...]}}`.
+ */
+internal suspend fun fetchLocationSuggestionItems(
+    listing: LocationListingRequest,
+    transport: GeocodeTransport = locationGeocodeTransport,
+): List<LocationSuggestion> {
+    return try {
+        val url = geocodeUrl("/api/v1/sdk/geocode/autocomplete")
+        val headers = locationAutocompleteHeaders(ai.appdna.sdk.AppDNA.getApiKey())
+        val reply = transport.post(url, headers, listing.autocompleteBody().toString())
+        if (reply.status != 200) return emptyList()
+        val results = JSONObject(reply.body).optJSONObject("data")?.optJSONArray("suggestions")
+            ?: return emptyList()
+        // Same parser as every other location reader; `raw_query` comes from the typed text at selection.
+        decodeLocationSuggestions(results)
+    } catch (e: kotlinx.coroutines.CancellationException) {
+        throw e
     } catch (e: Exception) {
-        ai.appdna.sdk.Log.debug("LocationFieldComposable autocomplete failed: ${e.message}")
+        ai.appdna.sdk.Log.debug("Location autocomplete failed: ${e.message}")
         emptyList()
     }
 }
 
 /**
- * The headers of a location autocomplete request. The server answers null for a missing coordinate / zone only to an
+ * `POST /api/v1/sdk/geocode/resolve` — the ONE resolve call in the Android SDK, used by both surfaces
+ * through [LocationSuggestionSearch]. `LocationResolve` in `LocationAutocomplete.swift` is the Swift twin.
+ */
+internal object LocationResolve {
+
+    /**
+     * Sends `body` (built by [LocationSuggestionSearch.resolveRequest]) and reads the reply. Never
+     * throws: every failure is [LocationResolveOutcome.Failed], and the field stores the typed text.
+     */
+    suspend fun send(
+        body: Map<String, String>,
+        transport: GeocodeTransport = locationGeocodeTransport,
+    ): LocationResolveOutcome {
+        return try {
+            val url = geocodeUrl("/api/v1/sdk/geocode/resolve")
+            // The same two headers as autocomplete: the server reads the build from them.
+            val headers = locationAutocompleteHeaders(ai.appdna.sdk.AppDNA.getApiKey())
+            val reply = transport.post(url, headers, JSONObject(body).toString())
+            outcome(reply.status, reply.body)
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            ai.appdna.sdk.Log.debug("Location resolve failed: ${e.message}")
+            LocationResolveOutcome.Failed("network")
+        }
+    }
+
+    /**
+     * The route's reply → an outcome. A success must carry a non-empty display line AND a provenance id
+     * (`mapbox_id`, or Google's `place_id`): the route always sends one, and a "resolved" answer without
+     * it would be stored on the device as if it were permanent while the server treats it as one from an
+     * older SDK — so it fails closed, to typed text.
+     */
+    fun outcome(status: Int, body: String): LocationResolveOutcome {
+        if (status !in 200..299) return LocationResolveOutcome.Failed("http_$status")
+        val reply = runCatching { JSONObject(body).optJSONObject("data") }.getOrNull()
+            ?: return LocationResolveOutcome.Failed("unparseable")
+        val resolved = reply.opt("resolved") as? Boolean ?: return LocationResolveOutcome.Failed("unparseable")
+        if (!resolved) return LocationResolveOutcome.Refused((reply.opt("reason") as? String) ?: "unknown")
+        val suggestion = reply.optJSONObject("suggestion") ?: return LocationResolveOutcome.Failed("unparseable")
+        val location = parseLocationSuggestion(suggestion)
+        if (location.address.isBlank() || (location.mapboxId == null && location.placeId == null)) {
+            return LocationResolveOutcome.Failed("unparseable")
+        }
+        return LocationResolveOutcome.Resolved(location)
+    }
+}
+
+/**
+ * The headers of a location autocomplete or resolve request. The server answers null for a missing coordinate / zone only to an
  * SDK that says it reads null (Android >= 1.0.54); without `x-sdk-version` / `x-sdk-platform` it sends the legacy
- * 0 / "UTC" shape, and it decides from them which builds are shown Google suggestions at all.
+ * 0 / "UTC" shape, and it decides from them which builds are shown Google suggestions at all, and which are shown
+ * display-only suggestions they resolve on a tap.
  */
 internal fun locationAutocompleteHeaders(apiKey: String?): Map<String, String> = buildMap {
     put("Content-Type", "application/json")

@@ -13005,16 +13005,38 @@ private fun FormInputLocationPlaceholder(
     inputValues: MutableMap<String, Any>,
 ) {
     val fieldId = block.field_id ?: block.id
-    // OB-6 — restore saved value on back nav.
-    // iOS pre-populates `_inputValues = State(initialValue: savedResponses ?? [:])`
-    // (`OnboardingRenderer.swift:1326`); Android previously initialized to ""
-    // so every back-press wiped typed answers. Read from inputValues map.
-    var text by remember { mutableStateOf((inputValues[fieldId] as? String) ?: "") }
-    var suggestions by remember { mutableStateOf<List<LocationSuggestion>>(emptyList()) }
-    var showSuggestions by remember { mutableStateOf(false) }
-    var isSearching by remember { mutableStateOf(false) }
+    // The ONE location state holder, shared with the form-step Location field: it owns the field text,
+    // the list (each row with the request that listed it), the dropdown, the tap → resolve and the
+    // answer it writes into `inputValues`.
+    //
+    // Restore on back navigation and after a configuration change: the step's `inputValues` is seeded
+    // from the saved responses, and the holder restores its text from the stored answer — a selection's
+    // `formatted_address` (else `address`), a typed answer itself. This read only a String before, so a
+    // stored selection (a Map) came back as an empty field.
     val coroutineScope = rememberCoroutineScope()
-    var debounceJob by remember { mutableStateOf<kotlinx.coroutines.Job?>(null) }
+    val holder = remember(fieldId) { LocationSuggestionSearch.live(inputValues[fieldId], coroutineScope) }
+    // Reactive too: an answer that arrives after the first composition (a host patch) is restored
+    // while the field is empty.
+    // The holder is a plain class: it bumps this counter when it changes, and reading it below is what
+    // recomposes the field. Keyed on the holder only: a map key could compare by content and restart
+    // on every write.
+    var holderVersion by remember(holder) { mutableIntStateOf(0) }
+    DisposableEffect(holder) {
+        holder.onChange = { holderVersion++ }
+        holder.attach { answer ->
+            if (answer == null) inputValues.remove(fieldId) else inputValues[fieldId] = answer
+        }
+        onDispose {
+            holder.onChange = null
+            holder.detach()
+        }
+    }
+    val stored = inputValues[fieldId]
+    SideEffect { holder.storedAnswerChanged(stored) }
+    @Suppress("UNUSED_EXPRESSION")
+    holderVersion
+    val text = holder.text
+    val suggestions = holder.results
 
     // Honor field_style.text_color, show_prefix_icon,
     // and dropdown_* styling (all read from field_config, matching iOS + editor).
@@ -13055,24 +13077,8 @@ private fun FormInputLocationPlaceholder(
         OutlinedTextField(
             value = text,
             onValueChange = { newText ->
-                text = newText
-                inputValues[fieldId] = LocationAnswer.typed(newText)
-                // Debounce API calls — wait 300ms after last keystroke
-                debounceJob?.cancel()
-                if (newText.length >= search.minChars) {
-                    debounceJob = coroutineScope.launch {
-                        kotlinx.coroutines.delay(300)
-                        isSearching = true
-                        suggestions = fetchLocationSuggestions(
-                            newText, search.type, search.biasCountry, search.language,
-                        )
-                        showSuggestions = suggestions.isNotEmpty()
-                        isSearching = false
-                    }
-                } else {
-                    suggestions = emptyList()
-                    showSuggestions = false
-                }
+                // Stores the typed text, drops a resolve in flight, and debounces the search (300 ms).
+                holder.textChanged(newText, search)
             },
             // Drop hardcoded Color.Gray placeholder color so
             // Material3 OutlinedTextFieldDefaults adaptive placeholder color
@@ -13083,7 +13089,8 @@ private fun FormInputLocationPlaceholder(
                 { Text("\uD83D\uDCCD", fontSize = 16.sp) }
             } else null,
             trailingIcon = {
-                if (isSearching) {
+                // A search, or a tap's resolve, is in flight.
+                if (holder.isSearching || holder.isResolving) {
                     CircularProgressIndicator(
                         modifier = Modifier.size(18.dp),
                         strokeWidth = 2.dp,
@@ -13109,7 +13116,7 @@ private fun FormInputLocationPlaceholder(
         )
 
         // Autocomplete results dropdown
-        if (showSuggestions) {
+        if (holder.isDropdownOpen) {
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -13122,17 +13129,16 @@ private fun FormInputLocationPlaceholder(
                         RoundedCornerShape((block.field_style?.corner_radius ?: 8.0).dp),
                     ),
             ) {
-                suggestions.forEachIndexed { index, suggestion ->
+                suggestions.forEachIndexed { index, listed ->
+                    val suggestion = listed.suggestion
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
                             .then(if (ddRowHeight != null) Modifier.height(ddRowHeight.dp) else Modifier)
                             .clickable {
-                                // The text the user typed is the raw_query.
-                                val typed = text
-                                text = suggestion.address
-                                showSuggestions = false
-                                inputValues[fieldId] = LocationAnswer.selection(suggestion, typed)
+                                // A tap ends the search (the pending one is cancelled, the dropdown
+                                // closes) and resolves the suggestion; the holder stores the answer.
+                                holder.select(listed)
                             }
                             .padding(horizontal = 12.dp, vertical = 8.dp),
                         verticalAlignment = Alignment.CenterVertically,
@@ -13192,10 +13198,11 @@ private fun FormInputLocationPlaceholder(
 
 // LocationSuggestion, parseLocationSuggestion and LocationAnswer live in LocationAnswer.kt.
 
-// #963 — the duplicate `fetchLocationSuggestions(query)` that used to live here is gone. It took
-// only the query, so the four location keys the console writes for this block never reached the
-// proxy. The canonical helper in LocationFieldComposable.kt takes all four and is the only one now;
-// its own comment used to point AT this copy, which is how the two drifted in the first place.
+// The duplicate autocomplete call that used to live here is gone. It took only the query, so
+// the four location keys the console writes for this block never reached the proxy. The canonical
+// request (`fetchLocationSuggestionItems` in LocationFieldComposable.kt) takes all four and is the
+// only one now, reached through `LocationSuggestionSearch`; its own comment used to point AT this
+// copy, which is how the two drifted in the first place.
 
 // MARK: - AC-048: Image Picker with PickVisualMedia (Android 13+, backported via Activity Result API)
 

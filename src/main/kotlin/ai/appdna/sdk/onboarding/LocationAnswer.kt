@@ -1,8 +1,13 @@
 package ai.appdna.sdk.onboarding
 
 /**
- * One geocoding autocomplete suggestion, as the server's `data.suggestions` items carry it. Parsed by
- * [parseLocationSuggestion]; stored by [LocationAnswer.selection].
+ * One geocoding autocomplete suggestion, as the server's `data.suggestions` items carry it, or a resolve
+ * reply's `suggestion`. Parsed by [parseLocationSuggestion]; stored by [LocationAnswer.selection].
+ *
+ * Internal on purpose: the suggestion's own [id] / [provider] ride here for the tap path and are never
+ * written by [LocationAnswer.selection], so the public [LocationData] (and `getLocationData`) cannot
+ * expose a suggestion id. [mapboxId] / [placeId] are the provenance of an answer a resolve reply
+ * produced; a listed suggestion never carries them ([decodeLocationSuggestions]).
  */
 internal data class LocationSuggestion(
     val address: String,
@@ -19,6 +24,14 @@ internal data class LocationSuggestion(
     val timezoneOffset: Int? = null,
     val postalCode: String? = null,
     val rawQuery: String? = null,
+    /** The suggestion's own id, sent to the resolve route on a tap. Null = it cannot be resolved. */
+    val id: String? = null,
+    /** `mapbox` / `google`: which resolve the tap asks for. */
+    val provider: String? = null,
+    /** A Mapbox answer resolved permanently. Only a resolve reply fills it. */
+    val mapboxId: String? = null,
+    /** A Google answer resolved by place id. Only a resolve reply fills it. */
+    val placeId: String? = null,
 )
 
 /**
@@ -43,8 +56,25 @@ internal fun parseLocationSuggestion(item: org.json.JSONObject): LocationSuggest
         timezoneOffset = (item.opt("timezone_offset") as? Number)?.toInt(),
         postalCode = str("postal_code"),
         rawQuery = str("raw_query"),
+        id = str("id"),
+        provider = str("provider"),
+        mapboxId = str("mapbox_id"),
+        placeId = str("place_id"),
     )
 }
+
+/**
+ * The autocomplete list → suggestions, through [parseLocationSuggestion], at most five.
+ *
+ * 🔴 A listed suggestion NEVER carries `mapbox_id` / `place_id`, whatever keys it has: those mark an
+ * answer a resolve reply produced, and a listed suggestion is a temporary result that may not be stored.
+ * A display-only suggestion (`{id, provider, formatted_address, name, place_formatted}`) decodes to its
+ * display line, its id and its provider.
+ */
+internal fun decodeLocationSuggestions(items: org.json.JSONArray): List<LocationSuggestion> =
+    (0 until minOf(items.length(), 5)).mapNotNull { i ->
+        items.optJSONObject(i)?.let { parseLocationSuggestion(it).copy(mapboxId = null, placeId = null) }
+    }
 
 /** An autocomplete item's coordinate: a finite number, else null (absent, null, non-numeric, NaN). */
 internal fun suggestionCoordinate(item: org.json.JSONObject, key: String): Double? =
@@ -84,6 +114,22 @@ internal object LocationAnswer {
         }
         s.postalCode.present()?.let { put("postal_code", it) }
         (typedQuery.present() ?: s.rawQuery.present())?.let { put("raw_query", it) }
+        s.mapboxId.present()?.let { put("mapbox_id", it) }
+        s.placeId.present()?.let { put("place_id", it) }
+    }
+
+    /**
+     * The ONE rule for the text a location field shows for a stored answer, on both Android surfaces,
+     * after a tap and on a restore alike: a selection shows its `formatted_address` (else the legacy
+     * `address`), a typed answer shows itself. Anything else (absent, empty, a number) shows nothing
+     * (null). `LocationAnswer.fieldText(forStored:)` in `LocationAnswer.swift` is the Swift twin, and
+     * the `location_field_text` fixtures pin the pair.
+     */
+    fun fieldText(stored: Any?): String? = when (stored) {
+        is String -> stored.ifEmpty { null }
+        is Map<*, *> -> (stored["formatted_address"] as? String)?.ifEmpty { null }
+            ?: (stored["address"] as? String)?.ifEmpty { null }
+        else -> null
     }
 
     /**
