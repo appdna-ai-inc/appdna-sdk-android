@@ -38,6 +38,13 @@ import androidx.compose.runtime.compositionLocalOf
  * - the config after the host's override is merged, as the step merges it: an override's options for
  *   a block the step does not hold are dropped;
  * - the interaction patches, for the blocks they are layered onto — the step's top-level blocks.
+ *
+ * The `item` root reads the element a `repeat` generated an option from. The raw pass expands a
+ * `repeat` on a top-level `input_select` only, so the walk gives `item` a value only inside such a
+ * block's template option (and that option's sheet): the elements of the array its `source` reaches
+ * among the answers the source's root reads. A `source` under `hook_data` (or `user`, `session`,
+ * `selected`) is host-supplied, which makes the host responsible for its attribution, and a block with
+ * an Option Set never expands — so neither gives `item` anything to credit.
  */
 internal object GoogleCredit {
 
@@ -57,6 +64,11 @@ internal object GoogleCredit {
         val step: Map<String, Any?>,
         /** `input` / `onboarding`, and every legacy view's `interpolated()`: the session store. */
         val onboarding: Map<String, Any?>,
+        /**
+         * `item`: what it can stand on where the walk stands — empty outside a repeat's template option
+         * ([repeatItems]).
+         */
+        val items: List<Any> = emptyList(),
     ) {
         constructor(
             accumulated: Map<String, Any?>,
@@ -65,7 +77,10 @@ internal object GoogleCredit {
         ) : this(listOf(accumulated, sessionStore), stepInputs, sessionStore)
 
         /** The same answers, with the `step` root reading [inputs] (an option sheet's own). */
-        fun withStepInputs(inputs: Map<String, Any?>): Answers = Answers(responses, inputs, onboarding)
+        fun withStepInputs(inputs: Map<String, Any?>): Answers = Answers(responses, inputs, onboarding, items)
+
+        /** The same answers, with the `item` root standing on [items]. */
+        fun withItems(items: List<Any>): Answers = Answers(responses, step, onboarding, items)
 
         /** Whether any answer a root can read is a Google one. Nothing can credit otherwise. */
         val holdAGoogleAnswer: Boolean
@@ -105,7 +120,26 @@ internal object GoogleCredit {
     /** The step's credit: its own walk, `sheet_blocks` skipped. */
     fun shows(sources: List<Any>, answers: Answers): Boolean {
         if (!answers.holdAGoogleAnswer) return false
-        return sources.any { walk(it, answers) }
+        return sources.any { walkSource(it, answers) }
+    }
+
+    /**
+     * One source. A source that is a list is the step's published top-level blocks (the options patch
+     * is a list too, of `{id, field_options}` objects that never hold a `repeat`), and a top-level block
+     * is the only one the raw pass expands a `repeat` on: its template option is walked with `item`
+     * standing on what the repeat generates from.
+     */
+    private fun walkSource(source: Any, answers: Answers): Boolean {
+        if (source !is List<*>) return walk(source, answers)
+        return source.any { block ->
+            if (block == null) return@any false
+            val r = (block as? Map<*, *>)?.let(::repeatOf) ?: return@any walk(block, answers)
+            if (walk(block.filterKeys { it != "field_options" }, answers)) return@any true
+            val generated = answers.withItems(repeatItems(r.repeat, answers))
+            r.options.withIndex().any { (i, option) ->
+                option != null && walk(option, if (i == r.templateIndex) generated else answers)
+            }
+        }
     }
 
     /** The step's credit from its parts — what the step container calls. */
@@ -122,38 +156,142 @@ internal object GoogleCredit {
 
     // ---- Option sheets --------------------------------------------------------------------------
 
-    /**
-     * Every option sheet in the sources, by [sheetKey]: the source of each, walked on its own when that
-     * sheet opens. A key seen twice (the authored option and a host's replacement with the same id)
-     * keeps both sources, so either one's reference credits.
-     */
-    fun sheetSources(sources: List<Any>): Map<String, List<Any?>> {
-        val out = LinkedHashMap<String, MutableList<Any?>>()
-        for (s in sources) indexSheets(s, out)
-        return out
+    /** Every option sheet in the sources, and the `repeat` each top-level template option is expanded by. */
+    class SheetIndex(
+        /**
+         * By [sheetKey]: the source of each sheet, walked on its own when that sheet opens. A key seen
+         * twice (the authored option and a host's replacement with the same id) keeps both sources, so
+         * either one's reference credits.
+         */
+        val sheets: Map<String, List<Any?>>,
+        /** By the template option's [sheetKey]: the `repeat` that generates options from it. */
+        val repeats: Map<String, Map<*, *>>,
+    )
+
+    /** The sheet index of the sources ([SheetIndex]). */
+    fun sheetSources(sources: List<Any>): SheetIndex {
+        val sheets = LinkedHashMap<String, MutableList<Any?>>()
+        val repeats = LinkedHashMap<String, Map<*, *>>()
+        for (s in sources) {
+            indexSheets(s, sheets)
+            // Top-level blocks only, as [walkSource] reads them.
+            for (block in (s as? List<*>).orEmpty()) {
+                val b = block as? Map<*, *> ?: continue
+                val r = repeatOf(b) ?: continue
+                val blockId = b["id"] as? String ?: continue
+                repeats[sheetKey(blockId, r.templateId)] = r.repeat
+            }
+        }
+        return SheetIndex(sheets, repeats)
     }
+
+    /** A sheet's source, and what its `item` root stands on. */
+    class Sheet(val blocks: List<Any?>, val items: List<Any>)
 
     fun sheetKey(blockId: String, optionId: String): String = "$blockId\u001F$optionId"
 
     /**
-     * The source of the sheet [optionId] opens on [blockId]. An option a `repeat` generated is
-     * `<template id>__<n>`, and it opens its TEMPLATE's sheet: the index holds that one, filed under the
-     * template's id, as authored.
+     * The source of the sheet [optionId] opens on [blockId], and what its `item` root stands on. An
+     * option a `repeat` generated is `<template id>__<n>`, and it opens its TEMPLATE's sheet: the index
+     * holds that one, filed under the template's id, as authored — and its `item` is element `n` of the
+     * repeat's source, resolved against the STEP's [answers], where the raw pass resolves it.
      */
-    fun sheetSource(index: Map<String, List<Any?>>, blockId: String, optionId: String): List<Any?>? {
-        index[sheetKey(blockId, optionId)]?.let { return it }
+    fun sheetSource(index: SheetIndex, blockId: String, optionId: String, answers: Answers): Sheet? {
+        index.sheets[sheetKey(blockId, optionId)]?.let { return Sheet(it, emptyList()) }
         val cut = optionId.lastIndexOf("__")
         if (cut < 0) return null
         val n = optionId.substring(cut + 2)
         if (n.isEmpty() || !n.all { it.isDigit() }) return null
-        return index[sheetKey(blockId, optionId.substring(0, cut))]
+        val template = sheetKey(blockId, optionId.substring(0, cut))
+        val blocks = index.sheets[template] ?: return null
+        val rep = index.repeats[template]
+        val i = n.toIntOrNull()
+        if (rep == null || i == null) return Sheet(blocks, emptyList())
+        return Sheet(blocks, repeatItems(rep, answers, i))
     }
 
-    /** A sheet's credit: its own blocks, its `step` root its own inputs, every other root the step's. */
-    fun sheetShows(sheetBlocks: List<Any?>, sheetInputs: Map<String, Any?>, answers: Answers): Boolean {
-        val own = answers.withStepInputs(sheetInputs)
+    /**
+     * A sheet's credit: its own blocks, its `step` root its own inputs, its `item` root [items], every
+     * other root the step's.
+     */
+    fun sheetShows(
+        sheetBlocks: List<Any?>,
+        sheetInputs: Map<String, Any?>,
+        answers: Answers,
+        items: List<Any> = emptyList(),
+    ): Boolean {
+        val own = answers.withStepInputs(sheetInputs).withItems(items)
         if (!own.holdAGoogleAnswer) return false
         return sheetBlocks.any { it != null && walk(it, own) }
+    }
+
+    // ---- Repeats --------------------------------------------------------------------------------
+
+    private class Repeat(val repeat: Map<*, *>, val templateId: String, val templateIndex: Int, val options: List<*>)
+
+    /**
+     * A top-level block's `repeat`, when the raw pass expands one: an `input_select` with a
+     * `field_config.repeat`, no Option Set, and an option whose `id` is the template's.
+     */
+    private fun repeatOf(block: Map<*, *>): Repeat? {
+        if (block["type"] != "input_select") return null
+        val fc = block["field_config"] as? Map<*, *> ?: return null
+        val rep = fc["repeat"] as? Map<*, *> ?: return null
+        val os = fc["option_set_id"]
+        if (os is String && os.trim().isNotEmpty()) return null
+        val tid = rep["template_option_id"] as? String ?: return null
+        val options = block["field_options"] as? List<*> ?: return null
+        val i = options.indexOfFirst { it is Map<*, *> && it["id"] == tid }
+        if (i < 0) return null
+        return Repeat(rep, tid, i, options)
+    }
+
+    /**
+     * What `item` stands on in the options [rep] generates: each element, up to its `max`, of the array
+     * its `source` reaches among the answers the source's root reads — only element [n] when [n] is
+     * given. A source that passes through a Google answer stands `item` on that answer, since everything
+     * it generates is a part of it. Only `responses` and `step` sources read onboarding answers; any
+     * other root gives nothing.
+     */
+    fun repeatItems(rep: Map<*, *>, answers: Answers, n: Int? = null): List<Any> {
+        val source = rep["source"] as? String ?: return emptyList()
+        val segments = source.split(".")
+        if (segments.size < 2) return emptyList()
+        val roots: List<Any> = when (segments[0]) {
+            "responses" -> answers.responses
+            "step" -> listOf(answers.step)
+            else -> return emptyList()
+        }
+        val max = repeatMax(rep["max"])
+        val out = mutableListOf<Any>()
+        for (root in roots) {
+            var current: Any? = root
+            var reached = true
+            for (segment in segments.drop(1)) {
+                // Standing on a Google answer: the rest of the source is a key inside it.
+                if (LocationAnswer.carriesPlaceId(current)) { out.add(current!!); reached = false; break }
+                val c = current
+                current = when {
+                    c is Map<*, *> && c[segment] != null -> c[segment]
+                    c is List<*> && segment.isNotEmpty() && segment.all { it in '0'..'9' } ->
+                        segment.toIntOrNull()?.let { c.getOrNull(it) }
+                    else -> null
+                }
+                if (current == null) { reached = false; break }
+            }
+            val a = current as? List<*>
+            if (!reached || a == null) continue
+            val drawn = a.take(max)
+            if (n != null) drawn.getOrNull(n)?.let { out.add(it) } else drawn.filterNotNullTo(out)
+        }
+        return out
+    }
+
+    /** A repeat's `max`, as the raw pass reads it: a positive whole number, capped; else the default. */
+    private fun repeatMax(value: Any?): Int {
+        val d = (value as? Number)?.toDouble() ?: return HostDataResolver.REPEAT_DEFAULT_MAX
+        if (!d.isFinite() || d <= 0 || d != Math.floor(d)) return HostDataResolver.REPEAT_DEFAULT_MAX
+        return minOf(d, HostDataResolver.REPEAT_HARD_MAX.toDouble()).toInt()
     }
 
     // ---- The walk -------------------------------------------------------------------------------
@@ -188,14 +326,15 @@ internal object GoogleCredit {
     }
 
     /**
-     * Whether one path, under an onboarding-answer root, reaches a Google answer, a key inside one, or
-     * a value holding one.
+     * Whether one path, under an onboarding-answer root or the `item` a repeat generated from them,
+     * reaches a Google answer, a key inside one, or a value holding one.
      */
     fun pathCredits(path: String, answers: Answers): Boolean {
         val segments = path.split(".")
         val root = segments.first()
-        if (root !in ROOTS) return false
         val rest = segments.drop(1)
+        if (root == "item") return answers.items.any { reaches(rest, it) }
+        if (root !in ROOTS) return false
         return when (root) {
             "responses" -> answers.responses.any { reaches(rest, it) }
             "step" -> reaches(rest, answers.step)
@@ -300,8 +439,9 @@ internal class GoogleCreditSheetContext(
     /**
      * The credit for the sheet of [optionId] on [blockId], from the sheet's SOURCE: the presented
      * blocks of a raw-resolved sheet have already had every token but its `step` ones substituted, so
-     * they no longer say what they show. An option a `repeat` generated finds its template's sheet.
-     * Only a sheet no source holds (an Option Set's option) walks the blocks it presents.
+     * they no longer say what they show. An option a `repeat` generated finds its template's sheet, its
+     * `item` root the element it was generated from. Only a sheet no source holds (an Option Set's
+     * option) walks the blocks it presents.
      */
     fun shows(
         blockId: String?,
@@ -311,9 +451,9 @@ internal class GoogleCreditSheetContext(
     ): Boolean {
         if (!answers.withStepInputs(sheetInputs).holdAGoogleAnswer) return false
         val source = if (blockId != null && optionId != null) {
-            GoogleCredit.sheetSource(GoogleCredit.sheetSources(sources()), blockId, optionId)
+            GoogleCredit.sheetSource(GoogleCredit.sheetSources(sources()), blockId, optionId, answers)
         } else null
-        if (source != null) return GoogleCredit.sheetShows(source, sheetInputs, answers)
+        if (source != null) return GoogleCredit.sheetShows(source.blocks, sheetInputs, answers, source.items)
         return GoogleCredit.sheetShows(presentedSheetBlocks.map(GoogleCredit::blockSource), sheetInputs, answers)
     }
 }
