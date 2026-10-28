@@ -67,6 +67,7 @@ import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.LinearEasing
@@ -13031,6 +13032,16 @@ private fun FormInputLocationPlaceholder(
             holder.detach()
         }
     }
+    // The step settles this field when it advances (a resolve in flight stores the typed text);
+    // `onDispose` above runs only after the step has handed its answers on.
+    val settlement = LocalLocationAdvanceSettlement.current
+    DisposableEffect(holder, settlement) {
+        settlement?.register(fieldId, holder)
+        onDispose { settlement?.unregister(holder) }
+    }
+    // Leaving the field ends its search: a debounced search still pending would otherwise fire and
+    // open the dropdown under a field the user has already left.
+    var hadFocus by remember(holder) { mutableStateOf(false) }
     val stored = inputValues[fieldId]
     SideEffect { holder.storedAnswerChanged(stored) }
     @Suppress("UNUSED_EXPRESSION")
@@ -13098,7 +13109,15 @@ private fun FormInputLocationPlaceholder(
                 }
             },
             // Honor field_config.field_height on the location search box (iOS sibling already does).
-            modifier = Modifier.fillMaxWidth().let { m -> (block.field_config?.get("field_height") as? Number)?.toFloat()?.let { m.heightIn(min = it.dp) } ?: m },
+            modifier = Modifier.fillMaxWidth().let { m -> (block.field_config?.get("field_height") as? Number)?.toFloat()?.let { m.heightIn(min = it.dp) } ?: m }
+                .onFocusChanged { state ->
+                    if (state.isFocused) {
+                        hadFocus = true
+                    } else if (hadFocus) {
+                        hadFocus = false
+                        holder.editingEnded()
+                    }
+                },
             singleLine = true,
             shape = RoundedCornerShape((block.field_style?.corner_radius ?: 8.0).dp),
             colors = OutlinedTextFieldDefaults.colors(

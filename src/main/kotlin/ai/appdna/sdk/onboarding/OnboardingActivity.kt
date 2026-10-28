@@ -2584,45 +2584,52 @@ fun OnboardingStepView(
     // Block-based vs legacy rendering
     val blocks = effectiveConfig.content_blocks
     if (!blocks.isNullOrEmpty()) {
-        // Block-based rendering with layout variants
-        BlockBasedStepView(
-            // #1014 — forwarded to the root handler that receives every tap in the step.
-            onContentTap = onContentTap,
-            effectiveConfig = effectiveConfig,
-            blocks = blocks,
-            toggleValues = toggleValues,
-            inputValues = inputValues,
-            onNext = onNext,
-            // Pass this through UNCONDITIONALLY, as iOS does.
-            //
-            // This used to read `if (step.config.skip_enabled == true) onSkip else null`, which made a CTA with
-            // `action: "skip"` a silent dead button: the dispatch below is `onSkip?.invoke()`, so a null handler
-            // does nothing at all. A live customer flow's Location step is exactly that — {"text":"Confirm","action":"skip"}
-            // on a step where `skip_enabled` is undefined — and their users could not get past it on Android while
-            // iOS advanced fine.
-            //
-            // `skip_enabled` means "render a Skip affordance", not "is skipping possible". iOS uses it in exactly
-            // two places and both are a Button("Skip") — ChatStepView.swift:405 and OnboardingRenderer.swift:1512 —
-            // while its CTA path (OnboardingRenderer.swift:1622) is an unconditional `case "skip": onSkip()`.
-            // The two affordance call sites below still consult the flag, because that IS what it means.
-            onSkip = onSkip,
-            modifier = modifier,
-            currentStepIndex = currentStepIndex,
-            totalSteps = totalSteps,
-            // Flow visibility-eval data through.
-            responses = accumulatedResponses,
-            hookData = hookData,
-            // Identity for auth-action analytics emit.
-            flowId = flowId,
-            stepId = step.id,
-            // Pass the flow-host interaction seam down to the step scope.
-            performInteraction = performInteraction,
-            delegate = delegate,
-            step = step,
-            stepOverride = stepOverride,
-            hostDataPending = hostDataPending,
-            hostDataIsCurrent = hostDataIsCurrent,
-        )
+        // The step's location fields register here. Every advance below goes through `onNext`, after
+        // the step's own required gate, so settling there stores the typed text of a field whose
+        // resolve is still in flight before the answers leave the step. The fields' own dispose runs
+        // a frame too late for that.
+        val locationSettlement = remember(step.id) { LocationAdvanceSettlement() }
+        CompositionLocalProvider(LocalLocationAdvanceSettlement provides locationSettlement) {
+            // Block-based rendering with layout variants
+            BlockBasedStepView(
+                // #1014 — forwarded to the root handler that receives every tap in the step.
+                onContentTap = onContentTap,
+                effectiveConfig = effectiveConfig,
+                blocks = blocks,
+                toggleValues = toggleValues,
+                inputValues = inputValues,
+                onNext = { data -> onNext(locationSettlement.settleInto(data)) },
+                // Pass this through UNCONDITIONALLY, as iOS does.
+                //
+                // This used to read `if (step.config.skip_enabled == true) onSkip else null`, which made a CTA with
+                // `action: "skip"` a silent dead button: the dispatch below is `onSkip?.invoke()`, so a null handler
+                // does nothing at all. A live customer flow's Location step is exactly that — {"text":"Confirm","action":"skip"}
+                // on a step where `skip_enabled` is undefined — and their users could not get past it on Android while
+                // iOS advanced fine.
+                //
+                // `skip_enabled` means "render a Skip affordance", not "is skipping possible". iOS uses it in exactly
+                // two places and both are a Button("Skip") — ChatStepView.swift:405 and OnboardingRenderer.swift:1512 —
+                // while its CTA path (OnboardingRenderer.swift:1622) is an unconditional `case "skip": onSkip()`.
+                // The two affordance call sites below still consult the flag, because that IS what it means.
+                onSkip = onSkip,
+                modifier = modifier,
+                currentStepIndex = currentStepIndex,
+                totalSteps = totalSteps,
+                // Flow visibility-eval data through.
+                responses = accumulatedResponses,
+                hookData = hookData,
+                // Identity for auth-action analytics emit.
+                flowId = flowId,
+                stepId = step.id,
+                // Pass the flow-host interaction seam down to the step scope.
+                performInteraction = performInteraction,
+                delegate = delegate,
+                step = step,
+                stepOverride = stepOverride,
+                hostDataPending = hostDataPending,
+                hostDataIsCurrent = hostDataIsCurrent,
+            )
+        }
     } else {
         // Legacy rendering
         // Chat step contains a LazyColumn that

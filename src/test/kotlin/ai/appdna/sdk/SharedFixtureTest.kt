@@ -3087,6 +3087,11 @@ class SharedFixtureTest(
                     "resolve_reply" ->
                         if (op.optBoolean("network_error")) rig.replyNetworkError()
                         else rig.reply(op.getInt("status"), op.opt("body"))
+                    // The field leaves the composition (the step advanced): what `onDispose` and the
+                    // step's settlement both run.
+                    "detach" -> rig.holder.detach()
+                    // The user leaves the field (focus lost).
+                    "editing_ended" -> rig.holder.editingEnded()
                     "store_answer" -> rig.storeFromOutside(jsonToStored(op.opt("value")))
                     "checkpoint" -> {
                         val key = "$legName/${op.getString("name")}"

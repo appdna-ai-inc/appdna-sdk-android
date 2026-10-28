@@ -4,6 +4,8 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.focus.FocusManager
+import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.test.hasClickAction
 import androidx.compose.ui.test.hasSetTextAction
 import androidx.compose.ui.test.hasText
@@ -59,14 +61,29 @@ class LocationFieldRestoreComposeTest {
         "mapbox_id" to "synthetic-region-id",
     )
 
-    private fun formStep(): OnboardingStep = OnboardingConfigParser.parseStepForTest(
+    private fun formStep(required: Boolean = true): OnboardingStep = OnboardingConfigParser.parseStepForTest(
         mapOf(
             "id" to "s_form", "type" to "form",
             "config" to mapOf(
-                "fields" to listOf(mapOf("id" to "where", "type" to "location", "label" to "Where", "required" to true)),
+                "fields" to listOf(mapOf("id" to "where", "type" to "location", "label" to "Where", "required" to required)),
             ),
         ),
     ) ?: error("form step did not parse")
+
+    /** A transport whose resolve is HELD until [release] completes; autocomplete answers at once. */
+    private inner class HeldResolve(private val reply: GeocodeHttpReply = resolvedReply) : GeocodeTransport {
+        val release = kotlinx.coroutines.CompletableDeferred<Unit>()
+        val autocomplete = Stub(reply)
+        var resolveCalls = 0
+        override suspend fun post(url: String, headers: Map<String, String>, body: String): GeocodeHttpReply {
+            if (url.endsWith("/resolve")) {
+                resolveCalls += 1
+                release.await()
+                return reply
+            }
+            return autocomplete.post(url, headers, body)
+        }
+    }
 
     private fun locationBlock(): List<ContentBlock> = OnboardingConfigParser.parseStepForTest(
         mapOf(
@@ -377,5 +394,134 @@ class LocationFieldRestoreComposeTest {
         compose.onAllNodes(hasClickAction() and hasText("Continue", ignoreCase = true))[0].performClick()
         compose.waitForIdle()
         assertNull("Continue advanced on a cleared required field", advanced)
+    }
+
+    // ---- The step advances while a resolve is in flight --------------------------------------------
+
+    /**
+     * An OPTIONAL form-step Location field, a resolve held in flight, Continue: the step advances (an
+     * optional field does not gate it) and submits the text the user typed, as for any failed resolve.
+     * The late reply then changes nothing. The field's own dispose runs a frame AFTER Continue built its
+     * payload, so this is the step settling its field before it submits.
+     * Red control: Continue without the settle → the payload carries "" for the field.
+     */
+    @Test
+    fun continueOnAnOptionalFieldWhileResolvingSubmitsTheTypedText() {
+        val held = HeldResolve()
+        locationGeocodeTransport = held
+        var advanced: Map<String, Any>? = null
+        compose.setContent { FormStep(config = formStep(required = false).config, onNext = { advanced = it }, savedValues = null) }
+        compose.waitForIdle()
+        typeAndTapTheRow("12 Exa")
+        assertEquals("precondition: the tap's resolve is held in flight", 1, held.resolveCalls)
+        assertNull("precondition: nothing advanced yet", advanced)
+        compose.onAllNodes(hasClickAction() and hasText("Continue", ignoreCase = true))[0].performClick()
+        compose.waitForIdle()
+        val submitted = advanced ?: error("Continue did not advance an optional field")
+        assertEquals("the submitted answer is the typed text", "12 Exa", submitted["where"])
+        // The late reply lands: nothing it carries reaches the field.
+        held.release.complete(Unit)
+        compose.mainClock.advanceTimeBy(1_000)
+        compose.waitForIdle()
+        assertTrue("the field still shows the typed text", fieldShows("12 Exa"))
+        assertFalse("the resolved line never appears", fieldShows(line))
+    }
+
+    /**
+     * The same on a block-based step, rendered through the real step view: an optional `input_location`
+     * block with its resolve held in flight, then the step's own Continue button (action `next`). The
+     * step hands on the typed text. Red control: the step's advance without the settle → the payload
+     * has no answer for the field.
+     */
+    @Test
+    fun continueOnABlockStepWhileResolvingSubmitsTheTypedText() {
+        val held = HeldResolve()
+        locationGeocodeTransport = held
+        val step = OnboardingConfigParser.parseStepForTest(
+            mapOf(
+                "id" to "s_block_continue", "type" to "content",
+                "config" to mapOf(
+                    "content_blocks" to listOf(
+                        mapOf(
+                            "id" to "b_loc", "type" to "input_location", "field_id" to "where",
+                            "field_config" to mapOf("location_type" to "address", "location_min_chars" to 3),
+                        ),
+                        mapOf("id" to "b_go", "type" to "button", "text" to "Continue", "action" to "next"),
+                    ),
+                ),
+            ),
+        )!!
+        var advances = 0
+        var advanced: Map<String, Any>? = null
+        compose.setContent {
+            OnboardingStepView(
+                step = step, effectiveConfig = step.config,
+                onNext = { advances += 1; advanced = it }, onSkip = {},
+            )
+        }
+        compose.waitForIdle()
+        typeAndTapTheRow("12 Exa")
+        assertEquals("precondition: the tap's resolve is held in flight", 1, held.resolveCalls)
+        compose.onAllNodes(hasClickAction() and hasText("Continue", ignoreCase = true))[0].performClick()
+        compose.waitForIdle()
+        assertEquals("Continue advanced the step once", 1, advances)
+        // A step that carried no answers hands on null, so a missing field answer reads as null here.
+        assertEquals("the submitted answer is the typed text", "12 Exa", advanced?.get("where"))
+        held.release.complete(Unit)
+        compose.mainClock.advanceTimeBy(1_000)
+        compose.waitForIdle()
+    }
+
+    // ---- Leaving the field ends its search -------------------------------------------------------
+
+    /**
+     * Types, then leaves the field before the debounce fires (focus cleared), then lets the debounce
+     * time pass: no autocomplete request and no dropdown. Then, as the NEGATIVE CONTROL in the same
+     * composition, types again without leaving: the request is made and the row is shown — so the
+     * harness can see a dropdown when one opens.
+     */
+    private fun leaveTheFieldWithASearchPending(stub: Stub, focus: () -> FocusManager) {
+        compose.onAllNodes(hasSetTextAction())[0].performTextInput("12 Exa")
+        compose.runOnUiThread { focus().clearFocus() }
+        compose.waitForIdle()
+        compose.mainClock.advanceTimeBy(1_000)
+        compose.waitForIdle()
+        assertEquals("no autocomplete request after the user left the field", 0, stub.autocompleteBodies.size)
+        assertFalse("no dropdown under a field the user has left", rowShown())
+
+        compose.onAllNodes(hasSetTextAction())[0].performTextInput("m")
+        compose.mainClock.advanceTimeBy(1_000)
+        compose.waitForIdle()
+        assertEquals("control: staying in the field searches", 1, stub.autocompleteBodies.size)
+        assertTrue("control: the harness sees the dropdown when it opens", rowShown())
+    }
+
+    /** The form step. Red control: no `editingEnded` on focus loss → the search fires and the row shows. */
+    @Test
+    fun leavingTheFormStepFieldWithASearchPendingOpensNoDropdown() {
+        val stub = Stub(resolvedReply)
+        locationGeocodeTransport = stub
+        lateinit var focusManager: FocusManager
+        compose.setContent {
+            focusManager = LocalFocusManager.current
+            FormStep(config = formStep().config, onNext = {}, savedValues = null)
+        }
+        compose.waitForIdle()
+        leaveTheFieldWithASearchPending(stub) { focusManager }
+    }
+
+    /** The content block. Red control: no `editingEnded` on focus loss → the search fires and the row shows. */
+    @Test
+    fun leavingTheBlockWithASearchPendingOpensNoDropdown() {
+        val stub = Stub(resolvedReply)
+        locationGeocodeTransport = stub
+        lateinit var focusManager: FocusManager
+        val inputValues = mutableStateMapOf<String, Any>()
+        compose.setContent {
+            focusManager = LocalFocusManager.current
+            ContentBlockRendererView(blocks = locationBlock(), onAction = {}, toggleValues = mutableMapOf(), inputValues = inputValues)
+        }
+        compose.waitForIdle()
+        leaveTheFieldWithASearchPending(stub) { focusManager }
     }
 }

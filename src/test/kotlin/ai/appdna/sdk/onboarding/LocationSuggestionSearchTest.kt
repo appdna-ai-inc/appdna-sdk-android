@@ -346,16 +346,101 @@ class LocationSuggestionSearchTest {
         assertFalse(rig.holder.isResolving)
     }
 
-    /** A reply that arrives after the step has advanced is dropped — the composable's dispose detaches the holder. */
+    // ---- The step advances while a resolve is in flight ----------------------------------------
+
+    /**
+     * The field leaves the composition (`detach`) with a resolve in flight: it stores the text the user
+     * had typed at the tap — the resolve's `raw_query` — as for any failed resolve, and the late reply
+     * changes nothing. Red control: `detach` without the settle → nothing stored (the typed text is
+     * lost) and this fails on the first assertion.
+     */
     @Test
-    fun aReplyAfterTheFieldWentAwayIsDropped() {
+    fun detachWhileResolvingStoresTheTypedTextAndDropsTheLateReply() {
         val rig = staleListTap()
-        val writes = rig.storeWrites
+        assertTrue("precondition: the resolve is held in flight", rig.holder.isResolving)
+        assertNull("precondition: nothing stored while it is", rig.stored)
         rig.holder.detach()
+        assertEquals("the typed text at the tap is stored", "12 Example Av", rig.stored)
+        assertFalse(rig.holder.isResolving)
+        val writes = rig.storeWrites
         rig.reply(200, resolvedReply())
-        assertEquals("nothing written after detach", writes, rig.storeWrites)
-        assertNull(rig.stored)
-        assertEquals("12 Example Av", rig.holder.text)
+        assertEquals("the late reply writes nothing", writes, rig.storeWrites)
+        assertEquals("12 Example Av", rig.stored)
+        assertEquals("the late reply does not set the field text", "12 Example Av", rig.holder.text)
+    }
+
+    /**
+     * The step's settlement (what Continue runs before it submits) does the same, and reports the
+     * answer under the field's id so a step can add it to a payload it already built. A second settle,
+     * and a settle with nothing in flight, write nothing.
+     */
+    @Test
+    fun theStepSettlementStoresTheTypedTextBeforeTheStepSubmits() {
+        val rig = staleListTap()
+        val settlement = LocationAdvanceSettlement()
+        settlement.register("where", rig.holder)
+        val payload = settlement.settleInto(mapOf("action" to "next"))
+        assertEquals("the submitted payload carries the typed text", "12 Example Av", payload?.get("where"))
+        assertEquals("next", payload?.get("action"))
+        assertEquals("and the field's answer holds it", "12 Example Av", rig.stored)
+        val writes = rig.storeWrites
+        assertTrue("nothing is in flight any more", settlement.settle().isEmpty())
+        rig.reply(200, resolvedReply())
+        rig.holder.detach()
+        assertEquals("the late reply and the later detach write nothing", writes, rig.storeWrites)
+        assertEquals("12 Example Av", rig.stored)
+    }
+
+    /** With no resolve in flight, `detach` and the settlement write nothing: a resolved answer stays resolved. */
+    @Test
+    fun detachWithNoResolveInFlightWritesNothing() {
+        val rig = staleListTap()
+        rig.reply(200, resolvedReply())
+        @Suppress("UNCHECKED_CAST")
+        val resolved = rig.stored as Map<String, Any?>
+        val writes = rig.storeWrites
+        val settlement = LocationAdvanceSettlement()
+        settlement.register("where", rig.holder)
+        assertTrue("the settlement settles nothing", settlement.settle().isEmpty())
+        rig.holder.detach()
+        assertEquals("detach writes nothing", writes, rig.storeWrites)
+        assertEquals("the resolved answer is kept", resolved, rig.stored)
+    }
+
+    // ---- Leaving the field ---------------------------------------------------------------------
+
+    /**
+     * The user leaves the field with a debounced search still pending: `editingEnded` cancels it, so
+     * no autocomplete call is made and the dropdown stays closed. Red control: `editingEnded` that only
+     * closes the dropdown → the search fires, one call, and the dropdown opens.
+     */
+    @Test
+    fun editingEndedBeforeTheDebounceCancelsTheSearchAndClosesTheDropdown() {
+        val rig = addressRig()
+        rig.type("12 Example")
+        rig.holder.editingEnded()
+        rig.advance(1_000)
+        assertEquals("no autocomplete call", emptyList<String>(), rig.autocompleteQueries)
+        assertFalse("the dropdown stays closed", rig.holder.isDropdownOpen)
+        assertTrue(rig.holder.results.isEmpty())
+        assertFalse(rig.holder.isSearching)
+        // The answer typed so far is kept, and the next edit searches again.
+        assertEquals("12 Example", rig.stored)
+        rig.type("12 Example Av")
+        rig.advance(300)
+        assertEquals(listOf("12 Example Av"), rig.autocompleteQueries)
+        assertTrue(rig.holder.isDropdownOpen)
+    }
+
+    /** `editingEnded` with the list on screen closes it. */
+    @Test
+    fun editingEndedClosesAnOpenDropdown() {
+        val rig = addressRig()
+        rig.type("12 Example")
+        rig.advance(300)
+        assertTrue("precondition: the list is on screen", rig.holder.isDropdownOpen)
+        rig.holder.editingEnded()
+        assertFalse("leaving the field closes the dropdown", rig.holder.isDropdownOpen)
     }
 
     /** A second tap supersedes the first: the first reply is dropped. */

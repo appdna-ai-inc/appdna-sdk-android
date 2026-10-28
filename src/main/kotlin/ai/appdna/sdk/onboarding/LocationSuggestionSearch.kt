@@ -187,6 +187,13 @@ internal class LocationSuggestionSearch(
      */
     private var resolveGeneration = 0
 
+    /**
+     * The text the user had typed when the resolve in flight was tapped — that resolve's `raw_query`,
+     * and the answer [settleResolveInFlight] stores if the step advances before the reply. Null when
+     * no resolve is in flight.
+     */
+    private var resolvingTyped: String? = null
+
     init {
         LocationAnswer.fieldText(storedAnswer)?.let { setTextProgrammatically(it) }
     }
@@ -202,13 +209,34 @@ internal class LocationSuggestionSearch(
     }
 
     /**
-     * The field left the composition (the step advanced, or the user navigated away): a resolve reply
-     * that arrives now is dropped, and a pending search never fires.
+     * The field left the composition (the step advanced, or the user navigated away): a resolve in
+     * flight is settled first ([settleResolveInFlight] — the typed text is stored), so a reply that
+     * arrives now is dropped, and a pending search never fires.
+     *
+     * The composables call this from `onDispose`, which runs AFTER the step has already submitted its
+     * answers. So the step settles its fields itself, before it builds the payload
+     * ([LocationAdvanceSettlement]); this call covers every other way the field leaves.
      */
     fun detach() {
+        settleResolveInFlight()
         store = null
-        dropResolveInFlight()
         cancelSearch()
+    }
+
+    /**
+     * The step is advancing while a tap's resolve is in flight (an optional field's Continue): the field
+     * stores the text the user had typed when they tapped, as for any failed resolve, and the late reply
+     * is dropped — so nothing the user typed is lost. The write goes through the store BEFORE the reply
+     * is dropped.
+     *
+     * Returns the answer written, or null when no resolve was in flight (nothing is written then).
+     */
+    fun settleResolveInFlight(): Any? {
+        if (!isResolving) return null
+        val answer: Any? = resolvingTyped?.ifEmpty { null }?.let { LocationAnswer.typed(it) }
+        if (answer != null) write(answer)
+        dropResolveInFlight()
+        return answer
     }
 
     /**
@@ -300,6 +328,15 @@ internal class LocationSuggestionSearch(
         isSearching = false
     }
 
+    /**
+     * The user left the field (it lost focus): close the dropdown, and let no pending search reopen it
+     * under a field the user is no longer in. The next edit searches again.
+     */
+    fun editingEnded() {
+        cancelSearch()
+        isDropdownOpen = false
+    }
+
     /** The clear button: no answer, no text, no list. */
     fun clear() {
         cancelSearch()
@@ -339,10 +376,12 @@ internal class LocationSuggestionSearch(
         }
         write(null)
         isResolving = true
+        resolvingTyped = typed
         val generation = resolveGeneration
         resolve(body) { outcome ->
             if (generation != resolveGeneration) return@resolve
             isResolving = false
+            resolvingTyped = null
             when (outcome) {
                 is LocationResolveOutcome.Resolved -> {
                     val answer = LocationAnswer.selection(outcome.location, typed)
@@ -396,6 +435,7 @@ internal class LocationSuggestionSearch(
 
     private fun dropResolveInFlight() {
         resolveGeneration += 1
+        resolvingTyped = null
         isResolving = false
     }
 
@@ -404,3 +444,63 @@ internal class LocationSuggestionSearch(
         store?.invoke(value)
     }
 }
+
+/**
+ * The step's half of the advance-while-resolving rule. Every location field on a step registers its
+ * holder here; the step settles them when it ADVANCES — after its own required gate has passed, before
+ * it hands its answers on — so a field whose resolve is still in flight stores the text the user typed
+ * ([LocationSuggestionSearch.settleResolveInFlight]).
+ *
+ * The holder's own [LocationSuggestionSearch.detach] cannot do this alone: it runs from `onDispose`, a
+ * frame after the step's Continue has already built and submitted its payload.
+ *
+ * Provided through [LocalLocationAdvanceSettlement] by the form step ([FormStep]) and by the
+ * block-based step (`OnboardingStepView`). A field rendered with no step around it registers nowhere and
+ * relies on [LocationSuggestionSearch.detach].
+ */
+internal class LocationAdvanceSettlement {
+    /** Holder → its field id. A holder is a plain class, so the key is its identity. */
+    private val fields = LinkedHashMap<LocationSuggestionSearch, String>()
+
+    fun register(fieldId: String, holder: LocationSuggestionSearch) {
+        fields[holder] = fieldId
+    }
+
+    fun unregister(holder: LocationSuggestionSearch) {
+        fields.remove(holder)
+    }
+
+    /**
+     * Settles every registered field. Each one with a resolve in flight writes its typed text through
+     * its own store (the step's answer map) and is returned here as `field id → answer`.
+     */
+    fun settle(): Map<String, Any> {
+        val settled = LinkedHashMap<String, Any>()
+        for ((holder, fieldId) in fields.entries.toList()) {
+            holder.settleResolveInFlight()?.let { settled[fieldId] = it }
+        }
+        return settled
+    }
+
+    /**
+     * For an advance whose payload was built BEFORE the fields were settled (every block-step advance
+     * path builds its own map and then calls `onNext`): settles, and adds each settled answer to the
+     * payload where the payload holds none for that field. A key the payload already carries is kept —
+     * the SDK's own keys (`action`, …) win over a field id, as they do when the payload is built.
+     */
+    fun settleInto(data: Map<String, Any>?): Map<String, Any>? {
+        val settled = settle()
+        if (settled.isEmpty()) return data
+        val merged = LinkedHashMap<String, Any>()
+        data?.let { merged.putAll(it) }
+        for ((fieldId, answer) in settled) {
+            val current = merged[fieldId]
+            if (current == null || current == "") merged[fieldId] = answer
+        }
+        return merged
+    }
+}
+
+/** The step's [LocationAdvanceSettlement]; null where no step provides one. */
+internal val LocalLocationAdvanceSettlement =
+    androidx.compose.runtime.staticCompositionLocalOf<LocationAdvanceSettlement?> { null }

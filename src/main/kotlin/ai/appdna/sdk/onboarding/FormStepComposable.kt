@@ -90,6 +90,11 @@ fun FormStep(
         v != null && v.toString().isNotEmpty()
     }
 
+    // The step's Location fields register here, so Continue can settle a field whose resolve is still
+    // in flight (it stores the typed text) before the answers are submitted.
+    val locationSettlement = remember { LocationAdvanceSettlement() }
+
+    CompositionLocalProvider(LocalLocationAdvanceSettlement provides locationSettlement) {
     Column(
         modifier = Modifier.fillMaxSize()
     ) {
@@ -262,6 +267,11 @@ fun FormStep(
                     }
                 }
                 if (errors.isEmpty()) {
+                    // The step advances: a Location field whose resolve is still in flight stores the
+                    // text the user typed (into `values`, through its holder), and its late reply is
+                    // dropped. Only here, after validation: a REQUIRED field with a resolve in flight
+                    // has no answer, so it never reaches this line, and Continue stays gated.
+                    locationSettlement.settle()
                     // TimeField writes a display-only `${id}_time` companion into `values`;
                     // strip those before submit so they don't ship in selection_data/responses (iOS has
                     // no such companion key). Key off ALL `fields` (not `visibleFields`): a
@@ -307,6 +317,7 @@ fun FormStep(
             )
         }
     }
+    } // LocalLocationAdvanceSettlement
 }
 
 @OptIn(ExperimentalMaterial3Api::class)

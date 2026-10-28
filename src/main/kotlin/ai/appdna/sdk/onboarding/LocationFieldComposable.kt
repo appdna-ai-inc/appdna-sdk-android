@@ -14,6 +14,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
@@ -108,6 +109,16 @@ fun LocationFieldComposable(
             holder.detach()
         }
     }
+    // The form step settles this field when Continue advances (a resolve in flight stores the typed
+    // text); `onDispose` above runs only after the answers were submitted.
+    val settlement = LocalLocationAdvanceSettlement.current
+    DisposableEffect(holder, settlement) {
+        settlement?.register(field.id, holder)
+        onDispose { settlement?.unregister(holder) }
+    }
+    // Leaving the field ends its search: a debounced search still pending would otherwise fire and
+    // open the dropdown under a field the user has already left.
+    var hadFocus by remember(holder) { mutableStateOf(false) }
     val stored = values[field.id]
     SideEffect { holder.storedAnswerChanged(stored) }
     @Suppress("UNUSED_EXPRESSION")
@@ -174,7 +185,14 @@ fun LocationFieldComposable(
                 keyboardType = KeyboardType.Text,
                 imeAction = ImeAction.Search,
             ),
-            modifier = Modifier.fillMaxWidth(),
+            modifier = Modifier.fillMaxWidth().onFocusChanged { state ->
+                if (state.isFocused) {
+                    hadFocus = true
+                } else if (hadFocus) {
+                    hadFocus = false
+                    holder.editingEnded()
+                }
+            },
             singleLine = true,
             isError = errors.containsKey(field.id),
         )
