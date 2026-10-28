@@ -210,6 +210,13 @@ internal class LocationSuggestionSearch(
     private var shownGoogle: Pair<String, String>? = null
 
     /**
+     * The Google line and `raw_query` the field last restarted from, until it shows another answer or is
+     * cleared. A Compose text field keeps its own undo history, which an app cannot clear: a hardware
+     * keyboard's undo would bring the line back as a user edit.
+     */
+    private var restartedGoogle: Pair<String, String>? = null
+
+    /**
      * The first edit of a Google answer's line arrived while the input method was composing: it is
      * applied when the composition commits, not before.
      */
@@ -224,12 +231,32 @@ internal class LocationSuggestionSearch(
         private set
 
     /**
-     * The text field reports whether the input method is composing, with each value it delivers and
-     * before that value reaches [textChanged]. A commit arrives as a value with no composing span, even
-     * when it leaves the text as it was.
+     * The text field delivered a value: its text, and whether the input method has a composing span.
+     * Both composables call this with every value `onValueChange` delivers, and that includes values
+     * whose TEXT is unchanged — a caret move, a selection change, a composing span set or cleared.
+     *
+     * Only a change to the text is an edit ([textChanged]). A value with the same text reports its
+     * composition only ([compositionChanged]): a caret moved inside a resolved answer leaves the answer
+     * stored and the field as it is, and a composing span set over the text while a tap's resolve is in
+     * flight leaves the resolve running.
      */
-    fun compositionChanged(composing: Boolean) {
+    fun valueChanged(newText: String, composing: Boolean, settings: LocationSearchSettings) {
+        if (newText == text) {
+            compositionChanged(composing, settings)
+            return
+        }
         this.composing = composing
+        textChanged(newText, settings)
+    }
+
+    /**
+     * The input method's composition started or ended with the text unchanged. A commit that leaves the
+     * text as it was applies the first edit of a Google line held back while composing; nothing else
+     * here is an edit.
+     */
+    fun compositionChanged(composing: Boolean, settings: LocationSearchSettings) {
+        this.composing = composing
+        if (!composing && awaitingCommit) applyEdit(text, settings, previous = text)
     }
 
     init {
@@ -305,20 +332,39 @@ internal class LocationSuggestionSearch(
             pendingEcho = null
             if (newText == echo) return
         }
-        if (text != newText) text = newText
+        // The text the field already holds is not an edit: a Compose field delivers values whose text
+        // is unchanged (a caret move, a selection, a composing span), and none of them may drop a
+        // resolve, store, or search.
+        if (newText == text) return
+        val previous = text
+        text = newText
         // [composing]: the input method has a composition in progress (the field's composing span). That
         // is not the first edit yet: Google's line with composing text after it is neither stored nor
-        // searched. The edit applies when the composition commits — the text field delivers the commit
-        // even when it leaves the text as it was.
+        // searched. The edit applies when the composition commits ([compositionChanged], or a commit
+        // that changes the text, which arrives here).
         if (composing && shownGoogle != null) {
             awaitingCommit = true
             return
         }
+        applyEdit(newText, settings, previous)
+    }
+
+    /**
+     * The user's edit to [newText], which the field now shows (it showed [previous] before): stores it
+     * and searches.
+     */
+    private fun applyEdit(newText: String, settings: LocationSearchSettings, previous: String) {
         awaitingCommit = false
         dropResolveInFlight()
         var typed = newText
-        shownGoogle?.let { (line, rawQuery) ->
+        val google = shownGoogle
+            ?: restartedGoogle?.takeIf { newText.startsWith(it.first) && !previous.startsWith(it.first) }
+        google?.let { (line, rawQuery) ->
             shownGoogle = null
+            // Kept after the restart: a text change that brings Google's line back (a hardware
+            // keyboard's undo restores the value before the restart) restarts again, so the line is
+            // never stored as typed text.
+            restartedGoogle = line to rawQuery
             typed = LocationAnswer.editRestart(rawQuery = rawQuery, shown = line, edited = newText)
             setTextProgrammatically(typed)
         }
@@ -354,6 +400,7 @@ internal class LocationSuggestionSearch(
     private fun showAnswer(line: String, answer: Any?) {
         setTextProgrammatically(line)
         shownGoogle = LocationAnswer.googleRawQuery(answer)?.let { line to it }
+        restartedGoogle = null
     }
 
     // ---- Search --------------------------------------------------------------------------------
@@ -410,6 +457,7 @@ internal class LocationSuggestionSearch(
         isDropdownOpen = false
         write(null)
         shownGoogle = null
+        restartedGoogle = null
         setTextProgrammatically("")
     }
 

@@ -144,8 +144,9 @@ fun LocationFieldComposable(
                 errors.remove(field.id)
                 // Stores the typed text, drops a resolve in flight, and debounces the search. A
                 // composition in progress is reported, so the first edit of Google's line waits for it.
-                holder.compositionChanged(newValue.composition != null)
-                holder.textChanged(newValue.text, search)
+                // Only a change to the text is an edit: a value whose text is unchanged (a caret move, a
+                // selection, a composing span) reports its composition and nothing else.
+                holder.valueChanged(newValue.text, composing = newValue.composition != null, settings = search)
             },
             label = { Text(field.label) },
             placeholder = { Text(placeholder) },

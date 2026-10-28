@@ -1301,6 +1301,9 @@ private fun resolveDotPath(
         }
         current = next ?: return null
     }
+    // A path that stops at a picked record (or a multi pick's list): every key it took from a Google
+    // answer takes the text the user typed, as a path to that key does.
+    if (typedText && parts[0] == "selected") current = SelectedOptionStore.withTypedText(current)
     return if (typedText) HostDataResolver.typedTextForGoogleAnswers(current) else current
 }
 
@@ -1885,6 +1888,29 @@ internal fun resolvedFieldOptions(
     )
 } ?: block
 
+/**
+ * A block drawn without the raw host-data pass (a step with no raw capture, a Screen, SDUI): its host
+ * options are layered FIRST, so the view-level pass ([resolveBlockBindings]) resolves their text and
+ * records the keys that took a Google answer, as it does for authored options — then the host's
+ * `field_config` patches. The Swift twin layers host options before its view-level pass too (in the
+ * step pipeline).
+ */
+internal fun viewPassBlock(
+    rawBlock: ContentBlock,
+    hookData: Map<String, Any>?,
+    responses: Map<String, Any>,
+    stepInputs: Map<String, Any>,
+    surface: ai.appdna.sdk.core.TemplateSurface,
+    fieldConfigOverrides: Map<String, Map<String, Any>>,
+    fieldOptionsOverrides: Map<String, List<InputOption>>,
+): ContentBlock = resolvedFieldConfig(
+    resolveBlockBindings(
+        resolvedFieldOptions(rawBlock, fieldOptionsOverrides),
+        hookData = hookData, responses = responses, stepInputs = stepInputs, surface = surface,
+    ),
+    fieldConfigOverrides,
+)
+
 // MARK: - Content Block Renderer
 
 @Composable
@@ -1954,15 +1980,10 @@ fun ContentBlockRendererView(
             // Fold host-pushed per-block field_config overrides UNCONDITIONALLY here,
             // AFTER resolveBlockBindings (which early-returns raw blocks that have no bindings — i.e.
             // every element, so the merge can't live inside it). Empty overrides → no change.
-            val block = if (rawResolved) rawBlock else resolvedFieldOptions(
-                resolvedFieldConfig(
-                    resolveBlockBindings(
-                        rawBlock, hookData = hookData, responses = responses, stepInputs = inputValues,
-                        surface = LocalTemplateSurface.current,
-                    ),
-                    fieldConfigOverrides,
-                ),
-                fieldOptionsOverrides,
+            val block = if (rawResolved) rawBlock else viewPassBlock(
+                rawBlock, hookData = hookData, responses = responses, stepInputs = inputValues,
+                surface = LocalTemplateSurface.current,
+                fieldConfigOverrides = fieldConfigOverrides, fieldOptionsOverrides = fieldOptionsOverrides,
             )
 
             val shouldAnimate = block.entrance_animation != null
@@ -5725,8 +5746,8 @@ private fun RichTextBlock(block: ContentBlock, loc: ((String, String) -> String)
  * - *italic* → SpanStyle(fontStyle = Italic)
  * - ++underline++ → SpanStyle(textDecoration = Underline)
  * - every link form iOS's markdown parser follows ([MarkdownLinks.find]): an inline link in any of
- *   its destination forms, an angle-bracket autolink, and a bare URL or email address → SpanStyle(color
- *   = linkColor, underline) + URL annotation
+ *   its destination forms (its label's own emphasis drawn), an angle-bracket autolink, and a bare URL
+ *   or email address → SpanStyle(color = linkColor, underline) + URL annotation
  *
  * `internal` so the shared-fixture runner reads the links THIS draws.
  */
@@ -5741,61 +5762,108 @@ internal fun parseMarkdownToAnnotatedString(
     val boldRegex = Regex("""\*\*(.+?)\*\*""")
     val italicRegex = Regex("""\*(.+?)\*""")
     val underlineRegex = Regex("""\+\+(.+?)\+\+""")
+    val codeSpanRegex = Regex("""(`+)(.+?)\1""")
+
+    // Every link is found once, on the whole text: what precedes a link decides whether it is one (an
+    // open `[`, the character before a `www.`), so a piece cut out of the text cannot be asked.
+    val links = MarkdownLinks.find(markdown)
 
     return buildAnnotatedString {
-        /** [text] with its links drawn as links, the rest as it is. */
-        fun appendLinked(text: String) {
-            var at = 0
-            for (link in MarkdownLinks.find(text)) {
-                if (link.start > at) append(text.substring(at, link.start))
-                pushStringAnnotation(tag = "URL", annotation = link.url)
-                withStyle(SpanStyle(
-                    color = linkColor,
-                    textDecoration = androidx.compose.ui.text.style.TextDecoration.Underline,
-                )) {
-                    append(link.text)
-                }
-                pop()
-                at = link.end
-            }
-            if (at < text.length) append(text.substring(at))
-        }
-
-        // Simple iterative parser: process the string character by character,
-        // replacing markdown tokens as we go
-        var remaining = markdown
-        while (remaining.isNotEmpty()) {
-            // Find the earliest markdown match
-            val link = MarkdownLinks.find(remaining).firstOrNull()
-            val boldMatch = boldRegex.find(remaining)
-            val underlineMatch = underlineRegex.find(remaining)
-            // Only match italic if it's not part of a bold marker
-            val italicMatch = italicRegex.find(remaining)?.takeIf { m ->
+        /** The first emphasis match in [text] (bold, underline or italic), or null. */
+        fun firstEmphasis(text: String): Pair<MatchResult, String>? {
+            val italicMatch = italicRegex.find(text)?.takeIf { m ->
                 val idx = m.range.first
                 // Ensure this is not a ** bold marker
-                !(idx > 0 && remaining.getOrNull(idx - 1) == '*') &&
-                    remaining.getOrNull(idx + 1) != '*'
+                !(idx > 0 && text.getOrNull(idx - 1) == '*') && text.getOrNull(idx + 1) != '*'
+            }
+            return listOfNotNull(
+                boldRegex.find(text)?.let { it to "bold" },
+                underlineRegex.find(text)?.let { it to "underline" },
+                italicMatch?.let { it to "italic" },
+            ).minByOrNull { it.first.range.first }
+        }
+
+        fun emphasisStyle(type: String): SpanStyle = when (type) {
+            "bold" -> SpanStyle(fontWeight = FontWeight.Bold)
+            "underline" -> SpanStyle(textDecoration = androidx.compose.ui.text.style.TextDecoration.Underline)
+            else -> SpanStyle(fontStyle = FontStyle.Italic)
+        }
+
+        /**
+         * An inline link's label as iOS draws it: its emphasis drawn, a code span as its text, its
+         * backslash escapes resolved (an escaped `*` stays a star).
+         */
+        fun appendLabel(label: String) {
+            val escaped = mutableListOf<Char>()
+            val src = StringBuilder()
+            var k = 0
+            while (k < label.length) {
+                if (label[k] == '\\' && k + 1 < label.length && MarkdownLinks.isEscapable(label[k + 1]) && escaped.size < 0x100) {
+                    src.append((0xE100 + escaped.size).toChar())
+                    escaped += label[k + 1]
+                    k += 2
+                    continue
+                }
+                src.append(label[k])
+                k++
+            }
+            fun restore(s: String) = buildString {
+                for (ch in s) append(if (ch.code in 0xE100 until 0xE100 + escaped.size) escaped[ch.code - 0xE100] else ch)
+            }
+            fun appendStyled(text: String) {
+                var rest = text
+                while (rest.isNotEmpty()) {
+                    val (match, type) = firstEmphasis(rest) ?: run { append(restore(rest)); return }
+                    if (match.range.first > 0) append(restore(rest.substring(0, match.range.first)))
+                    withStyle(emphasisStyle(type)) { appendStyled(match.groupValues[1]) }
+                    rest = rest.substring(match.range.last + 1)
+                }
+            }
+            appendStyled(codeSpanRegex.replace(src) { it.groupValues[2] })
+        }
+
+        fun appendLink(link: MarkdownLinks.Link) {
+            pushStringAnnotation(tag = "URL", annotation = link.url)
+            withStyle(SpanStyle(
+                color = linkColor,
+                textDecoration = androidx.compose.ui.text.style.TextDecoration.Underline,
+            )) {
+                val label = link.label
+                if (label != null) appendLabel(label) else append(link.text)
+            }
+            pop()
+        }
+
+        /** `markdown[from, to)` with the links wholly inside it drawn as links, the rest as it is. */
+        fun appendLinked(from: Int, to: Int) {
+            var at = from
+            for (link in links) {
+                if (link.start < at || link.end > to) continue
+                if (link.start > at) append(markdown.substring(at, link.start))
+                appendLink(link)
+                at = link.end
+            }
+            if (at < to) append(markdown.substring(at, to))
+        }
+
+        // Simple iterative parser: walk the string, drawing the earliest link or emphasis next.
+        var base = 0
+        while (base < markdown.length) {
+            val remaining = markdown.substring(base)
+            val link = links.firstOrNull { it.start >= base }
+            val first = firstEmphasis(remaining)
+            // A link takes the characters it spans before emphasis pairs up: an emphasis whose closing
+            // marker falls inside a link is no emphasis, and its opening marker draws as text.
+            val straddled = first != null && links.any {
+                val end = base + first.first.range.last + 1
+                it.start >= base + first.first.range.first && it.start < end && it.end > end
             }
 
-            val matches = listOfNotNull(
-                boldMatch?.let { it to "bold" },
-                underlineMatch?.let { it to "underline" },
-                italicMatch?.let { it to "italic" },
-            ).sortedBy { it.first.range.first }
-            val first = matches.firstOrNull()
-
-            if (link != null && (first == null || link.start <= first.first.range.first)) {
+            if (link != null && (first == null || straddled || link.start - base <= first.first.range.first)) {
                 // A link starts first: draw what precedes it, then the link.
-                if (link.start > 0) append(remaining.substring(0, link.start))
-                pushStringAnnotation(tag = "URL", annotation = link.url)
-                withStyle(SpanStyle(
-                    color = linkColor,
-                    textDecoration = androidx.compose.ui.text.style.TextDecoration.Underline,
-                )) {
-                    append(link.text)
-                }
-                pop()
-                remaining = remaining.substring(link.end)
+                if (link.start > base) append(markdown.substring(base, link.start))
+                appendLink(link)
+                base = link.end
                 continue
             }
 
@@ -5811,26 +5879,11 @@ internal fun parseMarkdownToAnnotatedString(
             if (match.range.first > 0) {
                 append(remaining.substring(0, match.range.first))
             }
-
-            when (type) {
-                "bold" -> {
-                    withStyle(SpanStyle(fontWeight = FontWeight.Bold)) {
-                        appendLinked(match.groupValues[1])
-                    }
-                }
-                "underline" -> {
-                    withStyle(SpanStyle(textDecoration = androidx.compose.ui.text.style.TextDecoration.Underline)) {
-                        appendLinked(match.groupValues[1])
-                    }
-                }
-                "italic" -> {
-                    withStyle(SpanStyle(fontStyle = FontStyle.Italic)) {
-                        appendLinked(match.groupValues[1])
-                    }
-                }
+            val inner = match.groups[1]!!.range
+            withStyle(emphasisStyle(type)) {
+                appendLinked(base + inner.first, base + inner.last + 1)
             }
-
-            remaining = remaining.substring(match.range.last + 1)
+            base += match.range.last + 1
         }
     }
 }
@@ -13194,8 +13247,9 @@ private fun FormInputLocationPlaceholder(
                 fieldValue = newValue
                 // Stores the typed text, drops a resolve in flight, and debounces the search (300 ms). A
                 // composition in progress is reported, so the first edit of Google's line waits for it.
-                holder.compositionChanged(newValue.composition != null)
-                holder.textChanged(newValue.text, search)
+                // Only a change to the text is an edit: a value whose text is unchanged (a caret move, a
+                // selection, a composing span) reports its composition and nothing else.
+                holder.valueChanged(newValue.text, composing = newValue.composition != null, settings = search)
             },
             // Drop hardcoded Color.Gray placeholder color so
             // Material3 OutlinedTextFieldDefaults adaptive placeholder color
@@ -13323,10 +13377,9 @@ private fun FormInputLocationPlaceholder(
                 if (holder.showsGoogleLogo) {
                     GoogleMapsLogo(
                         backdrop = GoogleMapsAttribution.backdrop(
-                            ofDropdownFill = cfg?.get("dropdown_bg_color") as? String,
-                            opacity = ddOpacity,
+                            ofLocationDropdown = cfg,
                             behind = LocalGoogleAttributionBackdrop.current,
-                            unstyled = GoogleMapsAttribution.Backdrop.Plain(GoogleMapsAttribution.hexOf(MaterialTheme.colorScheme.surface)),
+                            surface = MaterialTheme.colorScheme.surface,
                         ),
                     )
                 }

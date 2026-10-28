@@ -3099,6 +3099,10 @@ class SharedFixtureTest(
                         else rig.type(op.getString("text"))
                     // The input method commits the composition without changing the text.
                     "commit" -> rig.commit()
+                    // The caret moves without typing: the same text, a new selection.
+                    "move_caret" -> rig.moveCaret()
+                    // The input method sets or clears a composing span without changing the text.
+                    "composition" -> rig.compositionOnly(op.getBoolean("composing"))
                     "echo" -> rig.echo()
                     "advance_clock_ms" -> rig.advance(op.getLong("ms"))
                     "tap" -> rig.tap(op.optInt("index", 0))

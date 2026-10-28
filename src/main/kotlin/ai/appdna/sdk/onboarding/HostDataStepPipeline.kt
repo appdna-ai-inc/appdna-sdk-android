@@ -832,8 +832,26 @@ internal fun resolveSheetBlocks(
     /** The option's typed sheet blocks: what their options carry that raw JSON never holds (`googleKeys`). */
     typed: List<ContentBlock> = emptyList(),
 ): List<ContentBlock> {
-    val decoded = raw.map { OnboardingConfigParser.decodeRawBlock(applySheetStepPaths(HostDataResolver.deepCopyObj(it), sheetInputs)) }
-    val keys = googleKeysOf(typed)
+    val lateKeys = LinkedHashMap<String, LinkedHashMap<String, LinkedHashMap<String, String>>>()
+    val decoded = raw.map {
+        OnboardingConfigParser.decodeRawBlock(applySheetStepPaths(HostDataResolver.deepCopyObj(it), sheetInputs, lateKeys))
+    }
+    // A key the raw pass recorded holds its text as the user typed it with these deferred tokens still in
+    // it, so they are filled the same way; a key only a deferred token took from a Google answer is added.
+    val ctx = HostDataContext(step = sheetInputs)
+    val keys = LinkedHashMap<String, LinkedHashMap<String, Map<String, String>>>()
+    for ((blockId, options) in googleKeysOf(typed)) {
+        val out = keys.getOrPut(blockId) { LinkedHashMap() }
+        for ((optionId, recorded) in options) {
+            out[optionId] = recorded.mapValues { (_, t) ->
+                if (t.contains("{{")) HostDataResolver.resolvePlainString(t, ctx, allTyped = true) else t
+            }
+        }
+    }
+    for ((blockId, options) in lateKeys) {
+        val out = keys.getOrPut(blockId) { LinkedHashMap() }
+        for ((optionId, late) in options) out[optionId] = (late + out[optionId].orEmpty()).toSortedMap()
+    }
     return if (keys.isEmpty()) decoded else decoded.map { stampGoogleKeys(it, keys) }
 }
 
@@ -851,7 +869,12 @@ internal fun sheetPathKey(segs: List<String>): Pair<String?, Boolean> {
 }
 
 @Suppress("UNCHECKED_CAST")
-private fun applySheetStepPaths(block: MutableMap<String, Any?>, sheetInputs: Map<String, Any?>): MutableMap<String, Any?> {
+private fun applySheetStepPaths(
+    block: MutableMap<String, Any?>,
+    sheetInputs: Map<String, Any?>,
+    /** Block id → option id → key → typed text: each option key a deferred token filled from a Google answer. */
+    lateKeys: MutableMap<String, LinkedHashMap<String, LinkedHashMap<String, String>>>,
+): MutableMap<String, Any?> {
     val ctx = HostDataContext(step = sheetInputs)
     val paths = ((block["field_config"] as? Map<*, *>)?.get("sheet_step_paths") as? List<*>).orEmpty()
     for (p in paths) {
@@ -872,6 +895,21 @@ private fun applySheetStepPaths(block: MutableMap<String, Any?>, sheetInputs: Ma
                 }
                 val last = segs.last()
                 val target = cur
+                // An option's text that a deferred token fills from a Google answer in the sheet's
+                // inputs: the pick records the key, with the text as the user typed it, as the raw pass
+                // records an option's — so a later `selected` path credits where it is drawn and takes
+                // the typed text where it is stored.
+                if (isOption && key != null && target is Map<*, *>) {
+                    val template = target[last] as? String
+                    val blockId = block["id"] as? String
+                    val optionId = (target["id"] as? String) ?: (target["value"] as? String)
+                    if (template != null && blockId != null && optionId != null &&
+                        HostDataResolver.plainStringReadsGoogle(template, ctx)
+                    ) {
+                        lateKeys.getOrPut(blockId) { LinkedHashMap() }.getOrPut(optionId) { LinkedHashMap() }[key] =
+                            HostDataResolver.resolvePlainString(template, ctx, allTyped = true)
+                    }
+                }
                 when (target) {
                     // A whole location answer (`{{step.home}}`) draws its line, as iOS's sheet does.
                     is MutableMap<*, *> -> (target[last] as? String)?.let {
@@ -899,7 +937,7 @@ private fun applySheetStepPaths(block: MutableMap<String, Any?>, sheetInputs: Ma
     }
     for (key in listOf("children", "stack_children")) {
         (block[key] as? MutableList<Any?>)?.let { l ->
-            for (i in l.indices) (l[i] as? MutableMap<String, Any?>)?.let { l[i] = applySheetStepPaths(it, sheetInputs) }
+            for (i in l.indices) (l[i] as? MutableMap<String, Any?>)?.let { l[i] = applySheetStepPaths(it, sheetInputs, lateKeys) }
         }
     }
     return block

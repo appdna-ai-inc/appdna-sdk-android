@@ -57,13 +57,13 @@ internal object GoogleAttributionFixtureDrivers {
                 for (b in path) backdrop = GoogleMapsAttribution.backdrop(ofBlock = b, behind = backdrop)
                 // `dropdown`: what is behind the logo under the block's location dropdown, the call the
                 // block's composable makes with what is behind the dropdown.
+                // The surface is the default Material light scheme's, which is what an app with no theme
+                // of its own draws an unstyled dropdown with.
                 if (c["dropdown"] == true) {
-                    val cfg = path.last().field_config
                     backdrop = GoogleMapsAttribution.backdrop(
-                        ofDropdownFill = cfg?.get("dropdown_bg_color") as? String,
-                        opacity = (cfg?.get("dropdown_opacity") as? Number)?.toFloat() ?: 1f,
+                        ofLocationDropdown = path.last().field_config,
                         behind = backdrop,
-                        unstyled = GoogleMapsAttribution.Backdrop.Plain(null),
+                        surface = androidx.compose.material3.lightColorScheme().surface,
                     )
                 }
             }
@@ -80,13 +80,20 @@ internal object GoogleAttributionFixtureDrivers {
     }
 
     /**
-     * `action.cases[] = {name, markdown}` → `[{name, links: [{text, url}]}]`: each line through
+     * `action.cases[] = {name, markdown, surface?}` → `[{name, links: [{text, url}]}]`: each line through
      * `parseMarkdownToAnnotatedString` — the parser rich text and an agreement's copy draw with — and the
-     * spans carrying a URL annotation.
+     * spans carrying a URL annotation. `surface: "rich_text"` first runs the rich-text block's own
+     * `normaliseMarkdown` (which drops a code span's backticks); `"agreement"`, or no surface, hands the
+     * parser the line as written, as an agreement's copy does.
      */
     fun markdownLinks(cases: List<Map<String, Any?>>): List<Map<String, Any?>> = cases.map { c ->
         val name = c["name"] as? String ?: throw AssertionError("a case needs a name")
-        val md = c["markdown"] as? String ?: throw AssertionError("case $name needs markdown")
+        val raw = c["markdown"] as? String ?: throw AssertionError("case $name needs markdown")
+        val md = when (val surface = c["surface"] as? String) {
+            null, "agreement" -> raw
+            "rich_text" -> normaliseMarkdown(raw)
+            else -> throw AssertionError("case $name: unknown surface '$surface'")
+        }
         val drawn = parseMarkdownToAnnotatedString(
             md, androidx.compose.ui.text.TextStyle(), androidx.compose.ui.graphics.Color.Blue,
         )
@@ -153,15 +160,18 @@ internal object GoogleAttributionFixtureDrivers {
                 ),
             )
             // The picked Select at any depth: a container's child records its pick like a top-level one.
-            // `in_sheet = {block_id, option_id}`: the Select is drawn in that option's sheet, as the
-            // sheet draws it (`resolveSheetBlocks` over the raw sheet the pipeline kept).
+            // `in_sheet = {block_id, option_id, inputs?}`: the Select is drawn in that option's sheet, as
+            // the sheet draws it (`resolveSheetBlocks` over the raw sheet the pipeline kept), against the
+            // sheet's own inputs.
             val pickBlocks = (pick["in_sheet"] as? Map<String, Any?>)?.let { inSheet ->
                 val ownerId = inSheet["block_id"] as? String
                 val optionId = inSheet["option_id"] as? String
                 val opened = findBlock(ownerId, resolvedPick.blocks)?.field_options.orEmpty()
                     .firstOrNull { (it.id ?: it.value) == optionId }
                 val raw = resolvedPick.sheetRaw["$ownerId|$optionId"]
-                if (raw != null) resolveSheetBlocks(raw, emptyMap(), opened?.sheet_blocks.orEmpty()) else opened?.sheet_blocks.orEmpty()
+                // `in_sheet.inputs`: what the user entered in the sheet before picking (its own inputs).
+                val sheetInputs = (inSheet["inputs"] as? Map<String, Any?>).orEmpty()
+                if (raw != null) resolveSheetBlocks(raw, sheetInputs, opened?.sheet_blocks.orEmpty()) else opened?.sheet_blocks.orEmpty()
             } ?: resolvedPick.blocks
             val block = findBlock(pick["block_id"] as? String, pickBlocks)
                 ?: throw AssertionError("the picked block is not on the resolved step")
@@ -254,7 +264,10 @@ internal object GoogleAttributionFixtureDrivers {
                     "view_pass", "screen" -> withShared(selected) {
                         val bare = step.copy(rawContentBlocks = null)
                         bare.config.content_blocks.orEmpty().map {
-                            resolveBlockBindings(
+                            // The call the block renderer makes for a block the raw pass did not
+                            // produce: a step with no raw capture layers the host's interaction options
+                            // and patches there; a Screen has none.
+                            viewPassBlock(
                                 it, hookData = null,
                                 responses = stripNulls(accumulated) as Map<String, Any>,
                                 stepInputs = stripNulls(stepInputs) as Map<String, Any>,
@@ -262,6 +275,8 @@ internal object GoogleAttributionFixtureDrivers {
                                 // onboarding step has (`LocalTemplateSurface`'s default): no credit there.
                                 surface = if (via == "screen") ai.appdna.sdk.core.TemplateSurface.OTHER
                                 else ai.appdna.sdk.core.TemplateSurface.ONBOARDING,
+                                fieldConfigOverrides = if (via == "screen") emptyMap() else fieldConfigOverrides,
+                                fieldOptionsOverrides = if (via == "screen") emptyMap() else fieldOptionsOverrides,
                             )
                         }
                     }
@@ -295,6 +310,9 @@ internal object GoogleAttributionFixtureDrivers {
                     when (key) {
                         "label" -> option?.label
                         "value" -> option?.value
+                        // The text a pick of the option records for its label when the label took a
+                        // Google answer's content: what the user typed. Null when it took none.
+                        "google_label" -> option?.googleKeys?.get("label")
                         else -> throw AssertionError("read $name: unknown option key $key")
                     }
                 } else {
@@ -309,7 +327,7 @@ internal object GoogleAttributionFixtureDrivers {
                         else -> throw AssertionError("read $name: unknown block key $key")
                     }
                 }
-                name to value
+                name to matchRead(r["match"] as? Map<String, Any?>, value)
             }
         }
 
@@ -347,6 +365,19 @@ internal object GoogleAttributionFixtureDrivers {
         } finally {
             SelectedOptionStore.resetForTesting()
         }
+    }
+
+    /**
+     * `read.match = {contains?, lacks?}`: a value whose exact text is not portable (a picked record drawn
+     * whole, which each platform stringifies its own way) is checked for what it must and must not
+     * hold; the read reports `"matched"`, or the value itself when a check fails, so the failure shows it.
+     */
+    private fun matchRead(match: Map<String, Any?>?, value: Any?): Any? {
+        if (match == null) return value
+        val text = value?.toString() ?: return null
+        val contains = (match["contains"] as? List<*>).orEmpty().filterIsInstance<String>()
+        val lacks = (match["lacks"] as? List<*>).orEmpty().filterIsInstance<String>()
+        return if (contains.all { text.contains(it) } && lacks.none { text.contains(it) }) "matched" else text
     }
 
     /** The block with [id] among [blocks] at any depth: `children`, `stack_children` and option sheets. */

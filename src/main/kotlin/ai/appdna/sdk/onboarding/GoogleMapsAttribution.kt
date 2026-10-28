@@ -196,6 +196,18 @@ internal object GoogleMapsAttribution {
      * platforms draw those clear) — shows what is [behind] the dropdown. The Swift twin is
      * `GoogleMapsAttribution.backdrop(ofDropdownFill:opacity:behind:unstyled:)`.
      */
+    /**
+     * What is behind Google's logo under an `input_location` block's dropdown: the block's authored
+     * dropdown fill and opacity ([field_config]), else the theme's [surface], which is what an unstyled
+     * dropdown is filled with — the call the block's composable makes.
+     */
+    fun backdrop(ofLocationDropdown: Map<String, Any?>?, behind: Backdrop, surface: Color): Backdrop = backdrop(
+        ofDropdownFill = ofLocationDropdown?.get("dropdown_bg_color") as? String,
+        opacity = (ofLocationDropdown?.get("dropdown_opacity") as? Number)?.toFloat() ?: 1f,
+        behind = behind,
+        unstyled = Backdrop.Plain(hexOf(surface)),
+    )
+
     fun backdrop(ofDropdownFill: String?, opacity: Float, behind: Backdrop, unstyled: Backdrop): Backdrop {
         val raw = ofDropdownFill?.trim()
         if (raw.isNullOrEmpty()) return if (opacity < 1f) Backdrop.Busy else unstyled

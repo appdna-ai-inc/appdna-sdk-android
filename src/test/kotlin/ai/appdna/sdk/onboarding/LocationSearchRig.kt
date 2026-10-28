@@ -95,15 +95,31 @@ internal class LocationSearchRig(
      */
     fun typeComposing(text: String, composing: Boolean) {
         lastDelivered = text
-        holder.compositionChanged(composing)
-        holder.textChanged(text, settings)
+        holder.valueChanged(text, composing, settings)
     }
 
-    /** The input method commits without changing the text: Compose delivers the same text, no composing span. */
+    /**
+     * The input method commits without changing the text: Compose delivers a value with the same text
+     * and no composing span — what the composables forward to [LocationSuggestionSearch.valueChanged].
+     */
     fun commit() {
-        lastDelivered = holder.text
-        holder.compositionChanged(false)
-        holder.textChanged(holder.text, settings)
+        holder.valueChanged(holder.text, composing = false, settings = settings)
+    }
+
+    /**
+     * The user moves the caret (or the selection) without typing: Compose delivers a value with the
+     * same text and a new selection.
+     */
+    fun moveCaret() {
+        holder.valueChanged(holder.text, composing = false, settings = settings)
+    }
+
+    /**
+     * The input method sets or clears a composing span over the text without changing it (a keyboard
+     * marks the word under the caret): Compose delivers a value with the same text.
+     */
+    fun compositionOnly(composing: Boolean) {
+        holder.valueChanged(holder.text, composing = composing, settings = settings)
     }
 
     /** SwiftUI's `.onChange` after the holder set its own text. No-op when the text is unchanged. */

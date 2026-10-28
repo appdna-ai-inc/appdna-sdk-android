@@ -213,6 +213,22 @@ internal object HostDataResolver {
     }
 
     /**
+     * Inside a URL on one of Google's Maps hosts, the part from a nested `scheme://` on — written
+     * plainly, or percent-encoded as `%3A%2F%2F` — is another URL, which the Maps host fetches from
+     * wherever it points (a Static Maps marker icon). Every token there takes the typed text; a token
+     * before it, in the Maps URL itself, keeps the place. The Swift twin is
+     * `HostDataResolver.nestedURLRanges`.
+     */
+    internal fun nestedUrlRanges(template: String): List<IntRange> {
+        val outer = template.indexOf("://").takeIf { it >= 0 } ?: return emptyList()
+        val from = outer + 3
+        val start = listOf(template.indexOf("://", from), template.indexOf("%3A%2F%2F", from, ignoreCase = true))
+            .filter { it >= 0 }
+            .minOrNull() ?: return emptyList()
+        return listOf(start until template.length)
+    }
+
+    /**
      * Which tokens of one template resolve a Google location answer to its typed text (`raw_query`)
      * rather than its values: every token ([all]: a stored value, or a media URL whose host is not
      * Google's own), or only those inside [ranges] (the targets of the template's markdown links).
@@ -239,7 +255,9 @@ internal object HostDataResolver {
     internal fun typedTextRule(template: String, key: String?, isOption: Boolean): TypedTextRule {
         if (key != null) {
             if (isStoredValueKey(key, isOption)) return TypedTextRule.ALL
-            if (isMediaUrlKey(key)) return if (templateHostIsGoogle(template)) TypedTextRule.NONE else TypedTextRule.ALL
+            if (isMediaUrlKey(key)) {
+                return if (templateHostIsGoogle(template)) TypedTextRule(false, nestedUrlRanges(template)) else TypedTextRule.ALL
+            }
         }
         return TypedTextRule(false, markdownLinkTargets(template))
     }
@@ -616,12 +634,21 @@ internal object HostDataResolver {
         isOption: Boolean = false,
         /** A token naming a whole location answer draws its line (a sheet's late `{{step.<field>}}`). */
         wholeLocationAnswer: Boolean = false,
+        /** Every token takes the typed text: the text an option keeps for a Google key. */
+        allTyped: Boolean = false,
     ): String =
         resolveString(
             text, rootScope(ctx), url = false, deferStep = false,
             legacy = ctx.legacyToken, storedLegacy = ctx.legacyTokenStored, key = key, isOption = isOption,
-            wholeLocationAnswer = wholeLocationAnswer,
+            allTyped = allTyped, wholeLocationAnswer = wholeLocationAnswer,
         ).value
+
+    /** Whether drawing [text] in block scope ([resolvePlainString]) shows a Google answer's content. */
+    internal fun plainStringReadsGoogle(text: String, ctx: HostDataContext): Boolean =
+        resolveString(
+            text, rootScope(ctx), url = false, deferStep = false,
+            legacy = ctx.legacyToken, storedLegacy = ctx.legacyTokenStored, wholeLocationAnswer = true,
+        ).readGoogle
 
     // ─────────────────────────────────────────────────────────────────────────────────────────────
     // Id stamping and the skip rule

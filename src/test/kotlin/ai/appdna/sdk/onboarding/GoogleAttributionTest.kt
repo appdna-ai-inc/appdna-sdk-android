@@ -340,4 +340,28 @@ class GoogleAttributionTest {
         assertTrue(shows(emptyMap(), home(google), patches = mapOf("sel" to mapOf("search_placeholder" to "x"))))
         assertEquals("a new patch rebuilds", 2, GoogleCredit.sourcesBuilt - start)
     }
+
+    /**
+     * An unstyled location dropdown is filled with the theme's surface, so the logo under it picks its
+     * variant from that surface even on a dark step: what the block's composable and the shared
+     * fixture's driver both call ([GoogleMapsAttribution.backdrop] of the dropdown). A transparent fill
+     * shows the step behind it, and a translucent one is busy.
+     */
+    @Test
+    fun anUnstyledDropdownPicksTheLogoFromTheThemesSurface() {
+        val surface = androidx.compose.material3.lightColorScheme().surface
+        val darkStep = GoogleMapsAttribution.Backdrop.Plain("#0F172A")
+        assertEquals(
+            GoogleMapsAttribution.Backdrop.Plain(GoogleMapsAttribution.hexOf(surface)),
+            GoogleMapsAttribution.backdrop(ofLocationDropdown = emptyMap(), behind = darkStep, surface = surface),
+        )
+        assertEquals(
+            darkStep,
+            GoogleMapsAttribution.backdrop(ofLocationDropdown = mapOf("dropdown_bg_color" to "transparent"), behind = darkStep, surface = surface),
+        )
+        assertEquals(
+            GoogleMapsAttribution.Backdrop.Busy,
+            GoogleMapsAttribution.backdrop(ofLocationDropdown = mapOf("dropdown_opacity" to 0.5), behind = darkStep, surface = surface),
+        )
+    }
 }

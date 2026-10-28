@@ -110,4 +110,22 @@ internal object SelectedOptionStore {
     /** The recorded option's text for [key] with every Google answer as the user typed it; null when [key] is not a Google key. */
     fun typedText(record: Any?, key: String): String? =
         ((record as? Map<*, *>)?.get(GOOGLE_KEYS_KEY) as? Map<*, *>)?.get(key) as? String
+
+    /**
+     * A token that stops at a picked record (`{{selected.stop}}`), or at a multi pick's list of them,
+     * where a Google answer must not go (a stored value, a URL, a surface with no credit): each record
+     * with every key that came from a Google answer replaced by its text as the user typed it. Anything
+     * that is not a record is returned as it is.
+     */
+    fun withTypedText(value: Any?): Any? = when (value) {
+        is List<*> -> value.map { withTypedText(it) }
+        is Map<*, *> -> {
+            val keys = value[GOOGLE_KEYS_KEY] as? Map<*, *>
+            if (keys.isNullOrEmpty()) value
+            else LinkedHashMap<Any?, Any?>(value).apply {
+                for ((k, typed) in keys) if (containsKey(k)) put(k, typed)
+            }
+        }
+        else -> value
+    }
 }
