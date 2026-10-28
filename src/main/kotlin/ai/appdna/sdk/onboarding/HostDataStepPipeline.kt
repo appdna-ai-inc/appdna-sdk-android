@@ -627,6 +627,35 @@ internal fun recordOptionPick(block: ContentBlock, options: List<InputOption>, v
 }
 
 /**
+ * The option whose bottom sheet a pick of [value] opens: the picked option when it owns
+ * `sheet_blocks`, else null. Every Select presentation asks this one question, so the dropdown and
+ * the list, stacked and grid styles open the same sheet for the same pick, a repeat-generated or
+ * Option Set option included (they are in the rendered [options] like any other).
+ */
+internal fun optionSheetFor(options: List<InputOption>, value: String): InputOption? =
+    options.firstOrNull { it.value == value }?.takeIf { !it.sheet_blocks.isNullOrEmpty() }
+
+/**
+ * A pick from the dropdown menu — shared by the dropdown view and the fixture runner. The choice is
+ * recorded first, as the menu always recorded it (the one value, and the option for
+ * `{{selected.<field_id>.…}}`). The return is the option whose sheet the pick opens, or null; the
+ * sheet only presents, so nothing about it is reported. A value no rendered option carries records
+ * nothing and opens nothing.
+ */
+internal fun dropdownOptionPick(
+    block: ContentBlock,
+    options: List<InputOption>,
+    value: String,
+    inputValues: MutableMap<String, Any>,
+): InputOption? {
+    val option = options.firstOrNull { it.value == value } ?: return null
+    val fieldId = block.field_id ?: block.id
+    inputValues[fieldId] = option.value
+    SelectedOptionStore.record(fieldId, option)
+    return optionSheetFor(options, value)
+}
+
+/**
  * The single-select dropdown's button text: the rendered option's label, else the label RECORDED
  * when the user picked [selectedValue] (an Option Set search result that is not in the cached pages,
  * or one the active query excludes), else [placeholder]. An empty [selectedValue] — nothing picked,

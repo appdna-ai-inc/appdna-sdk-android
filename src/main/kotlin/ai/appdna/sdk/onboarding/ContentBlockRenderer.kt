@@ -10989,9 +10989,7 @@ private fun FormInputSelectBlock(
         }
         // Picking an option that owns a sheet opens it. The choice is already recorded above;
         // the sheet only presents, so nothing else is reported to the host app.
-        allOptions.firstOrNull { it.value == value }
-            ?.takeIf { !it.sheet_blocks.isNullOrEmpty() }
-            ?.let { sheetOption = it }
+        optionSheetFor(allOptions, value)?.let { sheetOption = it }
     }
     val isSelectedFn: (String) -> Boolean = { v -> isOptionSelected(v) }
     val pickFn: (String) -> Unit = { v -> pickOption(v) }
@@ -11042,7 +11040,7 @@ private fun FormInputSelectBlock(
             // #1013 — the category row: the same pills in ONE horizontally scrolling line.
             "bubble_scroll" -> style.SelectBubbleOptions(options, isSelectedFn, pickFn, scrolls = true)
             "list" -> style.SelectListOptions(options, isSelectedFn, pickFn)
-            else -> style.SelectDropdownOptions(options, fieldId, inputValues, selectedValueState)
+            else -> style.SelectDropdownOptions(options, fieldId, inputValues, selectedValueState) { sheetOption = it }
         }
 
         SelectGridTooltip(block, displayStyle)
@@ -11961,10 +11959,13 @@ private fun SelectOptionStyle.SelectDropdownOptions(
     fieldId: String,
     inputValues: MutableMap<String, Any>,
     selectedValueState: MutableState<String>,
+    onSheet: (InputOption) -> Unit,
 ) {
     var selectedValue by selectedValueState
     // "dropdown" (default): Spinner/dropdown
     var expanded by remember { mutableStateOf(false) }
+    // The sheet a pick opens, held until the menu has finished closing (see the menu's content).
+    var pendingSheet by remember { mutableStateOf<InputOption?>(null) }
     // Derived on every recomposition, never remembered: a remembered label
     // stays stale after a prune clears the value, and shows the placeholder forever when a
     // restored value's options only arrive with host data.
@@ -12005,6 +12006,11 @@ private fun SelectOptionStyle.SelectDropdownOptions(
             }
         }
         DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
+            // The menu's content leaves composition only once the menu has finished animating
+            // closed, so the picked option's sheet opens here: after the menu, never on top of it.
+            DisposableEffect(Unit) {
+                onDispose { pendingSheet?.let { pendingSheet = null; onSheet(it) } }
+            }
             options.forEach { option ->
                 DropdownMenuItem(
                     text = {
@@ -12025,9 +12031,11 @@ private fun SelectOptionStyle.SelectDropdownOptions(
                     },
                     onClick = {
                         selectedValue = option.value
-                        inputValues[fieldId] = option.value
-                        // The full option, for `{{selected.<field_id>.…}}` on a later screen.
-                        SelectedOptionStore.record(fieldId, option)
+                        // The choice is recorded first (the value, and the full option for
+                        // `{{selected.<field_id>.…}}` on a later screen); an option that owns a sheet
+                        // opens it once the menu has closed. Picking it again opens it again, as a
+                        // re-tap does in the other styles.
+                        pendingSheet = dropdownOptionPick(block, options, option.value, inputValues)
                         expanded = false
                     },
                 )

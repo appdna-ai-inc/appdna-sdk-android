@@ -24,6 +24,7 @@ import ai.appdna.sdk.onboarding.StepConfigOverride
 import ai.appdna.sdk.onboarding.applyInteractionReply
 import ai.appdna.sdk.onboarding.applyingOverride
 import ai.appdna.sdk.onboarding.beforeStepRenderEffect
+import ai.appdna.sdk.onboarding.dropdownOptionPick
 import ai.appdna.sdk.onboarding.filterOptionsLocally
 import ai.appdna.sdk.onboarding.isHiddenByHostData
 import ai.appdna.sdk.onboarding.lookupOnlyLoc
@@ -133,6 +134,8 @@ internal class HostDataScenarioDriver(
         var layered: List<ContentBlock> = emptyList()
         var rawIds: Set<String> = emptySet()
         var sheetBlocks: List<ContentBlock> = emptyList()
+        /** The sheet the last dropdown pick presented (`pick_dropdown`): {block_id, option_id}. */
+        var presentedSheet: Map<String, Any?>? = null
         var redactedFieldIds: List<String>? = null
         var responsesStep: Map<String, Any?>? = null
         /** The composition's `rememberCoroutineScope()` — cancelled when the composition leaves. */
@@ -208,6 +211,8 @@ internal class HostDataScenarioDriver(
                         }
                         "type_search" -> cur.searchQueries[op["block_id"] as String] = op["query"] as String
                         "open_sheet" -> openSheet(op)
+                        "pick_dropdown" -> pickDropdown(op)
+                        "dismiss_sheet" -> { cur.sheetBlocks = emptyList(); cur.presentedSheet = null }
                         "element_interaction" -> elementInteraction(op)
                         "complete_step" -> completeStep(cur)
                         "tap" -> tap(op)
@@ -536,6 +541,27 @@ internal class HostDataScenarioDriver(
         st.sheetBlocks = if (raw != null) resolveSheetBlocks(raw, emptyMap()) else option.sheet_blocks.orEmpty()
     }
 
+    /**
+     * A pick from a dropdown-style Select's menu, through the dropdown view's own seam
+     * ([dropdownOptionPick]) against the options the real pipeline rendered for the block. What it
+     * returns is what the view hands `OptionBottomSheet` once the menu has closed.
+     */
+    private fun pickDropdown(op: Map<String, Any?>) {
+        val blockId = op["block_id"] as String
+        val value = op["value"] as String
+        val (st, block) = ownerOf(blockId)
+        val options = block.field_options.orEmpty()
+        require(value.isEmpty() || options.any { it.value == value }) {
+            "pick_dropdown: block $blockId renders no option $value (renders ${options.map { it.value }})"
+        }
+        val sheet = dropdownOptionPick(block, options, value, st.inputValues)
+        st.presentedSheet = sheet?.let { mapOf("block_id" to blockId, "option_id" to (it.id ?: it.value)) }
+        st.sheetBlocks = if (sheet == null) emptyList() else {
+            val raw = st.resolved?.sheetRaw?.get("$blockId|${sheet.id ?: sheet.value}")
+            if (raw != null) resolveSheetBlocks(raw, emptyMap()) else sheet.sheet_blocks.orEmpty()
+        }
+    }
+
     private fun completeStep(st: StepState) {
         // BlockBasedStepView.handleAction("next") → OnboardingFlowHost onNext, verbatim.
         val merged = mutableMapOf<String, Any>()
@@ -688,6 +714,7 @@ internal class HostDataScenarioDriver(
         out["blocks"] = blockMap
         out["hook_data"] = access.effectiveHookData(st.step.id)
         out["interaction_calls"] = interactionCalls.toList()
+        out["presented_sheet"] = st.presentedSheet
         return out
     }
 
