@@ -1249,6 +1249,9 @@ private fun resolveDotPath(
     /** The current step's live inputValues, addressable as `{{step.field_id}}`.
      *  Defaulted so every existing call site compiles and behaves exactly as before. */
     stepInputs: Map<String, Any>? = null,
+    /** A stored value's or a URL's path: a Google location answer it reaches or passes through
+     *  resolves to the answer's typed text ([HostDataResolver.typedTextRule]). */
+    typedText: Boolean = false,
 ): Any? {
     if (path.isNullOrEmpty()) return null
     val parts = path.split(".")
@@ -1271,6 +1274,7 @@ private fun resolveDotPath(
 
     var current: Any? = root ?: return null
     for (part in parts.drop(1)) {
+        if (typedText && LocationAnswer.carriesPlaceId(current)) return HostDataResolver.typedTextOfGoogleAnswer(current)
         val next = when {
             current is Map<*, *> -> (current as Map<*, *>)[part]
             // Numeric step into a list — `{{selected.tags.0.label}}`. Multi-select records a list
@@ -1283,7 +1287,7 @@ private fun resolveDotPath(
         }
         current = next ?: return null
     }
-    return current
+    return if (typedText) HostDataResolver.typedTextForGoogleAnswers(current) else current
 }
 
 /**
@@ -1296,7 +1300,12 @@ fun resolveTemplateString(
     sessionData: Map<String, Any>? = null,
     userTraits: Map<String, Any>? = null,
     stepInputs: Map<String, Any>? = null,
+    /** Where [text] sits ([HostDataResolver.typedTextRule]): a token the rule covers resolves a Google
+     *  answer to its typed text. Null: drawn text, where only a markdown link's target does. */
+    key: String? = null,
+    isOption: Boolean = false,
 ): String {
+    val rule = HostDataResolver.typedTextRule(text, key, isOption)
     // `{{var | fallback}}`. The console's picker advertises this syntax and the web
     // preview implements it; neither native did, so the whole literal (pipe included) rendered on
     // the user's screen when an author followed our own instruction.
@@ -1307,7 +1316,9 @@ fun resolveTemplateString(
     return pattern.replace(text) { matchResult ->
         val path = matchResult.groupValues[1]
         val fallback = matchResult.groupValues.getOrNull(2)?.takeIf { it.isNotEmpty() }
-        val resolved = resolveDotPath(path, responses, hookData, userTraits, sessionData, stepInputs)
+        val resolved = resolveDotPath(
+            path, responses, hookData, userTraits, sessionData, stepInputs, typedText = rule.covers(matchResult.range.first),
+        )
         resolved?.toString() ?: fallback ?: matchResult.value
     }
 }
@@ -1366,7 +1377,10 @@ internal fun resolveBlockBindings(
     // Resolve bindings map — override block properties from data context
     if (hasBindings) {
         block.bindings?.forEach { (property, path) ->
-            val value = resolveDotPath(path, responses, hookData, null, null, stepInputs)
+            // A stored value or a media URL takes a Google answer's typed text, as in the raw pass.
+            val value = resolveDotPath(
+                path, responses, hookData, null, null, stepInputs, typedText = HostDataResolver.bindingTakesTypedText(property),
+            )
             if (value != null) {
                 resolved = applyBindingProperty(resolved, property, value)
             }
@@ -13601,7 +13615,8 @@ private fun OptionBottomSheet(option: InputOption, parentBlockId: String, onDism
     val rawSheet = if (LocalHostDataRawResolved.current) {
         LocalHostDataSheets.current["$parentBlockId|${option.id ?: option.value}"]
     } else null
-    val sheetBlocks = if (rawSheet != null) resolveSheetBlocks(rawSheet, sheetInputs.toMap()) else option.sheet_blocks.orEmpty()
+    val sheetBlocks = if (rawSheet != null) resolveSheetBlocks(rawSheet, sheetInputs.toMap(), option.sheet_blocks.orEmpty())
+    else option.sheet_blocks.orEmpty()
     // The step's credit context. The sheet is a modal above the step, so it draws its own credit when
     // its own blocks template a Google answer — their `step` root read against the sheet's own inputs.
     val creditContext = LocalGoogleCreditSheetContext.current

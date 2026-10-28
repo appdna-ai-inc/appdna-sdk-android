@@ -1,5 +1,7 @@
 package ai.appdna.sdk.onboarding
 
+import ai.appdna.sdk.core.interpolated
+
 /**
  * Android drivers for Google's attribution, dispatched from `SharedFixtureTest`. Every value they
  * return is produced by REAL SDK code:
@@ -95,7 +97,18 @@ internal object GoogleAttributionFixtureDrivers {
             val resolvedPick = HostDataStepPipeline(pickStep, legacyContext = { null }).resolve(
                 HostDataInputs(responses = accumulated, stepInputs = emptyMap()),
             )
-            val block = resolvedPick.blocks.firstOrNull { it.id == pick["block_id"] }
+            // The picked Select at any depth: a container's child records its pick like a top-level one.
+            // `in_sheet = {block_id, option_id}`: the Select is drawn in that option's sheet, as the
+            // sheet draws it (`resolveSheetBlocks` over the raw sheet the pipeline kept).
+            val pickBlocks = (pick["in_sheet"] as? Map<String, Any?>)?.let { inSheet ->
+                val ownerId = inSheet["block_id"] as? String
+                val optionId = inSheet["option_id"] as? String
+                val opened = findBlock(ownerId, resolvedPick.blocks)?.field_options.orEmpty()
+                    .firstOrNull { (it.id ?: it.value) == optionId }
+                val raw = resolvedPick.sheetRaw["$ownerId|$optionId"]
+                if (raw != null) resolveSheetBlocks(raw, emptyMap(), opened?.sheet_blocks.orEmpty()) else opened?.sheet_blocks.orEmpty()
+            } ?: resolvedPick.blocks
+            val block = findBlock(pick["block_id"] as? String, pickBlocks)
                 ?: throw AssertionError("the picked block is not on the resolved step")
             val option = block.field_options.orEmpty().firstOrNull { (it.id ?: it.value) == pick["option_id"] }
                 ?: throw AssertionError("the picked option is not on the resolved step")
@@ -145,15 +158,71 @@ internal object GoogleAttributionFixtureDrivers {
             )
         }
 
-        // `action.read[] = {name, block_id, option_id?, key}`: one value of the resolved step — an
-        // option's `label` / `value`, or a block's `text` / `action_value` / `default_value` (its
-        // `field_config.default_value`). Absent → null.
+        // The option sheet `action.sheet` opens, as its renderer draws it: the presented option's raw
+        // sheet blocks from the REAL pipeline, through `resolveSheetBlocks` — the call the sheet makes —
+        // so its deferred `{{step.…}}` paths resolve against the sheet's own inputs.
+        val sheetSpec = action["sheet"] as? Map<String, Any?>
+        val drawnSheet = {
+            val resolved = resolveStep()
+            val blockId = sheetSpec?.get("block_id") as? String
+            val optionId = sheetSpec?.get("option_id") as? String
+            val option = resolved.blocks.firstOrNull { it.id == blockId }?.field_options.orEmpty()
+                .firstOrNull { (it.id ?: it.value) == optionId }
+            val raw = resolved.sheetRaw["$blockId|$optionId"]
+            val inputs = (sheetSpec?.get("inputs") as? Map<String, Any?>).orEmpty()
+            if (raw != null) resolveSheetBlocks(raw, inputs, option?.sheet_blocks.orEmpty()) else option?.sheet_blocks.orEmpty()
+        }
+
+        // `action.read[] = {name, via?, block_id?, option_id?, key}`: one value as a renderer draws or
+        // stores it — an option's `label` / `value`, or a block's `text` / `action_value` /
+        // `default_value` (its `field_config.default_value`) / `image_url` / `video_url` / `lottie_url` /
+        // `markdown_content`, the block found at any depth. `via`: `pipeline` (default) the step the
+        // REAL pipeline resolves; `view_pass` the same step without raw capture, each block drawn through
+        // `resolveBlockBindings` (the view-level pass the renderer runs on it); `sheet` the sheet above;
+        // `legacy` the step's `title` / `subtitle` / `cta_text` through `interpolated()`, as every legacy
+        // view draws them. Absent → null.
         (action["read"] as? List<Map<String, Any?>>)?.let { reads ->
-            val blocks = resolveStep().blocks
+            val cache = HashMap<String, List<ContentBlock>>()
+            fun blocks(via: String): List<ContentBlock> = cache.getOrPut(via) {
+                when (via) {
+                    "view_pass" -> {
+                        val bare = step.copy(rawContentBlocks = null)
+                        bare.config.content_blocks.orEmpty().map {
+                            resolveBlockBindings(
+                                it, hookData = null,
+                                responses = stripNulls(accumulated) as Map<String, Any>,
+                                stepInputs = stripNulls(stepInputs) as Map<String, Any>,
+                            )
+                        }
+                    }
+                    "sheet" -> drawnSheet()
+                    else -> resolveStep().blocks
+                }
+            }
+            val legacyContext = ai.appdna.sdk.core.TemplateContext(
+                userTraits = null,
+                remoteConfig = { null },
+                onboardingResponses = (stripNulls(store) as Map<String, Any>)
+                    .mapNotNull { (k, v) -> (v as? Map<String, Any>)?.let { k to it } }.toMap(),
+                computedData = emptyMap(),
+                sessionData = emptyMap(),
+                deviceInfo = emptyMap(),
+                surface = ai.appdna.sdk.core.TemplateSurface.ONBOARDING,
+            )
             out["read"] = reads.associate { r ->
                 val name = r["name"] as? String ?: throw AssertionError("a read needs a name")
                 val key = r["key"] as? String ?: throw AssertionError("read $name needs a key")
-                val block = blocks.firstOrNull { it.id == r["block_id"] }
+                val via = r["via"] as? String ?: "pipeline"
+                if (via == "legacy") {
+                    val source = when (key) {
+                        "title" -> step.config.title
+                        "subtitle" -> step.config.subtitle
+                        "cta_text" -> step.config.cta_text
+                        else -> throw AssertionError("read $name: unknown legacy key $key")
+                    }
+                    return@associate name to source?.interpolated(null, legacyContext)
+                }
+                val block = findBlock(r["block_id"] as? String, blocks(via))
                 val optionId = r["option_id"] as? String
                 val value: Any? = if (optionId != null) {
                     val option = block?.field_options.orEmpty().firstOrNull { (it.id ?: it.value) == optionId }
@@ -167,6 +236,10 @@ internal object GoogleAttributionFixtureDrivers {
                         "text" -> block?.text
                         "action_value" -> block?.action_value
                         "default_value" -> block?.field_config?.get("default_value")
+                        "image_url" -> block?.image_url
+                        "video_url" -> block?.video_url
+                        "lottie_url" -> block?.lottie_url
+                        "markdown_content" -> block?.markdown_content
                         else -> throw AssertionError("read $name: unknown block key $key")
                     }
                 }
@@ -194,6 +267,18 @@ internal object GoogleAttributionFixtureDrivers {
             out["sheet_credit"] = context.shows(blockId, optionId, presented, inputs)
         }
         return out
+    }
+
+    /** The block with [id] among [blocks] at any depth: `children`, `stack_children` and option sheets. */
+    private fun findBlock(id: String?, blocks: List<ContentBlock>): ContentBlock? {
+        if (id == null) return null
+        for (b in blocks) {
+            if (b.id == id) return b
+            val nested = b.children.orEmpty() + b.stack_children.orEmpty() +
+                b.field_options.orEmpty().flatMap { it.sheet_blocks.orEmpty() }
+            findBlock(id, nested)?.let { return it }
+        }
+        return null
     }
 
     /** JSON nulls dropped, as the SDK's own parsers expect (`Map<String, Any>`). */

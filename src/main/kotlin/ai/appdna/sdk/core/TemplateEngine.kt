@@ -75,13 +75,24 @@ object TemplateEngine {
     /**
      * Interpolate all `{{...}}` variables in a string.
      */
-    fun interpolate(value: String, context: TemplateContext): String {
+    @JvmOverloads
+    fun interpolate(value: String, context: TemplateContext, key: String? = null, isOption: Boolean = false): String {
         if (!value.contains("{{")) return value // Fast path
+        // On an onboarding step a token the typed-text rule covers (a stored value, a media URL off
+        // Google's hosts, a markdown link's target) resolves as on every other surface: a Google answer
+        // to its typed text. [key] / [isOption]: where the string sits.
+        val rule = if (context.surface == TemplateSurface.ONBOARDING) {
+            ai.appdna.sdk.onboarding.HostDataResolver.typedTextRule(value, key, isOption)
+        } else {
+            null
+        }
+        val typedContext by lazy { context.copy(surface = TemplateSurface.OTHER) }
 
         return regex.replace(value) { match ->
             val varPath = match.groupValues[1].trim()
             val fallback = match.groupValues.getOrNull(2)?.trim() ?: ""
-            resolveVariable(varPath, context) ?: fallback
+            val tokenContext = if (rule?.covers(match.range.first) == true) typedContext else context
+            resolveVariable(varPath, tokenContext) ?: fallback
         }
     }
 
@@ -255,9 +266,18 @@ object TemplateEngine {
 /**
  * Convenience extension to interpolate {{variables}} in onboarding text fields.
  */
-fun String.interpolated(): String {
+fun String.interpolated(): String = interpolated(key = null)
+
+/**
+ * [key]: the field this text is, for the typed-text rule; null for drawn text, where only a markdown
+ * link's target takes a Google answer's typed text.
+ */
+internal fun String.interpolated(key: String?): String {
     if (!this.contains("{{")) return this
     // An onboarding step's own text: the step's container draws the Google credit (`GoogleCredit`).
-    val ctx = TemplateEngine.buildContext(TemplateSurface.ONBOARDING)
-    return TemplateEngine.interpolate(this, ctx)
+    return interpolated(key, TemplateEngine.buildContext(TemplateSurface.ONBOARDING))
 }
+
+/** [interpolated] against [context] — the SDK state it reads, as one value. */
+internal fun String.interpolated(key: String?, context: TemplateContext): String =
+    if (!this.contains("{{")) this else TemplateEngine.interpolate(this, context, key)

@@ -278,13 +278,9 @@ internal class HostDataStepPipeline(
                 reverting = mutableListOf()
                 decodeFellBack = false
                 val d = decodeWithRevert(r).let { block ->
-                    // Which option keys show a Google answer's content, for a later `selected` path.
-                    if (r.googleOptionKeys.isEmpty()) block
-                    else block.copy(
-                        field_options = block.field_options?.map { o ->
-                            o.copy(googleKeys = r.googleOptionKeys[o.id ?: o.value])
-                        }?.toImmutableList(),
-                    )
+                    // Which option keys show a Google answer's content, for a later `selected` path —
+                    // on a Select at any depth.
+                    if (r.googleOptionKeys.isEmpty()) block else stampGoogleKeys(block, r.googleOptionKeys)
                 }
                 Memo(memoKey, r, d, reverting.toList(), rawResolved = !r.skipped && !decodeFellBack).also { memo[i] = it }
             }
@@ -735,12 +731,73 @@ internal val LocalStepGateBlocks = compositionLocalOf<List<ContentBlock>?> { nul
 internal val LocalHostDataSheets = compositionLocalOf<Map<String, List<Map<String, Any?>>>> { emptyMap() }
 
 /**
+ * [block] with every option's `googleKeys` set from [keys] (block id → option id → keys), at every
+ * depth the raw pass records them: the block, its `children` / `stack_children`, and its options'
+ * sheets. A pick records an option's keys with it, so a nested Select credits like a top-level one.
+ * The Swift twin is `OnboardingStepPipeline.stampGoogleKeys`.
+ */
+internal fun stampGoogleKeys(block: ContentBlock, keys: Map<String, Map<String, List<String>>>): ContentBlock {
+    val own = keys[block.id]
+    return block.copy(
+        field_options = block.field_options?.map { option ->
+            val o = if (own != null) option.copy(googleKeys = own[option.id ?: option.value]) else option
+            val sheet = o.sheet_blocks ?: return@map o
+            o.copy(sheet_blocks = sheet.map { stampGoogleKeys(it, keys) }.toImmutableList())
+        }?.toImmutableList(),
+        children = block.children?.map { stampGoogleKeys(it, keys) }?.toImmutableList(),
+        stack_children = block.stack_children?.map { stampGoogleKeys(it, keys) }?.toImmutableList(),
+    )
+}
+
+/**
+ * The `googleKeys` the block trees [blocks] carry, keyed as [stampGoogleKeys] takes them — so blocks
+ * decoded afresh from raw JSON, which never holds them, can be given them back.
+ */
+internal fun googleKeysOf(blocks: List<ContentBlock>): Map<String, Map<String, List<String>>> {
+    val out = LinkedHashMap<String, LinkedHashMap<String, List<String>>>()
+    fun visit(b: ContentBlock) {
+        for (o in b.field_options.orEmpty()) {
+            o.googleKeys?.takeIf { it.isNotEmpty() }?.let { k ->
+                val id = o.id ?: o.value ?: return@let
+                out.getOrPut(b.id) { LinkedHashMap() }[id] = k
+            }
+            o.sheet_blocks?.forEach(::visit)
+        }
+        b.children?.forEach(::visit)
+        b.stack_children?.forEach(::visit)
+    }
+    blocks.forEach(::visit)
+    return out
+}
+
+/**
  * "Sheet ids" — the sheet renderer resolves ONLY the paths the raw pass recorded in
  * `field_config.sheet_step_paths` (`step`-root tokens and `step`-rooted bindings), against the
  * sheet's own inputs, then decodes. Never descends: every nested block carries its own paths.
  */
-internal fun resolveSheetBlocks(raw: List<Map<String, Any?>>, sheetInputs: Map<String, Any?>): List<ContentBlock> =
-    raw.map { OnboardingConfigParser.decodeRawBlock(applySheetStepPaths(HostDataResolver.deepCopyObj(it), sheetInputs)) }
+internal fun resolveSheetBlocks(
+    raw: List<Map<String, Any?>>,
+    sheetInputs: Map<String, Any?>,
+    /** The option's typed sheet blocks: what their options carry that raw JSON never holds (`googleKeys`). */
+    typed: List<ContentBlock> = emptyList(),
+): List<ContentBlock> {
+    val decoded = raw.map { OnboardingConfigParser.decodeRawBlock(applySheetStepPaths(HostDataResolver.deepCopyObj(it), sheetInputs)) }
+    val keys = googleKeysOf(typed)
+    return if (keys.isEmpty()) decoded else decoded.map { stampGoogleKeys(it, keys) }
+}
+
+/**
+ * The key a deferred token's path ends on, and whether it is an option's: `field_options.<n>.value` is
+ * an option's `value`; a list element (`gallery_images.<n>`) takes its list's key. The Swift twin is
+ * `OnboardingStepPipeline.sheetPathKey`.
+ */
+internal fun sheetPathKey(segs: List<String>): Pair<String?, Boolean> {
+    val last = segs.lastOrNull() ?: return null to false
+    val isIndex = { s: String -> s.isNotEmpty() && s.all { it in '0'..'9' } }
+    if (isIndex(last)) return (if (segs.size >= 2) segs[segs.size - 2] else null) to false
+    val isOption = segs.size >= 3 && segs[segs.size - 3] == "field_options" && isIndex(segs[segs.size - 2])
+    return last to isOption
+}
 
 @Suppress("UNCHECKED_CAST")
 private fun applySheetStepPaths(block: MutableMap<String, Any?>, sheetInputs: Map<String, Any?>): MutableMap<String, Any?> {
@@ -752,6 +809,7 @@ private fun applySheetStepPaths(block: MutableMap<String, Any?>, sheetInputs: Ma
         when (m["kind"]) {
             "token" -> {
                 val segs = path.split('.')
+                val (key, isOption) = sheetPathKey(segs)
                 var cur: Any? = block
                 for (seg in segs.dropLast(1)) {
                     val c = cur
@@ -765,17 +823,22 @@ private fun applySheetStepPaths(block: MutableMap<String, Any?>, sheetInputs: Ma
                 val target = cur
                 when (target) {
                     is MutableMap<*, *> -> (target[last] as? String)?.let {
-                        (target as MutableMap<String, Any?>)[last] = HostDataResolver.resolvePlainString(it, ctx)
+                        (target as MutableMap<String, Any?>)[last] = HostDataResolver.resolvePlainString(it, ctx, key, isOption)
                     }
                     is MutableList<*> -> last.toIntOrNull()?.let { i ->
-                        (target.getOrNull(i) as? String)?.let { (target as MutableList<Any?>)[i] = HostDataResolver.resolvePlainString(it, ctx) }
+                        (target.getOrNull(i) as? String)?.let {
+                            (target as MutableList<Any?>)[i] = HostDataResolver.resolvePlainString(it, ctx, key, isOption)
+                        }
                     }
                     else -> {}
                 }
             }
             "binding" -> {
                 val source = m["source"] as? String ?: continue
-                val value = HostDataResolver.resolveScopePath(source, HostDataResolver.Scope(mapOf("step" to sheetInputs)))
+                val value = HostDataResolver.resolveScopePath(
+                    source, HostDataResolver.Scope(mapOf("step" to sheetInputs)),
+                    typedText = HostDataResolver.bindingTakesTypedText(path),
+                )
                 HostDataResolver.convertBindingValue(path, value)?.let { block[path] = it }
             }
         }
