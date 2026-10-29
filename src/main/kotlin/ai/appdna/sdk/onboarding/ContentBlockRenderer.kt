@@ -5600,8 +5600,8 @@ private fun RatingBlock(
 /**
  * Fold markdown the parsers do NOT know into the subset they do.
  *
- * #893 / #900 — both platforms parse `**bold**`, `*italic*`, `[link](url)` and `++underline++`,
- * and nothing else. Everything outside that reached the screen as characters: a generated
+ * #893 / #900 — both platforms parse inline markdown only (emphasis, code spans, links, and
+ * `++underline++`; [MarkdownInline]), and no block syntax. Everything outside that reached the screen as characters: a generated
  * testimonial rendered as `> "I always quit after missing a day…"`, chevron and all, and a model
  * reaching for a heading or a list inside a `rich_text` block is a question of when rather than
  * whether — the generator is told to use `rich_text` for formatted copy.
@@ -5740,150 +5740,50 @@ private fun RichTextBlock(block: ContentBlock, loc: ((String, String) -> String)
 }
 
 /**
- * Parses a subset of Markdown into an AnnotatedString.
- * Supported patterns:
- * - **bold** → SpanStyle(fontWeight = Bold)
- * - *italic* → SpanStyle(fontStyle = Italic)
- * - ++underline++ → SpanStyle(textDecoration = Underline)
- * - every link form iOS's markdown parser follows ([MarkdownLinks.find]): an inline link in any of
- *   its destination forms (its label's own emphasis drawn), an angle-bracket autolink, and a bare URL
- *   or email address → SpanStyle(color = linkColor, underline) + URL annotation
+ * Inline markdown as an AnnotatedString, drawn as iOS draws it ([MarkdownInline]): emphasis by
+ * CommonMark's rules (`*a*`, `_a_`, `**a**`, `__a__`), `~~a~~` struck through, a code span in a
+ * monospaced face, backslash escapes, an image's alt text, and every link form iOS's markdown parser
+ * follows ([MarkdownLinks.find]) → SpanStyle(color = linkColor, underline) + URL annotation.
+ * `++underline++` is drawn when [underlineMarkers] is set (rich text; an agreement's copy does not).
  *
- * `internal` so the shared-fixture runner reads the links THIS draws.
+ * `internal` so the shared-fixture runner reads what THIS draws.
  */
 internal fun parseMarkdownToAnnotatedString(
     markdown: String,
     baseStyle: TextStyle,
     linkColor: Color,
+    underlineMarkers: Boolean = true,
 ): androidx.compose.ui.text.AnnotatedString {
-    // Regex patterns (order matters: bold before italic to avoid ambiguity).
-    // `++underline++` is the iOS custom marker mirrored
-    // here so the same Markdown source renders identically.
-    val boldRegex = Regex("""\*\*(.+?)\*\*""")
-    val italicRegex = Regex("""\*(.+?)\*""")
-    val underlineRegex = Regex("""\+\+(.+?)\+\+""")
-    val codeSpanRegex = Regex("""(`+)(.+?)\1""")
-
-    // Every link is found once, on the whole text: what precedes a link decides whether it is one (an
-    // open `[`, the character before a `www.`), so a piece cut out of the text cannot be asked.
-    val links = MarkdownLinks.find(markdown)
-
+    val runs = MarkdownInline.draw(markdown, underlineMarkers)
+    fun spanStyle(run: MarkdownInline.Run): SpanStyle? {
+        val link = run.url != null
+        val decorations = listOfNotNull(
+            androidx.compose.ui.text.style.TextDecoration.Underline.takeIf { link || run.underline },
+            androidx.compose.ui.text.style.TextDecoration.LineThrough.takeIf { run.strike },
+        )
+        if (!link && !run.bold && !run.italic && !run.code && decorations.isEmpty()) return null
+        return SpanStyle(
+            color = if (link) linkColor else Color.Unspecified,
+            fontWeight = if (run.bold) FontWeight.Bold else null,
+            fontStyle = if (run.italic) FontStyle.Italic else null,
+            fontFamily = if (run.code) androidx.compose.ui.text.font.FontFamily.Monospace else null,
+            textDecoration = if (decorations.isEmpty()) null else androidx.compose.ui.text.style.TextDecoration.combine(decorations),
+        )
+    }
     return buildAnnotatedString {
-        /** The first emphasis match in [text] (bold, underline or italic), or null. */
-        fun firstEmphasis(text: String): Pair<MatchResult, String>? {
-            val italicMatch = italicRegex.find(text)?.takeIf { m ->
-                val idx = m.range.first
-                // Ensure this is not a ** bold marker
-                !(idx > 0 && text.getOrNull(idx - 1) == '*') && text.getOrNull(idx + 1) != '*'
+        var i = 0
+        while (i < runs.size) {
+            val url = runs[i].url
+            var j = i + 1
+            // One annotation per link, however many styles its text is drawn in.
+            if (url != null) while (j < runs.size && runs[j].url == url) j++
+            if (url != null) pushStringAnnotation(tag = "URL", annotation = url)
+            for (k in i until j) {
+                val style = spanStyle(runs[k])
+                if (style != null) withStyle(style) { append(runs[k].text) } else append(runs[k].text)
             }
-            return listOfNotNull(
-                boldRegex.find(text)?.let { it to "bold" },
-                underlineRegex.find(text)?.let { it to "underline" },
-                italicMatch?.let { it to "italic" },
-            ).minByOrNull { it.first.range.first }
-        }
-
-        fun emphasisStyle(type: String): SpanStyle = when (type) {
-            "bold" -> SpanStyle(fontWeight = FontWeight.Bold)
-            "underline" -> SpanStyle(textDecoration = androidx.compose.ui.text.style.TextDecoration.Underline)
-            else -> SpanStyle(fontStyle = FontStyle.Italic)
-        }
-
-        /**
-         * An inline link's label as iOS draws it: its emphasis drawn, a code span as its text, its
-         * backslash escapes resolved (an escaped `*` stays a star).
-         */
-        fun appendLabel(label: String) {
-            val escaped = mutableListOf<Char>()
-            val src = StringBuilder()
-            var k = 0
-            while (k < label.length) {
-                if (label[k] == '\\' && k + 1 < label.length && MarkdownLinks.isEscapable(label[k + 1]) && escaped.size < 0x100) {
-                    src.append((0xE100 + escaped.size).toChar())
-                    escaped += label[k + 1]
-                    k += 2
-                    continue
-                }
-                src.append(label[k])
-                k++
-            }
-            fun restore(s: String) = buildString {
-                for (ch in s) append(if (ch.code in 0xE100 until 0xE100 + escaped.size) escaped[ch.code - 0xE100] else ch)
-            }
-            fun appendStyled(text: String) {
-                var rest = text
-                while (rest.isNotEmpty()) {
-                    val (match, type) = firstEmphasis(rest) ?: run { append(restore(rest)); return }
-                    if (match.range.first > 0) append(restore(rest.substring(0, match.range.first)))
-                    withStyle(emphasisStyle(type)) { appendStyled(match.groupValues[1]) }
-                    rest = rest.substring(match.range.last + 1)
-                }
-            }
-            appendStyled(codeSpanRegex.replace(src) { it.groupValues[2] })
-        }
-
-        fun appendLink(link: MarkdownLinks.Link) {
-            pushStringAnnotation(tag = "URL", annotation = link.url)
-            withStyle(SpanStyle(
-                color = linkColor,
-                textDecoration = androidx.compose.ui.text.style.TextDecoration.Underline,
-            )) {
-                val label = link.label
-                if (label != null) appendLabel(label) else append(link.text)
-            }
-            pop()
-        }
-
-        /** `markdown[from, to)` with the links wholly inside it drawn as links, the rest as it is. */
-        fun appendLinked(from: Int, to: Int) {
-            var at = from
-            for (link in links) {
-                if (link.start < at || link.end > to) continue
-                if (link.start > at) append(markdown.substring(at, link.start))
-                appendLink(link)
-                at = link.end
-            }
-            if (at < to) append(markdown.substring(at, to))
-        }
-
-        // Simple iterative parser: walk the string, drawing the earliest link or emphasis next.
-        var base = 0
-        while (base < markdown.length) {
-            val remaining = markdown.substring(base)
-            val link = links.firstOrNull { it.start >= base }
-            val first = firstEmphasis(remaining)
-            // A link takes the characters it spans before emphasis pairs up: an emphasis whose closing
-            // marker falls inside a link is no emphasis, and its opening marker draws as text.
-            val straddled = first != null && links.any {
-                val end = base + first.first.range.last + 1
-                it.start >= base + first.first.range.first && it.start < end && it.end > end
-            }
-
-            if (link != null && (first == null || straddled || link.start - base <= first.first.range.first)) {
-                // A link starts first: draw what precedes it, then the link.
-                if (link.start > base) append(markdown.substring(base, link.start))
-                appendLink(link)
-                base = link.end
-                continue
-            }
-
-            if (first == null) {
-                // No more markdown — append rest as plain text
-                append(remaining)
-                break
-            }
-
-            val (match, type) = first
-
-            // Append text before the match
-            if (match.range.first > 0) {
-                append(remaining.substring(0, match.range.first))
-            }
-            val inner = match.groups[1]!!.range
-            withStyle(emphasisStyle(type)) {
-                appendLinked(base + inner.first, base + inner.last + 1)
-            }
-            base += match.range.last + 1
+            if (url != null) pop()
+            i = j
         }
     }
 }
@@ -12529,7 +12429,8 @@ private fun AgreementBlock(
     }
 
     val baseTextStyle = TextStyle(fontSize = 13.sp, color = textColor)
-    val annotatedString = parseMarkdownToAnnotatedString(agreementText, baseTextStyle, linkColor)
+    // An agreement's copy draws no `++underline++`, as on iOS.
+    val annotatedString = parseMarkdownToAnnotatedString(agreementText, baseTextStyle, linkColor, underlineMarkers = false)
 
     androidx.compose.foundation.layout.Row(
         modifier = Modifier.fillMaxWidth(),

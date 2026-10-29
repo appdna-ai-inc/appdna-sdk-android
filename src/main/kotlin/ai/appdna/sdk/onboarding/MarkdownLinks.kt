@@ -59,7 +59,27 @@ internal object MarkdownLinks {
         return out
     }
 
-    private fun findInLine(t: String, from: Int, to: Int, out: MutableList<Link>) {
+    /**
+     * What the text `[from, to)` of one line draws as a unit, in order: a code span, an image, and every
+     * link, including one whose URL Foundation cannot make ([Link.url] empty) — it draws its text, but
+     * does not link. [MarkdownInline] draws the rest (emphasis, escapes) around them.
+     */
+    sealed class Atom(val start: Int, val end: Int) {
+        /** A code span; [text] is what it draws (one space stripped from each side when both have one). */
+        class Code(start: Int, end: Int, val text: String) : Atom(start, end)
+        /** An image `![alt](…)`; its alt text is `[labelStart, labelEnd)`. */
+        class Image(start: Int, end: Int, val labelStart: Int, val labelEnd: Int) : Atom(start, end)
+        /** A link; an inline link's label is `[link.start + 1, link.start + 1 + label.length)`. */
+        class Anchor(val link: Link) : Atom(link.start, link.end)
+    }
+
+    fun atoms(t: String, from: Int, to: Int): List<Atom> {
+        val atoms = mutableListOf<Atom>()
+        findInLine(t, from, to, mutableListOf(), atoms)
+        return atoms.sortedBy { it.start }
+    }
+
+    private fun findInLine(t: String, from: Int, to: Int, out: MutableList<Link>, atoms: MutableList<Atom>? = null) {
         val found = mutableListOf<Link>()
         // Spans no email may be found in: code spans, images, and every link found first.
         val opaque = mutableListOf<IntRange>()
@@ -81,12 +101,23 @@ internal object MarkdownLinks {
                     if (r == run) { close = k; break }
                     k += r
                 }
-                if (close >= 0) { opaque += i until close + run; i = close + run } else i += run
+                if (close >= 0) {
+                    opaque += i until close + run
+                    atoms?.add(Atom.Code(i, close + run, codeText(t.substring(i + run, close))))
+                    i = close + run
+                } else {
+                    i += run
+                }
                 continue
             }
             if (c == '!' && i + 1 < to && t[i + 1] == '[') {
                 val image = inline(t, i + 1, to)
-                if (image != null) { opaque += i until image.end; i = image.end; continue }
+                if (image != null) {
+                    opaque += i until image.end
+                    atoms?.add(Atom.Image(i, image.end, i + 2, i + 2 + (image.label?.length ?: 0)))
+                    i = image.end
+                    continue
+                }
                 brackets++
                 i += 2
                 continue
@@ -135,7 +166,12 @@ internal object MarkdownLinks {
         // A link whose URL Foundation cannot make, or whose label draws nothing, draws no link; its
         // text is consumed all the same.
         out += found.filter { it.url.isNotEmpty() && it.text.isNotEmpty() }.sortedBy { it.start }
+        atoms?.addAll(found.map { Atom.Anchor(it) })
     }
+
+    /** A code span's content as it draws: one space stripped from each side when both have one and it is not all spaces. */
+    private fun codeText(s: String): String =
+        if (s.length >= 2 && s.first() == ' ' && s.last() == ' ' && s.any { it != ' ' }) s.substring(1, s.length - 1) else s
 
     /**
      * The emails in one run of text `[from, to)`, read as cmark reads its text node: with backslash

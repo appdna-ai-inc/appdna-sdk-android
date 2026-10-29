@@ -22,6 +22,14 @@ Wraps iOS 1.0.83. Builds on Play Billing Library 8, which Google Play now requir
 
 ### Fixed
 
+- **Rich text and an agreement's copy draw markdown as iOS draws it** (#1183, #1186). Android knew only
+  `**bold**`, `*italic*` and `++underline++`, paired by an earliest-match rule, so `_emphasis_`,
+  `__strong__`, `~~struck~~`, a code span's backticks and a backslash escape were drawn as typed, nested
+  markers paired differently (`*a **b* c**`), a link with an invalid URL showed its raw markdown and an
+  image showed `![alt](…)`. Inline markdown now follows CommonMark's rules as iOS's parser does: `_` and `*`
+  emphasis (an `_` inside a word stays text), strikethrough, a code span in a monospaced face, escapes,
+  an invalid link's label as plain text, and an image's alt text. An agreement's copy no longer draws
+  `++underline++`, which iOS never drew there.
 - **A link to an international host opens the same host as on iOS** (#1185). The host was converted
   with IDNA2003, which maps `ß` to `ss` and `ς` to `σ` and drops a zero-width joiner — so a link to
   `straße.de` opened `strasse.de`, a different domain. It is now converted as iOS converts it (UTS #46,

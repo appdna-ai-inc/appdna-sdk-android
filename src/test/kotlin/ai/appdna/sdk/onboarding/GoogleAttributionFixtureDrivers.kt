@@ -84,23 +84,61 @@ internal object GoogleAttributionFixtureDrivers {
      * `parseMarkdownToAnnotatedString` — the parser rich text and an agreement's copy draw with — and the
      * spans carrying a URL annotation. `surface: "rich_text"` first runs the rich-text block's own
      * `normaliseMarkdown` (which drops a code span's backticks); `"agreement"`, or no surface, hands the
-     * parser the line as written, as an agreement's copy does.
+     * parser the line as written, as an agreement's copy does; `++underline++` is drawn on `rich_text`
+     * only. `draw: true` adds `runs` ([drawnRuns]).
      */
     fun markdownLinks(cases: List<Map<String, Any?>>): List<Map<String, Any?>> = cases.map { c ->
         val name = c["name"] as? String ?: throw AssertionError("a case needs a name")
         val raw = c["markdown"] as? String ?: throw AssertionError("case $name needs markdown")
-        val md = when (val surface = c["surface"] as? String) {
+        val surface = c["surface"] as? String
+        val md = when (surface) {
             null, "agreement" -> raw
             "rich_text" -> normaliseMarkdown(raw)
             else -> throw AssertionError("case $name: unknown surface '$surface'")
         }
         val drawn = parseMarkdownToAnnotatedString(
             md, androidx.compose.ui.text.TextStyle(), androidx.compose.ui.graphics.Color.Blue,
+            underlineMarkers = surface == "rich_text",
         )
         val links = drawn.getStringAnnotations("URL", 0, drawn.length).map { a ->
             linkedMapOf<String, Any?>("text" to drawn.text.substring(a.start, a.end), "url" to a.item)
         }
-        linkedMapOf("name" to name, "links" to links)
+        val result = linkedMapOf<String, Any?>("name" to name, "links" to links)
+        if (c["draw"] == true) result["runs"] = drawnRuns(drawn)
+        result
+    }
+
+    /**
+     * What [drawn] shows, one entry per stretch drawn the same way: `{text, style?: [bold, italic,
+     * underline, strike, code], link?}`, read off its span styles and URL annotations. `underline` is
+     * the `++` marker's (a link is always underlined); `code` is the monospaced face.
+     */
+    fun drawnRuns(drawn: androidx.compose.ui.text.AnnotatedString): List<Map<String, Any?>> {
+        val out = mutableListOf<MutableMap<String, Any?>>()
+        var lastKey: String? = null
+        for (k in drawn.text.indices) {
+            val spans = drawn.spanStyles.filter { k >= it.start && k < it.end }.map { it.item }
+            val link = drawn.getStringAnnotations("URL", k, k + 1).firstOrNull()?.item
+            fun has(d: androidx.compose.ui.text.style.TextDecoration) = spans.any { it.textDecoration?.contains(d) == true }
+            val style = listOfNotNull(
+                "bold".takeIf { spans.any { it.fontWeight == androidx.compose.ui.text.font.FontWeight.Bold } },
+                "italic".takeIf { spans.any { it.fontStyle == androidx.compose.ui.text.font.FontStyle.Italic } },
+                "underline".takeIf { link == null && has(androidx.compose.ui.text.style.TextDecoration.Underline) },
+                "strike".takeIf { has(androidx.compose.ui.text.style.TextDecoration.LineThrough) },
+                "code".takeIf { spans.any { it.fontFamily == androidx.compose.ui.text.font.FontFamily.Monospace } },
+            )
+            val key = style.joinToString(",") + "|" + (link ?: "")
+            if (key == lastKey) {
+                out.last()["text"] = (out.last()["text"] as String) + drawn.text[k]
+                continue
+            }
+            val entry = linkedMapOf<String, Any?>("text" to drawn.text[k].toString())
+            if (style.isNotEmpty()) entry["style"] = style
+            if (link != null) entry["link"] = link
+            out += entry
+            lastKey = key
+        }
+        return out
     }
 
     /**
