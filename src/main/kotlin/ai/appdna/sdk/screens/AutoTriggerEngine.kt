@@ -1,7 +1,6 @@
 package ai.appdna.sdk.screens
 
 import ai.appdna.sdk.core.AudienceRuleEvaluator
-import ai.appdna.sdk.core.ConditionEvaluator
 import java.util.*
 
 internal class AutoTriggerEngine {
@@ -65,8 +64,16 @@ internal class AutoTriggerEngine {
         // Event triggers
         rules.events?.forEach { trigger ->
             if (trigger.eventName == event) {
-                if (trigger.conditions == null || properties == null) { matched = true }
-                else if (trigger.conditions.all { c -> ConditionEvaluator.valuesEqual(properties[c.field], c.value) }) { matched = true }
+                // Each condition is evaluated by its OPERATOR, with the evaluator the user-trait conditions
+                // use (it compared everything by equality, so "gt 10" meant "== 10"). An event tracked
+                // without properties is evaluated on none; it no longer fires a conditioned trigger outright.
+                val props = properties.orEmpty()
+                if (trigger.conditions.isNullOrEmpty() || trigger.conditions.all { c ->
+                        AudienceRuleEvaluator.evaluateRule(
+                            ai.appdna.sdk.core.AudienceRule(trait = c.field, operator = c.operator, value = c.value), props,
+                        )
+                    }
+                ) { matched = true }
             }
         }
 

@@ -230,6 +230,7 @@ class SharedFixtureTest(
             "identify" -> runIdentify(action, spy)
             "report_paying_user" -> runReportPayingUser(action, spy)
             "evaluate_audience" -> runEvaluateAudience(spy)
+            "evaluate_screen_trigger" -> runEvaluateScreenTrigger(action, spy)
             "show_paywall" -> runShowPaywall(action, spy)
             "purchase" -> runPurchase(action, spy)
             "restore_purchases" -> runRestorePurchases(action, spy)
@@ -841,6 +842,31 @@ class SharedFixtureTest(
     // ---------------------------------------------------------------------------------------------
     // audience_eval — REAL AudienceRuleSet + AudienceRuleEvaluator
     // ---------------------------------------------------------------------------------------------
+
+    /**
+     * evaluate_screen_trigger — REAL ScreenIndexEntry.fromMap + AutoTriggerEngine.evaluate. Each case is
+     * one entry `{trigger_rules: {events: [{event_name, conditions}]}}` parsed as the screen index is,
+     * and one tracked event on a fresh engine (no frequency state carried between cases).
+     */
+    private fun runEvaluateScreenTrigger(action: JSONObject, spy: Spy) {
+        val event = action.getString("event")
+        val cases = action.optJSONArray("cases") ?: unsupported("evaluate_screen_trigger without cases")
+        spy.state["fired"] = (0 until cases.length()).map { i ->
+            val case = cases.getJSONObject(i)
+            val trigger = mutableMapOf<String, Any?>("event_name" to event)
+            case.optJSONArray("conditions")?.let { trigger["conditions"] = it.asList() }
+            val entry = ai.appdna.sdk.screens.ScreenIndexEntry.fromMap(
+                mapOf("id" to "s1", "name" to "Screen", "trigger_rules" to mapOf("events" to listOf(trigger))),
+            )
+            @Suppress("UNCHECKED_CAST")
+            val properties = case.optJSONObject("properties")?.asMap()
+                ?.filterValues { it != null } as Map<String, Any>?
+            ai.appdna.sdk.screens.AutoTriggerEngine().evaluate(
+                entries = listOf(entry), event = event, properties = properties, userTraits = emptyMap(),
+                sessionCount = 1, daysSinceInstall = 0, currentScreenName = null,
+            ) != null
+        }
+    }
 
     private fun runEvaluateAudience(spy: Spy) {
         val cfg = config ?: unsupported("evaluate_audience without setup.config")
