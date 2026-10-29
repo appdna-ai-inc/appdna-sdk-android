@@ -904,7 +904,7 @@ private fun applySheetStepPaths(
                     val blockId = block["id"] as? String
                     val optionId = (target["id"] as? String) ?: (target["value"] as? String)
                     if (template != null && blockId != null && optionId != null &&
-                        HostDataResolver.plainStringReadsGoogle(template, ctx)
+                        HostDataResolver.plainStringReadsGoogle(template, ctx, key, isOption)
                     ) {
                         lateKeys.getOrPut(blockId) { LinkedHashMap() }.getOrPut(optionId) { LinkedHashMap() }[key] =
                             HostDataResolver.resolvePlainString(template, ctx, allTyped = true)

@@ -725,11 +725,22 @@ internal object HostDataResolver {
             allTyped = allTyped, wholeLocationAnswer = wholeLocationAnswer,
         ).value
 
-    /** Whether drawing [text] in block scope ([resolvePlainString]) shows a Google answer's content. */
-    internal fun plainStringReadsGoogle(text: String, ctx: HostDataContext): Boolean =
+    /**
+     * Whether drawing [text] in block scope ([resolvePlainString]) shows a Google answer's content: a token
+     * that resolves to one where the typed-text rule does not apply. [key] / [isOption] are where the text
+     * sits, as for [resolvePlainString]: an option's stored key (`value`, ...) takes the typed text, so it
+     * shows no Google content and records no Google key.
+     */
+    internal fun plainStringReadsGoogle(
+        text: String,
+        ctx: HostDataContext,
+        key: String? = null,
+        isOption: Boolean = false,
+    ): Boolean =
         resolveString(
             text, rootScope(ctx), url = false, deferStep = false,
-            legacy = ctx.legacyToken, storedLegacy = ctx.legacyTokenStored, wholeLocationAnswer = true,
+            legacy = ctx.legacyToken, storedLegacy = ctx.legacyTokenStored, key = key, isOption = isOption,
+            wholeLocationAnswer = true,
         ).readGoogle
 
     // ─────────────────────────────────────────────────────────────────────────────────────────────
