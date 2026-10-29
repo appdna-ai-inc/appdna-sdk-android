@@ -18,9 +18,12 @@ internal data class LocationListingRequest(
     val language: String?,
 ) {
     /**
-     * The autocomplete body. Each setting only when the author chose one: the proxy narrows results
-     * only when the key is PRESENT, so sending a substituted default would filter a search the author
-     * asked to leave open.
+     * The autocomplete body. Each setting only when the author chose one; an unset one is sent as
+     * nothing, and the proxy (`GeocodingService.autocomplete`) applies its own default for it: a missing
+     * `type` searches places, localities and addresses at Mapbox (`mapboxTypeFilter`) and applies no
+     * type filter at Google (`googlePrimaryTypes`); a missing `bias_country` or `language` takes the
+     * app's geocoding settings, and then English for the language. A default substituted here would
+     * override both, so the device never invents one.
      */
     fun autocompleteBody(): org.json.JSONObject = org.json.JSONObject().apply {
         put("query", query)

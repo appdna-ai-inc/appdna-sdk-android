@@ -40,11 +40,12 @@ class LocationSearchSettingsTest {
     @Test
     fun `an unauthored type stays NULL rather than becoming address`() {
         /*
-         * 🔴 THE ONE THAT WOULD HAVE BEEN A SILENT BEHAVIOUR CHANGE. The server narrows results
-         * only when `type` is PRESENT (`GeocodingService.ts:230-232` adds a `types` param; `:318-323`
-         * maps it for the other provider). Defaulting to "address" here would have turned every
-         * unauthored field from an unfiltered search into an address-only one — on iOS, where it has
-         * always been unfiltered. Each surface applies its own historical default at its call site.
+         * 🔴 THE ONE THAT WOULD HAVE BEEN A SILENT BEHAVIOUR CHANGE. With no `type` in the request
+         * the proxy applies its own default (`GeocodingService.autocomplete`: places, localities and
+         * addresses at Mapbox through `mapboxTypeFilter`, no type filter at Google through
+         * `googlePrimaryTypes`). Defaulting to "address" here would have turned every unauthored
+         * field from that default into an address-only search — on iOS, where it has always had the
+         * proxy's default. Each surface applies its own historical default at its call site.
          */
         val s = LocationSearchSettings.from(emptyMap(), defaultMinChars = 3)
         assertNull(s.type)

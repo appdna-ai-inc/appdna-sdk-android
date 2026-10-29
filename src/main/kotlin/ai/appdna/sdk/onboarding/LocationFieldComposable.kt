@@ -75,11 +75,12 @@ fun LocationFieldComposable(
      * #964 — an unauthored type sends NOTHING, as iOS already does.
      *
      * This was `?: "address"`, and that substitution was the third of three answers to one
-     * question. The proxy filters only when the key is PRESENT (`GeocodingService.ts:230-232`), so
-     * iOS's form-step field sent nothing and the user got an unfiltered search; Android sent
-     * `"address"` and the same authored field returned street addresses only; and the Console's own
-     * select displayed **City**, which nobody implemented. A flow authored once rendered
-     * differently on the two platforms — the divergence class ADR-001 exists to prevent.
+     * question. With no `type` in the request the proxy applies its own default
+     * (`GeocodingService.autocomplete`: places, localities and addresses at Mapbox through
+     * `mapboxTypeFilter`, no type filter at Google through `googlePrimaryTypes`), so iOS's form-step
+     * field got that default; Android sent `"address"` and the same authored field returned street
+     * addresses only; and the Console's own select displayed **City**, which nobody implemented. A
+     * flow authored once rendered differently on the two platforms.
      *
      * The Console half shipped first: the select now carries an explicit "Any (no filter)" and
      * shows it when the key is absent, so it states the behaviour it will publish instead of a
@@ -87,7 +88,7 @@ fun LocationFieldComposable(
      * the truth about iOS and a lie about Android.
      *
      * 🔴 THIS CHANGES LIVE RESULTS, on purpose, and only here: an Android form-step Location field
-     * whose author set no type starts returning unfiltered suggestions instead of addresses only.
+     * whose author set no type starts returning the proxy's default mix instead of addresses only.
      * That population is the one already getting a result nobody chose. A field that authored
      * `address` is untouched, and so is the `input_location` content block, which seeds `address`
      * explicitly (`StepContentEditor.tsx`) and is therefore truthful already.
