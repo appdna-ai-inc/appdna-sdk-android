@@ -213,21 +213,20 @@ internal object GoogleAttributionFixtureDrivers {
             } ?: resolvedPick.blocks
             val block = findBlock(pick["block_id"] as? String, pickBlocks)
                 ?: throw AssertionError("the picked block is not on the resolved step")
-            val fieldId = block.field_id ?: block.id
+            // Each picked option is TAPPED through the production write (`recordOptionPick`), in order, so a
+            // fixture can only assert a pick its own Select can make: several ids on a single Select leave the
+            // last one picked, as a user's taps would.
             val ids = (pick["option_ids"] as? List<*>)?.filterIsInstance<String>()
-            if (ids != null) {
-                val options = ids.map { id ->
-                    block.field_options.orEmpty().firstOrNull { (it.id ?: it.value) == id }
-                        ?: throw AssertionError("the picked option $id is not on the resolved step")
-                }
-                SelectedOptionStore.record(fieldId, options)
-                selectedLabel = options.lastOrNull()?.label
-            } else {
-                val option = block.field_options.orEmpty().firstOrNull { (it.id ?: it.value) == pick["option_id"] }
-                    ?: throw AssertionError("the picked option is not on the resolved step")
-                SelectedOptionStore.record(fieldId, option)
-                selectedLabel = option.label
+                ?: listOfNotNull(pick["option_id"] as? String)
+            val all = block.field_options.orEmpty()
+            val options = ids.map { id ->
+                all.firstOrNull { (it.id ?: it.value) == id }
+                    ?: throw AssertionError("the picked option $id is not on the resolved step")
             }
+            if (options.isEmpty()) throw AssertionError("the pick names no option")
+            val pickInputs = mutableMapOf<String, Any>()
+            for (option in options) recordOptionPick(block, all, option.storedAnswer(), pickInputs)
+            selectedLabel = options.last().label
             selected = SelectedOptionStore.snapshot()
         }
         } finally {
