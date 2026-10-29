@@ -35,7 +35,8 @@ import java.io.File
 
 /**
  * The rest of an onboarding step's unstyled ink follows the step behind it, as text and labels do: the
- * typed text of an unstyled text input, its placeholder, and the step chrome (the ✕ and the Skip link).
+ * typed text of an unstyled text input, its placeholder, and the step chrome (the ✕, and the Skip link of a
+ * legacy step; a block-based step draws no step-level Skip).
  * Dark on a light step, as before; light on a dark, gradient or image step. Authored colours win.
  *
  * The onboarding activity is real (Robolectric, native graphics). Text is typed into the field through
@@ -79,12 +80,12 @@ class UnstyledInkChromeAndInputsTest {
     private fun step(background: Map<String, Any>?, authored: Boolean): Map<String, Any> {
         val input = mutableMapOf<String, Any>("id" to "b_in", "type" to "input_text", "field_id" to "name")
         if (authored) input["field_style"] = mapOf("text_color" to "#FF0000")
-        val config = mutableMapOf<String, Any>("content_blocks" to listOf(input), "skip_enabled" to true)
+        val config = mutableMapOf<String, Any>("content_blocks" to listOf(input))
         if (background != null) config["background"] = background
         return mapOf("id" to "s_ink", "type" to "custom", "config" to config)
     }
 
-    /** The step on screen with "WWWWWW" typed; the frames of the typed field (inset), the ✕ and Skip. */
+    /** The step on screen with "WWWWWW" typed; the frames of the typed field (inset) and the ✕. */
     private fun show(background: Map<String, Any>?, authored: Boolean = false, name: String): Map<String, Frame> {
         LocalStorage(ctx).setString(
             "cache_onboarding",
@@ -114,7 +115,6 @@ class UnstyledInkChromeAndInputsTest {
         val frames = mutableMapOf(
             "typed text" to Rect(fb.left + inset, fb.top + inset, fb.right - inset, fb.bottom - inset),
             "close" to compose.onAllNodes(hasContentDescription("Close onboarding"))[0].fetchSemanticsNode().boundsInRoot,
-            "skip" to compose.onNode(hasText("Skip"), useUnmergedTree = true).fetchSemanticsNode().boundsInRoot,
         )
         val path = "build/tmp/unstyled-ink-chrome/$name.png"
         File(path).parentFile?.mkdirs()
@@ -170,6 +170,47 @@ class UnstyledInkChromeAndInputsTest {
     fun `on a gradient step the typed text, the close glyph and Skip are light`() {
         val counts = show(gradient, name = "gradient").mapValues { it.value.lightInk() }
         assertTrue("light ink on the gradient, per element: $counts", counts.values.all { it > ink })
+    }
+
+    /** A legacy (welcome) step with Skip: the frame of its Skip link. */
+    private fun skipFrame(background: Map<String, Any>, name: String): Frame {
+        LocalStorage(ctx).setString(
+            "cache_onboarding",
+            JSONObject(mapOf("active_flow_id" to FLOW, "flows" to mapOf(FLOW to mapOf(
+                "id" to FLOW, "name" to "Ink probe", "version" to 1,
+                "steps" to listOf(
+                    mapOf("id" to "s_w", "type" to "welcome", "config" to mapOf("title" to "Hello", "skip_enabled" to true, "background" to background)),
+                    mapOf("id" to "s_end", "type" to "welcome", "config" to mapOf("title" to "End")),
+                ),
+            )))).toString(),
+        )
+        AppDNA.installOnboardingForTest(
+            OnboardingFlowManager(RemoteConfigManager(null, LocalStorage(ctx), 3600L), events.tracker),
+            ready = true,
+        )
+        val host = Robolectric.buildActivity(Activity::class.java).setup().also { controllers += it }.get()
+        assertTrue(AppDNA.presentOnboarding(host, FLOW))
+        val c = Robolectric.buildActivity(OnboardingActivity::class.java).setup().also { controllers += it }
+        idle()
+        compose.waitForIdle()
+        val bounds = compose.onNode(hasText("Skip"), useUnmergedTree = true).fetchSemanticsNode().boundsInRoot
+        val path = "build/tmp/unstyled-ink-chrome/$name.png"
+        File(path).parentFile?.mkdirs()
+        compose.onRoot().captureRoboImage(path)
+        val bitmap = BitmapFactory.decodeFile(path) ?: error("no frame was written to $path")
+        c.pause().stop().destroy()
+        idle()
+        AppDNA.installOnboardingForTest(null, ready = false)
+        OnboardingActivity.clearActiveLaunches()
+        return Frame(bitmap, bounds)
+    }
+
+    @Test
+    fun `a legacy step's Skip is light on a dark step and dark on a white one`() {
+        val navySkip = skipFrame(navy, "skip-navy")
+        assertTrue("Skip on navy (${navySkip.lightInk()} light pixels)", navySkip.lightInk() > ink)
+        val whiteSkip = skipFrame(white, "skip-white")
+        assertTrue("Skip on white (${whiteSkip.darkInk()} dark pixels)", whiteSkip.darkInk() > ink)
     }
 
     @Test

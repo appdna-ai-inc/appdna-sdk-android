@@ -2953,7 +2953,7 @@ private fun OnboardingStepBody(
                     )
                 }
                 // Skip button
-                if (step.config.skip_enabled == true) {
+                if (shouldRenderSkipAffordance(step.config.skip_enabled, hasSkipHandler = true)) {
                     TextButton(
                         onClick = onSkip,
                         modifier = Modifier.align(Alignment.CenterHorizontally).padding(bottom = 16.dp),
@@ -3010,7 +3010,7 @@ private fun OnboardingStepBody(
             }
 
             // Skip button — pinned to bottom outside step body.
-            if (step.config.skip_enabled == true) {
+            if (shouldRenderSkipAffordance(step.config.skip_enabled, hasSkipHandler = true)) {
                 TextButton(
                     onClick = onSkip,
                     // Bottom 8→16dp
@@ -3619,7 +3619,8 @@ private val AUTH_ACTIONS_REQUIRING_VALIDATION = setOf(
 
 // Block-based step view with 5 layout variants
 /**
- * Whether the built-in "Skip" affordance renders on a step.
+ * Whether the built-in "Skip" affordance renders on a legacy step (a block-based step never draws one:
+ * its Skip is a button block).
  *
  * Two independent things were conflated before #653: `skip_enabled` (the AUTHOR asked for a Skip
  * link) and the presence of a skip handler (the SDK is ABLE to skip). A later change made the handler
@@ -4485,29 +4486,11 @@ private fun BlockBasedStepView(
             }
         }
 
-        // Skip button at bottom
-        //
-        // 🔴 #653 — this was `if (onSkip != null)`, and a later change made `onSkip` non-null on EVERY
-        // step (correctly: a CTA with `action: "skip"` was a dead button while the handler was
-        // gated). The two consequences were not the same. The dispatch fix was right; this render
-        // gate was riding on the handler's nullability as a proxy for "skip is enabled", so the
-        // moment the handler was always passed, a grey "Skip" appeared at the bottom of every
-        // screen — underneath the CTA, because both are bottom-anchored.
-        //
-        // `skip_enabled` means "render a Skip affordance"; the handler means "skipping is
-        // possible". Gating on the flag matches iOS (OnboardingRenderer.swift:1512,
-        // ChatStepView.swift:405) and the other two Android sites in this file.
-        if (shouldRenderSkipAffordance(effectiveConfig.skip_enabled, onSkip != null)) {
-            TextButton(
-                onClick = onSkip!!,
-                modifier = Modifier
-                    .align(Alignment.BottomCenter)
-                    .padding(bottom = 16.dp),
-            ) {
-                // Skip 15sp matching iOS .subheadline.
-                Text("Skip", fontSize = 15.sp, color = if (UnstyledInk.onDark()) UnstyledInk.DARK_CHROME else MaterialTheme.colorScheme.onBackground.copy(alpha = 0.5f))
-            }
-        }
+        // No step-level "Skip" on a block-based step. Its layout is the author's: a Skip there is a
+        // button block with `action: "skip"`, placed where the author wants it, as the console preview
+        // and iOS draw it. A Skip link laid over the step used to sit on top of a bottom-zone button and
+        // take its taps, so tapping Continue skipped the step and dropped its answers. A step's
+        // `skip_enabled` keeps drawing Skip on the legacy step types ([OnboardingStepBody]).
 
         // In-app validation pill. Mirrors iOS
         // bottom-pill at OnboardingRenderer.swift:1383-1402 — `.background(
