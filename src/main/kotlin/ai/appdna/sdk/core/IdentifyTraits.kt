@@ -13,6 +13,9 @@ import org.json.JSONObject
  * location answer. Any other value that is not a JSON value (a string, a finite number, a boolean, a map
  * with string keys, a list, or a JSON object or array built from them) is dropped with a warning naming
  * its trait key, and only that key. It is never sent as `null`, which is what `JSONObject` did with it.
+ * A null IS a JSON value: a Kotlin `null` or `JSONObject.NULL`, as a trait or anywhere inside one, is
+ * kept as `JSONObject.NULL`, which serialises as JSON `null` (the React Native bridge passes every JS
+ * `null` that way, and the object its `getLocationData` resolves holds one for each unset key).
  * The Swift twin is `IdentifyTraits` in `IdentifyTraits.swift`; the Flutter facade applies the same
  * rule before its channel call.
  */
@@ -29,7 +32,7 @@ internal object IdentifyTraits {
         val dropped = mutableListOf<String>()
         for ((key, value) in traits) {
             val json = jsonValue(value)
-            if (json == null) dropped += key else out[key] = json
+            if (json === Unencodable) dropped += key else out[key] = json
         }
         if (log && dropped.isNotEmpty()) {
             Log.warning {
@@ -58,12 +61,15 @@ internal object IdentifyTraits {
         location.place_id?.let { put("place_id", it) }
     }
 
-    /** [value] as a JSON-safe value, or null when it cannot be one (anywhere inside it). */
-    private fun jsonValue(value: Any?): Any? = when (value) {
-        null -> null
+    /** Marks a value that cannot be JSON; distinct from a null, which can. */
+    private object Unencodable
+
+    /** [value] as a JSON-safe value, or [Unencodable] when it cannot be one (anywhere inside it). */
+    private fun jsonValue(value: Any?): Any = when (value) {
+        null, JSONObject.NULL -> JSONObject.NULL
         is String, is Boolean -> value
-        is Double -> value.takeIf { it.isFinite() }
-        is Float -> value.takeIf { it.isFinite() }
+        is Double -> if (value.isFinite()) value else Unencodable
+        is Float -> if (value.isFinite()) value else Unencodable
         is Number -> value
         is LocationData -> answerMap(value)
         is JSONObject, is JSONArray -> value
@@ -72,13 +78,23 @@ internal object IdentifyTraits {
             var ok = true
             for ((k, v) in value) {
                 val json = jsonValue(v)
-                if (k !is String || json == null) { ok = false; break }
+                if (k !is String || json === Unencodable) { ok = false; break }
                 out[k] = json
             }
-            if (ok) out else null
+            if (ok) out else Unencodable
         }
-        is Iterable<*> -> value.map { jsonValue(it) ?: return null }
-        is Array<*> -> value.map { jsonValue(it) ?: return null }
-        else -> null
+        is Iterable<*> -> list(value)
+        is Array<*> -> list(value.asIterable())
+        else -> Unencodable
+    }
+
+    private fun list(items: Iterable<*>): Any {
+        val out = ArrayList<Any>()
+        for (item in items) {
+            val json = jsonValue(item)
+            if (json === Unencodable) return Unencodable
+            out += json
+        }
+        return out
     }
 }

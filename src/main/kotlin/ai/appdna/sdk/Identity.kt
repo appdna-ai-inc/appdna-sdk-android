@@ -155,12 +155,9 @@ internal class IdentityManager(private val storage: LocalStorage) {
         return try {
             val obj = JSONObject(json)
             val map = mutableMapOf<String, Any>()
-            for (key in obj.keys()) {
-                val value = obj.get(key)
-                if (value != JSONObject.NULL) {
-                    map[key] = value
-                }
-            }
+            // A JSON null is a trait value like any other (`IdentifyTraits` keeps it as `JSONObject.NULL`),
+            // so it is kept across a relaunch rather than lost on the next launch only.
+            for (key in obj.keys()) map[key] = obj.get(key)
             map
         } catch (e: Exception) {
             // Surface parse errors instead of silently swallowing.

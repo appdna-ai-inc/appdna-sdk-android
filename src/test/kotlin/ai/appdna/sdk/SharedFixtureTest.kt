@@ -805,8 +805,10 @@ class SharedFixtureTest(
     private fun runIdentify(action: JSONObject, spy: Spy) {
         val p = Pipeline(fixtureName).also { pipeline = it }
         val userId = action.getString("userId")
+        // A null is passed the way a host passes one: `JSONObject.NULL` as a top-level value (the map's
+        // values are non-null), a Kotlin null inside a map or a list.
         val raw = (action.optJSONObject("traits") ?: JSONObject()).asMap()
-            .filterValues { it != null }.mapValues { it.value!! }.toMutableMap()
+            .mapValues { it.value ?: JSONObject.NULL }.toMutableMap()
         // `location_traits`: each value is a location answer, passed as the SDK's own LocationData.
         action.optJSONObject("location_traits")?.asMap()?.forEach { (key, answer) ->
             raw[key] = ai.appdna.sdk.onboarding.locationDataFromAnswer(answer)
