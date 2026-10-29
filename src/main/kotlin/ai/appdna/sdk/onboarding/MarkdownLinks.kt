@@ -535,9 +535,7 @@ internal object MarkdownLinks {
             val c = hostPort.lastIndexOf(':')
             host = if (c < 0) hostPort else hostPort.substring(0, c)
             port = if (c < 0) null else hostPort.substring(c + 1)
-            if (host.any { it.code > 0x7E }) {
-                host = try { java.net.IDN.toASCII(host, java.net.IDN.ALLOW_UNASSIGNED) } catch (_: Exception) { return null }
-            }
+            if (host.any { it.code > 0x7E }) host = toAsciiHost(host) ?: return null
             var k = 0
             while (k < host.length) {
                 val ch = host[k]
@@ -560,6 +558,38 @@ internal object MarkdownLinks {
             host +
             (if (!port.isNullOrEmpty()) ":$port" else "") +
             tail.joinToString("") { encodePart(it.first, it.second) }
+    }
+
+    /**
+     * A host holding any character outside ASCII, as Foundation's URL parsing converts it, or null where
+     * it makes no URL: the WHOLE host through UTS #46, non-transitional, with hyphens, joiners and bidi
+     * checked, and any error refusing it.
+     *
+     * - `ß` and `ς` are kept and encoded (`straße` -> `xn--strae-oqa`), never mapped to `ss` and `σ`;
+     * - a zero-width joiner or non-joiner is kept where its context allows it (after a virama, between
+     *   joining letters) and refuses the host anywhere else;
+     * - every label is mapped, so an ASCII label beside an international one is lowercased
+     *   (`WWW.straße.de` -> `www.xn--strae-oqa.de`), and `。` separates labels as `.` does;
+     * - a label that starts or ends with `-`, or that is empty before the last, refuses the host.
+     *
+     * `java.net.IDN` is IDNA2003, which maps `ß` to `ss` and drops a joiner — a different host.
+     */
+    private fun toAsciiHost(host: String): String? {
+        val out = StringBuilder()
+        val info = android.icu.text.IDNA.Info()
+        try {
+            idna.nameToASCII(host, out, info)
+        } catch (_: Exception) {
+            return null
+        }
+        return if (info.hasErrors()) null else out.toString()
+    }
+
+    private val idna: android.icu.text.IDNA by lazy {
+        android.icu.text.IDNA.getUTS46Instance(
+            android.icu.text.IDNA.CHECK_BIDI or android.icu.text.IDNA.CHECK_CONTEXTJ or
+                android.icu.text.IDNA.NONTRANSITIONAL_TO_ASCII or android.icu.text.IDNA.NONTRANSITIONAL_TO_UNICODE,
+        )
     }
 
     /** [s] cut into its path (`p`), query (`q`, from the first `?`) and fragment (`f`, from the first `#`). */

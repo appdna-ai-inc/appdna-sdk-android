@@ -22,6 +22,12 @@ Wraps iOS 1.0.83. Builds on Play Billing Library 8, which Google Play now requir
 
 ### Fixed
 
+- **A link to an international host opens the same host as on iOS** (#1185). The host was converted
+  with IDNA2003, which maps `ß` to `ss` and `ς` to `σ` and drops a zero-width joiner — so a link to
+  `straße.de` opened `strasse.de`, a different domain. It is now converted as iOS converts it (UTS #46,
+  non-transitional, joiners, hyphens and bidi checked): `straße.de` opens `xn--strae-oqa.de`, a joiner is
+  kept only where its script allows it and otherwise the text draws without a link, and every label of an
+  international host is lowercased.
 - **A subscription purchase now starts the free trial the paywall shows** (#1113). With no
   `offerToken`, the purchase used to launch the base plan every time, while the paywall read its
   "1 week free trial" sentence from Play's eligible offers — so Play's sheet said "Starting today"
