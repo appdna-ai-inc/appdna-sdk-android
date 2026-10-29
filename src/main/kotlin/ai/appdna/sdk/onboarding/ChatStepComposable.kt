@@ -94,26 +94,38 @@ fun ChatStepComposable(
     }
     val didRestore = savedTranscript != null && initialMessages.isNotEmpty()
 
-    // State
-    var messages by remember { mutableStateOf(initialMessages) }
-    var inputText by remember { mutableStateOf("") }
-    var isTyping by remember { mutableStateOf(false) }
-    var userTurnCount by remember { mutableIntStateOf(initialUserTurnCount) }
-    var isCompleted by remember { mutableStateOf(didRestore) }
-    var currentRating by remember { mutableStateOf<Int?>(null) }
-    // Only seed turn-0 quick replies synchronously
-    // when there are no auto-messages to play. iOS calls
-    // `loadQuickReplies(forTurn: 0)` AFTER `playAutoMessages`
-    // completes (or immediately when no auto-messages); Android
-    // previously seeded them at composition so they appeared while
-    // the AI was still "typing" the welcome sequence.
-    val initialQuickReplies = if (didRestore || chatConfig.auto_messages.isNullOrEmpty()) {
-        chatConfig.quick_replies?.filter { (it.show_at_turn ?: 0) == 0 } ?: emptyList()
-    } else emptyList()
-    var dynamicQuickReplies by remember { mutableStateOf(initialQuickReplies) }
-    var webhookData by remember { mutableStateOf(mutableMapOf<String, Any>()) }
-    val startTime = remember { System.currentTimeMillis() }
-    var showSoftLimitWarning by remember { mutableStateOf(false) }
+    // The conversation lives in the step's draft, held by the ViewModel when the flow runs in its
+    // activity, so a rotation keeps it and the saved state brings it back after a process death
+    // ([ChatSession]). Without a draft (a preview) it lives as long as this composition.
+    val draft = rememberStepDraft(step.id)
+    val session = remember(draft) { draft?.chat ?: ChatSession(step.id).also { draft?.chat = it } }
+    if (draft == null) DisposableEffect(session) { onDispose { session.close() } }
+    if (!session.seeded) {
+        session.seeded = true
+        session.messages = initialMessages
+        session.userTurnCount = initialUserTurnCount
+        session.isCompleted = didRestore
+        // Only seed turn-0 quick replies synchronously when there are no auto-messages to play. iOS
+        // calls `loadQuickReplies(forTurn: 0)` AFTER `playAutoMessages` completes (or immediately when
+        // no auto-messages), so they never appear while the AI is still "typing" the welcome sequence.
+        session.quickReplies = if (didRestore || chatConfig.auto_messages.isNullOrEmpty()) {
+            chatConfig.quick_replies?.filter { (it.show_at_turn ?: 0) == 0 } ?: emptyList()
+        } else emptyList()
+        // A restored transcript plays no welcome messages.
+        if (didRestore) { session.autoMessagesStarted = true; session.autoMessagesDone = true }
+    }
+
+    // State, read and written through the session.
+    var messages by session::messages
+    var inputText by session::inputText
+    var isTyping by session::isTyping
+    var userTurnCount by session::userTurnCount
+    var isCompleted by session::isCompleted
+    var currentRating by session::currentRating
+    var dynamicQuickReplies by session::quickReplies
+    val webhookData = session.webhookData
+    val startTime = session.startTime
+    var showSoftLimitWarning by session::showSoftLimitWarning
 
     val maxTurns = chatConfig.resolvedMaxTurns
     val minTurns = chatConfig.resolvedMinTurns
@@ -140,8 +152,11 @@ fun ChatStepComposable(
     // Auto-messages on appear — skip when we restored
     // a prior transcript so the user does not see the welcome
     // sequence replay over the saved bubbles.
-    LaunchedEffect(Unit) {
-        if (didRestore) return@LaunchedEffect
+    // They run in the session's scope, so a rotation neither cuts them short nor plays them again.
+    LaunchedEffect(session) {
+        if (session.autoMessagesStarted) return@LaunchedEffect
+        session.autoMessagesStarted = true
+        session.scope.launch {
         val autoMsgs = chatConfig.auto_messages?.filter { it.turn == 0 } ?: emptyList()
         // Refactor to a SINGLE sequential coroutine
         // (replacing the parallel-coroutines + AtomicInteger pattern).
@@ -166,6 +181,11 @@ fun ChatStepComposable(
         var elapsedAtLastFire = 0
         for ((origIndex, deadlineMs) in sorted) {
             val autoMsg = autoMsgs[origIndex]
+            // Already shown before the process ended: not played again.
+            if (messages.any { it.id == autoMsg.id }) {
+                elapsedAtLastFire = deadlineMs + 800
+                continue
+            }
             val sleepFromHere = deadlineMs - elapsedAtLastFire
             if (sleepFromHere > 0) delay(sleepFromHere.toLong())
             isTyping = true
@@ -178,7 +198,9 @@ fun ChatStepComposable(
         // have rendered. Now naturally tails the loop body since the for
         // loop runs sequentially.
         dynamicQuickReplies = chatConfig.quick_replies?.filter { (it.show_at_turn ?: 0) == 0 } ?: emptyList()
+        session.autoMessagesDone = true
         @Suppress("UNUSED_VARIABLE") val _start = playStart
+        }
     }
 
     // Scroll to bottom on new message OR when the typing indicator appears.
@@ -195,48 +217,16 @@ fun ChatStepComposable(
         }
     }
 
-    fun sendMessage(text: String) {
-        val trimmed = text.trim()
-        if (trimmed.isEmpty()) return
-
-        // sendMessage haptic feedback. Mirrors iOS
-        // HapticEngine.trigger(.light) at ChatStepView.swift:432.
-        runCatching {
-            ai.appdna.sdk.core.HapticEngine.trigger(
-                hostView,
-                ai.appdna.sdk.core.HapticType.LIGHT,
-            )
-        }
-        val userMsg = ChatMessage(id = "msg_u$userTurnCount", role = ChatRole.USER, content = trimmed)
-        messages = messages + userMsg
-        inputText = ""
-        userTurnCount++
-        dynamicQuickReplies = emptyList()
-        focusManager.clearFocus()
-
-        // Track message sent
-        ai.appdna.sdk.AppDNA.track("chat_message_sent", mapOf(
-            "flow_id" to flowId, "step_id" to step.id, "turn" to userTurnCount, "message_length" to trimmed.length
-        ))
-
-        if (!chatConfig.isHardLimit && turnsRemaining == 1) showSoftLimitWarning = true
-
-        // Check turn actions
-        chatConfig.turn_actions?.filter { it.turn == userTurnCount }?.forEach { action ->
-            when (action.type) {
-                "rating_prompt" -> currentRating = 0
-                "auto_message" -> {
-                    val content = (action.config?.get("content") as? String) ?: return@forEach
-                    scope.launch {
-                        delay(500)
-                        messages = messages + ChatMessage(id = "action_$userTurnCount", role = ChatRole.AI, content = content)
-                    }
-                }
-            }
-        }
-
+    /**
+     * Asks the webhook to answer the latest user message. Runs in the session's scope: a rotation
+     * does not cancel it, and its reply lands in the conversation the new composition shows.
+     * [remainingAtSend] is the turns that were left when the message was sent.
+     */
+    fun requestReply(remainingAtSend: Int) {
+        val turnsRemaining = remainingAtSend
         isTyping = true
-        scope.launch {
+        session.awaitingReply = true
+        session.scope.launch {
             try {
                 val result = fireWebhook(
                     webhook = chatConfig.webhook,
@@ -249,6 +239,7 @@ fun ChatStepComposable(
                     rating = currentRating,
                     context = webhookData.toMap(),
                 )
+                session.awaitingReply = false
                 isTyping = false
                 // Match iOS ChatStepView.swift:496-507.
                 // Distinguish HTTP non-2xx (preserves http_status +
@@ -328,7 +319,11 @@ fun ChatStepComposable(
                         ))
                     }
                 }
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                // The step left the screen (its draft was dropped): nothing to show.
+                throw e
             } catch (e: Exception) {
+                session.awaitingReply = false
                 isTyping = false
                 // Match iOS catch-default at
                 // ChatStepView.swift:518 ("Sorry, something went wrong. Please
@@ -341,6 +336,58 @@ fun ChatStepComposable(
                     "flow_id" to flowId, "step_id" to step.id, "turn" to userTurnCount, "error" to (e.message ?: "unknown")
                 ))
             }
+        }
+    }
+
+    fun sendMessage(text: String) {
+        val trimmed = text.trim()
+        if (trimmed.isEmpty()) return
+
+        // sendMessage haptic feedback. Mirrors iOS
+        // HapticEngine.trigger(.light) at ChatStepView.swift:432.
+        runCatching {
+            ai.appdna.sdk.core.HapticEngine.trigger(
+                hostView,
+                ai.appdna.sdk.core.HapticType.LIGHT,
+            )
+        }
+        val userMsg = ChatMessage(id = "msg_u$userTurnCount", role = ChatRole.USER, content = trimmed)
+        messages = messages + userMsg
+        inputText = ""
+        userTurnCount++
+        dynamicQuickReplies = emptyList()
+        focusManager.clearFocus()
+
+        // Track message sent
+        ai.appdna.sdk.AppDNA.track("chat_message_sent", mapOf(
+            "flow_id" to flowId, "step_id" to step.id, "turn" to userTurnCount, "message_length" to trimmed.length
+        ))
+
+        if (!chatConfig.isHardLimit && turnsRemaining == 1) showSoftLimitWarning = true
+
+        // Check turn actions
+        chatConfig.turn_actions?.filter { it.turn == userTurnCount }?.forEach { action ->
+            when (action.type) {
+                "rating_prompt" -> currentRating = 0
+                "auto_message" -> {
+                    val content = (action.config?.get("content") as? String) ?: return@forEach
+                    scope.launch {
+                        delay(500)
+                        messages = messages + ChatMessage(id = "action_$userTurnCount", role = ChatRole.AI, content = content)
+                    }
+                }
+            }
+        }
+
+        requestReply(remainingAtSend = turnsRemaining)
+    }
+
+    // Restored after the process ended while a reply was awaited: that request was lost with the
+    // process, so the last user message is sent again, once.
+    LaunchedEffect(session) {
+        if (session.resendOnShow) {
+            session.resendOnShow = false
+            requestReply(remainingAtSend = maxOf(0, maxTurns - (userTurnCount - 1)))
         }
     }
 
@@ -963,37 +1010,23 @@ private suspend fun fireWebhook(
         // `context` key (already populated above).
     }
 
-    val conn = (URL(url).openConnection() as HttpURLConnection).apply {
-        requestMethod = "POST"
-        setRequestProperty("Content-Type", "application/json")
-        webhook.headers?.forEach { (k, v) -> setRequestProperty(k, v) }
-        connectTimeout = (webhook.timeout_ms ?: 15000)
-        readTimeout = (webhook.timeout_ms ?: 15000)
-        doOutput = true
+    val reply = try {
+        chatWebhookTransport.post(url, webhook.headers.orEmpty(), body.toString(), webhook.timeout_ms ?: 15000)
+    } catch (e: kotlinx.coroutines.CancellationException) {
+        throw e
+    } catch (e: Exception) {
+        // Transport-level failures (timeout, DNS, no network), so the caller can emit the
+        // iOS-canonical `error` field. Matches ChatStepView.swift's catch path.
+        return@withContext WebhookResult.NetworkError(e.message ?: "unknown")
     }
-
-    try {
-        try {
-            conn.outputStream.use { it.write(body.toString().toByteArray()) }
-        } catch (e: Exception) {
-            // Capture transport-level failures (timeout, DNS, no-network) so
-            // the caller can emit the iOS-canonical `error` field. Matches
-            // ChatStepView.swift:518 catch path.
-            return@withContext WebhookResult.NetworkError(e.message ?: "unknown")
-        }
-        val statusCode = try { conn.responseCode } catch (e: Exception) {
-            return@withContext WebhookResult.NetworkError(e.message ?: "unknown")
-        }
+    run {
+        val statusCode = reply.status
         if (statusCode !in 200..299) {
-            // Read errorStream + take 500-char preview to
-            // match iOS bodyPreview semantics at ChatStepView.swift:498-505.
-            val bodyPreview = try {
-                conn.errorStream?.bufferedReader()?.use { it.readText() }?.take(500) ?: ""
-            } catch (_: Exception) { "" }
+            // A 500-character preview of the error body, as iOS's bodyPreview.
             Log.e("ChatWebhook", "HTTP $statusCode")
-            return@withContext WebhookResult.HttpError(statusCode, bodyPreview)
+            return@withContext WebhookResult.HttpError(statusCode, reply.body.take(500))
         }
-        val respText = conn.inputStream.bufferedReader().readText()
+        val respText = reply.body
         val json = JSONObject(respText)
 
         val respMessages = json.optJSONArray("messages")?.let { arr ->
@@ -1028,7 +1061,46 @@ private suspend fun fireWebhook(
                 completion_message = json.optString("completion_message", null)
             )
         )
-    } finally {
-        conn.disconnect()
     }
 }
+
+/** A chat webhook's HTTP reply: its status and its body (the error body for a non-2xx status). */
+internal data class ChatWebhookHttpReply(val status: Int, val body: String)
+
+/**
+ * Sends a chat webhook request. Throws for a transport failure (no network, DNS, timeout). Swappable
+ * so a test can hold a reply in flight, or count the requests sent.
+ */
+internal fun interface ChatWebhookTransport {
+    suspend fun post(url: String, headers: Map<String, String>, body: String, timeoutMs: Int): ChatWebhookHttpReply
+}
+
+/** The live transport: a blocking HttpURLConnection, called off the main thread by [fireWebhook]. */
+internal object LiveChatWebhookTransport : ChatWebhookTransport {
+    override suspend fun post(url: String, headers: Map<String, String>, body: String, timeoutMs: Int): ChatWebhookHttpReply {
+        val conn = (URL(url).openConnection() as HttpURLConnection).apply {
+            requestMethod = "POST"
+            setRequestProperty("Content-Type", "application/json")
+            headers.forEach { (k, v) -> setRequestProperty(k, v) }
+            connectTimeout = timeoutMs
+            readTimeout = timeoutMs
+            doOutput = true
+        }
+        try {
+            conn.outputStream.use { it.write(body.toByteArray()) }
+            val status = conn.responseCode
+            val text = if (status in 200..299) {
+                conn.inputStream.bufferedReader().use { it.readText() }
+            } else {
+                try { conn.errorStream?.bufferedReader()?.use { it.readText() } ?: "" } catch (_: Exception) { "" }
+            }
+            return ChatWebhookHttpReply(status, text)
+        } finally {
+            conn.disconnect()
+        }
+    }
+}
+
+/** The transport chat webhooks go through. */
+@Volatile
+internal var chatWebhookTransport: ChatWebhookTransport = LiveChatWebhookTransport

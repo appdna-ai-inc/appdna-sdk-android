@@ -64,6 +64,9 @@ internal class StepDraft(val stepId: String) {
     internal var inputsLocations: LocationAdvanceSettlement? = null
     internal var formLocations: LocationAdvanceSettlement? = null
 
+    /** An interactive chat step's conversation ([ChatSession]); ended when the draft is dropped. */
+    var chat: ChatSession? = null
+
     /** Compositions currently showing this draft. */
     internal var holders = 0
 }
@@ -94,12 +97,18 @@ internal class StepDrafts {
      */
     internal fun release(draft: StepDraft, keep: Boolean) {
         draft.holders = (draft.holders - 1).coerceAtLeast(0)
-        if (draft.holders == 0 && !keep && drafts[draft.stepId] === draft) drafts.remove(draft.stepId)
+        if (draft.holders == 0 && !keep && drafts[draft.stepId] === draft) {
+            drafts.remove(draft.stepId)
+            draft.chat?.close()
+        }
     }
 
     fun peek(stepId: String): StepDraft? = drafts[stepId]
 
-    fun clear() = drafts.clear()
+    fun clear() {
+        drafts.values.forEach { it.chat?.close() }
+        drafts.clear()
+    }
 
     /**
      * Write the draft of [step], the step on screen, for a process that may be ended. Values that
@@ -146,13 +155,15 @@ internal class StepDrafts {
             val inputs = bounded(withInFlight(draft.inputs, inputsInFlight).filterKeys { it !in secrets }, draft.stepId)
             val form = bounded(withInFlight(draft.form, formInFlight).filterKeys { it !in secrets }, draft.stepId)
             val empty = inputs.length() == 0 && form.length() == 0 && draft.toggles.isEmpty() && draft.selection.isEmpty()
-            if (empty && !draft.seeded && !draft.formSeeded && !draft.selectionSeeded) return null
+            val chat = draft.chat?.takeIf { it.seeded }
+            if (empty && chat == null && !draft.seeded && !draft.formSeeded && !draft.selectionSeeded) return null
             val obj = org.json.JSONObject()
             obj.put("step", draft.stepId)
             obj.put("inputs", inputs)
             obj.put("toggles", org.json.JSONObject(draft.toggles.toMap()))
             obj.put("form", form)
             obj.put("selection", org.json.JSONArray(draft.selection.toList()))
+            chat?.let { obj.put("chat", ChatSession.encode(it)) }
             return obj.toString()
         }
 
@@ -208,6 +219,7 @@ internal class StepDrafts {
                 obj.optJSONArray("selection")?.let { arr ->
                     for (i in 0 until arr.length()) arr.optString(i).takeIf { it.isNotEmpty() }?.let { draft.selection += it }
                 }
+                draft.chat = ChatSession.decode(obj.optJSONObject("chat"), stepId)
                 draft.seeded = true
                 draft.selectionSeeded = true
                 draft.formSeeded = true
