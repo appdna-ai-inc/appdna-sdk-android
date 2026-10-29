@@ -49,6 +49,7 @@ import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
+import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.text.style.TextAlign
@@ -2979,7 +2980,7 @@ private fun OnboardingStepBody(
             androidx.compose.foundation.layout.Box(modifier = Modifier.weight(1f)) {
                 when (step.type) {
                     OnboardingStep.StepType.WELCOME -> WelcomeStep(effectiveConfig, onNext)
-                    OnboardingStep.StepType.QUESTION -> QuestionStep(effectiveConfig, onNext)
+                    OnboardingStep.StepType.QUESTION -> QuestionStep(effectiveConfig, onNext, savedResponses, stepId = step.id)
                     OnboardingStep.StepType.VALUE_PROP -> ValuePropStep(effectiveConfig, onNext)
                     // `info` + `permission` mirror iOS
                     // OnboardingRenderer.swift:1497 routing through
@@ -4659,8 +4660,26 @@ private fun WelcomeStep(config: StepConfig, onNext: (Map<String, Any>?) -> Unit)
 }
 
 @Composable
-private fun QuestionStep(config: StepConfig, onNext: (Map<String, Any>?) -> Unit) {
-    val selectedOptions = remember { mutableStateListOf<String>() }
+private fun QuestionStep(
+    config: StepConfig,
+    onNext: (Map<String, Any>?) -> Unit,
+    /** The step's stored answer: a user who comes back to the question sees what they chose. */
+    savedResponses: Map<String, Any>? = null,
+    /** Keys the draft that keeps a pick not yet submitted across a recreation. */
+    stepId: String? = null,
+) {
+    // The pick lives in the step's draft (held by the ViewModel), so a rotation or a restore after
+    // process death keeps a pick not yet submitted; a fresh draft starts from the stored answer.
+    val draft = stepId?.let { rememberStepDraft(it) }
+    val selectedOptions = remember(draft) {
+        (draft?.selection ?: mutableStateListOf()).apply {
+            if (draft?.selectionSeeded != true) {
+                clear()
+                addAll(QuestionSelection.restored(savedResponses, config))
+                draft?.selectionSeeded = true
+            }
+        }
+    }
     val isMulti = config.selection_mode == SelectionMode.MULTI
 
     // Split into title (top
@@ -4767,6 +4786,9 @@ private fun QuestionStep(config: StepConfig, onNext: (Map<String, Any>?) -> Unit
                                 if (isSelected) accentColor else unselectedBorderColor,
                                 RoundedCornerShape(optionCornerRadius),
                             )
+                            // The highlight, for accessibility services too: iOS marks the card
+                            // with the `.isSelected` trait.
+                            .semantics { selected = isSelected }
                             .clickable {
                                 if (isMulti) {
                                     if (isSelected) selectedOptions.remove(option.id) else selectedOptions.add(option.id)

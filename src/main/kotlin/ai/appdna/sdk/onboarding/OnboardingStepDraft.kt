@@ -7,15 +7,17 @@ import android.content.ContextWrapper
 import android.os.Bundle
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.snapshots.SnapshotStateList
 import androidx.compose.runtime.snapshots.SnapshotStateMap
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.platform.LocalContext
 
 /**
  * What the user has entered on a step and not submitted yet: the values of its `input_*` blocks and
- * toggles, or the fields of a `form` step.
+ * toggles, the fields of a `form` step, or the options picked on a `question` step.
  *
  * These used to live in composition `remember` state, which is rebuilt when the activity is
  * recreated — a rotation, or a restore after the OS ended the process — so the fields came back
@@ -36,11 +38,17 @@ internal class StepDraft(val stepId: String) {
     /** A `form` step's field values. */
     val form: SnapshotStateMap<String, Any?> = mutableStateMapOf()
 
+    /** A `question` step's picked option ids. */
+    val selection: SnapshotStateList<String> = mutableStateListOf()
+
     /**
      * False until the step seeded [inputs] and [toggles] from its submitted answers on first show. A
      * draft brought back after a recreation is already seeded: it holds the seeds and the edits.
      */
     var seeded: Boolean = false
+
+    /** The same, for [selection]: seeded by the question step, which composes inside the step view. */
+    var selectionSeeded: Boolean = false
 
     /** Compositions currently showing this draft. */
     internal var holders = 0
@@ -107,12 +115,13 @@ internal class StepDrafts {
         internal fun encode(draft: StepDraft, secrets: Set<String>): String? {
             val inputs = bounded(draft.inputs.filterKeys { it !in secrets }, draft.stepId)
             val form = bounded(draft.form.filterKeys { it !in secrets }, draft.stepId)
-            if (inputs.length() == 0 && form.length() == 0 && draft.toggles.isEmpty()) return null
+            if (inputs.length() == 0 && form.length() == 0 && draft.toggles.isEmpty() && draft.selection.isEmpty()) return null
             val obj = org.json.JSONObject()
             obj.put("step", draft.stepId)
             obj.put("inputs", inputs)
             obj.put("toggles", org.json.JSONObject(draft.toggles.toMap()))
             obj.put("form", form)
+            obj.put("selection", org.json.JSONArray(draft.selection.toList()))
             return obj.toString()
         }
 
@@ -155,7 +164,11 @@ internal class StepDrafts {
                 (fromJsonAny(obj.optJSONObject("toggles")) as? Map<String, Any?>)?.forEach { (k, v) ->
                     if (v is Boolean) draft.toggles[k] = v
                 }
+                obj.optJSONArray("selection")?.let { arr ->
+                    for (i in 0 until arr.length()) arr.optString(i).takeIf { it.isNotEmpty() }?.let { draft.selection += it }
+                }
                 draft.seeded = true
+                draft.selectionSeeded = true
                 draft
             } catch (e: Exception) {
                 Log.warning("Onboarding step $stepId: the unsubmitted values could not be read back (${e.message}); showing the step without them.")
