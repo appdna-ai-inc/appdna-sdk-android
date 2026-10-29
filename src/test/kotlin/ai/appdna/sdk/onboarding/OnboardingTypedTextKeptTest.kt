@@ -14,6 +14,9 @@ import androidx.compose.ui.semantics.getOrNull
 import androidx.compose.ui.test.SemanticsNodeInteraction
 import androidx.compose.ui.test.hasSetTextAction
 import androidx.compose.ui.test.junit4.createEmptyComposeRule
+import androidx.compose.ui.test.hasText
+import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performTextClearance
 import androidx.compose.ui.test.performTextInput
 import androidx.lifecycle.ViewModelProvider
 import androidx.test.core.app.ApplicationProvider
@@ -88,6 +91,17 @@ class OnboardingTypedTextKeptTest {
         ),
     )
 
+    private val locationFormStep = mapOf(
+        "id" to "s_locform", "type" to "form",
+        "config" to mapOf("fields" to listOf(mapOf("id" to "where", "type" to "location", "label" to "Where"))),
+    )
+
+    /** A submitted Google answer: the field shows Google's line, the first edit restarts from the typed query. */
+    private val googleAnswer = mapOf(
+        "formatted_address" to "Synthetic Line 1, Town", "address" to "Synthetic Line 1, Town",
+        "place_id" to "place_synthetic", "raw_query" to "typed q",
+    )
+
     /** Autocomplete answers with no rows; nothing leaves the test. */
     private val noRows = object : GeocodeTransport {
         override suspend fun post(url: String, headers: Map<String, String>, body: String): GeocodeHttpReply =
@@ -101,7 +115,7 @@ class OnboardingTypedTextKeptTest {
             "cache_onboarding",
             JSONObject(mapOf("active_flow_id" to FLOW, "flows" to mapOf(FLOW to mapOf(
                 "id" to FLOW, "name" to "Typed text probe", "version" to 1,
-                "steps" to listOf(blocksStep, formStep, lastStep, locationStep),
+                "steps" to listOf(blocksStep, formStep, lastStep, locationStep, locationFormStep),
             )))).toString(),
         )
     }
@@ -231,6 +245,69 @@ class OnboardingTypedTextKeptTest {
         val saved = kill(c)
         restoreInNewProcess(saved)
         assertEquals("process death", listOf("12 Example"), fieldTexts())
+    }
+
+    /**
+     * Opens [stepIndex] holding a submitted Google answer, and empties its location field: the first
+     * clear restarts from the typed query (Google's line is never edited), the second empties it.
+     */
+    private fun emptyAGoogleAnswer(stepIndex: Int, stepId: String): ActivityController<OnboardingActivity> {
+        locationGeocodeTransport = noRows
+        val c = present(0)
+        val vm = vmOf(c.get())
+        vm.responses[stepId] = mapOf("where" to googleAnswer)
+        vm.currentIndex.intValue = stepIndex
+        idle(); compose.waitForIdle()
+        assertEquals("the field shows the submitted answer", listOf("Synthetic Line 1, Town"), fieldTexts())
+        fields()[0].performTextClearance(); compose.waitForIdle()
+        assertEquals("the first clear restarts from the typed query", listOf("typed q"), fieldTexts())
+        fields()[0].performTextClearance(); compose.waitForIdle()
+        assertEquals("the second clear empties the field", listOf(""), fieldTexts())
+        return c
+    }
+
+    @Test
+    fun `a location field the user emptied on a form step stays empty after a rotation`() {
+        val c = emptyAGoogleAnswer(4, "s_locform")
+        c.recreate(); idle(); compose.waitForIdle()
+        assertEquals(listOf(""), fieldTexts())
+    }
+
+    @Test
+    fun `a location field the user emptied on a form step stays empty after a process death`() {
+        val saved = kill(emptyAGoogleAnswer(4, "s_locform"))
+        val restored = restoreInNewProcess(saved)
+        assertEquals(4, vmOf(restored.get()).currentIndex.intValue)
+        assertEquals(listOf(""), fieldTexts())
+    }
+
+    @Test
+    fun `a location block the user emptied stays empty after a process death`() {
+        val saved = kill(emptyAGoogleAnswer(3, "s_loc"))
+        val restored = restoreInNewProcess(saved)
+        assertEquals(3, vmOf(restored.get()).currentIndex.intValue)
+        assertEquals(listOf(""), fieldTexts())
+    }
+
+    @Test
+    fun `text typed before tapping a suggestion survives a process death while the tap resolves`() {
+        locationGeocodeTransport = object : GeocodeTransport {
+            override suspend fun post(url: String, headers: Map<String, String>, body: String): GeocodeHttpReply {
+                // The resolve never replies: the process ends with the tap still in flight.
+                if (url.contains("resolve")) kotlinx.coroutines.awaitCancellation()
+                return GeocodeHttpReply(200, """{"data":{"suggestions":[{"id":"p1","provider":"google","formatted_address":"Row Place, Town","name":"Row Place","place_formatted":"Town"}]}}""")
+            }
+        }
+        val c = present(3)
+        fields()[0].performTextInput("12 Ex")
+        compose.mainClock.advanceTimeBy(1_000); idle(); compose.waitForIdle()
+        compose.onNode(hasText("Row Place"), useUnmergedTree = true).performClick()
+        idle(); compose.waitForIdle()
+        assertEquals("the field keeps the typed text while the tap resolves", listOf("12 Ex"), fieldTexts())
+
+        val saved = kill(c)
+        restoreInNewProcess(saved)
+        assertEquals(listOf("12 Ex"), fieldTexts())
     }
 
     // ---- Process death ----------------------------------------------------------------------------

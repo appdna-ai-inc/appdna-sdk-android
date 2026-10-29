@@ -50,6 +50,20 @@ internal class StepDraft(val stepId: String) {
     /** The same, for [selection]: seeded by the question step, which composes inside the step view. */
     var selectionSeeded: Boolean = false
 
+    /**
+     * The same, for [form]: seeded by the form step, which composes inside the step view, so it cannot
+     * share [seeded] (the step view sets that first).
+     */
+    var formSeeded: Boolean = false
+
+    /**
+     * The step's location fields, for the saved state: a field whose tap is still resolving has stored
+     * nothing yet, and its typed text would be lost with the process. [inputs]' fields register through
+     * the step view, [form]'s through the form step.
+     */
+    internal var inputsLocations: LocationAdvanceSettlement? = null
+    internal var formLocations: LocationAdvanceSettlement? = null
+
     /** Compositions currently showing this draft. */
     internal var holders = 0
 }
@@ -94,7 +108,12 @@ internal class StepDrafts {
      */
     fun writeTo(out: Bundle, step: OnboardingStep) {
         val draft = drafts[step.id] ?: return
-        encode(draft, AuthSecretRedactor.secretFieldIds(step))?.let { out.putString(KEY_STEP_DRAFT, it) }
+        encode(
+            draft,
+            AuthSecretRedactor.secretFieldIds(step),
+            inputsInFlight = draft.inputsLocations?.inFlight().orEmpty(),
+            formInFlight = draft.formLocations?.inFlight().orEmpty(),
+        )?.let { out.putString(KEY_STEP_DRAFT, it) }
     }
 
     /** Put back a draft saved by [writeTo], when it belongs to [stepId]. */
@@ -112,10 +131,22 @@ internal class StepDrafts {
         /** The whole draft is kept below this, smallest values first. */
         internal const val MAX_DRAFT_CHARS = 32 * 1024
 
-        internal fun encode(draft: StepDraft, secrets: Set<String>): String? {
-            val inputs = bounded(draft.inputs.filterKeys { it !in secrets }, draft.stepId)
-            val form = bounded(draft.form.filterKeys { it !in secrets }, draft.stepId)
-            if (inputs.length() == 0 && form.length() == 0 && draft.toggles.isEmpty() && draft.selection.isEmpty()) return null
+        /**
+         * The draft as JSON for the saved state. [inputsInFlight] and [formInFlight] are the typed
+         * answers of location fields whose tap is still resolving; each fills its field where the draft
+         * holds nothing. A seeded draft is written even when it holds nothing: a field the user emptied
+         * must come back empty, not be seeded again from the submitted answer.
+         */
+        internal fun encode(
+            draft: StepDraft,
+            secrets: Set<String>,
+            inputsInFlight: Map<String, Any> = emptyMap(),
+            formInFlight: Map<String, Any> = emptyMap(),
+        ): String? {
+            val inputs = bounded(withInFlight(draft.inputs, inputsInFlight).filterKeys { it !in secrets }, draft.stepId)
+            val form = bounded(withInFlight(draft.form, formInFlight).filterKeys { it !in secrets }, draft.stepId)
+            val empty = inputs.length() == 0 && form.length() == 0 && draft.toggles.isEmpty() && draft.selection.isEmpty()
+            if (empty && !draft.seeded && !draft.formSeeded && !draft.selectionSeeded) return null
             val obj = org.json.JSONObject()
             obj.put("step", draft.stepId)
             obj.put("inputs", inputs)
@@ -123,6 +154,16 @@ internal class StepDrafts {
             obj.put("form", form)
             obj.put("selection", org.json.JSONArray(draft.selection.toList()))
             return obj.toString()
+        }
+
+        private fun withInFlight(values: Map<String, Any?>, inFlight: Map<String, Any>): Map<String, Any?> {
+            if (inFlight.isEmpty()) return values
+            val merged = LinkedHashMap<String, Any?>(values)
+            for ((k, v) in inFlight) {
+                val current = merged[k]
+                if (current == null || current == "") merged[k] = v
+            }
+            return merged
         }
 
         private fun bounded(values: Map<String, Any?>, stepId: String): org.json.JSONObject {
@@ -169,6 +210,7 @@ internal class StepDrafts {
                 }
                 draft.seeded = true
                 draft.selectionSeeded = true
+                draft.formSeeded = true
                 draft
             } catch (e: Exception) {
                 Log.warning("Onboarding step $stepId: the unsubmitted values could not be read back (${e.message}); showing the step without them.")

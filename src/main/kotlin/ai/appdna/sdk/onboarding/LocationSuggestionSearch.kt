@@ -307,11 +307,20 @@ internal class LocationSuggestionSearch(
      */
     fun settleResolveInFlight(): Any? {
         if (!isResolving) return null
-        val answer: Any? = resolvingTyped?.ifEmpty { null }?.let { LocationAnswer.typed(it) }
+        val answer: Any? = typedInFlight()
         if (answer != null) write(answer)
         dropResolveInFlight()
         return answer
     }
+
+    /**
+     * What [settleResolveInFlight] would store, without settling: the text the user had typed when the
+     * resolve in flight was tapped, as a typed answer. Null when no resolve is in flight. The saved
+     * state reads it, so a process that ends mid-resolve keeps the typed text, while a recreation that
+     * keeps the process still drops only the late reply.
+     */
+    fun typedInFlight(): Any? =
+        if (!isResolving) null else resolvingTyped?.ifEmpty { null }?.let { LocationAnswer.typed(it) }
 
     /**
      * The composable saw its stored answer. The restore is REACTIVE: on an absent → present transition
@@ -601,6 +610,13 @@ internal class LocationAdvanceSettlement {
             holder.settleResolveInFlight()?.let { settled[fieldId] = it }
         }
         return settled
+    }
+
+    /** Field id → the typed answer of each field whose resolve is in flight, settling nothing. */
+    fun inFlight(): Map<String, Any> {
+        val typed = LinkedHashMap<String, Any>()
+        for ((holder, fieldId) in fields) holder.typedInFlight()?.let { typed[fieldId] = it }
+        return typed
     }
 
     /**

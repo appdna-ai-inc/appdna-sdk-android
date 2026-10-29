@@ -2857,6 +2857,12 @@ private fun OnboardingStepBody(
         // resolve is still in flight before the answers leave the step. The fields' own dispose runs
         // a frame too late for that.
         val locationSettlement = remember(step.id) { LocationAdvanceSettlement() }
+        // The step's draft reads these for the saved state (a tap still resolving has stored nothing).
+        val stepDraft = LocalStepDrafts.current?.peek(step.id)
+        DisposableEffect(stepDraft, locationSettlement) {
+            stepDraft?.inputsLocations = locationSettlement
+            onDispose { if (stepDraft != null && stepDraft.inputsLocations === locationSettlement) stepDraft.inputsLocations = null }
+        }
         CompositionLocalProvider(LocalLocationAdvanceSettlement provides locationSettlement) {
             // Block-based rendering with layout variants
             BlockBasedStepView(

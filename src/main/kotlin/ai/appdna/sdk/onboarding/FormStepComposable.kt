@@ -57,7 +57,10 @@ fun FormStep(
 
     // Initialize defaults + savedValues. Order: savedValues (back-nav
     // restoration) wins over fieldDefaults wins over per-field default_value.
+    // Once per draft: a draft kept across a recreation already holds the seeds and the user's edits,
+    // and a field the user emptied must stay empty rather than be seeded again.
     LaunchedEffect(fields) {
+        if (draft?.formSeeded == true) return@LaunchedEffect
         // Restore from prior responses first.
         savedValues?.forEach { (fieldId, value) ->
             if (values[fieldId] == null) values[fieldId] = value
@@ -74,6 +77,7 @@ fun FormStep(
                 field.config?.default_value?.let { values[field.id] = it }
             }
         }
+        draft?.formSeeded = true
     }
 
     val visibleFields = fields.filter { field ->
@@ -99,6 +103,10 @@ fun FormStep(
     // The step's Location fields register here, so Continue can settle a field whose resolve is still
     // in flight (it stores the typed text) before the answers are submitted.
     val locationSettlement = remember { LocationAdvanceSettlement() }
+    DisposableEffect(draft, locationSettlement) {
+        draft?.formLocations = locationSettlement
+        onDispose { if (draft != null && draft.formLocations === locationSettlement) draft.formLocations = null }
+    }
 
     CompositionLocalProvider(LocalLocationAdvanceSettlement provides locationSettlement) {
     Column(
