@@ -2308,7 +2308,7 @@ private fun HeadingBlock(block: ContentBlock, loc: ((String, String) -> String)?
         // iOS for the same `{level: 4}` payload — 10pt narrower.
         fontSize = when (block.level ?: 1) { 1 -> 28.sp; 2 -> 22.sp; 3 -> 18.sp; else -> 28.sp },
         fontWeight = FontWeight.Bold,
-        color = Color.Unspecified,
+        color = UnstyledInk.text(),
     )
     val effectiveStyle = if (block.style != null) StyleEngine.applyTextStyle(baseStyle, block.style) else baseStyle
     // Parity — iOS prioritizes `style.alignment ?? horizontal_align`
@@ -2340,7 +2340,7 @@ private fun HeadingBlock(block: ContentBlock, loc: ((String, String) -> String)?
 @Composable
 private fun TextBlock(block: ContentBlock, loc: ((String, String) -> String)? = null) {
     val text = block.text ?: ""
-    val baseStyle = TextStyle(fontSize = 16.sp, color = Color.Unspecified)
+    val baseStyle = TextStyle(fontSize = 16.sp, color = UnstyledInk.text())
     val effectiveStyle = if (block.style != null) StyleEngine.applyTextStyle(baseStyle, block.style) else baseStyle
     // Parity — iOS prioritizes `style.alignment ?? horizontal_align`
     // (ContentBlockRendererView.swift:358), so `horizontal_align` only acts as
@@ -9868,7 +9868,7 @@ private fun FormFieldLabel(block: ContentBlock) {
                 // top-level label_font_size was honored on iOS but dropped here).
                 fontSize = (block.field_style?.label_font_size ?: block.label_font_size ?: 15.0).sp,
                 fontWeight = FontWeight.Medium,
-                color = StyleEngine.parseColor(block.field_style?.label_color ?: "#374151"),
+                color = block.field_style?.label_color?.let { StyleEngine.parseColor(it) } ?: UnstyledInk.label(),
             )
             if (required) {
                 // Match iOS systemRed
@@ -10084,6 +10084,32 @@ private fun FormInputTextAreaBlock(
             )
         }
     }
+}
+
+/**
+ * The ink of unstyled text: a `text` or `heading` block with no `style.color`, and a form field's label
+ * with no `field_style.label_color`. Picked from what is behind the block, by the light-or-dark call the
+ * Google logo makes ([GoogleMapsAttribution.needsLightInk]): on a light surface, what it always was (the
+ * theme's text colour, and `#374151` for a label); on a dark, gradient or image surface, white, and
+ * `#E5E7EB` for a label. Authored colours always win. The Swift twin is `UnstyledInk` in
+ * `ContentBlockRendererView.swift`.
+ */
+internal object UnstyledInk {
+    val LIGHT_LABEL = Color(0xFF374151)
+    val DARK_TEXT = Color.White
+    val DARK_LABEL = Color(0xFFE5E7EB)
+
+    @Composable
+    private fun onDark(): Boolean =
+        GoogleMapsAttribution.needsLightInk(LocalGoogleAttributionBackdrop.current, googleAttributionThemeIsDark())
+
+    /** A text or heading block's default colour: unspecified (the theme's) on a light surface. */
+    @Composable
+    fun text(): Color = if (onDark()) DARK_TEXT else Color.Unspecified
+
+    /** A form field label's default colour. */
+    @Composable
+    fun label(): Color = if (onDark()) DARK_LABEL else LIGHT_LABEL
 }
 
 /**
