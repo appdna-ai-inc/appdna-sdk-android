@@ -1338,7 +1338,8 @@ fun resolveTemplateString(
         val resolved = resolveDotPath(
             path, responses, hookData, userTraits, sessionData, stepInputs, typedText = rule.covers(matchResult.range.first),
         )
-        resolved?.toString() ?: fallback ?: matchResult.value
+        // A JSON null (a trait identify kept, a null in hook data) is unresolved, never the text "null".
+        resolved?.takeIf { it != org.json.JSONObject.NULL }?.toString() ?: fallback ?: matchResult.value
     }
 }
 

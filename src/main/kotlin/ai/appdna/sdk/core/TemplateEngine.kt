@@ -2,6 +2,7 @@ package ai.appdna.sdk.core
 
 import ai.appdna.sdk.AppDNA
 import ai.appdna.sdk.onboarding.LocationAnswer
+import org.json.JSONObject
 
 /**
  * Which surface a template is drawn on. It decides what a Google location answer resolves to.
@@ -220,8 +221,13 @@ object TemplateEngine {
         else -> value
     }
 
-    private fun stringify(value: Any): String {
+    /**
+     * [value] as template text, or null (unresolved, so a `| fallback` applies) for a JSON null: a trait
+     * identify kept as `JSONObject.NULL` is not set, as [HostDataResolver.stringifyTemplateValue] reads it.
+     */
+    private fun stringify(value: Any): String? {
         return when (value) {
+            JSONObject.NULL -> null
             is String -> value
             is Boolean -> value.toString()
             is Number -> {

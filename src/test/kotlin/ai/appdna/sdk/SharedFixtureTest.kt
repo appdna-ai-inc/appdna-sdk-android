@@ -201,9 +201,10 @@ class SharedFixtureTest(
     private val config: JSONObject? get() = setup.optJSONObject("config")
     private val sessionData: JSONObject get() = setup.optJSONObject("session_data") ?: JSONObject()
     private val userTraits: Map<String, Any>
+        // A null trait in the form the identity store holds it (`IdentifyTraits` keeps a JSON null as
+        // `JSONObject.NULL`), so a reader that treats it as set shows up here rather than being filtered away.
         get() = (setup.optJSONObject("user_traits") ?: JSONObject()).asMap()
-            .filterValues { it != null }
-            .mapValues { it.value!! }
+            .mapValues { it.value ?: JSONObject.NULL }
 
     /**
      * The fatal fallback. A kind this runner cannot drive is a HOLE IN THE PROOF, and a hole in the
