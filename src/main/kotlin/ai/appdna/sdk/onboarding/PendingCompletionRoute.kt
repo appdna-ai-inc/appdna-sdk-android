@@ -43,6 +43,12 @@ internal object PendingCompletionRoute {
     }
 
     /**
+     * Read WITHOUT clearing — for saving the flow's state when the activity may be destroyed. The
+     * route still fires once, from [take], whichever process completes the flow.
+     */
+    fun peek(): String? = synchronized(lock) { url }
+
+    /**
      * Drop anything recorded. Called when a flow is PRESENTED, so a destination left by an
      * abandoned flow cannot leak into the next one.
      */

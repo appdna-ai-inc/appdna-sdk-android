@@ -1605,6 +1605,79 @@ object AppDNA {
     internal fun resolveOnboardingListener(explicit: AppDNAOnboardingDelegate?): AppDNAOnboardingDelegate? =
         explicit ?: onboarding.listener
 
+    /**
+     * Rebuild an onboarding flow the OS killed while it was in the background, for the activity
+     * Android restores in the new process. Uses the delegate registered through
+     * `AppDNA.onboarding.setDelegate`, read when each callback fires — the one passed to
+     * `presentOnboarding` died with the old process. Null when the flow cannot be resolved (yet).
+     *
+     * Reads the manager built in [configure], not the `onboarding.manager` facade wired at the end of
+     * the bootstrap: the cached config is loaded when the manager is built, so a flow resumes as soon
+     * as the host's Application.onCreate has configured the SDK, without waiting on the network.
+     */
+    internal fun onboardingResumePayload(
+        activity: Activity,
+        flowId: String,
+        renderedTreatment: Boolean,
+        startTime: Long,
+    ): ai.appdna.sdk.onboarding.OnboardingActivity.LaunchPayload? =
+        onboardingFlowManager?.resumePayload(
+            activity = activity,
+            flowId = flowId,
+            renderedTreatment = renderedTreatment,
+            startTime = startTime,
+            listener = { resolveOnboardingListener(null) },
+        )
+
+    /**
+     * Whether [configure] has been called in this process (and not undone by [shutdown]): either the
+     * SDK is ready, or its bootstrap is still running. A flow restored after process death waits for
+     * [onReady] only when this is true — otherwise nothing in the process is going to configure the
+     * SDK before the user is looking at the restored screen.
+     */
+    internal val isConfigureStarted: Boolean get() = synchronized(this) { isConfigured || isConfiguring }
+
+    /** Test seam: take what [track] buffered before configure() (names and properties), emptying it. */
+    internal fun drainPreInitBufferForTest(): List<Pair<String, Map<String, Any>?>> {
+        val out = ArrayList<PreInitEvent>()
+        synchronized(preInitLock) { preInitBuffer.drainTo(out) }
+        return out.map { it.name to it.properties }
+    }
+
+    /** End a flow that could not be resumed after process death as dismissed: event and delegate. */
+    internal fun reportOnboardingResumeAbandoned(flowId: String, lastStepId: String, lastStepIndex: Int) {
+        val listener = resolveOnboardingListener(null)
+        val manager = onboardingFlowManager
+        if (manager != null) {
+            manager.reportResumeAbandoned(flowId, lastStepId, lastStepIndex, listener)
+        } else {
+            track("onboarding_flow_dismissed", mapOf(
+                "flow_id" to flowId,
+                "last_step_id" to lastStepId,
+                "last_step_index" to lastStepIndex,
+            ))
+            listener?.onOnboardingDismissed(flowId = flowId, atStep = lastStepIndex)
+        }
+    }
+
+    /**
+     * Test seam: install an onboarding manager as [configure] would, and set whether the SDK reports
+     * itself ready — draining [onReady] callbacks on the main looper when it turns ready, as the
+     * bootstrap does — or, with [configuring], that configure() has been called and is still
+     * bootstrapping. `installOnboardingForTest(null, false)` puts all three back.
+     */
+    internal fun installOnboardingForTest(manager: OnboardingFlowManager?, ready: Boolean, configuring: Boolean = false) {
+        val callbacks = synchronized(this) {
+            onboardingFlowManager = manager
+            onboarding.manager = manager
+            isConfigured = ready
+            isConfiguring = configuring && !ready
+            if (ready) ArrayList(readyCallbacks).also { readyCallbacks.clear() } else { readyCallbacks.clear(); emptyList() }
+        }
+        val main = android.os.Handler(android.os.Looper.getMainLooper())
+        for (cb in callbacks) main.post(cb)
+    }
+
     /** @see resolveOnboardingListener */
     @JvmStatic
     internal fun resolvePaywallListener(explicit: AppDNAPaywallDelegate?): AppDNAPaywallDelegate? =

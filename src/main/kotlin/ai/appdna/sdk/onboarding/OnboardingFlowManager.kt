@@ -56,18 +56,7 @@ internal class OnboardingFlowManager(
             return false
         }
 
-        // Experiment-aware presentation. A running onboarding
-        // experiment targeting this flow + a treatment bucket renders the
-        // treatment payload flow; otherwise the active flow (cohort isolation).
-        var flow = activeFlow
-        val resolution = experimentManager?.resolveSurfacePresentation("onboarding_flow", activeFlow.id)
-        if (resolution is ai.appdna.sdk.config.ExperimentManager.SurfaceResolution.RenderTreatment) {
-            val treatment = OnboardingConfigParser.parseSingleFlow(activeFlow.id, resolution.payload)
-            if (treatment != null) {
-                Log.info("Onboarding flow ${activeFlow.id} rendering experiment treatment variant")
-                flow = treatment
-            }
-        }
+        val (flow, renderedTreatment) = applyExperiment(activeFlow)
 
         // Track flow started
         // Drop any after-onboarding destination left by a flow the user ABANDONED, so it cannot
@@ -87,9 +76,105 @@ internal class OnboardingFlowManager(
         // Launch the OnboardingActivity
         OnboardingActivity.launch(
             context = activity,
+            payload = buildPayload(activity, flow, renderedTreatment, startTime) { listener },
+        )
+
+        return true
+    }
+
+    /**
+     * Rebuild the launch payload for a flow the OS killed while it was in the background.
+     *
+     * The activity comes back with only its saved state: the flow id, whether the experiment
+     * treatment was on screen, when the flow started, and the step and answers. Everything else —
+     * the flow body, the event closures, the host delegate — died with the process, so it is
+     * resolved again here the same way [present] resolves it.
+     *
+     * Deliberately NOT repeated from [present]: `onboarding_flow_started`, the delegate's
+     * `onOnboardingStarted`, and clearing the pending completion route. The flow did not start
+     * again; it continues. The step on screen still reports `onboarding_step_viewed`, because the
+     * user is viewing it again.
+     *
+     * [activity] is the restored onboarding activity itself: the screen that presented the flow is
+     * not running.
+     *
+     * [listener] is read each time a callback fires, not once here. In a restored process the host's
+     * screens are created again around this activity, so a delegate registered from one of them can
+     * arrive after the flow is back; the observe-only callbacks (step changed, completed, dismissed)
+     * still reach it. The step hooks take the delegate registered when the flow resumes, because
+     * whether a delegate exists at all changes what the renderer allows.
+     *
+     * Returns null when the flow id does not resolve (unpublished, or a config that has not loaded
+     * yet); the activity logs the outcome once it knows which.
+     */
+    fun resumePayload(
+        activity: Activity,
+        flowId: String,
+        renderedTreatment: Boolean,
+        startTime: Long,
+        listener: () -> AppDNAOnboardingDelegate?,
+    ): OnboardingActivity.LaunchPayload? {
+        // Quiet on a miss: before the SDK is ready a miss is not final, and the caller decides.
+        val activeFlow = remoteConfigManager.getOnboardingFlow(flowId) ?: return null
+        val (flow, treatmentNow) = applyExperiment(activeFlow)
+        if (treatmentNow != renderedTreatment) {
+            Log.warning(
+                "Onboarding flow $flowId resumed after a restart with a different experiment variant " +
+                    "than it started with (treatment then: $renderedTreatment, now: $treatmentNow); " +
+                    "the user continues on the variant that resolves now.",
+            )
+        }
+        return buildPayload(activity, flow, treatmentNow, startTime, listener)
+    }
+
+    /**
+     * Report a flow that could not be resumed after a restart as dismissed, with the same event and
+     * delegate call a dismissal produces, so neither analytics nor the host is left waiting.
+     */
+    fun reportResumeAbandoned(
+        flowId: String,
+        lastStepId: String,
+        lastStepIndex: Int,
+        listener: AppDNAOnboardingDelegate?,
+    ) {
+        eventTracker.track("onboarding_flow_dismissed", mapOf(
+            "flow_id" to flowId,
+            "last_step_id" to lastStepId,
+            "last_step_index" to lastStepIndex
+        ))
+        listener?.onOnboardingDismissed(flowId = flowId, atStep = lastStepIndex)
+    }
+
+    /**
+     * Experiment-aware presentation. A running onboarding experiment targeting this flow + a
+     * treatment bucket renders the treatment payload flow; otherwise the active flow (cohort
+     * isolation). Returns the flow to render and whether it is the treatment.
+     */
+    private fun applyExperiment(activeFlow: OnboardingFlowConfig): Pair<OnboardingFlowConfig, Boolean> {
+        val resolution = experimentManager?.resolveSurfacePresentation("onboarding_flow", activeFlow.id)
+        if (resolution is ai.appdna.sdk.config.ExperimentManager.SurfaceResolution.RenderTreatment) {
+            val treatment = OnboardingConfigParser.parseSingleFlow(activeFlow.id, resolution.payload)
+            if (treatment != null) {
+                Log.info("Onboarding flow ${activeFlow.id} rendering experiment treatment variant")
+                return treatment to true
+            }
+        }
+        return activeFlow to false
+    }
+
+    /** The five event closures and the delegate, shared by [present] and [resumePayload]. */
+    private fun buildPayload(
+        activity: Activity,
+        flow: OnboardingFlowConfig,
+        renderedTreatment: Boolean,
+        startTime: Long,
+        listener: () -> AppDNAOnboardingDelegate?,
+    ): OnboardingActivity.LaunchPayload = OnboardingActivity.LaunchPayload(
             flow = flow,
-            delegate = listener,
+            delegate = listener(),
             eventTracker = eventTracker,
+            renderedTreatment = renderedTreatment,
+            startTime = startTime,
             onStepViewed = { stepId, stepIndex ->
                 eventTracker.track("onboarding_step_viewed", mapOf(
                     "flow_id" to flow.id,
@@ -97,7 +182,7 @@ internal class OnboardingFlowManager(
                     "step_index" to stepIndex,
                     "step_type" to (flow.steps.getOrNull(stepIndex)?.type?.value ?: "unknown")
                 ))
-                listener?.onOnboardingStepChanged(flowId = flow.id, stepId = stepId, stepIndex = stepIndex, totalSteps = flow.steps.size)
+                listener()?.onOnboardingStepChanged(flowId = flow.id, stepId = stepId, stepIndex = stepIndex, totalSteps = flow.steps.size)
             },
             onStepCompleted = { stepId, stepIndex, data ->
                 eventTracker.track("onboarding_step_completed", mapOf(
@@ -131,7 +216,7 @@ internal class OnboardingFlowManager(
                     durationMs = durationMs,
                     responses = responses,
                     track = { name, props -> eventTracker.track(name, props) },
-                    delegate = listener,
+                    delegate = listener(),
                     // Scheme-checked before the OS sees it — the URL comes from remote config.
                     openRoute = { raw ->
                         ai.appdna.sdk.core.URLSafety.sanitized(raw, activity)?.let { uri ->
@@ -149,12 +234,9 @@ internal class OnboardingFlowManager(
                     "last_step_id" to lastStepId,
                     "last_step_index" to lastStepIndex
                 ))
-                listener?.onOnboardingDismissed(flowId = flow.id, atStep = lastStepIndex)
-            }
+                listener()?.onOnboardingDismissed(flowId = flow.id, atStep = lastStepIndex)
+            },
         )
-
-        return true
-    }
 
     // MARK: - Private
 

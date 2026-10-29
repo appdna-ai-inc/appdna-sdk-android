@@ -47,6 +47,18 @@ internal class OnboardingViewModel : ViewModel() {
     var eventTracker: EventTracker? = null
         private set
 
+    /**
+     * Whether the flow on screen is an experiment's treatment payload rather than the live flow.
+     * Saved with the step so a flow the OS killed resumes on the variant it started with, or says
+     * that it could not.
+     */
+    var renderedTreatment: Boolean = false
+        private set
+
+    /** Wall-clock start of the flow, saved so a resumed flow's completion reports its full duration. */
+    var startTime: Long = 0L
+        private set
+
     /** Step-viewed lambda; emitted by host when a step appears. */
     var onStepViewed: ((String, Int) -> Unit)? = null
         private set
@@ -174,6 +186,8 @@ internal class OnboardingViewModel : ViewModel() {
         onStepSkipped = payload.onStepSkipped
         onFlowCompleted = payload.onFlowCompleted
         onFlowDismissed = payload.onFlowDismissed
+        renderedTreatment = payload.renderedTreatment
+        startTime = payload.startTime
         isBound = true
     }
 
@@ -195,6 +209,8 @@ internal class OnboardingViewModel : ViewModel() {
         onStepSkipped = null
         onFlowCompleted = null
         onFlowDismissed = null
+        renderedTreatment = false
+        startTime = 0L
         restoredStepIndex = null
         restoredResponses = null
         responses.clear()

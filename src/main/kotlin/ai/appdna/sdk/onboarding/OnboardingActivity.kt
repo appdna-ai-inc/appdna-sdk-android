@@ -165,14 +165,136 @@ class OnboardingActivity : ComponentActivity() {
         if (!viewModel.isBound) {
             val payload = consumePendingLaunchPayload()
             if (payload == null) {
-                // No payload + no bound VM == process was killed before
-                // onCreate ran (cold restart with no flow to resume). Bail.
-                finish()
+                /*
+                 * No payload and no bound ViewModel: the OS killed the process while the flow was in
+                 * the background, and is now restoring this activity in a new process. The static
+                 * payload and the ViewModel died with the old process; only the saved state is left.
+                 * Rebuild the flow from it and continue on the step the user left.
+                 */
+                val saved = OnboardingResumeState.from(savedInstanceState)
+                if (saved == null) {
+                    Log.warning(
+                        "OnboardingActivity started with no flow to show and no saved flow to resume; " +
+                            "closing it. Present onboarding through AppDNA.presentOnboarding.",
+                    )
+                    finish()
+                    return
+                }
+                beginResume(saved)
                 return
             }
             viewModel.bind(payload)
         }
+        showFlow(savedInstanceState)
+    }
 
+    /**
+     * The saved state of a flow being restored after the process was killed, held until the SDK can
+     * resolve the flow again. Null once the flow is bound, or once the resume was given up.
+     */
+    private var pendingResume: OnboardingResumeState? = null
+    private val resumeHandler = android.os.Handler(android.os.Looper.getMainLooper())
+    private val resumeTimeout = Runnable {
+        abandonResume(
+            "the SDK did not finish configuring within ${RESUME_READY_TIMEOUT_MS / 1000}s. Call " +
+                "AppDNA.configure in Application.onCreate so a restored flow can be rebuilt",
+        )
+    }
+
+    /**
+     * Restore a flow after process death. Android runs the host's Application.onCreate first, then
+     * recreates this activity, before any other screen of the host. A host that configures the SDK in
+     * Application.onCreate has a configured SDK by now, and it reads its cached config at once, so
+     * the flow usually resolves immediately; when it does not, wait for [AppDNA.onReady], bounded.
+     *
+     * A host that configures anywhere later — from a screen, or from Dart or JavaScript once a
+     * cross-platform engine has started — has not configured yet, and nothing will until this
+     * activity is gone. Waiting would only hold the user on a blank screen, so the flow ends at once.
+     */
+    private fun beginResume(saved: OnboardingResumeState) {
+        pendingResume = saved
+        if (tryCompleteResume(sdkReady = AppDNA.isReady)) return
+        if (!AppDNA.isConfigureStarted) {
+            abandonResume(
+                "AppDNA.configure had not been called when Android restored this screen, so the flow " +
+                    "cannot be rebuilt. Call AppDNA.configure from Application.onCreate for a flow to " +
+                    "resume after the app is restarted",
+            )
+            return
+        }
+        // A still, plain screen while waiting — not the host's screen showing through this
+        // translucent activity, and no animation that keeps the frame loop running meanwhile.
+        setContent {
+            val dark = isSystemInDarkTheme()
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(if (dark) Color.Black else Color.White),
+            )
+        }
+        val self = java.lang.ref.WeakReference(this)
+        AppDNA.onReady { self.get()?.tryCompleteResume(sdkReady = true) }
+        resumeHandler.postDelayed(resumeTimeout, RESUME_READY_TIMEOUT_MS)
+    }
+
+    /**
+     * Resolve the saved flow and show it on the saved step. Returns false only when the flow cannot
+     * be resolved YET (the SDK is still configuring); every other outcome — resumed, or given up
+     * with a dismissal — returns true.
+     */
+    private fun tryCompleteResume(sdkReady: Boolean): Boolean {
+        val saved = pendingResume ?: return true
+        if (isFinishing || isDestroyed) return true
+        val payload = AppDNA.onboardingResumePayload(
+            activity = this,
+            flowId = saved.flowId,
+            renderedTreatment = saved.renderedTreatment,
+            startTime = saved.startTime,
+        )
+        if (payload == null) {
+            if (!sdkReady) return false
+            abandonResume("flow ${saved.flowId} is no longer in the config")
+            return true
+        }
+        val index = saved.resolveStepIndex(payload.flow)
+        if (index == null) {
+            abandonResume(
+                "the published flow changed while the app was closed: step ${saved.stepId} is no " +
+                    "longer in flow ${saved.flowId}",
+            )
+            return true
+        }
+        resumeHandler.removeCallbacks(resumeTimeout)
+        pendingResume = null
+        viewModel.bind(payload)
+        saved.applyTo(viewModel, index)
+        Log.info("Onboarding flow ${saved.flowId} resumed on step ${index + 1} after the app was restarted")
+        showFlow(savedInstanceState = null)
+        return true
+    }
+
+    /**
+     * Give up on a restored flow: end it the way a dismissal ends it — the dismissed event and the
+     * host's onOnboardingDismissed — so nobody is left waiting, and say why in the log.
+     */
+    private fun abandonResume(reason: String) {
+        val saved = pendingResume ?: return
+        pendingResume = null
+        resumeHandler.removeCallbacks(resumeTimeout)
+        Log.warning(
+            "Onboarding flow ${saved.flowId} could not be resumed after the app was restarted: " +
+                "$reason. Ending it as dismissed at step ${saved.stepIndex + 1}.",
+        )
+        AppDNA.reportOnboardingResumeAbandoned(saved.flowId, saved.stepId ?: "", saved.stepIndex)
+        finish()
+    }
+
+    override fun onDestroy() {
+        resumeHandler.removeCallbacks(resumeTimeout)
+        super.onDestroy()
+    }
+
+    private fun showFlow(savedInstanceState: Bundle?) {
         val flow = viewModel.flow ?: run {
             finish()
             return
@@ -203,14 +325,13 @@ class OnboardingActivity : ComponentActivity() {
         if (flow.hasMapBlock()) warmGoogleMapsRenderer(applicationContext)
 
         // Restore (currentStepIndex, responses) from
-        // `savedInstanceState` so process-death / config-change rotations
-        // re-enter the flow on the same step with prior answers intact.
-        // Mirrors iOS `OnboardingRenderer` `@SceneStorage` round-trip.
+        // `savedInstanceState` for a recreated activity whose ViewModel is bound.
         //
-        // Process-death case: the VM was destroyed along with the Activity,
-        // so `viewModel.responses` is empty here — we hydrate it from the
-        // bundle. Config-change case: the VM survived, so we DON'T overwrite
-        // its in-memory state with a (potentially stale) bundle snapshot.
+        // Process death does NOT come through here: an unbound ViewModel with no
+        // launch payload goes to [beginResume], which applies the saved step,
+        // answers and history before the first composition. This block only
+        // runs for a bound ViewModel. Config-change case: the VM survived, so we
+        // DON'T overwrite its in-memory state with a (potentially stale) bundle snapshot.
         if (savedInstanceState != null && viewModel.responses.isEmpty() &&
             viewModel.currentIndex.intValue == 0
         ) {
@@ -299,6 +420,11 @@ class OnboardingActivity : ComponentActivity() {
     }
 
     override fun onBackPressed() {
+        // Back while a restored flow is still waiting for the SDK: the user chose to leave it.
+        if (pendingResume != null) {
+            abandonResume("the user closed it while it was being restored")
+            return
+        }
         // Respect `flow.settings.dismiss_allowed` (canDismiss)
         // when handling the system back button. When dismissal is disallowed
         // the flow intercepts back, mirroring iOS force-flow behavior.
@@ -344,6 +470,19 @@ class OnboardingActivity : ComponentActivity() {
      */
     override fun onSaveInstanceState(outState: Bundle) {
         super.onSaveInstanceState(outState)
+        // Still waiting to restore: the ViewModel is unbound, so hand the saved state on unchanged.
+        pendingResume?.let { it.writeTo(outState); return }
+        // What a new process needs to rebuild the flow if this one is killed in the background.
+        // Ids and flags only — the flow body is resolved again from config, never put in the Bundle.
+        viewModel.flow?.let { flow ->
+            OnboardingResumeState.writeFlow(
+                outState,
+                flow = flow,
+                stepIndex = viewModel.currentIndex.intValue,
+                renderedTreatment = viewModel.renderedTreatment,
+                startTime = viewModel.startTime,
+            )
+        }
         outState.putInt(KEY_CURRENT_STEP_INDEX, viewModel.currentIndex.intValue)
         try {
             val obj = org.json.JSONObject()
@@ -379,14 +518,25 @@ class OnboardingActivity : ComponentActivity() {
         val onStepSkipped: ((String, Int) -> Unit)?,
         val onFlowCompleted: ((Map<String, Any>) -> Unit)?,
         val onFlowDismissed: ((String, Int) -> Unit)?,
+        /** Whether [flow] is an experiment's treatment payload. Saved for a resume after process death. */
+        val renderedTreatment: Boolean = false,
+        /** Wall-clock start of the flow. Saved for a resume after process death. */
+        val startTime: Long = System.currentTimeMillis(),
     )
 
     companion object {
-        private const val KEY_CURRENT_STEP_INDEX = "appdna_onboarding_current_step_index"
-        private const val KEY_RESPONSES = "appdna_onboarding_responses"
+        internal const val KEY_CURRENT_STEP_INDEX = "appdna_onboarding_current_step_index"
+        internal const val KEY_RESPONSES = "appdna_onboarding_responses"
         // 8 D2 — navigation history for
         // previous_step_* rule operators (iOS OnboardingRenderer.swift:982-988).
-        private const val KEY_NAV_HISTORY = "appdna_onboarding_nav_history"
+        internal const val KEY_NAV_HISTORY = "appdna_onboarding_nav_history"
+
+        /**
+         * How long a flow restored after process death waits for the SDK to configure before it is
+         * given up as dismissed. A restore is never a first launch, so the cached config is on disk;
+         * the wait covers a slow bootstrap, not a missing one.
+         */
+        internal const val RESUME_READY_TIMEOUT_MS = 15_000L
 
         /**
          * Single-slot next-launch payload. Set by [launch]
@@ -434,27 +584,8 @@ class OnboardingActivity : ComponentActivity() {
             pendingLaunchPayload = null
         }
 
-        internal fun launch(
-            context: Context,
-            flow: OnboardingFlowConfig,
-            delegate: AppDNAOnboardingDelegate? = null,
-            eventTracker: EventTracker? = null,
-            onStepViewed: ((String, Int) -> Unit)? = null,
-            onStepCompleted: ((String, Int, Map<String, Any>?) -> Unit)? = null,
-            onStepSkipped: ((String, Int) -> Unit)? = null,
-            onFlowCompleted: ((Map<String, Any>) -> Unit)? = null,
-            onFlowDismissed: ((String, Int) -> Unit)? = null
-        ) {
-            pendingLaunchPayload = LaunchPayload(
-                flow = flow,
-                delegate = delegate,
-                eventTracker = eventTracker,
-                onStepViewed = onStepViewed,
-                onStepCompleted = onStepCompleted,
-                onStepSkipped = onStepSkipped,
-                onFlowCompleted = onFlowCompleted,
-                onFlowDismissed = onFlowDismissed,
-            )
+        internal fun launch(context: Context, payload: LaunchPayload) {
+            pendingLaunchPayload = payload
 
             val intent = Intent(context, OnboardingActivity::class.java).apply {
                 addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
@@ -2373,7 +2504,7 @@ private fun interpolateVariables(value: String): String {
  * this, restored responses for form/multi-select/chat steps surface as
  * raw JSONObject/JSONArray and fail every `as? Map`/`as? List` cast.
  */
-private fun fromJsonAny(value: Any?): Any? = when (value) {
+internal fun fromJsonAny(value: Any?): Any? = when (value) {
     null, org.json.JSONObject.NULL -> null
     is org.json.JSONObject -> {
         val map = mutableMapOf<String, Any?>()
