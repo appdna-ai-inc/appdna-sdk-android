@@ -122,6 +122,8 @@ internal class StepDrafts {
             AuthSecretRedactor.secretFieldIds(step),
             inputsInFlight = draft.inputsLocations?.inFlight().orEmpty(),
             formInFlight = draft.formLocations?.inFlight().orEmpty(),
+            inputsHeld = draft.inputsLocations?.heldEdits().orEmpty(),
+            formHeld = draft.formLocations?.heldEdits().orEmpty(),
         )?.let { out.putString(KEY_STEP_DRAFT, it) }
     }
 
@@ -143,17 +145,21 @@ internal class StepDrafts {
         /**
          * The draft as JSON for the saved state. [inputsInFlight] and [formInFlight] are the typed
          * answers of location fields whose tap is still resolving; each fills its field where the draft
-         * holds nothing. A seeded draft is written even when it holds nothing: a field the user emptied
-         * must come back empty, not be seeded again from the submitted answer.
+         * holds nothing. [inputsHeld] and [formHeld] are the user's own text of location fields that
+         * still compose their first edit after a Google line; each replaces what the field stores (the
+         * Google answer being edited). A seeded draft is written even when it holds nothing: a field the
+         * user emptied must come back empty, not be seeded again from the submitted answer.
          */
         internal fun encode(
             draft: StepDraft,
             secrets: Set<String>,
             inputsInFlight: Map<String, Any> = emptyMap(),
             formInFlight: Map<String, Any> = emptyMap(),
+            inputsHeld: Map<String, Any> = emptyMap(),
+            formHeld: Map<String, Any> = emptyMap(),
         ): String? {
-            val inputs = bounded(withInFlight(draft.inputs, inputsInFlight).filterKeys { it !in secrets }, draft.stepId)
-            val form = bounded(withInFlight(draft.form, formInFlight).filterKeys { it !in secrets }, draft.stepId)
+            val inputs = bounded(withHeld(withInFlight(draft.inputs, inputsInFlight), inputsHeld).filterKeys { it !in secrets }, draft.stepId)
+            val form = bounded(withHeld(withInFlight(draft.form, formInFlight), formHeld).filterKeys { it !in secrets }, draft.stepId)
             val empty = inputs.length() == 0 && form.length() == 0 && draft.toggles.isEmpty() && draft.selection.isEmpty()
             val chat = draft.chat?.takeIf { it.seeded }
             if (empty && chat == null && !draft.seeded && !draft.formSeeded && !draft.selectionSeeded) return null
@@ -174,6 +180,14 @@ internal class StepDrafts {
                 val current = merged[k]
                 if (current == null || current == "") merged[k] = v
             }
+            return merged
+        }
+
+        /** A field's held composing edit replaces what it stores ("" leaves the field empty). */
+        private fun withHeld(values: Map<String, Any?>, held: Map<String, Any>): Map<String, Any?> {
+            if (held.isEmpty()) return values
+            val merged = LinkedHashMap<String, Any?>(values)
+            for ((k, v) in held) if (v == "") merged.remove(k) else merged[k] = v
             return merged
         }
 

@@ -231,6 +231,9 @@ internal class LocationSuggestionSearch(
      */
     private var awaitingCommit = false
 
+    /** The search settings of the edit held back while composing, to apply it with when it settles. */
+    private var heldSettings: LocationSearchSettings? = null
+
     /**
      * Whether the text field's input method has a composition in progress (its composing span), as the
      * field reported it with its latest value ([compositionChanged]). The Swift twin is
@@ -313,6 +316,35 @@ internal class LocationSuggestionSearch(
         return answer
     }
 
+    /** The first edit of a Google answer's line, held while the input method composes, applied now. */
+    class HeldEdit(val answer: Any?)
+
+    /**
+     * The step is advancing while the first edit of a Google answer's line is still composing (the user
+     * typed after the line and tapped Continue without leaving the field): the edit is applied now, as a
+     * commit would apply it, so the user's own text is stored ([LocationAnswer.editRestart]) and not the
+     * Google answer the field showed. Returns the answer stored (null for an edit that left nothing), or
+     * null when no edit was held.
+     */
+    fun settleHeldEdit(): HeldEdit? {
+        if (!awaitingCommit) return null
+        val settings = heldSettings ?: return null
+        applyEdit(text, settings)
+        cancelSearch()
+        return HeldEdit(storedAnswer)
+    }
+
+    /**
+     * What [settleHeldEdit] would store, without applying it: the user's own text with the composing
+     * edit, as a typed answer, or "" when the edit leaves nothing. Null when no edit is held. The saved
+     * state reads it, so a process that ends mid-composition keeps the user's text, not Google's line.
+     */
+    fun heldEditTyped(): Any? {
+        if (!awaitingCommit) return null
+        val (line, rawQuery) = shownGoogle ?: return null
+        return LocationAnswer.typed(LocationAnswer.editRestart(rawQuery = rawQuery, shown = line, edited = text))
+    }
+
     /**
      * What [settleResolveInFlight] would store, without settling: the text the user had typed when the
      * resolve in flight was tapped, as a typed answer. Null when no resolve is in flight. The saved
@@ -361,6 +393,7 @@ internal class LocationSuggestionSearch(
         // that changes the text, which arrives here).
         if (composing && shownGoogle != null) {
             awaitingCommit = true
+            heldSettings = settings
             return
         }
         applyEdit(newText, settings)
@@ -373,6 +406,7 @@ internal class LocationSuggestionSearch(
      */
     private fun applyEdit(newText: String, settings: LocationSearchSettings) {
         awaitingCommit = false
+        heldSettings = null
         dropResolveInFlight()
         var typed = newText
         shownGoogle?.let { (line, rawQuery) ->
@@ -604,12 +638,32 @@ internal class LocationAdvanceSettlement {
      * Settles every registered field. Each one with a resolve in flight writes its typed text through
      * its own store (the step's answer map) and is returned here as `field id → answer`.
      */
-    fun settle(): Map<String, Any> {
+    fun settle(): Map<String, Any> = settleAll().first
+
+    /**
+     * Settles every registered field: a resolve in flight (its typed text, returned in the first map) and
+     * a first edit of a Google line held while composing (returned in the second map, null for an edit
+     * that left the field empty). Both write through the field's own store.
+     */
+    private fun settleAll(): Pair<Map<String, Any>, Map<String, Any?>> {
         val settled = LinkedHashMap<String, Any>()
+        val held = LinkedHashMap<String, Any?>()
         for ((holder, fieldId) in fields.entries.toList()) {
             holder.settleResolveInFlight()?.let { settled[fieldId] = it }
+            holder.settleHeldEdit()?.let { held[fieldId] = it.answer }
         }
-        return settled
+        return settled to held
+    }
+
+    /**
+     * Field id → the text a field holds back while composing after a Google line, as a typed answer
+     * ("" for nothing), settling nothing. Unlike [inFlight], it REPLACES what the field stores: the
+     * stored value is still the Google answer the user is editing away from.
+     */
+    fun heldEdits(): Map<String, Any> {
+        val typed = LinkedHashMap<String, Any>()
+        for ((holder, fieldId) in fields) holder.heldEditTyped()?.let { typed[fieldId] = it }
+        return typed
     }
 
     /** Field id → the typed answer of each field whose resolve is in flight, settling nothing. */
@@ -626,13 +680,17 @@ internal class LocationAdvanceSettlement {
      * the SDK's own keys (`action`, …) win over a field id, as they do when the payload is built.
      */
     fun settleInto(data: Map<String, Any>?): Map<String, Any>? {
-        val settled = settle()
-        if (settled.isEmpty()) return data
+        val (settled, held) = settleAll()
+        if (settled.isEmpty() && held.isEmpty()) return data
         val merged = LinkedHashMap<String, Any>()
         data?.let { merged.putAll(it) }
         for ((fieldId, answer) in settled) {
             val current = merged[fieldId]
             if (current == null || current == "") merged[fieldId] = answer
+        }
+        // A held edit replaces the field's value: the payload carries the Google answer it edits away from.
+        for ((fieldId, answer) in held) {
+            if (answer == null) merged.remove(fieldId) else merged[fieldId] = answer
         }
         return merged
     }
