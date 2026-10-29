@@ -9925,7 +9925,7 @@ private fun FormInputTextBlock(
         // threaded it into `colors=`/`border=` modifier — so authored
         // borders were silently invisible. Same payload rendered styled
         // on iOS and Material-default on Android.
-        val textColor = block.field_style?.text_color?.let { StyleEngine.parseColor(it) } ?: Color.Unspecified
+        val textColor = block.field_style?.text_color?.let { StyleEngine.parseColor(it) } ?: UnstyledInk.text()
         // Default the field CONTAINER to TRANSPARENT (was Color.Unspecified →
         // M3's default surface fill, which drew a filled rounded-rect INSIDE the custom
         // .border() = the "double border" the user saw). Transparent → only the authored
@@ -9971,7 +9971,7 @@ private fun FormInputTextBlock(
                 placeholder = {
                     Text(
                         text = block.field_placeholder ?: "",
-                        color = StyleEngine.parseColor(block.field_style?.placeholder_color ?: "#9CA3AF"),
+                        color = block.field_style?.placeholder_color?.let { StyleEngine.parseColor(it) } ?: UnstyledInk.placeholder("#9CA3AF"),
                     )
                 },
                 keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(
@@ -9989,6 +9989,7 @@ private fun FormInputTextBlock(
                     unfocusedTextColor = textColor,
                     focusedContainerColor = focusedBgColor,
                     unfocusedContainerColor = bgColor,
+                    cursorColor = UnstyledInk.cursor(),
                     // Built-in border always zeroed: the authored width is drawn by the
                     // outer Box, or (when the block draws its own outline) the block_style
                     // capsule owns it — either way the field itself stays border-less.
@@ -10027,7 +10028,7 @@ private fun FormInputTextAreaBlock(
         // Same field_style wiring as
         // FormInputTextBlock above; was ignoring all field_style except
         // corner_radius.
-        val textColor = block.field_style?.text_color?.let { StyleEngine.parseColor(it) } ?: Color.Unspecified
+        val textColor = block.field_style?.text_color?.let { StyleEngine.parseColor(it) } ?: UnstyledInk.text()
         // Default the field CONTAINER to TRANSPARENT (was Color.Unspecified →
         // M3's default surface fill, which drew a filled rounded-rect INSIDE the custom
         // .border() = the "double border" the user saw). Transparent → only the authored
@@ -10064,7 +10065,7 @@ private fun FormInputTextAreaBlock(
                 placeholder = {
                     Text(
                         text = block.field_placeholder ?: "",
-                        color = StyleEngine.parseColor(block.field_style?.placeholder_color ?: "#9CA3AF"),
+                        color = block.field_style?.placeholder_color?.let { StyleEngine.parseColor(it) } ?: UnstyledInk.placeholder("#9CA3AF"),
                     )
                 },
                 shape = RoundedCornerShape(cornerRadius),
@@ -10077,6 +10078,7 @@ private fun FormInputTextAreaBlock(
                     unfocusedTextColor = textColor,
                     focusedContainerColor = focusedBgColor,
                     unfocusedContainerColor = bgColor,
+                    cursorColor = UnstyledInk.cursor(),
                     // Built-in border zeroed; outer Box draws the authored width.
                     focusedBorderColor = Color.Transparent,
                     unfocusedBorderColor = Color.Transparent,
@@ -10087,8 +10089,9 @@ private fun FormInputTextAreaBlock(
 }
 
 /**
- * The ink of unstyled text: a `text` or `heading` block with no `style.color`, and a form field's label
- * with no `field_style.label_color`. Picked from what is behind the block, by the light-or-dark call the
+ * The ink of unstyled text: a `text` or `heading` block with no `style.color`, a form field's label with
+ * no `field_style.label_color`, the typed text, placeholder and cursor of an unstyled text input, and the
+ * onboarding step's chrome (back, close, Skip). Picked from what is behind the block, by the light-or-dark call the
  * Google logo makes ([GoogleMapsAttribution.needsLightInk]): on a light surface, what it always was (the
  * theme's text colour, and `#374151` for a label); on a dark, gradient or image surface, white, and
  * `#E5E7EB` for a label. Authored colours always win. The Swift twin is `UnstyledInk` in
@@ -10099,17 +10102,30 @@ internal object UnstyledInk {
     val DARK_TEXT = Color.White
     val DARK_LABEL = Color(0xFFE5E7EB)
 
-    @Composable
-    private fun onDark(): Boolean =
-        GoogleMapsAttribution.needsLightInk(LocalGoogleAttributionBackdrop.current, googleAttributionThemeIsDark())
+    /** An unstyled input's placeholder, and the step chrome (back, close, Skip), on a dark surface. */
+    val DARK_PLACEHOLDER = Color.White.copy(alpha = 0.5f)
+    val DARK_CHROME = Color.White.copy(alpha = 0.7f)
 
-    /** A text or heading block's default colour: unspecified (the theme's) on a light surface. */
+    /** Whether what is behind this composition ([behind], by default the block's backdrop) needs light ink. */
+    @Composable
+    fun onDark(behind: GoogleMapsAttribution.Backdrop = LocalGoogleAttributionBackdrop.current): Boolean =
+        GoogleMapsAttribution.needsLightInk(behind, googleAttributionThemeIsDark())
+
+    /** A text or heading block's default colour, and an unstyled input's typed text: the theme's on a light surface. */
     @Composable
     fun text(): Color = if (onDark()) DARK_TEXT else Color.Unspecified
 
     /** A form field label's default colour. */
     @Composable
     fun label(): Color = if (onDark()) DARK_LABEL else LIGHT_LABEL
+
+    /** An unstyled input's placeholder: [lightHex] on a light surface, as before. */
+    @Composable
+    fun placeholder(lightHex: String): Color = if (onDark()) DARK_PLACEHOLDER else StyleEngine.parseColor(lightHex)
+
+    /** An unstyled input's cursor: the theme's primary on a light surface, as before. */
+    @Composable
+    fun cursor(): Color = if (onDark()) DARK_TEXT else MaterialTheme.colorScheme.primary
 }
 
 /**
@@ -13281,7 +13297,7 @@ private fun FormInputLocationPlaceholder(
     // for street addresses and an authored Min characters did nothing. Default 3, not the form-step
     // field's 2: that is this surface's long-standing threshold and what the Console seeds.
     val search = LocationSearchSettings.from(cfg, defaultMinChars = 3)
-    val fieldTextColor = block.field_style?.text_color?.let { StyleEngine.parseColor(it) } ?: Color.Unspecified
+    val fieldTextColor = block.field_style?.text_color?.let { StyleEngine.parseColor(it) } ?: UnstyledInk.text()
     val ddBgColor = (cfg?.get("dropdown_bg_color") as? String)?.takeIf { it.isNotEmpty() }?.let { StyleEngine.parseColor(it) }
     val ddTextColor = (cfg?.get("dropdown_text_color") as? String)?.let { StyleEngine.parseColor(it) }
     val ddFontSize = ((cfg?.get("dropdown_font_size") as? Number)?.toFloat() ?: 14f).sp

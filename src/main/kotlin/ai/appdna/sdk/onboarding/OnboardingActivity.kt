@@ -662,12 +662,14 @@ internal fun DismissGlyph(
     style: DismissButtonStyle?,
     fallbackSize: Double? = null,
     fallbackColor: Color? = null,
+    // The step behind the ✕ is dark, a gradient or an image: an unstyled ✕ is drawn light ([UnstyledInk]).
+    onDark: Boolean = false,
 ) {
     val size = style?.icon_size ?: fallbackSize ?: 14.0
     val colour = style?.icon_color?.takeIf { it.isNotEmpty() }
         ?.let { ai.appdna.sdk.core.StyleEngine.parseColor(it) }
         ?: fallbackColor
-        ?: MaterialTheme.colorScheme.onBackground.copy(alpha = 0.6f)
+        ?: if (onDark) UnstyledInk.DARK_CHROME else MaterialTheme.colorScheme.onBackground.copy(alpha = 0.6f)
     val background = style?.bg_color?.takeIf { it.isNotEmpty() }
         ?.let { ai.appdna.sdk.core.StyleEngine.parseColor(it) }
 
@@ -1783,8 +1785,13 @@ internal fun OnboardingFlowHost(
                 // Default to iOS gray (#6B7280) instead
                 // of Material onBackground (black in light theme).
                 // Mirrors iOS OnboardingRenderer.swift:253.
+                // The chrome sits on the current step's background: on a dark, gradient or image step an
+                // unstyled back and close are drawn light ([UnstyledInk]).
+                val chromeOnDark = flow.steps.getOrNull(currentIndex)?.let { s ->
+                    UnstyledInk.onDark(GoogleMapsAttribution.backdrop(ofStep = s.config, type = s.type))
+                } ?: false
                 val backIconColor = bbStyle?.icon_color?.let { ai.appdna.sdk.core.StyleEngine.parseColor(it) }
-                    ?: ai.appdna.sdk.core.StyleEngine.parseColor("#6B7280")
+                    ?: if (chromeOnDark) UnstyledInk.DARK_CHROME else ai.appdna.sdk.core.StyleEngine.parseColor("#6B7280")
                 if (flow.settings.allow_back && navigationHistory.isNotEmpty() && currentStep?.hide_back != true) {
                     val backCd = stringResource(R.string.appdna_a11y_onboarding_back)
                     IconButton(
@@ -1877,7 +1884,7 @@ internal fun OnboardingFlowHost(
                     // semantic label by default.
                     modifier = Modifier.semantics { contentDescription = dismissCd },
                 ) {
-                    DismissGlyph(style = dismissStyle)
+                    DismissGlyph(style = dismissStyle, onDark = chromeOnDark)
                 }
                 } // end dismissAllowed
             }
@@ -2952,7 +2959,7 @@ private fun OnboardingStepBody(
                         modifier = Modifier.align(Alignment.CenterHorizontally).padding(bottom = 16.dp),
                     ) {
                         // Skip 15sp matching iOS .subheadline.
-                        Text("Skip", fontSize = 15.sp, color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.5f))
+                        Text("Skip", fontSize = 15.sp, color = if (UnstyledInk.onDark()) UnstyledInk.DARK_CHROME else MaterialTheme.colorScheme.onBackground.copy(alpha = 0.5f))
                     }
                 }
             }
@@ -3012,7 +3019,7 @@ private fun OnboardingStepBody(
                     modifier = Modifier.align(Alignment.CenterHorizontally).padding(bottom = 16.dp),
                 ) {
                     // Skip 15sp matching iOS .subheadline.
-                    Text("Skip", fontSize = 15.sp, color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.5f))
+                    Text("Skip", fontSize = 15.sp, color = if (UnstyledInk.onDark()) UnstyledInk.DARK_CHROME else MaterialTheme.colorScheme.onBackground.copy(alpha = 0.5f))
                 }
             }
         }
@@ -4498,7 +4505,7 @@ private fun BlockBasedStepView(
                     .padding(bottom = 16.dp),
             ) {
                 // Skip 15sp matching iOS .subheadline.
-                Text("Skip", fontSize = 15.sp, color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.5f))
+                Text("Skip", fontSize = 15.sp, color = if (UnstyledInk.onDark()) UnstyledInk.DARK_CHROME else MaterialTheme.colorScheme.onBackground.copy(alpha = 0.5f))
             }
         }
 
