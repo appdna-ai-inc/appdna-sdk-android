@@ -2953,7 +2953,7 @@ private fun OnboardingStepBody(
                     )
                 }
                 // Skip button
-                if (shouldRenderSkipAffordance(step.config.skip_enabled, hasSkipHandler = true)) {
+                if (step.config.skip_enabled == true) {
                     TextButton(
                         onClick = onSkip,
                         modifier = Modifier.align(Alignment.CenterHorizontally).padding(bottom = 16.dp),
@@ -3010,7 +3010,7 @@ private fun OnboardingStepBody(
             }
 
             // Skip button — pinned to bottom outside step body.
-            if (shouldRenderSkipAffordance(step.config.skip_enabled, hasSkipHandler = true)) {
+            if (step.config.skip_enabled == true) {
                 TextButton(
                     onClick = onSkip,
                     // Bottom 8→16dp
