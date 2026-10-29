@@ -13237,8 +13237,9 @@ private fun FormInputLocationPlaceholder(
     ) {
         FormFieldLabel(block)
 
-        // Drawn afresh after each text set the holder makes, so the field's undo history never holds
-        // text the holder replaced; focus and the caret carry over.
+        // Drawn afresh after each text set the holder makes (and after a first edit of Google's line that
+        // leaves the user's own text), so the field's undo history never holds text the holder replaced;
+        // focus and the caret carry over.
         LocationTextFieldGeneration(holder, holder.textSets) { focusModifier, isCurrent ->
             OutlinedTextField(
                 value = shownValue,

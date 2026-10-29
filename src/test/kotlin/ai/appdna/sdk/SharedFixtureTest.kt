@@ -3156,6 +3156,9 @@ class SharedFixtureTest(
             // Every typed text the field stored, in order: a Google line must never be one of them.
             "stored_texts" -> rig.storedTexts.toList()
             "stored_raw_query" -> (rig.stored as? Map<*, *>)?.get("raw_query")
+            // How many times the field's undo history was dropped: every text the holder set, and every
+            // first edit of Google's line that set none.
+            "field_history_resets" -> holder.textSets
             else -> unsupported("location_resolve_request observable '$key'")
         }
     }

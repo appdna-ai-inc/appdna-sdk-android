@@ -119,13 +119,6 @@ internal object LocationAnswer {
     }
 
     /**
-     * The ONE rule for the text a location field shows for a stored answer, on both Android surfaces,
-     * after a tap and on a restore alike: a selection shows its `formatted_address` (else the legacy
-     * `address`), a typed answer shows itself. Anything else (absent, empty, a number) shows nothing
-     * (null). `LocationAnswer.fieldText(forStored:)` in `LocationAnswer.swift` is the Swift twin, and
-     * the `location_field_text` fixtures pin the pair.
-     */
-    /**
      * Whether a stored answer came from Google: a selection carrying a non-blank `place_id`, which
      * only a Google resolve reply fills. Google's terms require attribution wherever such an answer's
      * content is shown without a Google map, so this one rule decides the logo kept beside a field,
@@ -151,6 +144,13 @@ internal object LocationAnswer {
     fun googleRawQuery(value: Any?): String? =
         if (!carriesPlaceId(value)) null else ((value as Map<*, *>)["raw_query"] as? String) ?: ""
 
+    /**
+     * The ONE rule for the text a location field shows for a stored answer, on both Android surfaces,
+     * after a tap and on a restore alike: a selection shows its `formatted_address` (else the legacy
+     * `address`), a typed answer shows itself. Anything else (absent, empty, a number) shows nothing
+     * (null). `LocationAnswer.fieldText(forStored:)` in `LocationAnswer.swift` is the Swift twin, and
+     * the `location_field_text` fixtures pin the pair.
+     */
     fun fieldText(stored: Any?): String? = when (stored) {
         is String -> stored.ifEmpty { null }
         is Map<*, *> -> (stored["formatted_address"] as? String)?.ifEmpty { null }

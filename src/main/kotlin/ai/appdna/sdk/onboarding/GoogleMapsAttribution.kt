@@ -189,14 +189,6 @@ internal object GoogleMapsAttribution {
     const val DEFAULT_COLOR_BACKGROUND = "#FFFFFF"
 
     /**
-     * What a location dropdown draws behind its rows, and so behind the logo under them: its authored
-     * fill (`dropdown_bg_color`), else [unstyled] (what an unstyled dropdown draws). A fill drawn
-     * translucent (`dropdown_opacity` below 1, or an alpha below `FF`) is busy. A fill that draws nothing
-     * — `transparent`, `clear`, a fully transparent colour, or a value no colour parser reads (both
-     * platforms draw those clear) — shows what is [behind] the dropdown. The Swift twin is
-     * `GoogleMapsAttribution.backdrop(ofDropdownFill:opacity:behind:unstyled:)`.
-     */
-    /**
      * What is behind Google's logo under an `input_location` block's dropdown: the block's authored
      * dropdown fill and opacity ([field_config]), else the theme's [surface], which is what an unstyled
      * dropdown is filled with — the call the block's composable makes.
@@ -208,6 +200,14 @@ internal object GoogleMapsAttribution {
         unstyled = Backdrop.Plain(hexOf(surface)),
     )
 
+    /**
+     * What a location dropdown draws behind its rows, and so behind the logo under them: its authored
+     * fill (`dropdown_bg_color`), else [unstyled] (what an unstyled dropdown draws). A fill drawn
+     * translucent (`dropdown_opacity` below 1, or an alpha below `FF`) is busy. A fill that draws nothing
+     * — `transparent`, `clear`, a fully transparent colour, or a value no colour parser reads (both
+     * platforms draw those clear) — shows what is [behind] the dropdown. The Swift twin is
+     * `GoogleMapsAttribution.backdrop(ofDropdownFill:opacity:behind:unstyled:)`.
+     */
     fun backdrop(ofDropdownFill: String?, opacity: Float, behind: Backdrop, unstyled: Backdrop): Backdrop {
         val raw = ofDropdownFill?.trim()
         if (raw.isNullOrEmpty()) return if (opacity < 1f) Backdrop.Busy else unstyled
@@ -258,7 +258,6 @@ internal val LocalGoogleAttributionBackdrop =
 internal val GoogleLogoVariantKey =
     androidx.compose.ui.semantics.SemanticsPropertyKey<GoogleMapsAttribution.Variant>("AppDNAGoogleLogoVariant")
 
-/** The "Google Maps" logo with Google's clear space. */
 /**
  * Whether the theme's background is dark: what [GoogleMapsAttribution.Backdrop.Plain] with no colour,
  * and a busy surface, are decided by. Read from the colour the theme fills with, not from the system
@@ -270,6 +269,7 @@ internal fun googleAttributionThemeIsDark(): Boolean {
     return l != null && l < ai.appdna.sdk.core.GoogleMarkChip.LIGHT_ENOUGH
 }
 
+/** The "Google Maps" logo with Google's clear space. */
 @Composable
 internal fun GoogleMapsLogo(backdrop: GoogleMapsAttribution.Backdrop, modifier: Modifier = Modifier) {
     val variant = GoogleMapsAttribution.variant(backdrop, googleAttributionThemeIsDark())

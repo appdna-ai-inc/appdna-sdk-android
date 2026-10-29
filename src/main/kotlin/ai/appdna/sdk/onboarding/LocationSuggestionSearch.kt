@@ -211,14 +211,19 @@ internal class LocationSuggestionSearch(
 
     /**
      * How many times the holder has set the field's text itself (a resolve, a restore, a clear, an edit
-     * that restarts from the user's own text). Both composables key their text field on it, so each set
-     * draws a fresh field and the old field's undo history goes with it: a hardware keyboard's undo can
-     * never bring back text the holder replaced, such as Google's line. After a restart the field is
-     * ordinary typed text, so anything the user types afterwards, Google's line included, is stored as
-     * typed. The Swift twin clears the text field's undo manager on the same sets.
+     * that restarts from the user's own text), plus each first edit of Google's line whose restart left
+     * the text as the edit had it. Both composables key their text field on it, so each one draws a
+     * fresh field and the old field's undo history goes with it: a hardware keyboard's undo can never
+     * bring back text the holder replaced, such as Google's line. After a restart the field is ordinary
+     * typed text, so anything the user types afterwards, Google's line included, is stored as typed. The
+     * Swift twin, `LocationSuggestionSearch.textSets`, clears the text field's undo manager on the same
+     * counts.
      */
     var textSets: Int = 0
-        private set
+        private set(value) {
+            field = value
+            onChange?.invoke()
+        }
 
     /**
      * The first edit of a Google answer's line arrived while the input method was composing: it is
@@ -364,7 +369,11 @@ internal class LocationSuggestionSearch(
         shownGoogle?.let { (line, rawQuery) ->
             shownGoogle = null
             typed = LocationAnswer.editRestart(rawQuery = rawQuery, shown = line, edited = newText)
-            setTextProgrammatically(typed)
+            // The field's undo history still holds Google's line, so it goes even when the edit already
+            // left the user's own text (the rest of the line deleted, or the typed text pasted over it):
+            // nothing is set then, but the field is drawn afresh all the same. No echo is armed, as no
+            // text changes.
+            if (typed == text) textSets += 1 else setTextProgrammatically(typed)
         }
         storeTyped(typed)
         search(typed, settings)

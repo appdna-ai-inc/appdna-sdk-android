@@ -138,8 +138,9 @@ fun LocationFieldComposable(
         modifier = modifier.fillMaxWidth(),
         verticalArrangement = Arrangement.spacedBy(6.dp),
     ) {
-        // Drawn afresh after each text set the holder makes, so the field's undo history never holds
-        // text the holder replaced; focus and the caret carry over.
+        // Drawn afresh after each text set the holder makes (and after a first edit of Google's line that
+        // leaves the user's own text), so the field's undo history never holds text the holder replaced;
+        // focus and the caret carry over.
         LocationTextFieldGeneration(holder, holder.textSets) { focusModifier, isCurrent ->
             OutlinedTextField(
                 value = shownValue,
@@ -296,8 +297,8 @@ private class LocationFieldFocus {
  * [LocationSuggestionSearch.textSets]. A Compose text field keeps an undo history no app can clear, and a
  * hardware keyboard's undo replays it as a user edit, so text the holder replaced (Google's line, after
  * the first edit restarts from the user's own text) could come back. Keying the field on each set the
- * holder makes draws a new field with an empty history, as the Swift twin empties its text field's undo
- * manager on the same sets.
+ * holder makes, and on a first edit of Google's line that already left the user's own text, draws a new
+ * field with an empty history, as the Swift twin empties its text field's undo manager on the same counts.
  *
  * What the user would otherwise notice is handled here:
  * - focus: a field that had focus asks for it again as soon as it is drawn;
@@ -311,7 +312,8 @@ private class LocationFieldFocus {
  * - [field] is handed `isCurrent`: a value delivered by the replaced field (its input session ending)
  *   must be ignored.
  *
- * The caret needs nothing here: the composables put it at the end after any text the holder sets.
+ * The caret needs nothing here: the composables put it at the end after any text the holder sets, and a
+ * new field whose text is unchanged keeps the value the user's edit gave it, caret included.
  * [focusModifier] goes on the text field's own modifier.
  */
 @Composable
