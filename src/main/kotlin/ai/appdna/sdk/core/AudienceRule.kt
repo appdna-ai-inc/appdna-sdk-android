@@ -90,7 +90,9 @@ internal object AudienceRuleEvaluator {
     }
 
     private fun evaluateRule(rule: AudienceRule, userTraits: Map<String, Any>): Boolean {
-        val traitValue = userTraits[rule.trait]
+        // A trait identify stored as null (`JSONObject.NULL`) is NOT SET, for every operator: it does not
+        // `exists`, as the server's segment SQL and the journey evaluators read it.
+        val traitValue = userTraits[rule.trait]?.takeIf { it != org.json.JSONObject.NULL }
 
         return when (rule.operator) {
             "equals", "eq" -> ConditionEvaluator.valuesEqual(traitValue, rule.value)

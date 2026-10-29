@@ -97,7 +97,8 @@ internal class AutoTriggerEngine {
         // User traits
         rules.userTraits?.let { traits ->
             if (traits.isNotEmpty() && traits.all { c ->
-                val v = userTraits[c.trait]
+                // A trait stored as null is not set (it does not `exists`), as in the audience rules.
+                val v = userTraits[c.trait]?.takeIf { it != org.json.JSONObject.NULL }
                 when (c.operator) {
                     "equals", "eq" -> ConditionEvaluator.valuesEqual(v, c.value)
                     "not_equals", "neq" -> !ConditionEvaluator.valuesEqual(v, c.value)
