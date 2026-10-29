@@ -213,28 +213,83 @@ internal object HostDataResolver {
     }
 
     /**
-     * A nested URL's scheme separator, in the forms a lenient URL parser reads as a scheme plus a host,
-     * in any encoding mix and any case:
-     * - `:` or `%3A`, then one or more slashes or backslashes, each `/`, `%2F`, `\` or `%5C`
-     *   (`https://`, `https:/`, `https%3A%2F%2F`, `https:%5C%5C`);
-     * - `http:` or `https:` with no slash at all (`https:x.example`), each scheme letter written plain or
-     *   percent-encoded, and the colon `:` or `%3A`. A bare colon with no slash counts only after one of
-     *   these two schemes, the ones a fetched image is served over, because a Static Maps parameter
-     *   writes its own colons (`markers=color:red%7C...`) in front of a token that keeps the place.
-     *
-     * No `IGNORE_CASE`: Kotlin/JVM turns it into CASE_INSENSITIVE | UNICODE_CASE, which folds `ſ`
-     * (U+017F) to `s`; the classes list both ASCII cases instead, as the Swift twin does.
+     * Where the first nested URL's scheme separator starts in [template], at or after [from], or null.
+     * It is read the way a lenient URL parser would read the text once a fetcher has decoded it: the
+     * text is percent-decoded again and again until no ASCII escape is left (so `%3A`, `%253A` and
+     * `%25%33%41` are all a colon), then every tab, line feed and carriage return is dropped, because a
+     * WHATWG parser strips them. In that decoded text a separator is either:
+     * - a colon followed by a slash or a backslash (`https://`, `https:/`, `https:%5C%5C`,
+     *   `https%253A%252F%252F`, `ftp%3A%09//`);
+     * - `http:` or `https:`, in any ASCII case, with no slash at all (`https:x.example`, `ht%09tps:x`,
+     *   `%2568ttps%253Ax`).
+     * A bare colon after any other word is not a separator: a Static Maps parameter writes its own
+     * colons (`markers=color:red%7C...`) in front of a token that keeps the place, and only the schemes
+     * an image is fetched over matter with no slash. The index returned is where, in [template], the
+     * text that decodes to the separator's first character begins. The Swift twin is
+     * `HostDataResolver.nestedSchemeSeparatorStart`.
      */
-    private val NESTED_SCHEME_SEPARATOR = Regex(
-        """(?::|%3[Aa])(?:/|%2[Ff]|\\|%5[Cc])+|(?:[Hh]|%[46]8)(?:[Tt]|%[57]4){2}(?:[Pp]|%[57]0)(?:[Ss]|%[57]3)?(?::|%3[Aa])""",
-    )
+    internal fun nestedSchemeSeparatorStart(template: String, from: Int): Int? {
+        if (from >= template.length) return null
+        var text = template.substring(from)
+        var origin = IntArray(text.length) { from + it }
+        while (true) {
+            val out = StringBuilder(text.length)
+            val outOrigin = IntArray(text.length)
+            var i = 0
+            var changed = false
+            while (i < text.length) {
+                val high = if (text[i] == '%' && i + 2 < text.length) hexValue(text[i + 1]) else -1
+                val low = if (high in 0..7) hexValue(text[i + 2]) else -1
+                if (low >= 0) {
+                    outOrigin[out.length] = origin[i]
+                    out.append((high * 16 + low).toChar())
+                    i += 3
+                    changed = true
+                } else {
+                    outOrigin[out.length] = origin[i]
+                    out.append(text[i])
+                    i += 1
+                }
+            }
+            if (!changed) break
+            text = out.toString()
+            origin = outOrigin.copyOf(out.length)
+        }
+        val chars = StringBuilder(text.length)
+        val at = IntArray(text.length)
+        for (k in text.indices) {
+            val c = text[k]
+            if (c == '\t' || c == '\n' || c == '\r') continue
+            at[chars.length] = origin[k]
+            chars.append(asciiLower(c))
+        }
+        for (k in chars.indices) {
+            val c = chars[k]
+            if (c == ':' && k + 1 < chars.length && (chars[k + 1] == '/' || chars[k + 1] == '\\')) return at[k]
+            if (c == 'h' && chars.startsWith("http", k)) {
+                val next = k + 4
+                if (next < chars.length && chars[next] == ':') return at[k]
+                if (next + 1 < chars.length && chars[next] == 's' && chars[next + 1] == ':') return at[k]
+            }
+        }
+        return null
+    }
+
+    private fun hexValue(c: Char): Int = when (c) {
+        in '0'..'9' -> c - '0'
+        in 'A'..'F' -> c - 'A' + 10
+        in 'a'..'f' -> c - 'a' + 10
+        else -> -1
+    }
+
+    private fun asciiLower(c: Char): Char = if (c in 'A'..'Z') c + 32 else c
 
     /**
      * Inside a URL on one of Google's Maps hosts, the parts that may be another URL, which the Maps host
      * fetches from wherever it points (a Static Maps marker icon). Every token in them takes the typed
      * text; any other token, in the Maps URL itself, keeps the place. They run to the end of [template]
      * from the first of:
-     * - a nested scheme separator after the outer `://` ([NESTED_SCHEME_SEPARATOR]), wherever it is
+     * - a nested scheme separator after the outer `://` ([nestedSchemeSeparatorStart]), wherever it is
      *   written, in the literal text or in a token's fallback;
      * - the end of the first token after the host, wherever it sits (path or query), so every token
      *   that follows another token is covered, whatever its position: the earlier token's value is not
@@ -247,7 +302,7 @@ internal object HostDataResolver {
         val outer = template.indexOf("://").takeIf { it >= 0 } ?: return emptyList()
         val from = outer + 3
         val starts = mutableListOf<Int>()
-        NESTED_SCHEME_SEPARATOR.find(template, from)?.let { starts += it.range.first }
+        nestedSchemeSeparatorStart(template, from)?.let { starts += it }
         extractTemplateTokens(template).firstOrNull { it.index >= from }?.let { starts += it.index + it.raw.length }
         val start = starts.minOrNull() ?: return emptyList()
         return listOf(start until template.length)
