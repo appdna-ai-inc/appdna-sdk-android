@@ -97,14 +97,11 @@ internal class AutoTriggerEngine {
         // User traits
         rules.userTraits?.let { traits ->
             if (traits.isNotEmpty() && traits.all { c ->
-                // A trait stored as null is not set (it does not `exists`), as in the audience rules.
-                val v = userTraits[c.trait]?.takeIf { it != org.json.JSONObject.NULL }
-                when (c.operator) {
-                    "equals", "eq" -> ConditionEvaluator.valuesEqual(v, c.value)
-                    "not_equals", "neq" -> !ConditionEvaluator.valuesEqual(v, c.value)
-                    "exists" -> v != null
-                    else -> true
-                }
+                // Evaluated as an audience rule: every operator the console offers, a stored null read as
+                // not set, and an unknown operator failing closed (it used to fire for every user).
+                AudienceRuleEvaluator.evaluateRule(
+                    ai.appdna.sdk.core.AudienceRule(trait = c.trait, operator = c.operator, value = c.value), userTraits,
+                )
             }) matched = true
         }
 

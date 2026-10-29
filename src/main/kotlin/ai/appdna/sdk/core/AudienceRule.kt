@@ -2,7 +2,7 @@ package ai.appdna.sdk.core
 
 data class AudienceRule(
     val trait: String,
-    // "equals", "not_equals", "gt", "lt", "contains", "exists", "in", "not_in", "between"
+    // "equals", "not_equals", "gt", "lt", "contains", "exists", "not_exists", "in", "not_in", "between"; any other fails closed
     val operator: String,
     val value: Any? = null,
     // `between` bounds. Authored as sibling `min` / `max` keys rather than inside `value`.
@@ -89,7 +89,8 @@ internal object AudienceRuleEvaluator {
         return rules.all { evaluateRule(it, userTraits) }
     }
 
-    private fun evaluateRule(rule: AudienceRule, userTraits: Map<String, Any>): Boolean {
+    /** One rule against [userTraits]. Also the reader of a screen trigger's user-trait conditions. */
+    internal fun evaluateRule(rule: AudienceRule, userTraits: Map<String, Any>): Boolean {
         // A trait identify stored as null (`JSONObject.NULL`) is NOT SET, for every operator: it does not
         // `exists`, as the server's segment SQL and the journey evaluators read it.
         val traitValue = userTraits[rule.trait]?.takeIf { it != org.json.JSONObject.NULL }
@@ -109,6 +110,8 @@ internal object AudienceRuleEvaluator {
                 }
             }
             "exists" -> traitValue != null
+            // The server's operator (segment SQL, journeys): no non-null value, the negation of `exists`.
+            "not_exists" -> traitValue == null
             // `in` / `not_in` compared raw `Any?` values, so an Int trait `1` never matched the
             // string values `["1", "2"]` the console writes for a numeric field. Route through
             // ConditionEvaluator so numbers and their string spellings coerce like everywhere else.
@@ -148,7 +151,13 @@ internal object AudienceRuleEvaluator {
                     else -> true
                 }
             }
-            else -> true
+            // An operator this SDK does not implement FAILS CLOSED. A rule can arrive that the console never
+            // offered (an API or import write, a newer console against this build), and matching every
+            // user is the opposite of targeting — `between` once passed vacuously exactly this way.
+            else -> {
+                ai.appdna.sdk.Log.debug { "audience rule on '${rule.trait}': unknown operator '${rule.operator}' does not match" }
+                false
+            }
         }
     }
 }
