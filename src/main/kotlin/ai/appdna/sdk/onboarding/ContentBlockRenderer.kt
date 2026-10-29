@@ -13284,7 +13284,7 @@ private fun FormInputLocationPlaceholder(
         // Drawn afresh after each text set the holder makes (and after a first edit of Google's line that
         // leaves the user's own text), so the field's undo history never holds text the holder replaced;
         // focus and the caret carry over.
-        LocationTextFieldGeneration(holder, holder.textSets) { focusModifier, isCurrent ->
+        LocationTextFieldGeneration(holder, holder.textSets) { focusModifier, isCurrent, searchKey ->
             OutlinedTextField(
                 value = shownValue,
                 onValueChange = { newValue ->
@@ -13318,6 +13318,10 @@ private fun FormInputLocationPlaceholder(
                 modifier = Modifier.fillMaxWidth().let { m -> (block.field_config?.get("field_height") as? Number)?.toFloat()?.let { m.heightIn(min = it.dp) } ?: m }
                     .then(focusModifier),
                 singleLine = true,
+                // The Search key leaves the field, as return does on iOS (`returnKeyType: .search`): the
+                // dropdown closes and the keyboard goes away.
+                keyboardOptions = KeyboardOptions(imeAction = androidx.compose.ui.text.input.ImeAction.Search),
+                keyboardActions = searchKey,
                 shape = RoundedCornerShape((block.field_style?.corner_radius ?: 8.0).dp),
                 colors = OutlinedTextFieldDefaults.colors(
                     focusedBorderColor = StyleEngine.parseColor(block.field_style?.focused_border_color ?: (ai.appdna.sdk.AppDNA.brandAccentHex ?: "#6366F1")),

@@ -5,6 +5,7 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Cancel
@@ -18,6 +19,7 @@ import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.text.TextRange
@@ -141,7 +143,7 @@ fun LocationFieldComposable(
         // Drawn afresh after each text set the holder makes (and after a first edit of Google's line that
         // leaves the user's own text), so the field's undo history never holds text the holder replaced;
         // focus and the caret carry over.
-        LocationTextFieldGeneration(holder, holder.textSets) { focusModifier, isCurrent ->
+        LocationTextFieldGeneration(holder, holder.textSets) { focusModifier, isCurrent, searchKey ->
             OutlinedTextField(
                 value = shownValue,
                 onValueChange = { newValue ->
@@ -197,12 +199,13 @@ fun LocationFieldComposable(
                         }
                     }
                 },
-                // Search IME action so Enter triggers a
-                // keyboard-driven submit (autocomplete still fires on debounce).
+                // The Search key leaves the field, as return does on iOS: the dropdown closes and the
+                // keyboard goes away (autocomplete itself runs on the debounce).
                 keyboardOptions = KeyboardOptions(
                     keyboardType = KeyboardType.Text,
                     imeAction = ImeAction.Search,
                 ),
+                keyboardActions = searchKey,
                 modifier = Modifier.fillMaxWidth().then(focusModifier),
                 singleLine = true,
                 isError = errors.containsKey(field.id),
@@ -322,7 +325,11 @@ private class LocationFieldFocus {
  *   field's own focus change, before this field hears of it (#1147). That field leaves for real: it
  *   reports the leaving, and the field drawn next does not take the focus back;
  * - [field] is handed `isCurrent`: a value delivered by the replaced field (its input session ending)
- *   must be ignored.
+ *   must be ignored;
+ * - the keyboard's Search key: [field] is handed the actions for it. It leaves the field, as return does
+ *   on iOS: the focus is cleared, so the leaving above runs ([LocationSuggestionSearch.editingEnded]
+ *   closes the dropdown and ends the search) and the next field drawn does not take the focus back, and
+ *   the keyboard is hidden. The typed text stays.
  *
  * The caret needs nothing here: the composables put it at the end after any text the holder sets, and a
  * new field whose text is unchanged keeps the value the user's edit gave it, caret included.
@@ -332,11 +339,18 @@ private class LocationFieldFocus {
 internal fun LocationTextFieldGeneration(
     holder: LocationSuggestionSearch,
     generation: Int,
-    field: @Composable (focusModifier: Modifier, isCurrent: () -> Boolean) -> Unit,
+    field: @Composable (focusModifier: Modifier, isCurrent: () -> Boolean, searchKey: KeyboardActions) -> Unit,
 ) {
     val focus = remember(holder) { LocationFieldFocus() }
     val view = LocalView.current
     val keyboard = LocalSoftwareKeyboardController.current
+    val focusManager = LocalFocusManager.current
+    val searchKey = remember(focusManager, keyboard) {
+        KeyboardActions(onSearch = {
+            focusManager.clearFocus()
+            keyboard?.hide()
+        })
+    }
     // Read while composing the change, before the replaced field is disposed and its session ends.
     val imeShown = remember(generation) { locationImeShown(view) }
     key(generation) {
@@ -366,7 +380,7 @@ internal fun LocationTextFieldGeneration(
                     holder.editingEnded()
                 }
             }
-        field(focusModifier, isCurrent)
+        field(focusModifier, isCurrent, searchKey)
         LaunchedEffect(Unit) {
             if (focus.focused) {
                 // The request dispatches the focus event at once, so the field has queued its new session
