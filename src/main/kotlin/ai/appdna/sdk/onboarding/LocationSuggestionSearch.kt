@@ -210,11 +210,15 @@ internal class LocationSuggestionSearch(
     private var shownGoogle: Pair<String, String>? = null
 
     /**
-     * The Google line and `raw_query` the field last restarted from, until it shows another answer or is
-     * cleared. A Compose text field keeps its own undo history, which an app cannot clear: a hardware
-     * keyboard's undo would bring the line back as a user edit.
+     * How many times the holder has set the field's text itself (a resolve, a restore, a clear, an edit
+     * that restarts from the user's own text). Both composables key their text field on it, so each set
+     * draws a fresh field and the old field's undo history goes with it: a hardware keyboard's undo can
+     * never bring back text the holder replaced, such as Google's line. After a restart the field is
+     * ordinary typed text, so anything the user types afterwards, Google's line included, is stored as
+     * typed. The Swift twin clears the text field's undo manager on the same sets.
      */
-    private var restartedGoogle: Pair<String, String>? = null
+    var textSets: Int = 0
+        private set
 
     /**
      * The first edit of a Google answer's line arrived while the input method was composing: it is
@@ -256,7 +260,7 @@ internal class LocationSuggestionSearch(
      */
     fun compositionChanged(composing: Boolean, settings: LocationSearchSettings) {
         this.composing = composing
-        if (!composing && awaitingCommit) applyEdit(text, settings, previous = text)
+        if (!composing && awaitingCommit) applyEdit(text, settings)
     }
 
     init {
@@ -336,7 +340,6 @@ internal class LocationSuggestionSearch(
         // is unchanged (a caret move, a selection, a composing span), and none of them may drop a
         // resolve, store, or search.
         if (newText == text) return
-        val previous = text
         text = newText
         // [composing]: the input method has a composition in progress (the field's composing span). That
         // is not the first edit yet: Google's line with composing text after it is neither stored nor
@@ -346,25 +349,20 @@ internal class LocationSuggestionSearch(
             awaitingCommit = true
             return
         }
-        applyEdit(newText, settings, previous)
+        applyEdit(newText, settings)
     }
 
     /**
-     * The user's edit to [newText], which the field now shows (it showed [previous] before): stores it
-     * and searches.
+     * The user's edit to [newText], which the field now shows: stores it and searches. The first edit
+     * of a Google answer's line restarts from the user's own text; after that the field holds typed
+     * text, and every edit is stored as it is.
      */
-    private fun applyEdit(newText: String, settings: LocationSearchSettings, previous: String) {
+    private fun applyEdit(newText: String, settings: LocationSearchSettings) {
         awaitingCommit = false
         dropResolveInFlight()
         var typed = newText
-        val google = shownGoogle
-            ?: restartedGoogle?.takeIf { newText.startsWith(it.first) && !previous.startsWith(it.first) }
-        google?.let { (line, rawQuery) ->
+        shownGoogle?.let { (line, rawQuery) ->
             shownGoogle = null
-            // Kept after the restart: a text change that brings Google's line back (a hardware
-            // keyboard's undo restores the value before the restart) restarts again, so the line is
-            // never stored as typed text.
-            restartedGoogle = line to rawQuery
             typed = LocationAnswer.editRestart(rawQuery = rawQuery, shown = line, edited = newText)
             setTextProgrammatically(typed)
         }
@@ -390,6 +388,7 @@ internal class LocationSuggestionSearch(
     private fun setTextProgrammatically(newText: String) {
         if (newText == text) return
         pendingEcho = newText
+        textSets += 1
         text = newText
     }
 
@@ -400,7 +399,6 @@ internal class LocationSuggestionSearch(
     private fun showAnswer(line: String, answer: Any?) {
         setTextProgrammatically(line)
         shownGoogle = LocationAnswer.googleRawQuery(answer)?.let { line to it }
-        restartedGoogle = null
     }
 
     // ---- Search --------------------------------------------------------------------------------
@@ -457,7 +455,6 @@ internal class LocationSuggestionSearch(
         isDropdownOpen = false
         write(null)
         shownGoogle = null
-        restartedGoogle = null
         setTextProgrammatically("")
     }
 

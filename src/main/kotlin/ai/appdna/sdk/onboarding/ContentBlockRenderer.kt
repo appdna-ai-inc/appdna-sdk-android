@@ -67,7 +67,6 @@ import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
-import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.LinearEasing
@@ -13187,9 +13186,6 @@ private fun FormInputLocationPlaceholder(
         settlement?.register(fieldId, holder)
         onDispose { settlement?.unregister(holder) }
     }
-    // Leaving the field ends its search: a debounced search still pending would otherwise fire and
-    // open the dropdown under a field the user has already left.
-    var hadFocus by remember(holder) { mutableStateOf(false) }
     val stored = inputValues[fieldId]
     SideEffect { holder.storedAnswerChanged(stored) }
     @Suppress("UNUSED_EXPRESSION")
@@ -13241,58 +13237,57 @@ private fun FormInputLocationPlaceholder(
     ) {
         FormFieldLabel(block)
 
-        OutlinedTextField(
-            value = shownValue,
-            onValueChange = { newValue ->
-                fieldValue = newValue
-                // Stores the typed text, drops a resolve in flight, and debounces the search (300 ms). A
-                // composition in progress is reported, so the first edit of Google's line waits for it.
-                // Only a change to the text is an edit: a value whose text is unchanged (a caret move, a
-                // selection, a composing span) reports its composition and nothing else.
-                holder.valueChanged(newValue.text, composing = newValue.composition != null, settings = search)
-            },
-            // Drop hardcoded Color.Gray placeholder color so
-            // Material3 OutlinedTextFieldDefaults adaptive placeholder color
-            // applies (theme-aware in dark mode).
-            placeholder = { Text(block.field_placeholder ?: "Search location...") },
-            // \u2014 honor show_prefix_icon (default true).
-            leadingIcon = if (showPrefixIcon) {
-                { Text("\uD83D\uDCCD", fontSize = 16.sp) }
-            } else null,
-            trailingIcon = {
-                // A search, or a tap's resolve, is in flight.
-                if (holder.isSearching || holder.isResolving) {
-                    CircularProgressIndicator(
-                        modifier = Modifier.size(18.dp),
-                        strokeWidth = 2.dp,
-                    )
-                }
-            },
-            // Honor field_config.field_height on the location search box (iOS sibling already does).
-            modifier = Modifier.fillMaxWidth().let { m -> (block.field_config?.get("field_height") as? Number)?.toFloat()?.let { m.heightIn(min = it.dp) } ?: m }
-                .onFocusChanged { state ->
-                    if (state.isFocused) {
-                        hadFocus = true
-                    } else if (hadFocus) {
-                        hadFocus = false
-                        holder.editingEnded()
+        // Drawn afresh after each text set the holder makes, so the field's undo history never holds
+        // text the holder replaced; focus and the caret carry over.
+        LocationTextFieldGeneration(holder, holder.textSets) { focusModifier, isCurrent ->
+            OutlinedTextField(
+                value = shownValue,
+                onValueChange = { newValue ->
+                    // A field the holder has already replaced (its input session ending) is not the user.
+                    if (!isCurrent()) return@OutlinedTextField
+                    fieldValue = newValue
+                    // Stores the typed text, drops a resolve in flight, and debounces the search (300 ms). A
+                    // composition in progress is reported, so the first edit of Google's line waits for it.
+                    // Only a change to the text is an edit: a value whose text is unchanged (a caret move, a
+                    // selection, a composing span) reports its composition and nothing else.
+                    holder.valueChanged(newValue.text, composing = newValue.composition != null, settings = search)
+                },
+                // Drop hardcoded Color.Gray placeholder color so
+                // Material3 OutlinedTextFieldDefaults adaptive placeholder color
+                // applies (theme-aware in dark mode).
+                placeholder = { Text(block.field_placeholder ?: "Search location...") },
+                // \u2014 honor show_prefix_icon (default true).
+                leadingIcon = if (showPrefixIcon) {
+                    { Text("\uD83D\uDCCD", fontSize = 16.sp) }
+                } else null,
+                trailingIcon = {
+                    // A search, or a tap's resolve, is in flight.
+                    if (holder.isSearching || holder.isResolving) {
+                        CircularProgressIndicator(
+                            modifier = Modifier.size(18.dp),
+                            strokeWidth = 2.dp,
+                        )
                     }
                 },
-            singleLine = true,
-            shape = RoundedCornerShape((block.field_style?.corner_radius ?: 8.0).dp),
-            colors = OutlinedTextFieldDefaults.colors(
-                focusedBorderColor = StyleEngine.parseColor(block.field_style?.focused_border_color ?: (ai.appdna.sdk.AppDNA.brandAccentHex ?: "#6366F1")),
-                unfocusedBorderColor = StyleEngine.parseColor(block.field_style?.border_color ?: "#D1D5DB"),
-                // \u2014 honor field_style.text_color for the input text.
-                focusedTextColor = fieldTextColor,
-                unfocusedTextColor = fieldTextColor,
-                // \u2014 honor field_style.background_color ("Field Fill") like the
-                // Text/Password siblings + iOS (FormInputBlockViews.swift:1676); else M3's default
-                // surface fill draws over the authored fill. Defaults Transparent.
-                focusedContainerColor = block.field_style?.background_color?.let { StyleEngine.parseColor(it) } ?: Color.Transparent,
-                unfocusedContainerColor = block.field_style?.background_color?.let { StyleEngine.parseColor(it) } ?: Color.Transparent,
-            ),
-        )
+                // Honor field_config.field_height on the location search box (iOS sibling already does).
+                modifier = Modifier.fillMaxWidth().let { m -> (block.field_config?.get("field_height") as? Number)?.toFloat()?.let { m.heightIn(min = it.dp) } ?: m }
+                    .then(focusModifier),
+                singleLine = true,
+                shape = RoundedCornerShape((block.field_style?.corner_radius ?: 8.0).dp),
+                colors = OutlinedTextFieldDefaults.colors(
+                    focusedBorderColor = StyleEngine.parseColor(block.field_style?.focused_border_color ?: (ai.appdna.sdk.AppDNA.brandAccentHex ?: "#6366F1")),
+                    unfocusedBorderColor = StyleEngine.parseColor(block.field_style?.border_color ?: "#D1D5DB"),
+                    // \u2014 honor field_style.text_color for the input text.
+                    focusedTextColor = fieldTextColor,
+                    unfocusedTextColor = fieldTextColor,
+                    // \u2014 honor field_style.background_color ("Field Fill") like the
+                    // Text/Password siblings + iOS (FormInputBlockViews.swift:1676); else M3's default
+                    // surface fill draws over the authored fill. Defaults Transparent.
+                    focusedContainerColor = block.field_style?.background_color?.let { StyleEngine.parseColor(it) } ?: Color.Transparent,
+                    unfocusedContainerColor = block.field_style?.background_color?.let { StyleEngine.parseColor(it) } ?: Color.Transparent,
+                ),
+            )
+        }
 
         // Autocomplete results dropdown
         if (holder.isDropdownOpen) {

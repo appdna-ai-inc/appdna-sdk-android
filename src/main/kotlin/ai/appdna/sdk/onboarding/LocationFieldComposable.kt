@@ -14,6 +14,8 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.TextRange
@@ -118,9 +120,6 @@ fun LocationFieldComposable(
         settlement?.register(field.id, holder)
         onDispose { settlement?.unregister(holder) }
     }
-    // Leaving the field ends its search: a debounced search still pending would otherwise fire and
-    // open the dropdown under a field the user has already left.
-    var hadFocus by remember(holder) { mutableStateOf(false) }
     val stored = values[field.id]
     SideEffect { holder.storedAnswerChanged(stored) }
     @Suppress("UNUSED_EXPRESSION")
@@ -137,76 +136,75 @@ fun LocationFieldComposable(
         modifier = modifier.fillMaxWidth(),
         verticalArrangement = Arrangement.spacedBy(6.dp),
     ) {
-        OutlinedTextField(
-            value = shownValue,
-            onValueChange = { newValue ->
-                fieldValue = newValue
-                errors.remove(field.id)
-                // Stores the typed text, drops a resolve in flight, and debounces the search. A
-                // composition in progress is reported, so the first edit of Google's line waits for it.
-                // Only a change to the text is an edit: a value whose text is unchanged (a caret move, a
-                // selection, a composing span) reports its composition and nothing else.
-                holder.valueChanged(newValue.text, composing = newValue.composition != null, settings = search)
-            },
-            label = { Text(field.label) },
-            placeholder = { Text(placeholder) },
-            // Opt-out for the prefix location
-            // pin matches iOS LocationFieldView.swift:1384 reading
-            // `field_config["show_prefix_icon"]` (default true). Some flows
-            // hide the pin in dark/minimalist designs.
-            leadingIcon = if (config?.show_prefix_icon != false) {
-                {
-                    Icon(
-                        imageVector = Icons.Filled.LocationOn,
-                        contentDescription = null,
-                        modifier = Modifier.size(20.dp),
-                    )
-                }
-            } else null,
-            trailingIcon = {
-                // Clear-X button when a
-                // location is selected (`values[field.id]` is a Map).
-                // iOS LocationFieldView.swift:81-87 + clearSelection() at
-                // :272 lets users clear with one tap. Without this Android
-                // user can't clear after select except by manually deleting
-                // every char of the formatted address.
-                when {
-                    // A search, or a tap's resolve, is in flight.
-                    holder.isSearching || holder.isResolving -> CircularProgressIndicator(
-                        modifier = Modifier.size(18.dp),
-                        strokeWidth = 2.dp,
-                    )
-                    values[field.id] is Map<*, *> -> IconButton(
-                        onClick = {
-                            holder.clear()
-                            errors.remove(field.id)
-                        },
-                    ) {
+        // Drawn afresh after each text set the holder makes, so the field's undo history never holds
+        // text the holder replaced; focus and the caret carry over.
+        LocationTextFieldGeneration(holder, holder.textSets) { focusModifier, isCurrent ->
+            OutlinedTextField(
+                value = shownValue,
+                onValueChange = { newValue ->
+                    // A field the holder has already replaced (its input session ending) is not the user.
+                    if (!isCurrent()) return@OutlinedTextField
+                    fieldValue = newValue
+                    errors.remove(field.id)
+                    // Stores the typed text, drops a resolve in flight, and debounces the search. A
+                    // composition in progress is reported, so the first edit of Google's line waits for it.
+                    // Only a change to the text is an edit: a value whose text is unchanged (a caret move, a
+                    // selection, a composing span) reports its composition and nothing else.
+                    holder.valueChanged(newValue.text, composing = newValue.composition != null, settings = search)
+                },
+                label = { Text(field.label) },
+                placeholder = { Text(placeholder) },
+                // Opt-out for the prefix location
+                // pin matches iOS LocationFieldView.swift:1384 reading
+                // `field_config["show_prefix_icon"]` (default true). Some flows
+                // hide the pin in dark/minimalist designs.
+                leadingIcon = if (config?.show_prefix_icon != false) {
+                    {
                         Icon(
-                            imageVector = Icons.Filled.Cancel,
-                            contentDescription = "Clear location",
+                            imageVector = Icons.Filled.LocationOn,
+                            contentDescription = null,
                             modifier = Modifier.size(20.dp),
                         )
                     }
-                }
-            },
-            // Search IME action so Enter triggers a
-            // keyboard-driven submit (autocomplete still fires on debounce).
-            keyboardOptions = KeyboardOptions(
-                keyboardType = KeyboardType.Text,
-                imeAction = ImeAction.Search,
-            ),
-            modifier = Modifier.fillMaxWidth().onFocusChanged { state ->
-                if (state.isFocused) {
-                    hadFocus = true
-                } else if (hadFocus) {
-                    hadFocus = false
-                    holder.editingEnded()
-                }
-            },
-            singleLine = true,
-            isError = errors.containsKey(field.id),
-        )
+                } else null,
+                trailingIcon = {
+                    // Clear-X button when a
+                    // location is selected (`values[field.id]` is a Map).
+                    // iOS LocationFieldView.swift:81-87 + clearSelection() at
+                    // :272 lets users clear with one tap. Without this Android
+                    // user can't clear after select except by manually deleting
+                    // every char of the formatted address.
+                    when {
+                        // A search, or a tap's resolve, is in flight.
+                        holder.isSearching || holder.isResolving -> CircularProgressIndicator(
+                            modifier = Modifier.size(18.dp),
+                            strokeWidth = 2.dp,
+                        )
+                        values[field.id] is Map<*, *> -> IconButton(
+                            onClick = {
+                                holder.clear()
+                                errors.remove(field.id)
+                            },
+                        ) {
+                            Icon(
+                                imageVector = Icons.Filled.Cancel,
+                                contentDescription = "Clear location",
+                                modifier = Modifier.size(20.dp),
+                            )
+                        }
+                    }
+                },
+                // Search IME action so Enter triggers a
+                // keyboard-driven submit (autocomplete still fires on debounce).
+                keyboardOptions = KeyboardOptions(
+                    keyboardType = KeyboardType.Text,
+                    imeAction = ImeAction.Search,
+                ),
+                modifier = Modifier.fillMaxWidth().then(focusModifier),
+                singleLine = true,
+                isError = errors.containsKey(field.id),
+            )
+        }
 
         if (holder.isDropdownOpen) {
             // Material3 Card elevation replaces the
@@ -282,6 +280,63 @@ fun LocationFieldComposable(
             // A Google answer keeps its attribution after the dropdown closes, and when it is restored
             // on returning to the step: the field shows Google content.
             GoogleMapsLogo(backdrop = LocalGoogleAttributionBackdrop.current)
+        }
+    }
+}
+
+/** Whether a location text field has focus, across the fields [LocationTextFieldGeneration] draws. */
+private class LocationFieldFocus {
+    var focused = false
+}
+
+/**
+ * Draws a location text field ([field]) keyed on [generation], the holder's
+ * [LocationSuggestionSearch.textSets]. A Compose text field keeps an undo history no app can clear, and a
+ * hardware keyboard's undo replays it as a user edit, so text the holder replaced (Google's line, after
+ * the first edit restarts from the user's own text) could come back. Keying the field on each set the
+ * holder makes draws a new field with an empty history, as the Swift twin empties its text field's undo
+ * manager on the same sets.
+ *
+ * What the user would otherwise notice is handled here:
+ * - focus: a field that had focus asks for it again as soon as it is drawn, so the keyboard stays up;
+ * - leaving the field: only the field on screen reports it ([LocationSuggestionSearch.editingEnded], which
+ *   ends the search). The replaced field losing focus is not the user leaving;
+ * - [field] is handed `isCurrent`: a value delivered by the replaced field (its input session ending)
+ *   must be ignored.
+ *
+ * The caret needs nothing here: the composables put it at the end after any text the holder sets.
+ * [focusModifier] goes on the text field's own modifier.
+ */
+@Composable
+internal fun LocationTextFieldGeneration(
+    holder: LocationSuggestionSearch,
+    generation: Int,
+    field: @Composable (focusModifier: Modifier, isCurrent: () -> Boolean) -> Unit,
+) {
+    val focus = remember(holder) { LocationFieldFocus() }
+    key(generation) {
+        val focusRequester = remember { FocusRequester() }
+        // Whether THIS field has had focus: a field that never had it reports no leaving.
+        val hadFocus = remember { booleanArrayOf(false) }
+        val isCurrent = { generation == holder.textSets }
+        val focusModifier = Modifier
+            .focusRequester(focusRequester)
+            .onFocusChanged { state ->
+                if (!isCurrent()) return@onFocusChanged
+                if (state.isFocused) {
+                    hadFocus[0] = true
+                    focus.focused = true
+                } else if (hadFocus[0]) {
+                    hadFocus[0] = false
+                    focus.focused = false
+                    // Leaving the field ends its search: a debounced search still pending would
+                    // otherwise fire and open the dropdown under a field the user has already left.
+                    holder.editingEnded()
+                }
+            }
+        field(focusModifier, isCurrent)
+        LaunchedEffect(Unit) {
+            if (focus.focused) focusRequester.requestFocus()
         }
     }
 }

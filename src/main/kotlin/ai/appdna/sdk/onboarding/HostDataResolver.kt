@@ -213,18 +213,42 @@ internal object HostDataResolver {
     }
 
     /**
-     * Inside a URL on one of Google's Maps hosts, the part from a nested `scheme://` on — written
-     * plainly, or percent-encoded as `%3A%2F%2F` — is another URL, which the Maps host fetches from
-     * wherever it points (a Static Maps marker icon). Every token there takes the typed text; a token
-     * before it, in the Maps URL itself, keeps the place. The Swift twin is
-     * `HostDataResolver.nestedURLRanges`.
+     * A nested URL's scheme separator in any encoding mix, case-insensitively: `:` or `%3A`, then two
+     * slashes, each `/` or `%2F`.
+     */
+    private val NESTED_SCHEME_SEPARATOR = Regex("""(?::|%3A)(?:/|%2F)(?:/|%2F)""", RegexOption.IGNORE_CASE)
+
+    /**
+     * Inside a URL on one of Google's Maps hosts, the parts that may be another URL, which the Maps host
+     * fetches from wherever it points (a Static Maps marker icon). Every token in them takes the typed
+     * text; any other token, in the Maps URL itself, keeps the place. They run to the end of [template]
+     * from the first of:
+     * - a nested scheme separator after the outer `://` ([NESTED_SCHEME_SEPARATOR]), wherever it is
+     *   written, in the literal text or in a token's fallback;
+     * - the end of the first token in the query (after the first `?` outside any token), so every token
+     *   that follows another token in the query is covered: the earlier token's value is not known
+     *   from the literal, and it may supply the nested scheme.
+     *
+     * The Swift twin is `HostDataResolver.nestedURLRanges`.
      */
     internal fun nestedUrlRanges(template: String): List<IntRange> {
         val outer = template.indexOf("://").takeIf { it >= 0 } ?: return emptyList()
         val from = outer + 3
-        val start = listOf(template.indexOf("://", from), template.indexOf("%3A%2F%2F", from, ignoreCase = true))
-            .filter { it >= 0 }
-            .minOrNull() ?: return emptyList()
+        val starts = mutableListOf<Int>()
+        NESTED_SCHEME_SEPARATOR.find(template, from)?.let { starts += it.range.first }
+        val tokens = extractTemplateTokens(template)
+        var query: Int? = null
+        var i = from
+        for (t in tokens + null) {
+            val literalEnd = t?.index ?: template.length
+            if (i < literalEnd) {
+                val q = template.indexOf('?', i)
+                if (q in i until literalEnd) { query = q; break }
+            }
+            if (t != null) i = maxOf(i, t.index + t.raw.length)
+        }
+        query?.let { q -> tokens.firstOrNull { it.index > q }?.let { starts += it.index + it.raw.length } }
+        val start = starts.minOrNull() ?: return emptyList()
         return listOf(start until template.length)
     }
 

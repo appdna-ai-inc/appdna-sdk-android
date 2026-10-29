@@ -106,7 +106,7 @@ internal object GoogleAttributionFixtureDrivers {
     /**
      * `setup.config.step` = one onboarding step as published; `setup.session_data` = {responses (the
      * flow's accumulated answers), session_store (the session store's onboarding responses), step (the
-     * step's inputs)}. `action`: override {title, subtitle, cta_text, field_defaults, field_options},
+     * step's inputs)}. `action`: override {title, subtitle, cta_text, field_defaults, field_options, data},
      * field_config_overrides, field_options_overrides (the interaction patches), sheet {block_id,
      * option_id, inputs}. Returns `shows_credit`, and `sheet_credit` when the action names a sheet.
      */
@@ -206,6 +206,8 @@ internal object GoogleAttributionFixtureDrivers {
                 subtitle = o["subtitle"] as? String,
                 ctaText = o["cta_text"] as? String,
                 fieldOptions = StepConfigOverride.decodeFieldOptions(stripNulls(o["field_options"])),
+                // The host's data for the step: the `hook_data` root.
+                dataContext = (o["data"] as? Map<String, Any?>)?.let { stripNulls(it) as Map<String, Any> },
             )
         }
         val fieldConfigOverrides = ((action["field_config_overrides"] as? Map<String, Any?>).orEmpty())
@@ -223,6 +225,9 @@ internal object GoogleAttributionFixtureDrivers {
         val resolveStep = {
             HostDataStepPipeline(step, legacyContext = { templateContext }).resolve(
                 HostDataInputs(
+                    // The base `hook_data`, as `liveHostDataInputs` passes it for a step with no
+                    // interaction layer.
+                    hookData = override?.dataContext,
                     responses = accumulated,
                     stepInputs = stepInputs,
                     selected = selected,
