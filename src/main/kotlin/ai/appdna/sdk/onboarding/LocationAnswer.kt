@@ -206,9 +206,11 @@ internal object LocationAnswer {
 internal data class LocationSearchSettings(
     /**
      * 🔴 NULLABLE, and null means the author never chose one — which is NOT the same as "address".
-     * The server narrows results only when `type` is present (`GeocodingService.ts:230-232`,
-     * `:318-323`), so substituting a default here would silently change what every unauthored field
-     * returns. Each surface applies its own historical default at the call site.
+     * No surface substitutes a default: both pass `type` to the search as it is here, and a null or
+     * blank one is left out of the request body. The proxy then applies its own unset-type behaviour
+     * (`mapboxTypeFilter` and `googlePrimaryTypes` in the server's `GeocodingService`): Mapbox
+     * searches places, localities and addresses, and Google applies no type filter. Substituting a
+     * default here would silently change what every unauthored field returns.
      */
     val type: String?,
     val biasCountry: String?,
