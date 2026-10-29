@@ -378,34 +378,36 @@ class OnboardingActivity : ComponentActivity() {
                 else
                     androidx.compose.material3.lightColorScheme(),
             ) {
-                OnboardingFlowHost(
-                    flow = flow,
-                    viewModel = viewModel,
-                    delegate = viewModel.delegate,
-                    eventTracker = viewModel.eventTracker,
-                    isDark = isDark,
-                    onStepViewed = { stepId, stepIndex ->
-                        viewModel.onStepViewed?.invoke(stepId, stepIndex)
-                    },
-                    onStepCompleted = { stepId, stepIndex, data ->
-                        viewModel.onStepCompleted?.invoke(stepId, stepIndex, data)
-                    },
-                    onStepSkipped = { stepId, stepIndex ->
-                        viewModel.onStepSkipped?.invoke(stepId, stepIndex)
-                    },
-                    onFlowCompleted = { responses ->
-                        // A step whose onBeforeStepRender is still in flight was
-                        // viewed; pay its onStepViewed BEFORE the flow ends (reset() nulls it after).
-                        viewModel.hostDataPresentations.current?.fireStepViewedIfOwed()
-                        viewModel.onFlowCompleted?.invoke(responses)
-                        cleanup()
-                    },
-                    onFlowDismissed = { lastStepId, lastStepIndex ->
-                        viewModel.hostDataPresentations.current?.fireStepViewedIfOwed()
-                        viewModel.onFlowDismissed?.invoke(lastStepId, lastStepIndex)
-                        cleanup()
-                    }
-                )
+                CompositionLocalProvider(LocalStepDrafts provides viewModel.stepDrafts) {
+                    OnboardingFlowHost(
+                        flow = flow,
+                        viewModel = viewModel,
+                        delegate = viewModel.delegate,
+                        eventTracker = viewModel.eventTracker,
+                        isDark = isDark,
+                        onStepViewed = { stepId, stepIndex ->
+                            viewModel.onStepViewed?.invoke(stepId, stepIndex)
+                        },
+                        onStepCompleted = { stepId, stepIndex, data ->
+                            viewModel.onStepCompleted?.invoke(stepId, stepIndex, data)
+                        },
+                        onStepSkipped = { stepId, stepIndex ->
+                            viewModel.onStepSkipped?.invoke(stepId, stepIndex)
+                        },
+                        onFlowCompleted = { responses ->
+                            // A step whose onBeforeStepRender is still in flight was
+                            // viewed; pay its onStepViewed BEFORE the flow ends (reset() nulls it after).
+                            viewModel.hostDataPresentations.current?.fireStepViewedIfOwed()
+                            viewModel.onFlowCompleted?.invoke(responses)
+                            cleanup()
+                        },
+                        onFlowDismissed = { lastStepId, lastStepIndex ->
+                            viewModel.hostDataPresentations.current?.fireStepViewedIfOwed()
+                            viewModel.onFlowDismissed?.invoke(lastStepId, lastStepIndex)
+                            cleanup()
+                        }
+                    )
+                }
             }
         }
     }
@@ -484,6 +486,10 @@ class OnboardingActivity : ComponentActivity() {
             )
         }
         outState.putInt(KEY_CURRENT_STEP_INDEX, viewModel.currentIndex.intValue)
+        // What the user typed on the step on screen and has not submitted, secrets left out.
+        viewModel.flow?.steps?.getOrNull(viewModel.currentIndex.intValue)?.let {
+            viewModel.stepDrafts.writeTo(outState, it)
+        }
         try {
             val obj = org.json.JSONObject()
             for ((k, v) in viewModel.responses) {
@@ -2695,9 +2701,15 @@ fun OnboardingStepView(
     // Pre-populate from savedResponses on
     // first composition. `step.id` keying the remember ensures a fresh
     // clear when the user navigates forward to a different step.
-    val toggleValues = remember(step.id) {
-        mutableMapOf<String, Boolean>().apply {
-            savedResponses?.forEach { (k, v) ->
+    //
+    // Both maps are the step's DRAFT, held by the ViewModel when the flow runs in its activity, so
+    // what the user typed and has not submitted survives a recreation (rotation, or a restore after
+    // process death). A draft brought back that way is already seeded, and is not seeded again.
+    val draft = rememberStepDraft(step.id)
+    val seedDraft = draft?.seeded != true
+    val toggleValues = remember(step.id, draft) {
+        (draft?.toggles ?: mutableMapOf()).apply {
+            if (seedDraft) savedResponses?.forEach { (k, v) ->
                 if (k.startsWith("toggle_") && v is Boolean) put(k.removePrefix("toggle_"), v)
             }
         }
@@ -2705,13 +2717,14 @@ fun OnboardingStepView(
     // SnapshotStateMap (was mutableMapOf) so the step scope's handleInteract can
     // clear()/putAll() host-pushed inputValue patches and have the tree recompose. It's a `val` — never
     // reassign; mutate in place.
-    val inputValues = remember(step.id) {
-        mutableStateMapOf<String, Any>().apply {
-            savedResponses?.forEach { (k, v) ->
+    val inputValues = remember(step.id, draft) {
+        (draft?.inputs ?: mutableStateMapOf()).apply {
+            if (seedDraft) savedResponses?.forEach { (k, v) ->
                 if (!k.startsWith("toggle_") && k != "action" && k != "selected" && k != "selection_mode") {
                     put(k, v)
                 }
             }
+            draft?.seeded = true
         }
     }
 
@@ -2976,7 +2989,7 @@ private fun OnboardingStepBody(
                     OnboardingStep.StepType.CUSTOM,
                     OnboardingStep.StepType.INFO,
                     OnboardingStep.StepType.PERMISSION -> CustomStep(effectiveConfig, onNext)
-                    OnboardingStep.StepType.FORM -> FormStep(effectiveConfig, onNext, savedResponses)
+                    OnboardingStep.StepType.FORM -> FormStep(effectiveConfig, onNext, savedResponses, stepId = step.id)
                     // INTERACTIVE_CHAT handled via the early return above.
                     OnboardingStep.StepType.INTERACTIVE_CHAT -> Unit
                 }

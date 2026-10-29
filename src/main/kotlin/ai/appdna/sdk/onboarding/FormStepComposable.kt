@@ -44,9 +44,15 @@ fun FormStep(
      * Mirrors iOS FormStepView.savedValues (FormStepView.swift:9,119-123).
      */
     savedValues: Map<String, Any>? = null,
+    /** The step's id: keys the draft of unsubmitted values. Null keeps them in composition only. */
+    stepId: String? = null,
 ) {
     val fields = config.fields ?: emptyList()
-    val values = remember { mutableStateMapOf<String, Any?>() }
+    // The step's draft, held by the ViewModel when the flow runs in its activity: what the user typed
+    // and has not submitted survives a recreation (rotation, or a restore after process death). The
+    // seeding below only fills fields that are still empty, so it never overwrites a kept value.
+    val draft = stepId?.let { rememberStepDraft(it) }
+    val values = remember(draft) { draft?.form ?: mutableStateMapOf<String, Any?>() }
     val errors = remember { mutableStateMapOf<String, String>() }
 
     // Initialize defaults + savedValues. Order: savedValues (back-nav

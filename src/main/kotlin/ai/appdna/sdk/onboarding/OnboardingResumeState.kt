@@ -9,8 +9,9 @@ import android.os.Bundle
  * When the user leaves the app mid-flow and the process is killed, Android later restores the
  * onboarding activity in a NEW process with only its saved Bundle. The launch payload (a static) and
  * the ViewModel died with the old process. This is the part of the flow that survives: which flow,
- * which variant, when it started, the step on screen, the answers, the navigation history, and a
- * completion route a CTA recorded.
+ * which variant, when it started, the step on screen, the answers, the navigation history, a
+ * completion route a CTA recorded, and what the user had typed on the step on screen and not yet
+ * submitted (secrets excluded — see [StepDrafts.writeTo]).
  *
  * Kept small on purpose. The flow body is NOT saved — the Bundle travels through a binder
  * transaction with a hard size limit — so the flow is resolved again from config, and the saved
@@ -26,6 +27,7 @@ internal class OnboardingResumeState private constructor(
     private val responsesJson: String?,
     private val navigationHistory: Array<String>?,
     private val completionRoute: String?,
+    private val stepDraftJson: String?,
 ) {
 
     /**
@@ -55,6 +57,7 @@ internal class OnboardingResumeState private constructor(
             viewModel.navigationHistory.addAll(it)
         }
         completionRoute?.let { PendingCompletionRoute.record(it) }
+        viewModel.flow?.steps?.getOrNull(index)?.id?.let { viewModel.stepDrafts.restore(stepDraftJson, it) }
     }
 
     /** Write this state back unchanged, for an activity recreated again before it could resume. */
@@ -68,6 +71,7 @@ internal class OnboardingResumeState private constructor(
         responsesJson?.let { out.putString(OnboardingActivity.KEY_RESPONSES, it) }
         navigationHistory?.let { out.putStringArray(OnboardingActivity.KEY_NAV_HISTORY, it) }
         completionRoute?.let { out.putString(KEY_COMPLETION_ROUTE, it) }
+        stepDraftJson?.let { out.putString(StepDrafts.KEY_STEP_DRAFT, it) }
     }
 
     @Suppress("UNCHECKED_CAST")
@@ -118,6 +122,7 @@ internal class OnboardingResumeState private constructor(
                 responsesJson = saved.getString(OnboardingActivity.KEY_RESPONSES),
                 navigationHistory = saved.getStringArray(OnboardingActivity.KEY_NAV_HISTORY),
                 completionRoute = saved.getString(KEY_COMPLETION_ROUTE),
+                stepDraftJson = saved.getString(StepDrafts.KEY_STEP_DRAFT),
             )
         }
     }

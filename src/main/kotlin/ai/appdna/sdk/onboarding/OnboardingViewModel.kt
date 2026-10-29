@@ -151,6 +151,13 @@ internal class OnboardingViewModel : ViewModel() {
     val hostDataInteractionStore = HostDataInteractionStore()
 
     /**
+     * What the user has entered on the step on screen and not submitted yet. Here, not in
+     * composition, so a configuration change keeps it; the activity saves the open step's draft for
+     * process death. Cleared by [reset].
+     */
+    val stepDrafts = StepDrafts()
+
+    /**
      * Snapshot index restored by [OnboardingActivity.onCreate] from
      * `savedInstanceState`. Read once by the Compose host's initial-state
      * seed, then cleared.
@@ -233,6 +240,7 @@ internal class OnboardingViewModel : ViewModel() {
         lastViewedStepIndex = -1
         hostDataPresentations.reset()
         hostDataInteractionStore.reset()
+        stepDrafts.clear()
         isBound = false
     }
 
