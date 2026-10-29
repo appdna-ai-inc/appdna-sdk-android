@@ -131,10 +131,12 @@ internal object LocationAnswer {
     /**
      * The text the first edit of a field showing a Google answer restarts from. The field shows
      * Google's line ([shown]), which must never be stored or sent, so the edit goes back to the user's
-     * own words, the answer's `raw_query`: characters appended at the END of Google's line are appended
-     * to it, and any other edit (a deletion, a replacement, a paste inside the line) leaves the typed
-     * text alone. The result is ordinary typed text from then on. The Swift twin is
-     * `LocationAnswer.editRestart`.
+     * own words, the answer's `raw_query`. It is decided by the RESULTING text, not by the gesture that
+     * produced it: when [edited] is Google's whole line followed by more characters, those characters
+     * are appended to `raw_query`; any other result (shorter than the line, or not beginning with all
+     * of it) leaves the typed text alone. So a paste or a replacement inside the line that leaves the
+     * line intact at the start, with more after it, is an append too. The result is ordinary typed
+     * text from then on. The Swift twin is `LocationAnswer.editRestart`.
      */
     fun editRestart(rawQuery: String, shown: String, edited: String): String =
         if (edited.length > shown.length && edited.startsWith(shown)) rawQuery + edited.substring(shown.length)
