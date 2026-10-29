@@ -805,8 +805,20 @@ class SharedFixtureTest(
     private fun runIdentify(action: JSONObject, spy: Spy) {
         val p = Pipeline(fixtureName).also { pipeline = it }
         val userId = action.getString("userId")
-        val traits = (action.optJSONObject("traits") ?: JSONObject()).asMap()
-            .filterValues { it != null }.mapValues { it.value!! }
+        val raw = (action.optJSONObject("traits") ?: JSONObject()).asMap()
+            .filterValues { it != null }.mapValues { it.value!! }.toMutableMap()
+        // `location_traits`: each value is a location answer, passed as the SDK's own LocationData.
+        action.optJSONObject("location_traits")?.asMap()?.forEach { (key, answer) ->
+            raw[key] = ai.appdna.sdk.onboarding.locationDataFromAnswer(answer)
+                ?: unsupported("location_traits.$key is not a location answer")
+        }
+        // `opaque_traits`: keys whose value is a host object that is not a JSON value.
+        action.optJSONArray("opaque_traits")?.let { keys ->
+            for (i in 0 until keys.length()) raw[keys.getString(i)] = OpaqueHostValue()
+        }
+        // Passed as the host passes them: the SDK's own identity store and buildIdentifyProps decide what
+        // a trait value becomes.
+        val traits: Map<String, Any> = raw
 
         val previousAnonId = p.identity.currentIdentity.anonId
         val previousUserId = p.identity.currentIdentity.userId
@@ -819,6 +831,9 @@ class SharedFixtureTest(
         spy.state["user_id"] = p.identity.currentIdentity.userId
         spy.state["user_traits"] = p.identity.currentIdentity.traits
     }
+
+    /** A host object that is not a JSON value, for `opaque_traits`. */
+    private class OpaqueHostValue
 
     // ---------------------------------------------------------------------------------------------
     // audience_eval — REAL AudienceRuleSet + AudienceRuleEvaluator

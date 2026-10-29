@@ -49,7 +49,10 @@ internal class IdentityManager(private val storage: LocalStorage) {
      * persists `keychainStore.setUserTraits(traits)` when a non-nil dictionary
      * is supplied (Sources/AppDNASDK/Core/Identity/IdentityManager.swift:49-58).
      */
-    fun identify(userId: String, traits: Map<String, Any>?) {
+    fun identify(userId: String, rawTraits: Map<String, Any>?) {
+        // What is stored and persisted is JSON-safe ([IdentifyTraits]); the public identify has already
+        // logged anything it dropped.
+        val traits = ai.appdna.sdk.core.IdentifyTraits.sanitize(rawTraits, log = false)
         // On a null `traits`, clear traits ONLY when the user actually CHANGES (an
         // account switch — the prior user's traits don't apply to the new one), and retain them on a
         // same-user re-identify (the common per-launch call). Previously Android retained traits even
@@ -136,7 +139,9 @@ internal class IdentityManager(private val storage: LocalStorage) {
         try {
             val json = JSONObject()
             for ((key, value) in traits) {
-                json.put(key, value)
+                // `wrap` turns a map or a list into a JSON object or array; `put` alone stored their
+                // toString().
+                json.put(key, JSONObject.wrap(value))
             }
             storage.setString("user_traits", json.toString())
         } catch (e: Exception) {

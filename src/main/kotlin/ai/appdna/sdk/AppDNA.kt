@@ -1059,6 +1059,10 @@ object AppDNA {
     @JvmStatic
     @JvmOverloads
     fun identify(userId: String, traits: Map<String, Any>? = null) {
+        // Only JSON values and the SDK's own LocationData (sent as its answer map) leave the device; any
+        // other value is dropped with a warning naming its key, never sent as null ([IdentifyTraits]).
+        @Suppress("NAME_SHADOWING")
+        val traits = ai.appdna.sdk.core.IdentifyTraits.sanitize(traits)
         // Capture pre-identify ids so the backend alias call + identify event
         // can include the previous values (iOS parity, AppDNA.swift:185-216).
         val previousAnonId = identityManager?.currentIdentity?.anonId
@@ -3104,7 +3108,9 @@ internal fun buildIdentifyProps(
         props["previous_user_id"] = previousUserId
     }
     if (traits != null) {
-        props["traits"] = traits
+        // JSON values and LocationData (as its answer map) only; the public identify already sanitised
+        // and logged, so this is silent and a no-op for it ([ai.appdna.sdk.core.IdentifyTraits]).
+        props["traits"] = ai.appdna.sdk.core.IdentifyTraits.sanitize(traits, log = false) ?: traits
     }
     return props
 }
