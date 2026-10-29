@@ -226,8 +226,9 @@ internal object HostDataResolver {
      * - a nested scheme separator after the outer `://` ([NESTED_SCHEME_SEPARATOR]), wherever it is
      *   written, in the literal text or in a token's fallback;
      * - the end of the first token after the host, wherever it sits (path or query), so every token
-     *   that follows another token is covered: the earlier token's value is not known from the
-     *   literal, and it may supply the nested scheme, and a `?` before it too.
+     *   that follows another token is covered, whatever its position: the earlier token's value is not
+     *   known from the literal (a value substituted in the query may carry a nested URL; one in the path
+     *   is percent-encoded, so it cannot open a query or a scheme, and is covered only to keep the rule simple).
      *
      * The Swift twin is `HostDataResolver.nestedURLRanges`.
      */
