@@ -17,7 +17,20 @@ import kotlinx.coroutines.launch
 // The class itself remains opaque — only the delegate-setter and a couple of
 // existing fan-out methods (`showScreen`/`showFlow`) form the public API.
 class ScreenManager private constructor() {
-    companion object { val shared = ScreenManager() }
+    companion object {
+        val shared = ScreenManager()
+
+        /** The screens module's own events, which do not run screen triggers (see [evaluateTriggers]). */
+        internal val OWN_EVENTS = setOf(
+            "screen_presented", "screen_dismissed", "screen_action", "screen_response_submitted",
+            "flow_started", "flow_completed", "flow_abandoned", "interception_triggered",
+            "slot_registered", "slot_rendered", "slot_empty",
+            "message_request", "purchase_request", "restore_request",
+        )
+
+        /** A manager with its own index and trigger state, for tests that drive the trigger decision. */
+        internal fun newForTest(): ScreenManager = ScreenManager()
+    }
 
     private var screenIndex: ScreenIndex? = null
     private val screenCache = mutableMapOf<String, ScreenConfig>()
@@ -506,30 +519,58 @@ class ScreenManager private constructor() {
         return assignment.screenId to config
     }
 
+    /**
+     * Every tracked event (`AppDNA.track`) runs the screen triggers, as messages and surveys run theirs. The
+     * screens module's own events are skipped: a session-count, install-age or trait trigger matches on any
+     * evaluation, and a presented (or failed) screen tracking `screen_*` must not re-trigger itself.
+     */
     fun evaluateTriggers(event: String, properties: Map<String, Any>?) {
-        // Spec audit-2 P1 — consent gate. Mirrors
-        // iOS ScreenManager.swift:362 — `read path` (screenForSlot,
-        // NavigationInterceptor) already checks consent; the trigger path
-        // was missing it. Without this, screens fire from analytics
-        // events even when the user revoked consent.
-        if (!AppDNA.isConsentGranted()) return
-        val index = screenIndex ?: return
-        val entries = index.screens ?: return
-        val traits = AppDNA.getUserTraits()
-        // Spec audit-2 P1 — wire SessionManager
-        // into AutoTriggerEngine instead of the previous hardcoded
-        // sessionCount=1 / daysSinceInstall=0. Audience rules using
-        // `sessionCount.min: 5` previously NEVER matched on Android.
-        // daysSinceInstall stays 0 because Android does not yet
-        // persist an install epoch (parity with iOS — both platforms
-        // share this gap; tracked under future SPEC).
-        val sessionCount = AppDNA.sessionManager?.sessionsThisInstall()?.toInt() ?: 1
-        val screenId = autoTriggerEngine.evaluate(entries, event, properties, traits, sessionCount = sessionCount, daysSinceInstall = 0, currentScreenName = null)
-        if (screenId != null) {
-            if (!ai.appdna.sdk.core.PresentationCoordinator.shared.canPresent(
-                ai.appdna.sdk.core.PresentationCoordinator.PresentationType.SCREEN, isAutoTriggered = true)) return
-            showScreen(screenId)
-        }
+        if (event in OWN_EVENTS) return
+        present { triggeredScreen(event, properties, currentScreenName = null) }
+    }
+
+    /**
+     * A host screen appeared: evaluate the `on_screen` triggers against its name. Called from the same
+     * place the "after" navigation interceptions are (every Activity resume, and `notifyScreenAppeared`
+     * for Compose screens). An event is not involved, so no `events` trigger matches here.
+     */
+    fun onScreenAppeared(screenName: String) {
+        present { triggeredScreen(event = "", properties = null, currentScreenName = screenName) }
+    }
+
+    /**
+     * The ONE trigger decision: which screen (if any) this event or screen appearance presents. Every
+     * trigger kind the console can author is evaluated by [AutoTriggerEngine] (events with their
+     * conditions, session count, days since install, the current screen, user traits) together with the
+     * frequency caps, which the engine records when it picks a screen.
+     */
+    internal fun triggeredScreen(
+        event: String,
+        properties: Map<String, Any>?,
+        currentScreenName: String?,
+        inputs: ScreenTriggerInputs = ScreenTriggerInputs.current(),
+        traits: Map<String, Any> = AppDNA.getUserTraits(),
+    ): String? {
+        // Consent gate (iOS `ScreenManager.evaluateTriggers`): screens never fire from analytics events
+        // once the user revoked consent.
+        if (!AppDNA.isConsentGranted()) return null
+        val entries = run { lock.lock(); try { screenIndex?.screens } finally { lock.unlock() } } ?: return null
+        return autoTriggerEngine.evaluate(
+            entries, event, properties, traits,
+            sessionCount = inputs.sessionCount,
+            daysSinceInstall = inputs.daysSinceInstall,
+            currentScreenName = currentScreenName,
+        )
+    }
+
+    /**
+     * Presents what [decide] picks. Presentability is checked FIRST: the engine records an impression when it
+     * picks a screen, so a pick that could not be shown would otherwise spend the screen's frequency cap.
+     */
+    private inline fun present(decide: () -> String?) {
+        if (!ai.appdna.sdk.core.PresentationCoordinator.shared.canPresent(
+            ai.appdna.sdk.core.PresentationCoordinator.PresentationType.SCREEN, isAutoTriggered = true)) return
+        decide()?.let { showScreen(it) }
     }
 
     fun enableNavigationInterception(forScreens: List<String>? = null) {

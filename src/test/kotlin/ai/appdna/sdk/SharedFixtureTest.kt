@@ -844,27 +844,47 @@ class SharedFixtureTest(
     // ---------------------------------------------------------------------------------------------
 
     /**
-     * evaluate_screen_trigger — REAL ScreenIndexEntry.fromMap + AutoTriggerEngine.evaluate. Each case is
-     * one entry `{trigger_rules: {events: [{event_name, conditions}]}}` parsed as the screen index is,
-     * and one tracked event on a fresh engine (no frequency state carried between cases).
+     * evaluate_screen_trigger — the LIVE trigger decision, `ScreenManager.triggeredScreen`, which both
+     * `evaluateTriggers` (every tracked event) and `onScreenAppeared` (every screen that appears) call.
+     * Each case is one screen-index entry, parsed by `ScreenIndex.fromMap` as the index is, on a fresh
+     * manager (its own frequency state). A case's `steps` run in order on that manager and record one
+     * fired/not-fired each; a case without steps is one step. The trigger inputs a device would read
+     * (`session_count`, `days_since_install`, `user_traits`) come from the case.
      */
     private fun runEvaluateScreenTrigger(action: JSONObject, spy: Spy) {
-        val event = action.getString("event")
+        val defaultEvent = action.optStringOrNull("event") ?: ""
         val cases = action.optJSONArray("cases") ?: unsupported("evaluate_screen_trigger without cases")
         spy.state["fired"] = (0 until cases.length()).map { i ->
             val case = cases.getJSONObject(i)
-            val trigger = mutableMapOf<String, Any?>("event_name" to event)
-            case.optJSONArray("conditions")?.let { trigger["conditions"] = it.asList() }
-            val entry = ai.appdna.sdk.screens.ScreenIndexEntry.fromMap(
-                mapOf("id" to "s1", "name" to "Screen", "trigger_rules" to mapOf("events" to listOf(trigger))),
+            val rules: Map<String, Any?> = case.optJSONObject("trigger_rules")?.asMap() ?: run {
+                val trigger = mutableMapOf<String, Any?>("event_name" to defaultEvent)
+                case.optJSONArray("conditions")?.let { trigger["conditions"] = it.asList() }
+                mapOf("events" to listOf(trigger))
+            }
+            val manager = ai.appdna.sdk.screens.ScreenManager.newForTest()
+            manager.updateIndex(ai.appdna.sdk.screens.ScreenIndex.fromMap(
+                mapOf("screens" to listOf(mapOf("id" to "s1", "name" to "Screen", "trigger_rules" to rules))),
+            ))
+            val inputs = ai.appdna.sdk.screens.ScreenTriggerInputs(
+                sessionCount = case.optInt("session_count", 1),
+                daysSinceInstall = if (case.has("days_since_install") && case.isNull("days_since_install")) null
+                    else case.optInt("days_since_install", 0),
             )
             @Suppress("UNCHECKED_CAST")
-            val properties = case.optJSONObject("properties")?.asMap()
-                ?.filterValues { it != null } as Map<String, Any>?
-            ai.appdna.sdk.screens.AutoTriggerEngine().evaluate(
-                entries = listOf(entry), event = event, properties = properties, userTraits = emptyMap(),
-                sessionCount = 1, daysSinceInstall = 0, currentScreenName = null,
-            ) != null
+            val traits = (case.optJSONObject("user_traits")?.asMap()?.mapValues { it.value ?: JSONObject.NULL }
+                ?: emptyMap()) as Map<String, Any>
+            fun step(s: JSONObject): Boolean {
+                @Suppress("UNCHECKED_CAST")
+                val properties = s.optJSONObject("properties")?.asMap()?.filterValues { it != null } as Map<String, Any>?
+                return manager.triggeredScreen(
+                    event = s.optStringOrNull("event") ?: (if (s.has("screen")) "" else defaultEvent),
+                    properties = properties,
+                    currentScreenName = s.optStringOrNull("screen"),
+                    inputs = inputs, traits = traits,
+                ) != null
+            }
+            val steps = case.optJSONArray("steps")
+            if (steps == null) step(case) else (0 until steps.length()).map { step(steps.getJSONObject(it)) }
         }
     }
 

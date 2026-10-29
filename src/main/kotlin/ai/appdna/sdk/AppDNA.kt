@@ -565,6 +565,10 @@ object AppDNA {
     private var eventDatabase: ai.appdna.sdk.storage.EventDatabase? = null
     private var connectivityMonitor: ai.appdna.sdk.network.ConnectivityMonitor? = null
     private var appContext: Context? = null
+
+    /** When the app was first installed on this device (epoch ms), or null when it cannot be read. */
+    internal fun installEpochMs(): Long? =
+        ai.appdna.sdk.config.ExperimentEligibilityContext.current(appContext, emptyMap()).installEpochMs
     private var bootstrapOrgId: String? = null
     private var bootstrapAppId: String? = null
 

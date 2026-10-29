@@ -16,7 +16,7 @@ internal class AutoTriggerEngine {
         properties: Map<String, Any>?,
         userTraits: Map<String, Any>,
         sessionCount: Int,
-        daysSinceInstall: Int,
+        daysSinceInstall: Int?,
         currentScreenName: String?,
     ): String? {
         val now = System.currentTimeMillis()
@@ -35,7 +35,7 @@ internal class AutoTriggerEngine {
 
     private fun evaluateEntry(
         entry: ScreenIndexEntry, event: String, properties: Map<String, Any>?,
-        userTraits: Map<String, Any>, sessionCount: Int, daysSinceInstall: Int,
+        userTraits: Map<String, Any>, sessionCount: Int, daysSinceInstall: Int?,
         currentScreenName: String?, now: Long,
     ): Boolean {
         // Check scheduling
@@ -88,7 +88,8 @@ internal class AutoTriggerEngine {
         }
 
         // Days since install
-        rules.daysSinceInstall?.let { t ->
+        // An unknown install time matches no install-age rule.
+        if (daysSinceInstall != null) rules.daysSinceInstall?.let { t ->
             val minOk = t.min == null || daysSinceInstall >= t.min
             val maxOk = t.max == null || daysSinceInstall <= t.max
             if (minOk && maxOk && (t.min != null || t.max != null)) matched = true

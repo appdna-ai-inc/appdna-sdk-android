@@ -13,17 +13,17 @@ import org.junit.Test
  */
 class TraitTriggerOperatorsTest {
 
+    // Through the live decision every tracked event runs (`ScreenManager.triggeredScreen`), on a fresh manager.
     private fun shown(operator: String, value: Any?, traits: Map<String, Any>): String? =
-        AutoTriggerEngine().evaluate(
-            entries = listOf(
+        ScreenManager.newForTest().run {
+            updateIndex(ScreenIndex(screens = listOf(
                 ScreenIndexEntry(
                     id = "s1", name = "Offer",
                     triggerRules = UnifiedTriggerRules(userTraits = listOf(TraitCondition("plan", operator, value))),
                 ),
-            ),
-            event = "app_open", properties = null, userTraits = traits,
-            sessionCount = 1, daysSinceInstall = 0, currentScreenName = null,
-        )
+            )))
+            triggeredScreen("app_open", null, null, ScreenTriggerInputs(sessionCount = 1, daysSinceInstall = 0), traits)
+        }
 
     @Test fun anUnknownOperatorDoesNotFire() = assertNull(shown("is_one_of", "pro", mapOf("plan" to "pro")))
 

@@ -20,10 +20,11 @@ class TraitExistsNonNullTriggerTest {
         triggerRules = UnifiedTriggerRules(userTraits = listOf(TraitCondition(trait = "name", operator = "exists"))),
     )
 
-    private fun shown(traits: Map<String, Any>): String? = AutoTriggerEngine().evaluate(
-        entries = listOf(entry), event = "app_open", properties = null, userTraits = traits,
-        sessionCount = 1, daysSinceInstall = 0, currentScreenName = null,
-    )
+    // Through the live decision every tracked event runs (`ScreenManager.triggeredScreen`), on a fresh manager.
+    private fun shown(traits: Map<String, Any>): String? = ScreenManager.newForTest().run {
+        updateIndex(ScreenIndex(screens = listOf(entry)))
+        triggeredScreen("app_open", null, null, ScreenTriggerInputs(sessionCount = 1, daysSinceInstall = 0), traits)
+    }
 
     @Test
     fun aNullTraitDoesNotExist() {
