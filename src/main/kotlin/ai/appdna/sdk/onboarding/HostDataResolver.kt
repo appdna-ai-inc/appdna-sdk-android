@@ -225,9 +225,9 @@ internal object HostDataResolver {
      * from the first of:
      * - a nested scheme separator after the outer `://` ([NESTED_SCHEME_SEPARATOR]), wherever it is
      *   written, in the literal text or in a token's fallback;
-     * - the end of the first token in the query (after the first `?` outside any token), so every token
-     *   that follows another token in the query is covered: the earlier token's value is not known
-     *   from the literal, and it may supply the nested scheme.
+     * - the end of the first token after the host, wherever it sits (path or query), so every token
+     *   that follows another token is covered: the earlier token's value is not known from the
+     *   literal, and it may supply the nested scheme, and a `?` before it too.
      *
      * The Swift twin is `HostDataResolver.nestedURLRanges`.
      */
@@ -236,18 +236,7 @@ internal object HostDataResolver {
         val from = outer + 3
         val starts = mutableListOf<Int>()
         NESTED_SCHEME_SEPARATOR.find(template, from)?.let { starts += it.range.first }
-        val tokens = extractTemplateTokens(template)
-        var query: Int? = null
-        var i = from
-        for (t in tokens + null) {
-            val literalEnd = t?.index ?: template.length
-            if (i < literalEnd) {
-                val q = template.indexOf('?', i)
-                if (q in i until literalEnd) { query = q; break }
-            }
-            if (t != null) i = maxOf(i, t.index + t.raw.length)
-        }
-        query?.let { q -> tokens.firstOrNull { it.index > q }?.let { starts += it.index + it.raw.length } }
+        extractTemplateTokens(template).firstOrNull { it.index >= from }?.let { starts += it.index + it.raw.length }
         val start = starts.minOrNull() ?: return emptyList()
         return listOf(start until template.length)
     }

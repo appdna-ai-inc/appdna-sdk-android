@@ -18,6 +18,8 @@ import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
+import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.TextFieldValue
@@ -298,7 +300,12 @@ private class LocationFieldFocus {
  * manager on the same sets.
  *
  * What the user would otherwise notice is handled here:
- * - focus: a field that had focus asks for it again as soon as it is drawn, so the keyboard stays up;
+ * - focus: a field that had focus asks for it again as soon as it is drawn;
+ * - the keyboard: it stays as it was. A field that gains focus starts an input session, and a new session
+ *   shows the keyboard, so a keyboard the user had hidden (Back hides it and leaves the field focused)
+ *   would reopen on a tap of a suggestion or of the clear button. Whether it was showing is read when the
+ *   generation changes, before the replaced field ends its session ([locationImeShown]); when it was
+ *   hidden the new session is told to hide it in the same batch, so it never shows;
  * - leaving the field: only the field on screen reports it ([LocationSuggestionSearch.editingEnded], which
  *   ends the search). The replaced field losing focus is not the user leaving;
  * - [field] is handed `isCurrent`: a value delivered by the replaced field (its input session ending)
@@ -314,6 +321,10 @@ internal fun LocationTextFieldGeneration(
     field: @Composable (focusModifier: Modifier, isCurrent: () -> Boolean) -> Unit,
 ) {
     val focus = remember(holder) { LocationFieldFocus() }
+    val view = LocalView.current
+    val keyboard = LocalSoftwareKeyboardController.current
+    // Read while composing the change, before the replaced field is disposed and its session ends.
+    val imeShown = remember(generation) { locationImeShown(view) }
     key(generation) {
         val focusRequester = remember { FocusRequester() }
         // Whether THIS field has had focus: a field that never had it reports no leaving.
@@ -336,9 +347,27 @@ internal fun LocationTextFieldGeneration(
             }
         field(focusModifier, isCurrent)
         LaunchedEffect(Unit) {
-            if (focus.focused) focusRequester.requestFocus()
+            if (focus.focused) {
+                // The request dispatches the focus event at once, so the field has queued its new session
+                // (which would show the keyboard) by the time the hide is queued after it.
+                focusRequester.requestFocus()
+                if (!imeShown) keyboard?.hide()
+            }
         }
     }
+}
+
+/**
+ * Whether the soft keyboard is showing in the window that holds [view]: the root window insets' IME
+ * visibility, and true when the insets are not available, so a field keeps the keyboard it had. A test
+ * seam: production always reads the window; a Robolectric test, which has no IME window, answers from
+ * its shadow input method manager.
+ */
+@Volatile
+internal var locationImeShown: (android.view.View) -> Boolean = { view ->
+    androidx.core.view.ViewCompat.getRootWindowInsets(view)
+        ?.isVisible(androidx.core.view.WindowInsetsCompat.Type.ime())
+        ?: true
 }
 
 /** One geocode proxy reply: the HTTP status and the body text (the error body for a non-2xx). */
