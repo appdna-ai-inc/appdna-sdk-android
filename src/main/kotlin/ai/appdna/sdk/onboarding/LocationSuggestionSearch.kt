@@ -70,6 +70,19 @@ internal sealed class LocationResolveOutcome {
 }
 
 /**
+ * The characters a user sees in [text]: grapheme clusters, so a flag, an emoji or a letter typed with a
+ * combining accent is one, as Swift's `String.count` counts it on iOS. `String.length` counts UTF-16
+ * units and made Min characters reach its threshold early on the same input.
+ */
+internal fun characterCount(text: String): Int {
+    val it = java.text.BreakIterator.getCharacterInstance()
+    it.setText(text)
+    var count = 0
+    while (it.next() != java.text.BreakIterator.DONE) count++
+    return count
+}
+
+/**
  * THE ONE state holder both Android location surfaces bind to — the form-step
  * [LocationFieldComposable] and the `input_location` content block — so the shared fixtures and the
  * unit tests drive the code the composables run. A plain class: the composables `remember` it and
@@ -465,7 +478,7 @@ internal class LocationSuggestionSearch(
      */
     private fun search(query: String, settings: LocationSearchSettings) {
         cancelSearch()
-        if (query.length < settings.minChars || query.isBlank()) {
+        if (characterCount(query) < settings.minChars || query.isBlank()) {
             results = emptyList()
             isDropdownOpen = false
             return
