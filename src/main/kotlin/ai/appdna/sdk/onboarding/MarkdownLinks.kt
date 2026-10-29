@@ -778,7 +778,7 @@ internal object MarkdownLinks {
             val gt = p.lastIndexOf('>')
             if (gt > 0) p.indexOf(TOKEN).takeIf { it in 0 until gt }?.let { starts += it }
             for (marker in listOf("www.", "mailto:", "xmpp:")) {
-                p.indexOf(marker, ignoreCase = true).takeIf { it >= 0 }?.let { starts += it }
+                indexOfAscii(p, marker).takeIf { it >= 0 }?.let { starts += it }
             }
             // An email address may begin at any `@` with a local part before it: a later `@` starts
             // one when the first has none (`@{{…}}@host`).
@@ -794,6 +794,20 @@ internal object MarkdownLinks {
             out += at[start] until w
         }
         return out
+    }
+
+    /**
+     * The first index of [marker] in [s], ASCII letters compared without case and nothing else, as the
+     * markdown parser compares them: a dotless `ı` or a dotted `İ` is not an `i`. (`indexOf` with
+     * `ignoreCase` folds every script, so it read `maılto:` as `mailto:`.)
+     */
+    private fun indexOfAscii(s: String, marker: String): Int {
+        fun fold(c: Char) = if (c in 'A'..'Z') c + 32 else c
+        outer@ for (i in 0..s.length - marker.length) {
+            for (k in marker.indices) if (fold(s[i + k]) != fold(marker[k])) continue@outer
+            return i
+        }
+        return -1
     }
 
     private fun isEmailChar(c: Char) = isAsciiAlnum(c) || c in ".+-_"
