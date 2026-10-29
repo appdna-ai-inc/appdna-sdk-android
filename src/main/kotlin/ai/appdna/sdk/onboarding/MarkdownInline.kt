@@ -12,7 +12,9 @@ package ai.appdna.sdk.onboarding
  *   with the nearest opener before it;
  * - `~a~` and `~~a~~` struck through (the opener and closer the same length; three or more is text);
  * - a code span drawn as its text, in a monospaced face, with nothing inside it parsed;
- * - a backslash escape drawn as the character it escapes;
+ * - a backslash escape drawn as the character it escapes, and an entity reference (`&amp;`, `&#35;`)
+ *   as its characters — never inside a code span;
+ * - an inline HTML tag, comment or declaration drawn as its characters, nothing inside it parsed;
  * - every link form [MarkdownLinks] finds, its label's own emphasis drawn; a link whose URL Foundation
  *   cannot make draws its label (an autolink its address) as plain text, without its own emphasis;
  * - an image draws its alt text, plain; an image with no alt text draws nothing;
@@ -103,6 +105,15 @@ internal object MarkdownInline {
                 i += 2
                 continue
             }
+            if (c == '&') {
+                val entity = MarkdownLinks.entityAt(t, i, to)
+                if (entity != null) {
+                    // Drawn as its characters, and never a delimiter (`&#42;` is a star, not emphasis).
+                    text.append(entity.first)
+                    i = entity.second
+                    continue
+                }
+            }
             if (c == '*' || c == '_' || c == '~') {
                 var e = i
                 while (e < to && t[e] == c && (e == i || starts[e] == null)) e++
@@ -133,6 +144,7 @@ internal object MarkdownInline {
 
     private fun atomNode(t: String, atom: MarkdownLinks.Atom, line: Line, atoms: List<MarkdownLinks.Atom>): Node = when (atom) {
         is MarkdownLinks.Atom.Code -> Node.Code(atom.text)
+        is MarkdownLinks.Atom.Html -> Node.Text(t.substring(atom.start, atom.end))
         is MarkdownLinks.Atom.Image -> Node.Plain(plain(labelNodes(t, atom.labelStart, atom.labelEnd, line)))
         is MarkdownLinks.Atom.Anchor -> {
             val link = atom.link

@@ -22,6 +22,11 @@ Wraps iOS 1.0.83. Builds on Play Billing Library 8, which Google Play now requir
 
 ### Fixed
 
+- **An HTML entity in rich text or an agreement's copy draws as its character, as on iOS** (#1221).
+  `&amp;`, `&copy;`, `&nbsp;` and `&#35;` were drawn as typed; every HTML5 named reference (with its `;`)
+  and every numeric one is now decoded, in text, in a link's label and address, and in an `<…>`
+  autolink — not inside a code span or after a backslash. An inline HTML tag (`<span title="*x*">`) is
+  still drawn as typed, but the markdown inside it is no longer read, as on iOS.
 - **Rich text and an agreement's copy draw markdown as iOS draws it** (#1183, #1186). Android knew only
   `**bold**`, `*italic*` and `++underline++`, paired by an earliest-match rule, so `_emphasis_`,
   `__strong__`, `~~struck~~`, a code span's backticks and a backslash escape were drawn as typed, nested

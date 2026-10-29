@@ -71,6 +71,8 @@ internal object MarkdownLinks {
         class Image(start: Int, end: Int, val labelStart: Int, val labelEnd: Int) : Atom(start, end)
         /** A link; an inline link's label is `[link.start + 1, link.start + 1 + label.length)`. */
         class Anchor(val link: Link) : Atom(link.start, link.end)
+        /** An inline HTML tag, comment, declaration or CDATA section: drawn as its characters, nothing inside parsed. */
+        class Html(start: Int, end: Int) : Atom(start, end)
     }
 
     fun atoms(t: String, from: Int, to: Int): List<Atom> {
@@ -133,6 +135,13 @@ internal object MarkdownLinks {
             if (c == '<') {
                 val link = angle(t, i, to)
                 if (link != null) { found += link; i = link.end; continue }
+                val html = htmlEnd(t, i, to)
+                if (html > i) {
+                    opaque += i until html
+                    atoms?.add(Atom.Html(i, html))
+                    i = html
+                    continue
+                }
             }
             if (brackets == 0) {
                 val floor = maxOf(from, found.lastOrNull()?.end ?: from, opaque.lastOrNull()?.let { it.last + 1 } ?: from)
@@ -268,12 +277,13 @@ internal object MarkdownLinks {
         val label = t.substring(open + 1, k)
         var j = k + 2
         while (j < n && (t[j] == ' ' || t[j] == '\t')) j++
+        // The destination as written; its entity references are decoded first, then its backslash escapes.
         val dest = StringBuilder()
         if (j < n && t[j] == '<') {
             j++
             while (j < n && t[j] != '>') {
                 if (t[j] == '<') return null
-                if (t[j] == '\\' && j + 1 < n && isEscapable(t[j + 1])) { dest.append(t[j + 1]); j += 2; continue }
+                if (t[j] == '\\' && j + 1 < n && isEscapable(t[j + 1])) { dest.append(t, j, j + 2); j += 2; continue }
                 dest.append(t[j]); j++
             }
             if (j >= n) return null
@@ -282,7 +292,7 @@ internal object MarkdownLinks {
             var parens = 0
             while (j < n) {
                 val c = t[j]
-                if (c == '\\' && j + 1 < n && isEscapable(t[j + 1])) { dest.append(t[j + 1]); j += 2; continue }
+                if (c == '\\' && j + 1 < n && isEscapable(t[j + 1])) { dest.append(t, j, j + 2); j += 2; continue }
                 if (c == '(') parens++
                 if (c == ')') { if (parens == 0) break; parens-- }
                 if (isSpace(c) || c.code < 0x20) break
@@ -291,7 +301,7 @@ internal object MarkdownLinks {
             if (parens != 0) return null
         }
         val close = closeOfInline(t, j, n) ?: return null
-        return Link(open, close + 1, unescape(label), encode(dest.toString()) ?: "", label)
+        return Link(open, close + 1, unescape(label), encode(unescape(decodeEntities(dest.toString()))) ?: "", label)
     }
 
     /** After a destination at [from]: optional spaces, an optional title, optional spaces, then `)`. */
@@ -315,9 +325,11 @@ internal object MarkdownLinks {
     /** `<scheme:…>` or `<user@host>` starting at [open] (a `<`). */
     private fun angle(t: String, open: Int, to: Int): Link? {
         val close = t.indexOf('>', open + 1).takeIf { it in (open + 2) until to } ?: return null
-        val inner = t.substring(open + 1, close)
-        if (SCHEME.matches(inner)) return Link(open, close + 1, inner, encode(inner) ?: "")
-        if (EMAIL.matches(inner)) return Link(open, close + 1, inner, "mailto:$inner")
+        val raw = t.substring(open + 1, close)
+        // The address draws, and opens, with its entity references decoded (`&amp;` is `&`).
+        val inner = decodeEntities(raw)
+        if (SCHEME.matches(raw)) return Link(open, close + 1, inner, encode(inner) ?: "")
+        if (EMAIL.matches(raw)) return Link(open, close + 1, inner, "mailto:$inner")
         return null
     }
 
@@ -518,6 +530,76 @@ internal object MarkdownLinks {
     private fun isAsciiAlpha(c: Char) = c in 'a'..'z' || c in 'A'..'Z'
 
     fun isEscapable(c: Char) = c in "!\"#$%&'()*+,-./:;<=>?@[\\]^_`{|}~"
+
+    /**
+     * The entity reference at [i] (a `&`) as cmark decodes it — its characters and the index after it — or
+     * null where there is none: `&name;` for every HTML5 named reference ([ai.appdna.sdk.generated.HtmlEntities]),
+     * `&#NN;` and `&#xHH;` (a code point of 0, a surrogate or past U+10FFFF draws U+FFFD). A name without its
+     * `;` (`&copy`) is not one.
+     */
+    fun entityAt(t: String, i: Int, to: Int): Pair<String, Int>? {
+        if (i + 2 >= to || t[i] != '&') return null
+        if (t[i + 1] == '#') {
+            val hex = t[i + 2] == 'x' || t[i + 2] == 'X'
+            var k = if (hex) i + 3 else i + 2
+            val digitsStart = k
+            var cp = 0
+            while (k < to) {
+                val c = t[k]
+                val d = when {
+                    c in '0'..'9' -> c - '0'
+                    hex && c in 'a'..'f' -> c - 'a' + 10
+                    hex && c in 'A'..'F' -> c - 'A' + 10
+                    else -> break
+                }
+                cp = minOf(cp * (if (hex) 16 else 10) + d, 0x110000)
+                k++
+            }
+            if (k == digitsStart || k >= to || t[k] != ';') return null
+            if (cp == 0 || cp in 0xD800..0xDFFF || cp >= 0x110000) cp = 0xFFFD
+            return String(Character.toChars(cp)) to k + 1
+        }
+        var k = i + 1
+        while (k < to && k - i - 1 < ai.appdna.sdk.generated.HtmlEntities.MAX_NAME_LENGTH && isAsciiAlnum(t[k])) k++
+        if (k == i + 1 || k >= to || t[k] != ';') return null
+        val chars = ai.appdna.sdk.generated.HtmlEntities.byName[t.substring(i + 1, k)] ?: return null
+        return chars to k + 1
+    }
+
+    /** [s] with its entity references decoded ([entityAt]). */
+    fun decodeEntities(s: String): String {
+        if (!s.contains('&')) return s
+        val out = StringBuilder()
+        var i = 0
+        while (i < s.length) {
+            val e = if (s[i] == '&') entityAt(s, i, s.length) else null
+            if (e != null) { out.append(e.first); i = e.second; continue }
+            out.append(s[i]); i++
+        }
+        return out.toString()
+    }
+
+    private const val HTML_SPACE = " \t\n\r\u000B\u000C"
+    private val HTML_TAG = java.util.regex.Pattern.compile(
+        "<[A-Za-z][A-Za-z0-9-]*" +
+            "(?:[$HTML_SPACE]+[A-Za-z_:][A-Za-z0-9_.:-]*(?:[$HTML_SPACE]*=[$HTML_SPACE]*(?:[^$HTML_SPACE\"'=<>`]+|'[^']*'|\"[^\"]*\"))?)*" +
+            "[$HTML_SPACE]*/?>" +
+            "|</[A-Za-z][A-Za-z0-9-]*[$HTML_SPACE]*>" +
+            "|<!--->|<!-->|<!--.*?-->" +
+            "|<\\?.*?\\?>" +
+            "|<![A-Za-z][^>]*>" +
+            "|<!\\[CDATA\\[.*?]]>",
+        java.util.regex.Pattern.DOTALL,
+    )
+
+    /**
+     * Where an inline HTML tag starting at [open] (a `<`) ends, or [open] where there is none: an open or closing
+     * tag, a comment, a processing instruction, a declaration or a CDATA section, as CommonMark defines them.
+     */
+    private fun htmlEnd(t: String, open: Int, to: Int): Int {
+        val m = HTML_TAG.matcher(t).region(open, to)
+        return if (m.lookingAt()) m.end() else open
+    }
 
     /** [s] with its backslash escapes resolved. */
     fun unescape(s: String): String {
