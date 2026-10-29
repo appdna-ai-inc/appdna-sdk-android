@@ -290,6 +290,14 @@ fun LocationFieldComposable(
 /** Whether a location text field has focus, across the fields [LocationTextFieldGeneration] draws. */
 private class LocationFieldFocus {
     var focused = false
+
+    /**
+     * The generation of the field last composed: the one on screen. Written while composing, so it is
+     * already the new generation when the replaced field is removed and loses its focus (that happens
+     * when the change is applied, after the composition and before any `onDispose`), and still the old
+     * one when a blur bumps the generation from inside the field's own focus change.
+     */
+    var drawn = -1
 }
 
 /**
@@ -308,7 +316,11 @@ private class LocationFieldFocus {
  *   generation changes, before the replaced field ends its session ([locationImeShown]); when it was
  *   hidden the new session is told to hide it in the same batch, so it never shows;
  * - leaving the field: only the field on screen reports it ([LocationSuggestionSearch.editingEnded], which
- *   ends the search). The replaced field losing focus is not the user leaving;
+ *   ends the search). The replaced field losing focus is not the user leaving. The field on screen losing
+ *   focus is, even when the generation has already moved on: a blur ends the input method's composition,
+ *   and committing it can be the first edit of Google's line, which bumps the generation from inside the
+ *   field's own focus change, before this field hears of it (#1147). That field leaves for real: it
+ *   reports the leaving, and the field drawn next does not take the focus back;
  * - [field] is handed `isCurrent`: a value delivered by the replaced field (its input session ending)
  *   must be ignored.
  *
@@ -332,14 +344,21 @@ internal fun LocationTextFieldGeneration(
         // Whether THIS field has had focus: a field that never had it reports no leaving.
         val hadFocus = remember { booleanArrayOf(false) }
         val isCurrent = { generation == holder.textSets }
+        // Composing this generation makes it the field on screen ([LocationFieldFocus.drawn]).
+        focus.drawn = generation
         val focusModifier = Modifier
             .focusRequester(focusRequester)
             .onFocusChanged { state ->
-                if (!isCurrent()) return@onFocusChanged
                 if (state.isFocused) {
+                    if (!isCurrent()) return@onFocusChanged
                     hadFocus[0] = true
                     focus.focused = true
-                } else if (hadFocus[0]) {
+                } else if (hadFocus[0] && focus.drawn == generation) {
+                    // The field on screen lost focus: the user left it. Not gated on [isCurrent]: when
+                    // the blur's own commit was the first edit of Google's line, the generation has
+                    // already moved on, and ignoring the leaving here made the next field take the focus
+                    // back and let the search the commit started run (#1147). A field already replaced
+                    // (a newer generation composed) losing focus as it is removed is not the user.
                     hadFocus[0] = false
                     focus.focused = false
                     // Leaving the field ends its search: a debounced search still pending would
