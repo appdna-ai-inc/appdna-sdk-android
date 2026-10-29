@@ -10086,6 +10086,45 @@ private fun FormInputTextAreaBlock(
     }
 }
 
+/**
+ * The colours an `input_password` block draws with when its `field_style` leaves them unset, picked
+ * from what is behind the block ([GoogleMapsAttribution.needsLightInk]). On a light surface: iOS's
+ * defaults, a `#D1D5DB` outline and the system's light-appearance text, placeholder and secondary
+ * colours. On a dark, gradient or image surface: white, so the field stays visible there. The Swift
+ * twin is `UnstyledPasswordField` in `FormInputBlockViews.swift`.
+ */
+internal object UnstyledPasswordField {
+    data class Palette(
+        val border: Color,
+        val focusedBorder: Color,
+        val text: Color,
+        val placeholder: Color,
+        val icon: Color,
+        val cursor: Color,
+    )
+
+    val LIGHT = Palette(
+        border = Color(0xFFD1D5DB),
+        focusedBorder = Color(0xFFD1D5DB),
+        text = Color(0xFF000000),
+        placeholder = Color(0x4D3C3C43),
+        icon = Color(0x993C3C43),
+        cursor = Color(0xFF000000),
+    )
+
+    val DARK = Palette(
+        border = Color.White.copy(alpha = 0.3f),
+        focusedBorder = Color.White,
+        text = Color.White,
+        placeholder = Color.White.copy(alpha = 0.5f),
+        icon = Color.White.copy(alpha = 0.7f),
+        cursor = Color.White,
+    )
+
+    fun palette(behind: GoogleMapsAttribution.Backdrop, darkAppearance: Boolean): Palette =
+        if (GoogleMapsAttribution.needsLightInk(behind, darkAppearance)) DARK else LIGHT
+}
+
 /** Password input with show/hide toggle. */
 @Composable
 private fun FormInputPasswordBlock(
@@ -10106,17 +10145,22 @@ private fun FormInputPasswordBlock(
     ) {
         FormFieldLabel(block)
 
-        // QA-R16 \u2014 explicit `OutlinedTextFieldDefaults.colors(...)` so
-        // the password field stops falling through to Material3's purple
-        // `colorScheme.primary` for `focusedBorderColor`, `focusedLabelColor`,
-        // `cursorColor`, `focusedPlaceholderColor` defaults. Reads any
-        // console-authored colors first; otherwise defaults to white-on-
-        // transparent that matches onboarding gradient backgrounds.
-        val focusedBorder = block.field_style?.focused_border_color?.let { StyleEngine.parseColor(it) } ?: Color.White
-        val unfocusedBorder = block.field_style?.border_color?.let { StyleEngine.parseColor(it) } ?: Color.White.copy(alpha = 0.3f)
-        val textCol = block.field_style?.text_color?.let { StyleEngine.parseColor(it) } ?: Color.White
-        val placeholderCol = block.field_style?.placeholder_color?.let { StyleEngine.parseColor(it) } ?: Color.White.copy(alpha = 0.5f)
-        val cursorCol = focusedBorder
+        // Explicit `OutlinedTextFieldDefaults.colors(...)` so the password field never falls
+        // through to Material3's purple `colorScheme.primary`. Console-authored colours win;
+        // an unstyled field takes its defaults from what the step draws behind it
+        // ([UnstyledPasswordField]): grey outline and dark text on a light surface, as on iOS;
+        // white on a dark, gradient or image one.
+        val unstyled = UnstyledPasswordField.palette(
+            LocalGoogleAttributionBackdrop.current,
+            googleAttributionThemeIsDark(),
+        )
+        val focusedBorder = block.field_style?.focused_border_color?.let { StyleEngine.parseColor(it) } ?: unstyled.focusedBorder
+        val unfocusedBorder = block.field_style?.border_color?.let { StyleEngine.parseColor(it) } ?: unstyled.border
+        val authoredText = block.field_style?.text_color?.let { StyleEngine.parseColor(it) }
+        val textCol = authoredText ?: unstyled.text
+        val placeholderCol = block.field_style?.placeholder_color?.let { StyleEngine.parseColor(it) } ?: unstyled.placeholder
+        val iconCol = authoredText?.copy(alpha = 0.7f) ?: unstyled.icon
+        val cursorCol = block.field_style?.focused_border_color?.let { StyleEngine.parseColor(it) } ?: unstyled.cursor
         // Mirror FormInputTextBlock font_size + field_height onto the password sibling.
         val pwFontSize = fieldInputFontSize(block)
         val pwFieldHeightDp = (block.field_config?.get("field_height") as? Number)?.toFloat()
@@ -10153,7 +10197,7 @@ private fun FormInputPasswordBlock(
                         else
                             androidx.compose.material.icons.Icons.Filled.Visibility,
                         contentDescription = if (passwordVisible) "Hide password" else "Show password",
-                        tint = textCol.copy(alpha = 0.7f),
+                        tint = iconCol,
                     )
                 }
             },

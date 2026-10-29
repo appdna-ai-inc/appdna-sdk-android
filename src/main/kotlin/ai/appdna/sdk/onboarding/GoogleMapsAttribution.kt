@@ -242,6 +242,15 @@ internal object GoogleMapsAttribution {
      */
     fun textColorHex(on: Backdrop, darkAppearance: Boolean): String =
         if (variant(on, darkAppearance) == Variant.GRAY) "#5E5E5E" else "#FFFFFF"
+
+    /**
+     * Whether content drawn on [on] needs light ink: a dark plain surface, or a busy one (a gradient,
+     * an image, an animation). The same light-or-dark call the logo variant makes, for other views
+     * that pick an unstyled default from what is behind them. The Swift twin is
+     * `GoogleMapsAttribution.needsLightInk(on:darkAppearance:)`.
+     */
+    fun needsLightInk(on: Backdrop, darkAppearance: Boolean): Boolean =
+        on == Backdrop.Busy || variant(on, darkAppearance) == Variant.WHITE
 }
 
 /**
