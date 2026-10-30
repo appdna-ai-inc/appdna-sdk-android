@@ -644,7 +644,10 @@ internal fun pruneHostDataSelections(
                 is String -> if (v.isNotEmpty() && v !in rendered) {
                     inputValues.remove(fid); SelectedOptionStore.clear(fid); changed = true
                 }
-                is List<*> -> {
+                // Only a list of Strings is a selection to prune (`storedMultiSelection`'s rule, and iOS's
+                // `as? [String]`). A list holding a number is left as stored: filtering it by `toString()`
+                // turned `["1", 2]` into `["1"]` and drew "1" checked where iOS draws nothing.
+                is List<*> -> if (v.all { it is String }) {
                     val kept = v.filter { it?.toString() in rendered }
                     if (kept.size != v.size) {
                         if (kept.isEmpty()) inputValues.remove(fid) else inputValues[fid] = kept
@@ -667,9 +670,12 @@ internal fun pruneHostDataSelections(
  * String. Anything else is not a selection this Select can draw: a stored single answer (a `String`, e.g.
  * one a host patched in through `input_values`), a list holding a number (`[1]`, or `[1.0]` from a
  * React Native host) and a mixed list (`["1", 2]`) all draw nothing checked, and a tap toggles against
- * the empty list. iOS reads the field the same way: its view restores the value only `as? [String]` and
- * resyncs only when it `is [String]`, so on both platforms the drawn selection is exactly what the next
- * tap toggles. The Select's view draws from this and [recordOptionPick] writes from it.
+ * the empty list. That holds when the value arrives MID-STEP too (a host's `inputValuePatches`): the
+ * Select's view re-reads it through this on every change. iOS reads the field the same way: its view
+ * restores the value only `as? [String]` and re-reads every outside change through
+ * `SelectionResync.multiAfterExternalChange`, so on both platforms the drawn selection is exactly what
+ * the next tap toggles. The Select's view draws from this, [recordOptionPick] writes from it, and the
+ * host-data prune (`clearVanishedSelections`) touches only a list this would count.
  */
 internal fun storedMultiSelection(value: Any?): List<String> {
     val list = value as? List<*> ?: return emptyList()
