@@ -209,9 +209,11 @@ internal object GoogleAttributionFixtureDrivers {
             val pickOverride = (pick["override"] as? Map<String, Any?>)?.let { o ->
                 StepConfigOverride(fieldOptions = StepConfigOverride.decodeFieldOptions(stripNulls(o["field_options"])))
             }
+            // `inputs`: what the user entered on the pick step itself before picking (its `step` root).
+            val pickInputs = stripNulls(pick["inputs"] ?: emptyMap<String, Any?>()) as Map<String, Any>
             val resolvedPick = HostDataStepPipeline(pickStep, legacyContext = { templateContext }).resolve(
                 HostDataInputs(
-                    responses = accumulated, stepInputs = emptyMap(), selected = selected, stepOverride = pickOverride,
+                    responses = accumulated, stepInputs = pickInputs, selected = selected, stepOverride = pickOverride,
                     fieldOptionsOverrides = StepConfigOverride.decodeFieldOptions(stripNulls(pick["field_options_overrides"])).orEmpty(),
                 ),
             )
@@ -228,7 +230,19 @@ internal object GoogleAttributionFixtureDrivers {
                 // `in_sheet.inputs`: what the user entered in the sheet before picking (its own inputs).
                 val sheetInputs = (inSheet["inputs"] as? Map<String, Any?>).orEmpty()
                 if (raw != null) resolveSheetBlocks(raw, sheetInputs, opened?.sheet_blocks.orEmpty()) else opened?.sheet_blocks.orEmpty()
-            } ?: resolvedPick.blocks
+            } ?: if (pick["via"] == "view_pass") {
+                // `via: "view_pass"`: the pick step drawn as a step with no raw capture draws it — every block
+                // through the view-level pass (the renderer's call), against the step's own inputs.
+                withShared(selected) {
+                    pickStep.copy(rawContentBlocks = null).config.content_blocks.orEmpty().map {
+                        viewPassBlock(
+                            it, hookData = null, responses = stripNulls(accumulated) as Map<String, Any>,
+                            stepInputs = pickInputs, surface = ai.appdna.sdk.core.TemplateSurface.ONBOARDING,
+                            fieldConfigOverrides = emptyMap(), fieldOptionsOverrides = emptyMap(),
+                        )
+                    }
+                }
+            } else resolvedPick.blocks
             val block = findBlock(pick["block_id"] as? String, pickBlocks)
                 ?: throw AssertionError("the picked block is not on the resolved step")
             // Each picked option is TAPPED through the production write (`recordOptionPick`), in order, so a
@@ -242,8 +256,8 @@ internal object GoogleAttributionFixtureDrivers {
                     ?: throw AssertionError("the picked option $id is not on the resolved step")
             }
             if (options.isEmpty()) throw AssertionError("the pick names no option")
-            val pickInputs = mutableMapOf<String, Any>()
-            for (option in options) recordOptionPick(block, all, option.storedAnswer(), pickInputs)
+            val tapInputs = mutableMapOf<String, Any>()
+            for (option in options) recordOptionPick(block, all, option.storedAnswer(), tapInputs)
             selectedLabel = options.last().label
             selected = SelectedOptionStore.snapshot()
         }

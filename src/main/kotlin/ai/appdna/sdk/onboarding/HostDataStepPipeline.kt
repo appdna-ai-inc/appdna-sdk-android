@@ -474,7 +474,10 @@ internal class HostDataStepPipeline(
         )
         fun r(s: String): String = if (s.contains("{{")) resolveTemplateString(s, hook, responses, session, user, stepIn) else s
         fun typed(s: String): String = resolveTemplateString(s, hook, responses, session, user, stepIn, allTyped = true)
-        return block.withFieldOptions(opts.map { o -> o.withResolvedText(::r).withGoogleKeysOf(o, answers, ::typed) }.toImmutableList())
+        fun readsGoogle(s: String, key: String): Boolean = resolveTemplateStringReadingGoogle(
+            s, hook, responses, session, user, stepIn, key = key, isOption = true, googleAnswers = answers,
+        ).second
+        return block.withFieldOptions(opts.map { o -> o.withResolvedText(::r).withGoogleKeysOf(o, ::readsGoogle, ::typed) }.toImmutableList())
     }
 
     companion object {
@@ -554,13 +557,19 @@ internal fun InputOption.withResolvedText(r: (String) -> String): InputOption =
 
 /**
  * This option (already filled) with the Google keys of [authored]'s `label` / `subtitle` /
- * `leading_text`: each key whose template takes a Google answer's content ([templateReadsGoogle]), with
- * its text as the user typed it ([typed]), merged over the keys it already carries.
+ * `leading_text`: each key whose text, as drawn, shows a Google answer's content ([readsGoogle]: a token
+ * that resolves, where the typed-text rule does not apply), with its text as the user typed it ([typed]),
+ * merged over the keys it already carries. A token that falls back, or one in a link's target, records
+ * nothing.
  */
-internal fun InputOption.withGoogleKeysOf(authored: InputOption, answers: GoogleCredit.Answers, typed: (String) -> String): InputOption {
+internal fun InputOption.withGoogleKeysOf(
+    authored: InputOption,
+    readsGoogle: (text: String, key: String) -> Boolean,
+    typed: (String) -> String,
+): InputOption {
     val found = LinkedHashMap<String, String>()
     for ((key, text) in listOf("label" to authored.label, "subtitle" to authored.subtitle, "leading_text" to authored.leading_text)) {
-        if (text != null && templateReadsGoogle(text, answers)) found[key] = typed(text)
+        if (text != null && text.contains("{{") && readsGoogle(text, key)) found[key] = typed(text)
     }
     return if (found.isEmpty()) this else withGoogleKeys((googleKeys.orEmpty() + found).toSortedMap())
 }

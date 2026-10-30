@@ -1323,7 +1323,29 @@ fun resolveTemplateString(
     /** Every token takes the typed text: text drawn where no Google credit is (off an onboarding step),
      *  or the text an option keeps for a Google key ([InputOption.googleKeys]). */
     allTyped: Boolean = false,
-): String {
+): String = resolveTemplateStringReadingGoogle(
+    text, hookData, responses, sessionData, userTraits, stepInputs, key, isOption, allTyped,
+).first
+
+/**
+ * [resolveTemplateString], and whether what it drew shows a Google answer's content: a token that resolves
+ * (not to its fallback) where the typed-text rule does not apply, on a path that reads a Google answer under
+ * [googleAnswers] ([GoogleCredit.pathCredits]). A token in a markdown link's target, or one that falls
+ * back, shows none. The Swift twin is `resolveTemplateStringReadingGoogle`.
+ */
+internal fun resolveTemplateStringReadingGoogle(
+    text: String,
+    hookData: Map<String, Any>?,
+    responses: Map<String, Any>,
+    sessionData: Map<String, Any>? = null,
+    userTraits: Map<String, Any>? = null,
+    stepInputs: Map<String, Any>? = null,
+    key: String? = null,
+    isOption: Boolean = false,
+    allTyped: Boolean = false,
+    googleAnswers: GoogleCredit.Answers? = null,
+): Pair<String, Boolean> {
+    var readGoogle = false
     val rule = if (allTyped) HostDataResolver.TypedTextRule.ALL else HostDataResolver.typedTextRule(text, key, isOption)
     // `{{var | fallback}}`. The console's picker advertises this syntax and the web
     // preview implements it; neither native did, so the whole literal (pipe included) rendered on
@@ -1332,25 +1354,20 @@ fun resolveTemplateString(
     // and AI-generated flows produce it. The picker offered it and the preview chipped it while
     // this pattern matched nothing, so the literal shipped. Mirrors iOS exactly.
     val pattern = Regex("\\{\\{\\s*([a-zA-Z0-9_.\\-]+)\\s*(?:\\|\\s*([^}]*?)\\s*)?\\}\\}")
-    return pattern.replace(text) { matchResult ->
+    val out = pattern.replace(text) { matchResult ->
         val path = matchResult.groupValues[1]
         val fallback = matchResult.groupValues.getOrNull(2)?.takeIf { it.isNotEmpty() }
+        val typed = rule.covers(matchResult.range.first)
         val resolved = resolveDotPath(
-            path, responses, hookData, userTraits, sessionData, stepInputs, typedText = rule.covers(matchResult.range.first),
+            path, responses, hookData, userTraits, sessionData, stepInputs, typedText = typed,
         )
         // A JSON null (a trait identify kept, a null in hook data) is unresolved, never the text "null".
-        resolved?.takeIf { it != org.json.JSONObject.NULL }?.toString() ?: fallback ?: matchResult.value
+        val shown = resolved?.takeIf { it != org.json.JSONObject.NULL }?.toString()
+        if (shown != null && !typed && googleAnswers != null && GoogleCredit.pathCredits(path, googleAnswers)) readGoogle = true
+        shown ?: fallback ?: matchResult.value
     }
+    return out to readGoogle
 }
-
-/**
- * Whether drawing [text] through [resolveTemplateString] shows a Google answer's content: a token whose
- * path reaches one under `responses` / `step`, or reads a picked option's Google key under `selected`
- * ([GoogleCredit.pathCredits] over [answers]). An option filled with such text records the key
- * ([InputOption.googleKeys]). The Swift twin is `templateReadsGoogle`.
- */
-internal fun templateReadsGoogle(text: String, answers: GoogleCredit.Answers): Boolean =
-    text.contains("{{") && HostDataResolver.extractTemplateTokens(text).any { GoogleCredit.pathCredits(it.path, answers) }
 
 /**
  * Resolves dynamic bindings and template strings on a block.
@@ -1475,9 +1492,15 @@ internal fun resolveBlockBindings(
                 // A key whose text takes a Google answer's content records it with the text as the user
                 // typed it ([InputOption.googleKeys]), as the raw pass records an authored option's — so a
                 // host's options, and a step drawn without raw capture, carry it to a later `selected` path.
-                if (allTyped) next else next.withGoogleKeysOf(o, googleAnswers) {
-                    resolveTemplateString(it, hookData, responses, stepInputs = stepInputs, allTyped = true)
-                }
+                if (allTyped) next else next.withGoogleKeysOf(
+                    o,
+                    readsGoogle = { text, key ->
+                        resolveTemplateStringReadingGoogle(
+                            text, hookData, responses, stepInputs = stepInputs, key = key, isOption = true,
+                            googleAnswers = googleAnswers,
+                        ).second
+                    },
+                ) { resolveTemplateString(it, hookData, responses, stepInputs = stepInputs, allTyped = true) }
             }
             if (optChanged) resolved = resolved.copy(field_options = nextOpts.toImmutableList())
         }
