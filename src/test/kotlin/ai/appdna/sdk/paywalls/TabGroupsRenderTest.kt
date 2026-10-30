@@ -17,7 +17,7 @@ import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
 
 /**
- * #960 — `tab_groups` draws a tab per plan, and the TAB SELECTS WHICH CARD IS SHOWN.
+ * `tab_groups` draws a tab per plan, and the TAB SELECTS WHICH CARD IS SHOWN.
  *
  * The console has offered this style in its picker since it shipped and neither renderer had an arm
  * for it, so an author picked "Tab groups", saw the console preview draw it, published, and every
@@ -25,11 +25,11 @@ import org.robolectric.annotation.Config
  * error, no warning and no blank screen — just the wrong layout.
  *
  * 🔴 THE TAP IS THE TEST, not the screenshot. Rule 24: a control that draws perfectly and does
- * nothing is the defect this repo keeps shipping — #893's chevron drew, #888's five stars drew and
+ * nothing is the defect this repo keeps shipping — a chevron that drew, five rating stars that drew and
  * collected nothing. A tab bar exists to switch panels, so the assertion that matters is that the
  * body CHANGES when a tab is tapped, and that only one plan's card is present at a time.
  *
- * The plans live under `layout.sections[].config.plans` where a real paywall keeps them (#923), not
+ * The plans live under `layout.sections[].config.plans` where a real paywall keeps them, not
  * at the document root — a fixture that put them at the root would pass against code that reaches
  * no real paywall.
  */

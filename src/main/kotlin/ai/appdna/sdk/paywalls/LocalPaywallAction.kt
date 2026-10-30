@@ -3,7 +3,7 @@ package ai.appdna.sdk.paywalls
 import androidx.compose.runtime.compositionLocalOf
 
 /**
- * #1076 — the host's `onPaywallAction`, reachable from anywhere inside a paywall.
+ * The host's `onPaywallAction`, reachable from anywhere inside a paywall.
  *
  * 🔴 A COMPOSITION LOCAL, NOT A PARAMETER, AND THE REASON IS A CRASH. Threading it as a parameter
  * through `PaywallScreen` worked everywhere except a real device, where the app died on launch:

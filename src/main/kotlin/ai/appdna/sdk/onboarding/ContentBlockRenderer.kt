@@ -226,7 +226,7 @@ fun Modifier.applyBlockStyle(style: BlockStyle?, clipContent: Boolean = true): M
 
     // Shadow (must come before clip/background to be visible)
     //
-    // #886 — through `StyleEngine.resolveShadow`, the same seam `applyContainerStyle` uses and the
+    // Through `StyleEngine.resolveShadow`, the same seam `applyContainerStyle` uses and the
     // same seam the shared fixture drives, so a block and a paywall section cannot disagree about
     // what an authored shadow means. `Modifier.shadow` was wrong twice here: it has no offset, so
     // an authored x / y was dropped, and its ambient / spot colours only tint Compose's elevation
@@ -396,7 +396,7 @@ internal fun parseStackAlignment(token: String?): Alignment? {
 }
 
 /**
- * One summary stat, made safe to render (#660).
+ * One summary stat, made safe to render.
  *
  * Returns null only when the card would say nothing at all. `UNRESOLVED_STAT_PLACEHOLDER` stands in
  * for a value the host did not supply, so the card keeps its place instead of the screen silently
@@ -678,7 +678,7 @@ data class ContentBlock(
     val loading_text_color: String? = null,
     // media_gallery: horizontal row of image tiles.
     val gallery_images: kotlinx.collections.immutable.ImmutableList<String>? = null,
-    /** #1021 — an optional title above the strip, belonging to the element. Unset draws nothing. */
+    /** An optional title above the strip, belonging to the element. Unset draws nothing. */
     val gallery_title: String? = null,
     /** The title's colour; unset follows the renderer's default. */
     val gallery_title_color: String? = null,
@@ -853,7 +853,7 @@ data class SocialProvider(
     // non-empty URL the SDK loads the remote image instead of the built-in glyph.
     val icon_url: String? = null,
     /**
-     * Per-provider label size. Requested by QA on #560 once the Style section became findable: the
+     * Per-provider label size. Requested once the Style section became findable: the
      * colours were there and the size was not, so a provider could be styled to match a brand
      * everywhere except its type.
      */
@@ -992,7 +992,7 @@ data class FormFieldBlockStyle(
 )
 
 /**
- * The input text's size — `field_style.font_size` first (#1053), then the two `field_config`
+ * The input text's size — `field_style.font_size` first, then the two `field_config`
  * spellings the console writes, then 14.
  *
  * 🔴 THREE SPELLINGS OF ONE IDEA, and `field_style.font_size` was the one nothing read. The
@@ -1011,7 +1011,7 @@ internal fun fieldInputFontSize(block: ContentBlock): androidx.compose.ui.unit.T
         ?: 14f).sp
 
 /**
- * The input text's weight from `field_style.font_weight` (#1053). `null` means "leave the default",
+ * The input text's weight from `field_style.font_weight`. `null` means "leave the default",
  * which is not the same as `FontWeight.Normal`.
  *
  * Mirrors iOS `fieldInputFontWeight`.
@@ -1030,8 +1030,7 @@ internal fun fieldInputFontWeight(block: ContentBlock): androidx.compose.ui.text
     }
 
 /**
- * A field's border colour, swapping to `field_style.error_border_color` while it is in error
- * (#1053).
+ * A field's border colour, swapping to `field_style.error_border_color` while it is in error.
  *
  * `error_text_color` was already drawn beside it on both platforms; the border was not, so an
  * authored error colour showed on the message and not on the field it belonged to.
@@ -1158,7 +1157,7 @@ data class EntranceAnimationConfig(
     val type: String = "none",    // none, fade_in, slide_up, slide_down, slide_left, slide_right, scale_up, scale_down, bounce, flip
     val duration_ms: Int = 300,
     val delay_ms: Int = 0,
-    // Audit pass-8 — canonical missing-easing default is "linear" to match iOS's
+    // Canonical missing-easing default is "linear" to match iOS's
     // swiftUIAnimation fall-through (ContentBlockTypes.swift:692 → .linear). Was
     // "ease_out", which resolved a hand-authored/imported easing-less payload to a
     // different curve than iOS. (Preview '|| ease' → '|| linear' is a sibling change.)
@@ -1193,7 +1192,7 @@ fun evaluateVisibilityCondition(
     userTraits: Map<String, Any>? = null,
     sessionData: Map<String, Any>? = null,
     /**
-     * #1013 — the presented step's id and its LIVE input values, which are what make a condition
+     * The presented step's id and its LIVE input values, which are what make a condition
      * react while the step is open.
      *
      * `responses` holds completed steps only, so "show this when the category above is Modern"
@@ -1531,7 +1530,7 @@ internal fun resolveBlockBindings(
             // renderer means no current or future renderer can leak it, and a fixture can see it as a
             // count. A stat whose LABEL alone is unresolved keeps its value and loses the caption.
             //
-            // 🔴 #660 — dropping the stat was too much. A five-stat booking summary,
+            // 🔴 Dropping the stat was too much. A five-stat booking summary,
             // all bound to `hook_data.booking.*`. Until the host supplies them EVERY card vanished,
             // so the screen read as "the summary screen does not render at all" on both platforms —
             // and an author had no way to tell a mis-typed path from a host that sent nothing.
@@ -1714,7 +1713,7 @@ fun mergeFieldConfigOverrides(
  * `List<*>` branch so an empty multi-select still fails the gate — pre-existing behavior).
  */
 /**
- * #593 — a summary stat's authored font size.
+ * A summary stat's authored font size.
  *
  * Sizes ride in the same string bag as `min`/`max`/`step`, so they arrive from the console as
  * strings. Coerced the same way `statDouble` coerces those, with a fallback rather than a
@@ -1797,7 +1796,7 @@ object RequiredFieldGate {
                 val input = stat["input"] as? String ?: continue
                 if (input == "none") continue
                 if (stat["required"]?.toString() != "true") continue
-                // #595 — a stat with no authored `field_id` used to be skipped here, so `required`
+                // A stat with no authored `field_id` used to be skipped here, so `required`
                 // was silently dropped. It now falls back to the same derived key the renderer's
                 // control writes; deriving it anywhere but `summaryStatFieldId` would gate on a key
                 // nothing writes.
@@ -1813,7 +1812,7 @@ object RequiredFieldGate {
             }
         }
 
-        // #585 — a MINIMUM selection count gates the CTA.
+        // A MINIMUM selection count gates the CTA.
         //
         // 🔴 `min_selections` has been in the Zod schema for a long time, with a console control on
         // form fields, and NOTHING on any platform ever read it. An author could set "Min
@@ -1894,7 +1893,7 @@ suspend fun fireElementInteraction(
 }
 
 /**
- * #657 — replace a block's `field_options` with host-supplied ones from a refresh interaction.
+ * Replace a block's `field_options` with host-supplied ones from a refresh interaction.
  *
  * Separate from [resolvedFieldConfig] because options are a SIBLING of `field_config`, not a key
  * inside it: merging them into `field_config` would compile, do nothing visible, and look fixed.
@@ -1951,7 +1950,7 @@ fun ContentBlockRendererView(
     // Default no-op / empty so non-interactive call paths (previews, legacy) compile unchanged.
     onInteract: (String, String, String?) -> Unit = { _, _, _ -> },
     fieldConfigOverrides: Map<String, Map<String, Any>> = emptyMap(),
-    // #657 — per-block replacement options pushed back by a refresh interaction.
+    // Per-block replacement options pushed back by a refresh interaction.
     fieldOptionsOverrides: Map<String, List<InputOption>> = emptyMap(),
     /**
      * The step's FULL layered block list, for readers that judge the whole step (the
@@ -1960,7 +1959,7 @@ fun ContentBlockRendererView(
      */
     stepBlocks: List<ContentBlock>? = null,
     /**
-     * #993 — how far the step has scrolled, in dp, for blocks authored `collapse_on_scroll`.
+     * How far the step has scrolled, in dp, for blocks authored `collapse_on_scroll`.
      *
      * iOS has applied this since Sprint 7 and Android decoded the key and stopped there: every
      * application of it in this SDK is in `PaywallActivity`, a different surface. So one authored
@@ -1971,7 +1970,7 @@ fun ContentBlockRendererView(
      * pass it renders exactly as before.
      */
     scrollOffset: Float = 0f,
-    /** #1013 — the presented step's id, so a `visibility_condition` naming a field on THIS step
+    /** The presented step's id, so a `visibility_condition` naming a field on THIS step
      *  evaluates against what the control holds right now ([VisibilityScope]). Empty = no merge,
      *  which is what Screens, SDUI and option sheets get. */
     stepId: String = "",
@@ -2031,7 +2030,7 @@ fun ContentBlockRendererView(
             val sizingModifier = Modifier.applyRelativeSizing(block.element_width, effectiveHeight, useMinHeight = isTextBlock)
 
             /*
-             * #993 — scroll-collapse, through the same `BlockCollapseOnScroll.progress` the Swift
+             * Scroll-collapse, through the same `BlockCollapseOnScroll.progress` the Swift
              * calls. ONLY a block that asked for it is touched: `alpha` and a height cap on every
              * block would clip dropdowns and overflow content, which is the note iOS carries at the
              * same place.
@@ -2069,7 +2068,7 @@ fun ContentBlockRendererView(
 }
 
 /**
- * #654 / #659 — a width-constrained block ignored its authored `horizontal_align` on Android.
+ * A width-constrained block ignored its authored `horizontal_align` on Android.
  *
  * The sizing box (`element_width`) was applied OUTSIDE the alignment box, so the order was:
  *
@@ -2139,7 +2138,7 @@ internal fun RenderBlock(
     // The hook is opt-in: it no-ops when the field_config has no
     // visible container values.
     /*
-     * 🔴 #1036 — THE BLEED HAS TO HAPPEN WHERE THE BACKGROUND IS PAINTED.
+     * 🔴 THE BLEED HAS TO HAPPEN WHERE THE BACKGROUND IS PAINTED.
      *
      * `background_full_bleed` widened the multi-buttons Column, and the Column is INSIDE this
      * wrapper — which paints `block_style.background_color` on the un-widened box and clips its
@@ -2162,7 +2161,7 @@ internal fun RenderBlock(
             .applyBlockStyle(
                 block.block_style,
                 // Overflow blocks (pulse rings / star field) must not be clipped to the block box,
-                // and neither is one that deliberately paints past it (#1036).
+                // and neither is one that deliberately paints past it.
                 clipContent = !blockBleeds &&
                     block.type != "pulsing_avatar" && block.type != "star_background",
             )
@@ -2262,7 +2261,7 @@ private fun RenderBlockContent(
         "date_wheel_picker" -> DateWheelPickerBlock(block, inputValues)
         "circular_gauge" -> CircularGaugeBlock(block)
         "row" -> RowBlock(block, onAction, toggleValues, inputValues, loc, stepBlocks)
-        // #609 — several CTAs laid out N per row on one shared background.
+        // Several CTAs laid out N per row on one shared background.
         "multi_buttons" -> MultiButtonsBlock(block, onAction, toggleValues, inputValues, loc, stepBlocks, onInteract)
         // Pricing card
         "pricing_card" -> PricingCardBlock(block, onAction, inputValues)
@@ -2576,7 +2575,7 @@ private fun MediaGalleryBlock(block: ContentBlock) {
     if (images.isEmpty()) return
 
     /*
-     * #1021 — the title sits INSIDE the empty check, as on iOS: a cleared gallery draws nothing at
+     * The title sits INSIDE the empty check, as on iOS: a cleared gallery draws nothing at
      * all, and a lone title over no images is a worse artefact than no title. Unset draws nothing,
      * so every gallery authored before this is unchanged.
      */
@@ -2604,8 +2603,8 @@ private fun MediaGalleryBlock(block: ContentBlock) {
 }
 
 /**
- * The strip itself — extracted so the titled and untitled paths draw exactly the same thing
- * (#1021). Everything below is the body the gallery had before the title existed.
+ * The strip itself — extracted so the titled and untitled paths draw exactly the same thing.
+ * Everything below is the body the gallery had before the title existed.
  */
 @Composable
 private fun MediaGalleryStrip(block: ContentBlock, images: kotlinx.collections.immutable.ImmutableList<String>) {
@@ -2838,7 +2837,7 @@ private fun ImageBlock(block: ContentBlock) {
         else -> Modifier.fillMaxWidth()
     }
     val imgHeightMax = if (iconSize != null) iconSize.dp else (block.height ?: 200.0).dp
-    // #581 — `phone` stays the THICK mockup so flows authored before this release are untouched;
+    // `phone` stays the THICK mockup so flows authored before this release are untouched;
     // `phone_thin` is the same shape with a narrower bezel, expressed as the same three numbers the
     // preview and iOS use so "thin" cannot come to mean something different on each surface.
     if (block.image_frame == "phone" || block.image_frame == "phone_thin") {
@@ -2847,7 +2846,7 @@ private fun ImageBlock(block: ContentBlock) {
         val outerR = if (thin) 32.dp else 40.dp
         val innerR = if (thin) 28.dp else 30.dp
         // Phone mockup: dark bezel + dynamic-island notch, image fills the "screen".
-        // #610 — the screen was `imgHeightMax` tall by a HARDCODED 260dp wide, so Height changed
+        // The screen was `imgHeightMax` tall by a HARDCODED 260dp wide, so Height changed
         // only the height: at the default 200 the "phone" was LANDSCAPE (260×200) and every other
         // height was some other arbitrary shape. A phone has a FIXED shape, so the screen takes a
         // 9:19.5 aspect (modern iPhone) and the authored height scales the whole device
@@ -2874,7 +2873,7 @@ private fun ImageBlock(block: ContentBlock) {
                         .height(screenH)
                         .clip(RoundedCornerShape(innerR))
                         .background(androidx.compose.ui.graphics.Color(0xFF2A2A2E)),
-                    // #610 — image_fit is honored INSIDE the mockup; it was hardcoded to Crop,
+                    // Image_fit is honored INSIDE the mockup; it was hardcoded to Crop,
                     // which is why the reporter's "Fit" attempt did nothing.
                     contentScale = contentScale,
                     contentDescription = block.alt ?: "Image",
@@ -2893,7 +2892,7 @@ private fun ImageBlock(block: ContentBlock) {
         }
         return
     }
-    // #581 — effects on the plain image rather than mockups. Settings live in `field_config`:
+    // Effects on the plain image rather than mockups. Settings live in `field_config`:
     // ContentBlock is at the JVM 255-argument ceiling, so a new top-level field would compile and
     // then die at runtime with a bare ClassFormatError naming nothing.
     if (block.image_frame == "glow" || block.image_frame == "color_frame") {
@@ -2965,7 +2964,7 @@ private fun ButtonBlock(
     // Device QA (s20/s22) — when set (sound_button), tap runs this instead of
     // the flow-action routing below (e.g. play an audio clip).
     onClickOverride: (() -> Unit)? = null,
-    // #657 — a button with `action: "refresh_step"` fires the element-interaction hook instead of
+    // A button with `action: "refresh_step"` fires the element-interaction hook instead of
     // navigating, so the host can replace what the step shows without advancing it.
     onInteract: (String, String, String?) -> Unit = { _, _, _ -> },
 ) {
@@ -2973,7 +2972,7 @@ private fun ButtonBlock(
     // 16→17sp matching iOS
     // .body.weight(.semibold) at ContentBlockRendererView.swift:395-396.
     val baseStyle = TextStyle(fontWeight = FontWeight.SemiBold, fontSize = 17.sp)
-    // #594 — the button-specific `text_color` beats the generic Typography colour.
+    // The button-specific `text_color` beats the generic Typography colour.
     //
     // It was the other way round: `applyTextStyle` folds `block.style.color` into the style and it
     // silently won, so the "Text" picker sitting right beside "Background" did nothing whenever a
@@ -2985,7 +2984,7 @@ private fun ButtonBlock(
     val styledBase = if (block.style != null) StyleEngine.applyTextStyle(baseStyle, block.style) else baseStyle
     val colouredStyle = block.text_color?.takeIf { it.isNotBlank() }
         ?.let { styledBase.copy(color = StyleEngine.parseColor(it)) } ?: styledBase
-    // #609 follow-up — the button's own authored "Font size". Same specificity rule as `text_color`
+    // The button's own authored "Font size". Same specificity rule as `text_color`
     // directly above and for the same reason: the control sits on the button panel, so it beats the
     // generic Typography size rather than being silently beaten by it. Nothing read this field on
     // ANY surface, so the input did nothing at all. Unset leaves the 17sp default untouched.
@@ -3013,7 +3012,7 @@ private fun ButtonBlock(
     }
     val txtColor = StyleEngine.parseColor(block.text_color ?: "#FFFFFF")
     val cornerRadius = (block.button_corner_radius ?: 12.0).dp
-    // #609 — the AUTHORED border. "Border color" and "Border width" sit on every button panel and
+    // The AUTHORED border. "Border color" and "Border width" sit on every button panel and
     // on every multi-buttons child, and nothing read either: the ring was hardcoded to 1.5dp of the
     // BACKGROUND colour and drawn only for `outline`. A filled button with a yellow border at width
     // 40 drew nothing at all, which is exactly what was reported.
@@ -3040,7 +3039,7 @@ private fun ButtonBlock(
     val onClick: () -> Unit = onClickOverride ?: {
         val action = block.action ?: "next"
         when (action) {
-            // #657 — refresh the step in place. iOS parity: ContentBlockRendererView `buttonBlock`.
+            // Refresh the step in place. iOS parity: ContentBlockRendererView `buttonBlock`.
             // A tap while not tappable is refused (with a debug log) by the step's coordinator.
             "refresh_step" -> (stepInteraction?.onInteract ?: onInteract)(block.id, "refresh", block.action_value)
             "link" -> {
@@ -3126,7 +3125,7 @@ private fun ButtonBlock(
     // Without this the console "Size" control had no effect on the CTA (the field existed but was never read).
     val heightMod: Modifier = block.button_height?.let { Modifier.height(it.dp) }
         ?: Modifier.defaultMinSize(minHeight = 52.dp)
-    // #654/#659/#663 — `element_width: "auto"` means "as wide as the label". Every variant below
+    // `element_width: "auto"` means "as wide as the label". Every variant below
     // used to hardcode fillMaxWidth(), which is why an auto-width button still spanned the row.
     val widthMod: Modifier = if (buttonFillsWidth(block.element_width)) {
         Modifier.fillMaxWidth()
@@ -3167,7 +3166,7 @@ private fun ButtonBlock(
             // when both are set (ContentBlockRendererView.swift:383-394).
             // Android previously gated image_url on icon_emoji being
             // null/empty, so authored buttons with both lost the image.
-            // #580 — the icon and its spacing are authored. The gap defaults to the 8dp the button
+            // The icon and its spacing are authored. The gap defaults to the 8dp the button
             // has always used, so a button with no icon settings lays out identically.
             val soundIconGap = ((block.field_config?.get("sound_icon_gap") as? Number)?.toFloat() ?: 8f).dp
             block.icon_emoji?.let { emoji ->
@@ -3175,7 +3174,7 @@ private fun ButtonBlock(
                     Text(emoji, modifier = Modifier.padding(end = soundIconGap))
                 }
             }
-            // #580 — an authored icon: a built-in play triangle, or an uploaded image.
+            // An authored icon: a built-in play triangle, or an uploaded image.
             //
             // Defaults to "none". The button has never drawn an icon, so anything else would
             // change the appearance of every sound button already authored — a fix nobody asked
@@ -3218,7 +3217,7 @@ private fun ButtonBlock(
              *
              * 🔴 This was the opposite rule, under a comment that described iOS's OLD behaviour as
              * if it were parity: `block.style?.color ?: textColor` made the Typography colour win.
-             * #594 had already reversed that on iOS — the button's own `text_color` wins, because
+             * iOS had already reversed that — the button's own `text_color` wins, because
              * the "Text" picker sits on the button panel and a control that loses silently is a
              * control that does not exist. So a button with BOTH set drew in two different colours
              * on the two platforms, and 250 lines above this one `colouredStyle` was applying the
@@ -3321,7 +3320,7 @@ private fun SoundButtonBlock(
     loc: ((String, String) -> String)? = null,
     stepBlocks: List<ContentBlock> = emptyList(),
     inputValues: Map<String, Any> = emptyMap(),
-    // #657 — a refresh_step sound button fires the interaction hook like any other button.
+    // A refresh_step sound button fires the interaction hook like any other button.
     onInteract: (String, String, String?) -> Unit = { _, _, _ -> },
 ) {
     val context = LocalContext.current
@@ -3467,7 +3466,7 @@ private fun WarningBannerBlock(block: ContentBlock, loc: ((String, String) -> St
     val titleSize = ((fc?.get("banner_title_size") as? Number)?.toFloat() ?: 14f).sp
     val subtitleSize = ((fc?.get("banner_subtitle_size") as? Number)?.toFloat() ?: 13f).sp
     /*
-     * #1005 — the four things a real app's info banner needed and this did not have: the icon
+     * The four things a real app's info banner needed and this did not have: the icon
      * beside the FIRST line rather than always centred, a way to leave the icon out, a colour per
      * text, and a link under the subtitle. Every default below is what was drawn before, so an
      * already-published banner is unchanged. Parity with iOS `warningBannerBlock`.
@@ -3487,7 +3486,7 @@ private fun WarningBannerBlock(block: ContentBlock, loc: ((String, String) -> St
     val linkColor = (fc?.get("banner_link_color") as? String)?.let { StyleEngine.parseColor(it) } ?: accent
     val linkSize = ((fc?.get("banner_link_size") as? Number)?.toFloat() ?: 13f).sp
     /*
-     * #1005 — AN UPLOADED ICON, which is the half an emoji cannot cover: a real app's info banner
+     * AN UPLOADED ICON, which is the half an emoji cannot cover: a real app's info banner
      * carries its own mark, and "paste any emoji" is not a way to set one. A URL wins over the
      * glyph; the size applies to BOTH, because an 18dp PNG is unreadable and the glyph has to stay
      * at 18 for every banner already published. Parity with iOS `warningBannerBlock`.
@@ -3724,7 +3723,7 @@ private fun SummaryScreenBlock(
     // bg_color = card bg, text_color = headline + label, summary_align = headline align,
     // stats_layout = horizontal (2-col, default) | vertical (single full-width column). Parity w/ iOS.
     val cardBg = block.bg_color?.let { StyleEngine.parseColor(it) } ?: Color(0xFF1F2937)
-    // #595 was a CONSOLE defect (the preview's step surface is light by default, so a white headline
+    // An invisible headline here was a CONSOLE defect (the preview's step surface is light by default, so a white headline
     // was invisible there). On DEVICE the default stays #FFFFFF deliberately.
     //
     // 🔴 `MaterialTheme.colorScheme.onSurface` was tried here and reverted: it follows the SYSTEM
@@ -3759,7 +3758,7 @@ private fun SummaryScreenBlock(
                     val value = m["value"]?.toString() ?: ""
                     val label = m["label"]?.toString() ?: ""
                     val color = StyleEngine.parseColor((m["color"] as? String) ?: defaultAccent)
-                    // #593 — the sub-headline's own type. `color` above styles the VALUE; the label
+                    // The sub-headline's own type. `color` above styles the VALUE; the label
                     // under it had no colour, size or alignment at all, and neither did a
                     // slider/stepper's displayed number — the same text through a different
                     // control. An authored label colour drops the 0.7 alpha with it: an author who
@@ -3783,7 +3782,7 @@ private fun SummaryScreenBlock(
                         horizontalAlignment = statAlign,
                     ) {
                         val statInput = (m["input"] as? String) ?: "none"
-                        // #595 — an author who set an `input` but no `field_id` got an EMPTY CARD:
+                        // An author who set an `input` but no `field_id` got an EMPTY CARD:
                         // the control was skipped on the blank id and the else-branch drew this
                         // stat's (also blank) value and label. Fall back to a stable derived key so
                         // the control renders. The required gate derives the SAME key.
@@ -4529,7 +4528,7 @@ private fun VideoBlock(block: ContentBlock) {
 // Lottie content block
 @Composable
 private fun LottieContentBlock(block: ContentBlock) {
-    // #996 — `lottie_json` is gone: declared, carried into the DTO, drawn by nothing, and
+    // `lottie_json` is gone: declared, carried into the DTO, drawn by nothing, and
     // unauthorable from the console. A block with no `lottie_url` now draws nothing at all, which
     // is what a block with only a `lottie_json` already drew.
     if (block.lottie_url != null) {
@@ -4618,7 +4617,7 @@ private val StarDotShape = GenericShape { size, _ ->
 
 @Composable
 private fun PageIndicatorBlock(block: ContentBlock, currentStepIndex: Int = 0, totalSteps: Int = 1) {
-    // Audit pass-8 — clamp to [0,50] to match iOS (ContentBlockRendererView.swift:1236),
+    // Clamp to [0,50] to match iOS (ContentBlockRendererView.swift:1236),
     // which caps dot_count precisely because ForEach(0..<count) is unsafe. A
     // binding/API-driven dot_count above 50 would render an unbounded dot row on
     // Android while iOS caps at 50.
@@ -4712,7 +4711,7 @@ private fun SocialLoginBlock(
     val dividerText = block.divider_text ?: "or"
     // Social-Login styling v2 — divider color/placement + in-button text align.
     val dividerColor = block.divider_color?.let { StyleEngine.parseColor(it) } ?: Color.Gray.copy(alpha = 0.3f)
-    // #615 — the LINE took `divider_color`; the TEXT between the segments was pinned to the theme's
+    // The LINE took `divider_color`; the TEXT between the segments was pinned to the theme's
     // secondary, so "or continue with email" could not be themed at all. Unset keeps the previous
     // colour exactly, so existing flows are untouched. iOS parity:
     // ContentBlockRendererView.swift `dividerTextColor`.
@@ -4794,7 +4793,7 @@ private fun SocialLoginBlock(
             }
             val bgColor = provider.bg_color?.let { StyleEngine.parseColor(it) } ?: defaultBg
             /*
-             * #1030 — the same background as a HEX, because a `Color` carries no readable
+             * The same background as a HEX, because a `Color` carries no readable
              * components and the chip rule needs a luminance. The brand defaults repeat the
              * table above rather than re-deriving it, so an edit to one is visible beside the
              * other.
@@ -4855,7 +4854,7 @@ private fun SocialLoginBlock(
                 "github" -> ""
                 else -> ""
             }
-            // OB-2 audit-1 CRIT-2 \u2014 icon_style was a
+            // icon_style was a
             // dead field. Mirrors iOS ContentBlockRendererView.swift:778-814:
             // "monochrome_light" \u2192 force white, "monochrome_dark" \u2192 force
             // black, default \u2192 use provider-native or button textColor.
@@ -4936,7 +4935,7 @@ private fun SocialLoginBlock(
                         )
                     } else if (provider.type == "google" && monoIconColor == null) {
                         /*
-                         * #1003 — THE OFFICIAL MARK, not a letter.
+                         * THE OFFICIAL MARK, not a letter.
                          *
                          * This drew `Text("G")` in a bold sans — a letterform, so a Sign in with
                          * Google button could not be made to match Google's own branding
@@ -4950,7 +4949,7 @@ private fun SocialLoginBlock(
                          * an explicit author choice.
                          */
                         /*
-                         * #1030 — A WHITE CHIP WHEN THE BUTTON IS TOO DARK TO READ A BLUE ARM
+                         * A WHITE CHIP WHEN THE BUTTON IS TOO DARK TO READ A BLUE ARM
                          * AGAINST. The mark is red, yellow, green and BLUE, and the Google
                          * provider's default fill is `#4285F4`: the blue arm and crossbar vanish
                          * into it and the mark reads as a "C" — intact at 4×, illegible at 18dp.
@@ -4991,7 +4990,7 @@ private fun SocialLoginBlock(
                     // Explicit 17sp matches
                     // iOS .body.weight(.semibold) (ContentBlockRendererView.swift:759).
                     // Material Button content defaults to labelLarge=14sp.
-                    // #560 — per-provider label size. 17sp is what this rendered at before the
+                    // Per-provider label size. 17sp is what this rendered at before the
                     // field existed, so an unset value is byte-identical to the previous behaviour
                     // rather than a silent restyle of every existing flow. Mirrors iOS.
                     Text(
@@ -5024,10 +5023,10 @@ private fun SocialLoginBlock(
                 Modifier.graphicsLayer(scaleX = pressedScale, scaleY = pressedScale, alpha = pressedAlpha)
             } else Modifier
 
-            // OB-2 audit follow-up — apply per-provider
+            // Apply per-provider
             // colors + provider-level corner/border-width across ALL three
-            // button styles (filled, outlined, minimal). Audit caught
-            // that only the filled branch read the overrides; outlined+minimal
+            // button styles (filled, outlined, minimal). Previously only
+            // the filled branch read the overrides; outlined+minimal
             // ignored authored colors entirely.
             when (buttonStyle) {
                 "outlined" -> {
@@ -5038,7 +5037,7 @@ private fun SocialLoginBlock(
                         shape = RoundedCornerShape(providerCorner),
                         border = androidx.compose.foundation.BorderStroke(providerBorderWidth, borderColor),
                         colors = ButtonDefaults.outlinedButtonColors(
-                            // Audit pass-8 — honor an authored provider.bg_color on
+                            // Honor an authored provider.bg_color on
                             // outlined buttons (iOS ContentBlockRendererView.swift:1362-1365
                             // applies bgColor unconditionally; preview OnboardingStepPreview.tsx:1542
                             // does the same). Must default TRANSPARENT (not the brand `bgColor`)
@@ -5067,7 +5066,7 @@ private fun SocialLoginBlock(
                         interactionSource = pressedInteractionSource,
                         shape = RoundedCornerShape(providerCorner),
                         colors = ButtonDefaults.textButtonColors(
-                            // Audit pass-8 — same authored-bg_color honor as outlined
+                            // Same authored-bg_color honor as outlined
                             // (iOS applies bgColor to minimal too); TRANSPARENT default
                             // preserves the borderless minimal look until bg_color is set.
                             containerColor = provider.bg_color?.let { StyleEngine.parseColor(it) } ?: Color.Transparent,
@@ -5091,7 +5090,7 @@ private fun SocialLoginBlock(
                             .then(if (providerBorderWidth > 0.dp) Modifier.border(providerBorderWidth, borderColor, RoundedCornerShape(providerCorner)) else Modifier)
                             .then(pressedModifier),
                         interactionSource = pressedInteractionSource,
-                        // OB-2 audit-1 CRIT-1 — was
+                        // Was
                         // `RoundedCornerShape(cornerRadius)`, dropping the
                         // per-provider `corner_radius` override. Filled is
                         // the default style (block.button_style ?: "filled")
@@ -5144,7 +5143,7 @@ private fun SocialLoginBlock(
                     // ContentBlockRendererView.swift:713 .subheadline (~15pt).
                     fontSize = 15.sp,
                     // Theme-adaptive secondary (was Color.Gray).
-                    // iOS .secondary (ContentBlockRendererView.swift:714). #615 — an authored
+                    // iOS .secondary (ContentBlockRendererView.swift:714). An authored
                     // `divider_text_color` wins.
                     color = dividerTextColor ?: MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
                     modifier = Modifier.padding(horizontal = 12.dp),
@@ -5158,7 +5157,7 @@ private fun SocialLoginBlock(
             }
         }
 
-        // #578 — the divider is a SLOT in the stack, not one of two fixed ends.
+        // The divider is a SLOT in the stack, not one of two fixed ends.
         //
         // `top` is slot 0 and `bottom` is the last slot, kept as their own values so no flow
         // authored before this release changes and an older SDK build still understands them.
@@ -5337,7 +5336,7 @@ private fun CountdownTimerBlock(block: ContentBlock, onAction: (String) -> Unit)
     when (variant) {
         "circular" -> {
             /*
-             * #1066 — the ring SWEEPS. `sweepAngle` was a hardcoded `270f` (= 75%), the console
+             * The ring SWEEPS. `sweepAngle` was a hardcoded `270f` (= 75%), the console
              * preview's static mock ported into a renderer: the digits counted down while the ring
              * never moved, and it was still at 75% when the timer expired. A preview is allowed a
              * frozen value because it has no clock; a renderer is not, and the `bar` arm below
@@ -5420,7 +5419,7 @@ private fun CountdownTimerBlock(block: ContentBlock, onAction: (String) -> Unit)
         }
         "bar" -> {
             // Time + "remaining" label + shrinking accent bar (matches preview).
-            // #1066 — the same shared rule the ring uses, so the two indicators cannot disagree.
+            // The same shared rule the ring uses, so the two indicators cannot disagree.
             val fraction = CountdownProgress.remainingFraction(remainingSeconds, initialSeconds).toFloat()
             Column(modifier = Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Row(
@@ -5623,7 +5622,7 @@ private fun RatingBlock(
 /**
  * Fold markdown the parsers do NOT know into the subset they do.
  *
- * #893 / #900 — both platforms parse inline markdown only (emphasis, code spans, links, and
+ * Both platforms parse inline markdown only (emphasis, code spans, links, and
  * `++underline++`; [MarkdownInline]), and no block syntax. Everything outside that reached the screen as characters: a generated
  * testimonial rendered as `> "I always quit after missing a day…"`, chevron and all, and a model
  * reaching for a heading or a list inside a `rich_text` block is a question of when rather than
@@ -5631,8 +5630,8 @@ private fun RatingBlock(
  *
  * 🔴 CONVERT, never teach the parsers new rules. `*…*` and `**…**` are already supported on both,
  * already styled the same on both, and already covered by whatever tests those paths have. A
- * second markdown implementation in two languages is two things that can drift — the shape of
- * #885 and #891, and not worth repeating for a chevron or a hash.
+ * second markdown implementation in two languages is two things that can drift, and not worth
+ * risking for a chevron or a hash.
  *
  *   `> quote`        -> `*quote*`          a quote reads as emphasis
  *   `# Heading`      -> `**Heading**`      1-6 hashes, the only weight the subset has
@@ -5887,7 +5886,7 @@ private fun ProgressBarBlock(block: ContentBlock, loc: ((String, String) -> Stri
         // platforms match. (label text itself is unchanged.)
         // Theme-adaptive secondary (was Color.Gray).
         //
-        // #584 — the label's OWN colour and size. It rendered in a theme secondary with no control
+        // The label's OWN colour and size. It rendered in a theme secondary with no control
         // at all, so an author could style the bar and its track and not the words beside them. An
         // authored colour replaces the theme value outright, alpha included: an author who picked a
         // colour meant that colour. iOS parity.
@@ -6157,7 +6156,7 @@ private fun AnimatedLoadingBlock(block: ContentBlock, onAction: (String) -> Unit
     // bar -> message -> items. Absent = today's arrangement, so existing flows are unchanged.
     val loadingOrder = (block.field_config?.get("loading_order") as? List<*>)?.mapNotNull { it as? String }
     // Loading message color falls back loading_text_color → text_color → #9CA3AF
-    // (matches iOS + preview; Android previously fell back to text_color→#000).
+    // (matches iOS + preview; Android previously fell back to text_color→#000000).
     val loadingMessageColor = block.loading_text_color?.let { StyleEngine.parseColor(it) }
         ?: block.text_color?.let { StyleEngine.parseColor(it) }
         ?: StyleEngine.parseColor("#9CA3AF")
@@ -7712,10 +7711,10 @@ private fun StackBlock(
 // MARK: - Row Block (HStack container)
 
 /**
- * #609 — how a Multi-buttons group splits its children into rows.
+ * How a Multi-buttons group splits its children into rows.
  *
  * Pure so the layout rule is asserted by a test and a shared fixture rather than by eye: the bugs
- * this element exists to fix (#654/#659) were all layout rules that only a screenshot could check.
+ * this element exists to fix were all layout rules that only a screenshot could check.
  * Returns the number of buttons on each row, in order. `perRow` is clamped to 1..3 because the ask
  * was "up to 3 per row" and a 0 would divide by zero.
  */
@@ -7728,7 +7727,7 @@ internal fun multiButtonRowPlan(childCount: Int, perRow: Int): List<Int> {
 }
 
 /**
- * #671 — let a block bleed past its parent's horizontal padding, by `inset` on each side.
+ * Let a block bleed past its parent's horizontal padding, by `inset` on each side.
  *
  * 🔴 THIS WAS `Modifier.padding(horizontal = (-20).dp)` AND IT CRASHED THE WHOLE SCREEN.
  *
@@ -7760,7 +7759,7 @@ internal fun Modifier.fullBleedHorizontal(inset: Dp): Modifier = this.layout { m
 }
 
 /**
- * #654 / #659 / #663 — whether a button should stretch to the width it is offered.
+ * Whether a button should stretch to the width it is offered.
  *
  * A button hardcoded `fillMaxWidth()` on Android, `.frame(maxWidth: .infinity)` on iOS and
  * `w-full` in the console preview, so `element_width: "auto"` — the one value that means "be as
@@ -7776,7 +7775,7 @@ internal fun Modifier.fullBleedHorizontal(inset: Dp): Modifier = this.layout { m
 internal fun buttonFillsWidth(elementWidth: String?): Boolean = elementWidth != "auto"
 
 /**
- * #609 — the width of a button's AUTHORED border, in dp.
+ * The width of a button's AUTHORED border, in dp.
  *
  * Pure because the bug was a hardcoded constant nobody could see: all three surfaces stroked a
  * fixed 1.5 of the BACKGROUND colour, and only for `outline`. A filled button with border width 40
@@ -7791,7 +7790,7 @@ internal fun authoredButtonBorderWidth(
 ): Double {
     if (authored != null) return maxOf(0.0, authored)
     /*
-     * 🔴 #1007 — AN AUTHORED COLOUR IMPLIES A VISIBLE BORDER.
+     * 🔴 AN AUTHORED COLOUR IMPLIES A VISIBLE BORDER.
      *
      * "Border color" and "Border width" are two separate controls and the width input is empty by
      * default, so an author who picked a colour and did not then find the second box got NOTHING
@@ -7804,7 +7803,7 @@ internal fun authoredButtonBorderWidth(
 }
 
 /**
- * #609 — the hex of a button's authored border colour, or null to fall back to its own colour.
+ * The hex of a button's authored border colour, or null to fall back to its own colour.
  *
  * Blank counts as unset: the console's ColorPicker writes an empty string for "transparent", and
  * treating that as a real colour would stroke a ring in nothing and hide the fill's own outline.
@@ -7814,7 +7813,7 @@ internal fun authoredButtonBorderColorHex(authored: String?): String? =
     authored?.takeIf { it.isNotBlank() }
 
 /**
- * #609 — how much EMPTY column a short last row puts on each side of itself.
+ * How much EMPTY column a short last row puts on each side of itself.
  *
  * A short row cannot be centred by arrangement alone, and that is not a detail: a button fills the
  * width it is given, so a lone child in a `spacedBy(gap, CenterHorizontally)` row still spans the
@@ -7833,7 +7832,7 @@ internal fun multiButtonFillerWeight(rowSize: Int, perRow: Int, stretchLastRow: 
 }
 
 /**
- * #609 — the Multi-buttons element: several CTAs laid out N per row, on one shared background.
+ * The Multi-buttons element: several CTAs laid out N per row, on one shared background.
  *
  * "Use a Row" was rejected for a good reason: these have to BE buttons, carrying every Button
  * setting, because each one triggers a different thing in the host app. So the children are real
@@ -7860,7 +7859,7 @@ private fun MultiButtonsBlock(
     val gap = (block.spacing ?: block.gap ?: 12.0).dp
     val stretchLastRow = (block.field_config?.get("last_row") as? String) == "stretch"
     /*
-     * #1006 — a shared background that reaches the screen edges.
+     * A shared background that reaches the screen edges.
      *
      * Changing the width cannot do this: `element_width: 100%` is 100% of the CONTENT COLUMN, and
      * the column is inset by the step's horizontal padding. So the column widens past that inset
@@ -7868,7 +7867,7 @@ private fun MultiButtonsBlock(
      * rejects) and the rows get the inset back, leaving the buttons exactly where they were and
      * moving only the background behind them. The inset is shared with iOS in [BlockFullBleed].
      */
-    // #1036 — the WRAPPER widens now (it owns the background); this keeps only the row inset, which
+    // The WRAPPER widens now (it owns the background); this keeps only the row inset, which
     // is what puts the buttons back where they were.
     val bleeds = BlockFullBleed.isOn(block.field_config?.get("background_full_bleed"))
     val inset = BlockFullBleed
@@ -7888,7 +7887,7 @@ private fun MultiButtonsBlock(
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    // #1006 — the inset the column just cancelled, given back to the BUTTONS, so
+                    // The inset the column just cancelled, given back to the BUTTONS, so
                     // only the background behind them reaches the edges.
                     .then(if (bleeds) Modifier.padding(horizontal = inset) else Modifier),
                 horizontalArrangement = Arrangement.spacedBy(gap),
@@ -8687,7 +8686,7 @@ private fun trimNum(v: Double): String =
  *
  *   - **full-bleed** cancels the step's horizontal padding. In an anchored strip or behind the
  *     content there is no padding to cancel, so applying it would push the map 20dp OFF each edge —
- *     the same negative-inset shape that crashed the whole step in #671.
+ *     the same negative-inset shape that once crashed the whole step.
  *   - **corner radius** defaults to 12 for a card in a column and to 0 for a map that is meant to
  *     meet the screen edges. An author who set a radius still gets it; only the default moves.
  */
@@ -8768,8 +8767,8 @@ internal fun MapBlock(block: ContentBlock, placement: MapPlacement = MapPlacemen
                     // Tier 1 — the host's own map, given everything the author set.
                     factory(mapResolvedConfig(block))
                 } else if (bundledGoogle) {
-                    // Tier 2 — a real pannable map from the bundled SDK. This is the tier #671
-                    // asked for, and the manifest-key check above is why a host without the
+                    // Tier 2 — a real pannable map from the bundled SDK. The manifest-key
+                    // check above is why a host without the
                     // `com.google.android.geo.API_KEY` line falls through to the still image
                     // rather than being handed the Maps SDK's grey "no key" rectangle.
                     GoogleInteractiveMap(block, rawResolved = LocalHostDataRawResolved.current)
@@ -9685,7 +9684,7 @@ fun EntranceAnimationWrapper(
     // slid in from fully off-screen on Android while iOS only nudged 50pt.
     val slideOffsetPx = with(androidx.compose.ui.platform.LocalDensity.current) { 50.dp.roundToPx() }
 
-    // Audit pass-8 — a real "flip" is a 3D X-axis rotation to match iOS
+    // A real "flip" is a 3D X-axis rotation to match iOS
     // (ContentBlockTypes.swift:613-616 rotates 90°→0 around x). AnimatedVisibility's
     // EnterTransition cannot express rotationX, and the previous impl used
     // fadeIn + scaleIn(0.0) (scale-from-zero, NO rotation) so a "flip" block
@@ -9869,7 +9868,7 @@ private fun FormInputTextBlock(
         val focusedBorderWidth = (block.field_style?.border_width ?: 2.0).dp
         val interactionSource = remember { androidx.compose.foundation.interaction.MutableInteractionSource() }
         val isFocused by interactionSource.collectIsFocusedAsState()
-        // Audit pass-8 — honor authored field_style.border_width by drawing the
+        // Honor authored field_style.border_width by drawing the
         // border on an OUTER Box and zeroing the field's built-in border (fixed at
         // M3 1dp/2dp), mirroring FormInputTextAreaBlock (:7600-7636) and iOS
         // FormInputBlockViews.swift:103-106. borderWidth/focusedBorderWidth/isFocused
@@ -9903,7 +9902,7 @@ private fun FormInputTextBlock(
                     imeAction = androidx.compose.ui.text.input.ImeAction.Done,
                 ),
                 shape = RoundedCornerShape(cornerRadius),
-                // #1053 — size AND weight from the authored field style.
+                // Size AND weight from the authored field style.
                 textStyle = TextStyle(fontSize = inputFontSize, fontWeight = fieldInputFontWeight(block)),
                 modifier = if (fieldHeightDp != null) Modifier.fillMaxWidth().heightIn(min = fieldHeightDp.dp) else Modifier.fillMaxWidth(),
                 singleLine = true,
@@ -10138,7 +10137,7 @@ private fun FormInputPasswordBlock(
             },
             placeholder = { Text(block.field_placeholder ?: "Password", color = placeholderCol) },
             shape = RoundedCornerShape((block.field_style?.corner_radius ?: 8.0).dp),
-            // #1053 — size AND weight from the authored field style.
+            // Size AND weight from the authored field style.
             textStyle = androidx.compose.ui.text.TextStyle(fontSize = pwFontSize, fontWeight = fieldInputFontWeight(block)),
             // \u2014 Password Autofill keyboard + Done return key.
             modifier = Modifier.fillMaxWidth().let { if (pwFieldHeightDp != null) it.heightIn(min = pwFieldHeightDp.dp) else it },
@@ -10305,7 +10304,7 @@ private fun FormInputDateBlock(
     // these constraints and surfaces an inline error string under the picker.
     // Android was silently writing invalid dates.
     var dateError by remember { mutableStateOf<String?>(null) }
-    // Audit pass-8 — resolve min_date/max_date to day-bounded epoch millis so
+    // Resolve min_date/max_date to day-bounded epoch millis so
     // validateDate can enforce them. These were parsed on the block and honored
     // by DateWheelPicker (:5899-5920) + FormStep, but the calendar/DatePicker
     // path silently dropped them (only allow_future/allow_past were checked),
@@ -10456,7 +10455,7 @@ private fun FormInputDateBlock(
                     }
                 },
                 /*
-                 * #1052 — the compact pill's height. iOS has honoured `field_style.height`
+                 * The compact pill's height. iOS has honoured `field_style.height`
                  * (sm|md|lg) and the numeric `field_config.input_height` since it shipped; this
                  * platform honoured neither, so the same authored config produced two different
                  * pills. Through the shared rule, so the two cannot drift again.
@@ -10484,7 +10483,7 @@ private fun FormInputDateBlock(
                 shape = RoundedCornerShape((block.field_style?.corner_radius ?: 8.0).dp),
                 border = androidx.compose.foundation.BorderStroke(
                     1.dp,
-                    // #1053 — the error colour reaches the BORDER while the field is in error, not
+                    // The error colour reaches the BORDER while the field is in error, not
                     // only the message below it. `dateError` is the one real per-field error state
                     // either renderer has; the required-field gate raises a toast instead.
                     fieldBorderColor(block, hasError = dateError != null),
@@ -10704,7 +10703,7 @@ private fun SelectRadioIndicator(
 }
 
 /**
- * #596 — the form-step Select's door into this engine.
+ * The form-step Select's door into this engine.
  *
  * `FormInputSelectBlock` is private, and a form Select must render through THE SAME code as the
  * `input_select` content block rather than a second implementation of six layouts. This wrapper is
@@ -10719,7 +10718,7 @@ internal fun FormInputSelectBlockPublic(
 }
 
 /**
- * #596 — a synthetic `input_select` ContentBlock carrying a form field's options and RAW config.
+ * A synthetic `input_select` ContentBlock carrying a form field's options and RAW config.
  *
  * Built through the real option parser rather than by hand, so the options a form Select renders
  * are parsed by the same code that parses a content block's. Returns null when the field carries
@@ -11061,7 +11060,7 @@ private fun FormInputSelectBlock(
     // same rule `recordOptionPick` toggles against, so a checked row is always one a tap would remove.
     var selectedValues by remember { mutableStateOf(storedMultiSelection(inputValues[fieldId]).toSet()) }
     /*
-     * #1013 — A CATEGORY ROW OPENS ON ITS FIRST CATEGORY.
+     * A CATEGORY ROW OPENS ON ITS FIRST CATEGORY.
      *
      * `bubble_scroll` exists to filter the blocks beneath it, so a row with nothing chosen filters
      * all of them away: the step opens EMPTY, and the author has authored a screen whose first
@@ -11163,7 +11162,7 @@ private fun FormInputSelectBlock(
             "grid" -> style.SelectGridOptions(options, isSelectedFn, pickFn)
             "image_tiles" -> style.SelectImageTileOptions(options, isSelectedFn, pickFn)
             "bubble" -> style.SelectBubbleOptions(options, isSelectedFn, pickFn)
-            // #1013 — the category row: the same pills in ONE horizontally scrolling line.
+            // The category row: the same pills in ONE horizontally scrolling line.
             "bubble_scroll" -> style.SelectBubbleOptions(options, isSelectedFn, pickFn, scrolls = true)
             "list" -> style.SelectListOptions(options, isSelectedFn, pickFn)
             else -> style.SelectDropdownOptions(options, fieldId, inputValues, selectedValueState) { sheetOption = it }
@@ -11862,8 +11861,8 @@ private fun SelectOptionStyle.SelectImageTile(
             // text is drawn separately, below, sized by the text itself:
             // a fixed share of the tile cannot be right at every tile
             // height and font size, and when the text is taller than the
-            // share it spills back onto the photograph — which is the
-            // exact defect #555 reported.
+            // share it spills back onto the photograph, which is why the
+            // band is sized by the text.
             Box(Modifier.matchParentSize().background(surfaceCol))
         }
         option.resolvedImageURL(isSelected)?.takeIf { it.isNotEmpty() }?.let { url ->
@@ -11963,7 +11962,7 @@ private fun SelectOptionStyle.SelectImageTile(
  * display_style "bubble" — wrapping pills; `scrolls` → "bubble_scroll", ONE row that runs off the
  * screen edge.
  *
- * #1013 — same chip, same colours, same per-option overrides: only the container differs, which is
+ * Same chip, same colours, same per-option overrides: only the container differs, which is
  * the whole difference an author asked for when they wanted a category row instead of a block of
  * tags. A second copy of the chip body is exactly the drift the parity gates exist to catch.
  */
@@ -12177,7 +12176,7 @@ private fun SelectGridTooltip(block: ContentBlock, displayStyle: String) {
     // stacked / dropdown matching iOS FormInputBlockViews.swift:769-770
     // + 926-937. Reads field_config.tooltip_text + tooltip_icon.
     // Renders 12sp caption with optional 12dp leading icon at 50% alpha.
-    // Audit pass-8 — scope the tooltip caption to displayStyle=="grid" to
+    // Scope the tooltip caption to displayStyle=="grid" to
     // match iOS, which renders it only inside gridSelectView
     // (FormInputBlockViews.swift:1180/1349), and the editor, which exposes
     // tooltip_text only in the grid section (StepContentEditor.tsx:6941).
@@ -12239,7 +12238,7 @@ private fun FormInputSliderBlock(
     // field_style.track_color (or block.track_color) per iOS
     // FormInputBlockViews.swift slider track. Was Material default purple.
     val trackCol = StyleEngine.parseColor(block.field_style?.track_color ?: block.track_color ?: "#E5E7EB")
-    // OB-6 audit follow-up — restore saved value on back nav.
+    // Restore saved value on back nav.
     var value by remember {
         mutableStateOf(
             (inputValues[fieldId] as? Number)?.toFloat()
@@ -12344,8 +12343,8 @@ private fun FormInputToggleBlock(
     val offColor = StyleEngine.parseColor(block.field_style?.toggle_off_color ?: "#E5E5EA")
     val thumbColor = StyleEngine.parseColor(block.field_style?.thumb_color ?: "#FFFFFF")
     val label = block.field_label ?: block.toggle_label ?: ""
-    // OB-6 audit follow-up — restore saved value on back nav.
-    // Audit pass-8 — the input_toggle editor writes 'Default On' to
+    // Restore saved value on back nav.
+    // The input_toggle editor writes 'Default On' to
     // field_config.default_value (StepContentEditor.tsx:6950) and the preview
     // reads cfg.default_value (OnboardingStepPreview.tsx:3721), but this init read
     // only block.toggle_default (never field_config.default_value), so the
@@ -12509,7 +12508,7 @@ private fun FormInputStepperBlock(
     // legacy-form path already fires LIGHT haptic on the same buttons —
     // this content-block path was missing it.
     val view = androidx.compose.ui.platform.LocalView.current
-    // OB-6 audit follow-up — restore saved value on back nav.
+    // Restore saved value on back nav.
     var value by remember {
         mutableStateOf(
             (inputValues[fieldId] as? Number)?.toInt()
@@ -12613,7 +12612,7 @@ private fun FormInputSegmentedBlock(
     inputValues: MutableMap<String, Any>,
 ) {
     /*
-     * #1013 — the one authored key that decides whether this is a segmented control at all.
+     * The one authored key that decides whether this is a segmented control at all.
      *
      * See [SegmentedPresentation]: a Select presentation renders through the Select, which draws
      * all seven of them; absent / `segmented` / unknown keeps the control, as before.
@@ -12626,7 +12625,7 @@ private fun FormInputSegmentedBlock(
 
     val fieldId = block.field_id ?: block.id
     val options = block.field_options ?: emptyList()
-    // OB-6 audit follow-up — restore saved value on back nav.
+    // Restore saved value on back nav.
     // A host-patched answer of another type (a number, a bool) is NOT replaced by the
     // first option: the view shows nothing selected and writes nothing back (see `segmentedDefault`).
     var selectedValue by remember {
@@ -12710,7 +12709,7 @@ private fun FormInputRatingBlock(
     inputValues: MutableMap<String, Any>,
 ) {
     val fieldId = block.field_id ?: block.id
-    // Audit pass-8 — the input_rating editor (StepContentEditor.tsx:6963-6977)
+    // The input_rating editor (StepContentEditor.tsx:6963-6977)
     // writes max_stars/star_size/filled_color/empty_color/allow_half to
     // field_config, and the preview (OnboardingStepPreview.tsx:3765-3767) + iOS
     // (FormInputBlockViews.swift:1699-1706) read field_config FIRST. Android was
@@ -12810,7 +12809,7 @@ private fun FormInputRangeSliderBlock(
     // Drain2 parity — range slider thumbs honor field_style.thumb_color
     // (the editor exposes it; the single FormInputSliderBlock already honors it).
     val rangeThumbColor = block.field_style?.thumb_color?.let { StyleEngine.parseColor(it) } ?: StyleEngine.parseColor("#FFFFFF")
-    // OB-6 audit follow-up — restore saved range on back nav.
+    // Restore saved range on back nav.
     // Saved range is stored as Map<"min","max"> under fieldId per the
     // write sites below (Slider onValueChange + LaunchedEffect).
     val savedMap = inputValues[fieldId] as? Map<*, *>
@@ -12938,7 +12937,7 @@ private fun FormInputChipsBlock(
     // Console writes the cap as `max_chips` (Max Chips slider); `max_selections`
     // kept as a fallback for older/imported configs.
     val maxSelections = (block.field_config?.get("max_chips") as? Number)?.toInt() ?: (block.field_config?.get("max_selections") as? Number)?.toInt()
-    // OB-6 audit follow-up — restore saved chips selection on back nav.
+    // Restore saved chips selection on back nav.
     var selectedValues by remember { mutableStateOf(chipSelectionOf(inputValues[fieldId])) }
     // A value the step prunes from outside (host data settled and the option is no
     // longer rendered) leaves the view's selected state too, and the next tap toggles against the
@@ -13014,7 +13013,7 @@ private fun FormInputColorBlock(
     @Suppress("UNCHECKED_CAST")
     val presetColors: List<String> = (block.field_config?.get("preset_colors") as? List<String>)
         ?: listOf("#EF4444", "#F97316", "#EAB308", "#22C55E", "#3B82F6", (ai.appdna.sdk.AppDNA.brandAccentHex ?: "#6366F1"), "#A855F7", "#EC4899", "#000000", "#6B7280")
-    // OB-6 audit follow-up — restore saved color on back nav.
+    // Restore saved color on back nav.
     var selectedColor by remember {
         mutableStateOf((inputValues[fieldId] as? String) ?: "")
     }
@@ -13193,7 +13192,7 @@ private fun FormInputLocationPlaceholder(
     // and dropdown_* styling (all read from field_config, matching iOS + editor).
     val cfg = block.field_config
     val showPrefixIcon = (cfg?.get("show_prefix_icon") as? Boolean) ?: true
-    // #963 — the four location settings the Console writes for THIS block
+    // The four location settings the Console writes for THIS block
     // (`StepContentEditor.tsx:2845` seeds `location_type` + `location_min_chars`; `:9073` renders the
     // Type select). They were read by the form-step field only, so a block authored "City" searched
     // for street addresses and an authored Min characters did nothing. Default 3, not the form-step
@@ -13329,7 +13328,7 @@ private fun FormInputLocationPlaceholder(
                             Text(text = "📍", fontSize = 10.sp, color = ddIconColor ?: Color.Unspecified)
                         }
                         // #13 — primary + optional subtitle row (split address on first comma),
-                        // mirroring iOS title/subtitle. #963 — the rule is now
+                        // mirroring iOS title/subtitle. The rule is now
                         // `LocationAnswer.displayLines`, shared with the form-step field and both
                         // iOS surfaces; this copy had no city/country fallback for a
                         // single-segment address and its sibling did.
@@ -13798,7 +13797,7 @@ private fun SummaryStatInput(
     labelColor: Color,
     label: String,
     inputValues: MutableMap<String, Any>,
-    /** #593 — authored sizes, so a stat hosting a control matches one showing a fixed value. */
+    /** Authored sizes, so a stat hosting a control matches one showing a fixed value. */
     labelSize: Float = 13f,
     valueSize: Float = 24f,
 ) {
@@ -13836,7 +13835,7 @@ private fun SummaryStatInput(
         is String -> v.trim().toDoubleOrNull()
         else -> null
     }
-    // Seed order, and the middle entry is the point of #558: the stat's own resolved `value` is the
+    // Seed order, and the middle entry is the point: the stat's own resolved `value` is the
     // PRE-FILL (`value: "{{responses.group_size}}"` has already been through the resolver), so it is
     // the number an earlier answer produced. Without it the control ignored that number and opened
     // on the authored default — the "pre-filled value I cannot adjust" the reporter described.
@@ -13934,9 +13933,9 @@ private fun UnsupportedBlockPlaceholder(type: String, blockId: String) {
  * 🔴 THE CONTENT SLOT IS `weight(1f)`, AND THAT IS THE WHOLE POINT.
  *
  * Says a fullscreen or anchored map must not break scrolling. A map that ate the
- * available height and left the content measuring to infinity would do exactly that — and #671 was
- * a map that only LOOKED like it had broken scrolling, so the real version is not a subtle bug to
- * ship on top of it. `weight(1f)` gives the content an explicitly bounded height, which is what
+ * available height and left the content measuring to infinity would do exactly that — and an earlier
+ * defect was a map that only LOOKED like it had broken scrolling, so the real version is not a
+ * subtle bug to ship on top of it. `weight(1f)` gives the content an explicitly bounded height, which is what
  * ThreeZoneBlockLayout's inner `verticalScroll` needs to work at all.
  *
  * With no placements at all this is the identity function — no Box, no Column, no layout change on

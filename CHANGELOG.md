@@ -14,109 +14,109 @@ well as Mapbox; an onboarding flow survives a rotation and the OS ending the app
 
 **SDK and host API**
 
-- **`AppDNA.isReady`** (#855, #856). Answers whether `configure()` has finished. A `present…` call
+- **`AppDNA.isReady`**. Answers whether `configure()` has finished. A `present…` call
   made before then used to log "Onboarding flow not found", which sent integrators to check a flow
   id that was fine; the log now says the SDK is not ready yet. A bundled config with no section the
   SDK recognises now logs a warning naming the keys it found.
-- **`AppDNALifecycleDelegate.onConfigurationIssue(surface, id, detail)`** (#935, #958). Called when
+- **`AppDNALifecycleDelegate.onConfigurationIssue(surface, id, detail)`**. Called when
   part of a published flow, paywall, survey or message is the wrong type and is dropped while the
   rest still renders. `detail` names the field's path and the reason. The SDK also tracks
   `sdk_decode_dropped` with the same values and logs the detail at warning level. Each distinct
   problem is reported once per process.
-- **`AppDNALifecycleDelegate.onEventTracked(name, properties)`** (#1047). Called for every event the
+- **`AppDNALifecycleDelegate.onEventTracked(name, properties)`**. Called for every event the
   SDK tracks, right after it is queued, so you can forward AppDNA analytics into your own pipeline.
-- **`LocationData.mapbox_id` and `LocationData.place_id`** (#1147). Set on an answer resolved from
+- **`LocationData.mapbox_id` and `LocationData.place_id`**. Set on an answer resolved from
   a tapped Mapbox or Google suggestion (see Location fields below).
-- **Main-thread stall logging in debuggable builds** (#952). While an AppDNA screen is in front, a
+- **Main-thread stall logging in debuggable builds**. While an AppDNA screen is in front, a
   main-thread stall of 700 ms or more is logged with the screen and the blocking stack. Release
   builds are unaffected.
 
 **Paywalls**
 
-- **Prices come from Google Play** (#923). A plan shows Play's localized price for its product, in
+- **Prices come from Google Play**. A plan shows Play's localized price for its product, in
   the user's own currency. The authored `price_display` is used whenever Play cannot answer, and a
   plan with `use_store_price: false` always shows the authored price. `paywall_view` now fires
   after the price lookup and carries `price_source` and `store_prices_resolved`.
-- **Billing period and free trial from Google Play** (#933, #989). A plan that authors no period
+- **Billing period and free trial from Google Play**. A plan that authors no period
   shows Play's billing period next to its price, phrased in the ten languages the console can
   localize into (English otherwise). The trial line uses, in order: `trial.label`,
   `trial_duration`, `trial.duration_days`, then a free-trial offer Play says the user is eligible
   for (an introductory price is never shown as a trial). An ISO duration such as `P7D` is now
   phrased ("7 days free trial") instead of printed.
-- **Any section can be pinned to the bottom zone** with `zone: "bottom"` (#884, #903). Pinned
+- **Any section can be pinned to the bottom zone** with `zone: "bottom"`. Pinned
   sections sit above the purchase button in authored order. If the pinned group would take more
   than 55% of the screen, every pinned section except the purchase button goes back into the
   scrolling body.
-- **Per-element container style** (#905, #910, #913). An element's `element_style` (border,
+- **Per-element container style**. An element's `element_style` (border,
   radius, padding, opacity, shadow) is now drawn on plan labels, prices and badges, feature items,
   header title and subtitle, legal text, the purchase button, the restore link, reviews,
   testimonials, icon grids, guarantees and social proof. It used to be dropped.
-- **`tab_groups` plan layout** (#960), and a dedicated **`carousel_cards`** layout with page dots
-  (#962). `tab_groups` used to fall back to a vertical stack, and `carousel_cards` drew exactly
+- **`tab_groups` plan layout**, and a dedicated **`carousel_cards`** layout with page dots.
+ `tab_groups` used to fall back to a vertical stack, and `carousel_cards` drew exactly
   like `horizontal_scroll`.
-- **Countdown variants and styling** (#980, #979, #978). A paywall countdown draws its `variant`
+- **Countdown variants and styling**. A paywall countdown draws its `variant`
   (`digital`, `circular`, `flip`, `bar`) as the onboarding countdown does, and honours
   `label_font_weight`, `digit_font_size`, `digit_font_weight` and `text_color`. Unset keys draw as
   before.
-- **Plans draw in `sort_order`** (#1056). A plan without a rank keeps its position.
-- **A purchase button on a multi-plan paywall names the plan it will buy** (#1100), for example
+- **Plans draw in `sort_order`**. A plan without a rank keeps its position.
+- **A purchase button on a multi-plan paywall names the plan it will buy**, for example
   "Continue — Annual". A single-plan paywall, a plan's own `cta_text`, and a label that already
   contains the plan's name are left alone. See `cta.name_plan` / `cta.plan_format` below to turn
   it off or reword it.
-- **`onPaywallAction` reports every action** (#1074, #1076). `CTA_TAPPED` is reported at the tap,
+- **`onPaywallAction` reports every action**. `CTA_TAPPED` is reported at the tap,
   also when the tap cannot proceed (it used to be reported only once a plan resolved), and
   `PLAN_CHANGED`, `LINK_TAPPED`, `CUSTOM` (an authored action the SDK does not recognise) and
   `FEATURE_SELECTED` (a tapped feature row) are now sent.
-- **Social proof draws its caption and author** (#954, #955): the `app_rating` variant's `text`,
+- **Social proof draws its caption and author**: the `app_rating` variant's `text`,
   and `author_name` wherever it is set.
 
 **Onboarding**
 
-- **A flow survives the OS ending the app** (#1170). When the app calls `AppDNA.configure()` in
+- **A flow survives the OS ending the app**. When the app calls `AppDNA.configure()` in
   `Application.onCreate`, a flow the OS ended in the background resumes on its step with its
   answers. Otherwise it now closes at once with a warning, instead of after a 15-second wait.
-- **What the user typed survives a rotation and the OS ending the app** (#1189). Text not yet
+- **What the user typed survives a rotation and the OS ending the app**. Text not yet
   submitted on the open step is kept; password and one-time-code fields are kept across a rotation
   only.
-- **An interactive chat step keeps its conversation** across a rotation and the OS ending the app
-  (#1193). A reply in flight during a rotation is still delivered; one lost with the process is
+- **An interactive chat step keeps its conversation** across a rotation and the OS ending the app.
+ A reply in flight during a rotation is still delivered; one lost with the process is
   asked for again, once.
-- **Steps that advance without a button** (#921, #1014). `auto_advance_seconds` (0.1–60) advances
+- **Steps that advance without a button**. `auto_advance_seconds` (0.1–60) advances
   the step after a delay; `wait_for_host: true` marks a step your app advances, so it never times
   out; `tap_anywhere_advances: true` advances on any tap a child element does not handle. All
   three go through the same advance as Continue (rules, events, required fields).
-- **`skip_to_step`** (#1056) sets where Skip goes.
-- **`dismiss_button_style`** (#1004) styles the ✕ that closes a flow: glyph, size, colour,
+- **`skip_to_step`** sets where Skip goes.
+- **`dismiss_button_style`** styles the ✕ that closes a flow: glyph, size, colour,
   background, radius and inset. The tap target does not shrink with the glyph. Unset keeps today's
   look.
-- **Store reviews** (#896). `request_store_review: true` on a step asks Play for the in-app review
+- **Store reviews**. `request_store_review: true` on a step asks Play for the in-app review
   as the step appears; a button with `action: "rate_app"` opens the app's Play Store listing.
-- **The flow's Celebration Effect is drawn** (#1026), on its first step (`on_appear`) or on every
+- **The flow's Celebration Effect is drawn**, on its first step (`on_appear`) or on every
   advance (`on_step_complete`).
-- **Sign in with Google draws Google's official mark** (#1003, #1030) instead of a bold "G", on a
+- **Sign in with Google draws Google's official mark** instead of a bold "G", on a
   white chip when the button's own fill is too dark for it.
-- **Info banner options** (#1005): `banner_hide_icon`, `banner_icon_align`, `banner_title_color`,
+- **Info banner options**: `banner_hide_icon`, `banner_icon_align`, `banner_title_color`,
   `banner_subtitle_color`, a link (`banner_link_text`, `banner_link_url`, `banner_link_color`,
   `banner_link_size`), and an uploaded icon (`banner_icon_url`, `banner_icon_size`). Defaults draw
   the banner as before.
-- **Form-field style keys** (#1052, #1053): `error_border_color` (while the field is in error),
+- **Form-field style keys**: `error_border_color` (while the field is in error),
   `font_weight`, `field_style.font_size`, and the compact picker's `field_style.height`.
-- **`min_length` and `validate_format` are enforced** on text and URL fields (#984).
-- **Category rows and live conditions** (#1013). `input_select` with `display_style:
+- **`min_length` and `validate_format` are enforced** on text and URL fields.
+- **Category rows and live conditions**. `input_select` with `display_style:
   "bubble_scroll"` draws one horizontally scrolling row of pills, opening on its first option. A
   block's `visibility_condition` can name a field on the same step and reacts as it changes. A
   Segmented block honours its `display_style`.
-- **A media gallery can carry a title** (`gallery_title`, `gallery_title_color`) (#1021, #1060).
-- **Bundled assets** (#986). A config whose images were bundled into the app (`appdna-assets/…`)
+- **A media gallery can carry a title** (`gallery_title`, `gallery_title_color`).
+- **Bundled assets**. A config whose images were bundled into the app (`appdna-assets/…`)
   loads them from the app's assets, falling back to the network for any file that is not there.
 
 **Location fields**
 
-- **A tapped suggestion is resolved once more through AppDNA's proxy** (#1147). The stored answer
+- **A tapped suggestion is resolved once more through AppDNA's proxy**. The stored answer
   is what that lookup returns and carries `mapbox_id` or `place_id`. A tap that cannot be resolved,
   or a step that moves on while it is resolving, stores the typed text. A selection is restored
   when the user comes back to the field or rotates the device.
-- **Google as a location-search provider** (#1147, #1173). With a Google key under Settings >
+- **Google as a location-search provider**. With a Google key under Settings >
   Location search, the dropdown shows the Google Maps logo, and a step that displays a Google
   answer draws a small "Google Maps" credit (an option's bottom sheet draws its own). Where an
   answer is stored or sent rather than shown (an option's value, a default value, a link or media
@@ -126,32 +126,32 @@ well as Mapbox; an onboarding flow survives a rotation and the OS ending the app
 
 **Events**
 
-- **`store_listing_opened` carries `store`** (`app_store` / `google_play`) (#974), a property both
+- **`store_listing_opened` carries `store`** (`app_store` / `google_play`), a property both
   platforms send.
 
 ### Changed
 
-- **A failed purchase now shows a banner above the purchase button, the same one iOS draws** (#1105). For
+- **A failed purchase now shows a banner above the purchase button, the same one iOS draws**. For
   `post_purchase.on_failure` actions `show_error` and `retry`, Android used to draw a centred card
   over a dimmed, full-screen backdrop that covered the plans and the purchase button. It now draws a
   red banner above the button and nothing else, so the user can pick another plan or tap the
   purchase button again straight away. Tapping the banner hides it. Successful-purchase messages are
   unchanged.
-- **The banner's retry button is now exactly a second tap on the purchase button** (#1107). It used to start
+- **The banner's retry button is now exactly a second tap on the purchase button**. It used to start
   the purchase without the button's in-progress state (so the button stayed tappable mid-purchase) and
   without the purchase metadata (a validated promo code and toggle states were dropped). It now also
   reports `CTA_TAPPED` to your paywall action listener, as a second tap would. iOS's retry button now
   starts the purchase too; it used to only hide the banner.
 - **Naming the selected plan on a multi-plan purchase button is now optional, and its wording is
-  yours** (#1104). The paywall's top-level `cta` gains `name_plan` (`false` shows exactly the text you
+  yours**. The paywall's top-level `cta` gains `name_plan` (`false` shows exactly the text you
   configured; default: the plan is named, as before) and `plan_format` (`{cta}` and `{plan}`, default
   `{cta} — {plan}`), which is translatable as `cta.plan_format` so a locale can reorder the two.
   The sticky-footer button now names the plan too, as it already did on iOS.
-- **The purchase button behaves the same wherever it is drawn** (#1109). A purchase button inside a paywall
+- **The purchase button behaves the same wherever it is drawn**. A purchase button inside a paywall
   section or a sticky footer started the paywall's particle effect on the tap rather than after the
   purchase succeeded — the pinned button already waited for the purchase.
 
-- **Play Billing Library 7.0.0 → 8.0.0** (#1112). Google Play refuses an app update built on Play
+- **Play Billing Library 7.0.0 → 8.0.0**. Google Play refuses an app update built on Play
   Billing Library 7 ("must update to at least version 8.0.0"), and this SDK is where an integrating
   app gets it from, so every app on 1.0.55 or earlier is blocked from publishing. Nothing in the
   public API changes.
@@ -160,120 +160,119 @@ well as Mapbox; an onboarding flow survives a rotation and the OS ending the app
   helpers the SDK used from it are now internal. An app on Kotlin 1.9 keeps building. If your own code
   uses `billing-ktx`, add it to your app's dependencies directly. (8.0.0 rather than a later 8.x:
   `billing-ktx` 8.1.0+ requires kotlin-stdlib 2.2.)
-- **Unstyled text follows the step's background** (#1194, #1196, #1198). Text, headings, field
+- **Unstyled text follows the step's background**. Text, headings, field
   labels, typed text, placeholders, the cursor, the password field and the back / close / Skip
   controls default to light ink on a dark, gradient or image step, and stay dark on a light one. An
   unstyled password field used to be white, so invisible on a light step; text and labels used to
   be dark, so nearly invisible on a dark one. Authored colours still win.
-- **A paywall's colours follow its page** (#891, #909, #926, #938, #946, #961, #966, #1067). Text,
+- **A paywall's colours follow its page**. Text,
   icons, tiles and dots nobody coloured are read off the page background. Android used hard-coded
   white and a dark theme, so on a light paywall the selected plan, feature rows, cards, countdowns,
   legal text, timelines and carousels could draw nothing visible, and an unset page background was
   black where iOS draws white.
-- **A block-based step has no step-level Skip** (#1200). With `skip_enabled`, Android drew a Skip
+- **A block-based step has no step-level Skip**. With `skip_enabled`, Android drew a Skip
   button over the bottom of the step that took a bottom-zone Continue's taps, so tapping Continue
   skipped the step without storing its answer. On a block step, Skip is a Button block with
   `action: "skip"`, as on iOS. Legacy step types keep their Skip.
-- **Store reviews are never pre-screened** (#897). If any branch of a survey asks for a review,
+- **Store reviews are never pre-screened**. If any branch of a survey asks for a review,
   every respondent who finishes is eligible and Play decides the rest; the respondent's own branch
   still runs. `review_prompt_accepted` and `review_prompt_declined` are no longer sent, because
   neither store reports the outcome.
-- **A survey trigger's unknown `frequency` means `once`**, the documented default (#1064). Android
+- **A survey trigger's unknown `frequency` means `once`**, the documented default. Android
   treated it as unlimited.
-- **A button's "Text" colour wins over the Typography colour** (#1001), as on iOS.
-- **Markdown outside the supported subset is converted, not printed** (#893, #900): `# Heading`
+- **A button's "Text" colour wins over the Typography colour**, as on iOS.
+- **Markdown outside the supported subset is converted, not printed**: `# Heading`
   draws bold, `> quote` italic, `- item` as "• item", a table row as "a · b", and inline code
   without its backticks.
-- **A user trait counts as present only when it holds a non-null value** (#1212), in audience
+- **A user trait counts as present only when it holds a non-null value**, in audience
   rules, matching the server.
 
 ### Fixed
 
 **Paywalls & billing**
 
-- **A subscription purchase now starts the free trial the paywall shows** (#1113). With no
+- **A subscription purchase now starts the free trial the paywall shows**. With no
   `offerToken`, the purchase launched the base plan every time while the paywall read its "1 week free
   trial" sentence from Play's eligible offers, so Play's sheet said "Starting today" at the full price.
   It now uses the same free-trial offer the sentence came from, and the base plan when Play returns
   none. An explicit `offerToken` is still bought as given; an introductory price is never chosen
   automatically.
-- **`onEntitlementsChanged` fires on a renewal, and on the main thread** (#1061). Only a change of
+- **`onEntitlementsChanged` fires on a renewal, and on the main thread**. Only a change of
   product id was reported, so a renewal, a grace period or a billing-retry recovery fired nothing,
   and the lambda could run on a background thread.
-- **A paywall whose purchase button is set only at the document root draws it** (#1073). The plans
+- **A paywall whose purchase button is set only at the document root draws it**. The plans
   could be selected and nothing bought them.
-- **The particle effect fires on its authored trigger** (#997, #1103): `on_appear` when the paywall
+- **The particle effect fires on its authored trigger**: `on_appear` when the paywall
   shows, `on_purchase` once a purchase has succeeded. It used to start on the purchase-button tap
   whatever its trigger, and keep running over a payment-failed message.
-- **An authored shadow draws as authored** (#886): offset, blur, spread and colour. Android drew the
+- **An authored shadow draws as authored**: offset, blur, spread and colour. Android drew the
   same faint elevation shadow for every value, including a fully transparent one.
-- **A colour is parsed the same way everywhere** (#885). Paywalls and surveys read `#RRGGBBAA` as
+- **A colour is parsed the same way everywhere**. Paywalls and surveys read `#RRGGBBAA` as
   ARGB and drew an unreadable colour as opaque black or white; they now use the SDK's one parser.
-- **A comparison table draws its column headers** (#971, #972) when `columns` is a list of labels.
-- **A named feature icon draws** (#1067). `icon: "check"` printed the word "check".
-- **A numeric plan price is shown** (#959). A price authored as a number drew empty, and an integral
+- **A comparison table draws its column headers** when `columns` is a list of labels.
+- **A named feature icon draws**. `icon: "check"` printed the word "check".
+- **A numeric plan price is shown**. A price authored as a number drew empty, and an integral
   one as "9.0"; it now reads "9", as on iOS.
-- **The sticky footer honours `blur_background`** (#976) with a translucent layer, and a rounded
-  plan badge has the same 6 dp corner as on iOS (#988).
-- **The close button no longer covers the header title** (#881). The header reserves room for it.
-- **The default confetti and fireworks colours are the same as on iOS** (#1040).
+- **The sticky footer honours `blur_background`** with a translucent layer, and a rounded
+  plan badge has the same 6 dp corner as on iOS.
+- **The close button no longer covers the header title**. The header reserves room for it.
+- **The default confetti and fireworks colours are the same as on iOS**.
 
 **Onboarding**
 
 - **A button with an action the SDK does not recognise (for example `continue`) advances with the
-  step's answers** (#1091). It used to advance and discard them.
-- **Coming back to a question step shows the options the user chose**, with Continue enabled
-  (#1188).
-- **A dropdown-style select opens the picked option's bottom sheet** (#1172).
-- **A step whose `layout.content_blocks` is empty falls back to the step's root blocks** (#772), as
+  step's answers**. It used to advance and discard them.
+- **Coming back to a question step shows the options the user chose**, with Continue enabled.
+- **A dropdown-style select opens the picked option's bottom sheet**.
+- **A step whose `layout.content_blocks` is empty falls back to the step's root blocks**, as
   on iOS. It used to render blank.
-- **A circular countdown's ring sweeps** (#1066). It sat at 75% for the whole countdown.
+- **A circular countdown's ring sweeps**. It sat at 75% for the whole countdown.
 - **A Multi-buttons border colour draws a border, and `background_full_bleed` reaches the screen
-  edges** (#1007, #1006, #1036).
-- **Rive state-machine inputs apply** (#1017, #1024). `rive_inputs` was never read; a string input
+  edges**.
+- **Rive state-machine inputs apply**. `rive_inputs` was never read; a string input
   now fires a trigger, as on iOS.
-- **A Google map pans with a drag** (#951). The step's scroll took vertical drags that began on the
+- **A Google map pans with a drag**. The step's scroll took vertical drags that began on the
   map.
-- **Opening a step with a map no longer blocks the main thread** (#952). The Maps renderer is now
+- **Opening a step with a map no longer blocks the main thread**. The Maps renderer is now
   loaded in the background when a flow containing a map opens; it used to stall the app for up to
   about a second.
-- **A selected location answer, and any list or map answer, reads back the same after a relaunch**
-  (#1150). Nested values were persisted as their `toString()`, so after a restart `getLocationData`
+- **A selected location answer, and any list or map answer, reads back the same after a relaunch**.
+ Nested values were persisted as their `toString()`, so after a restart `getLocationData`
   returned `"{formatted_address=…, city=…}"` as the address and nothing else, and a multi-select
   answer came back as the text `"[a, b]"`. They are now stored as JSON and read back as the `Map` /
   `List` they were, as on iOS; the same applies to `setSessionData`. An answer saved by an earlier
   version still reads as typed text. A value JSON cannot hold (NaN, infinity, a non-JSON type) is
   kept for the session but not persisted.
-- **`{{onboarding.<step>.<field>.city}}` now resolves** (#1158). The token path was split at most
+- **`{{onboarding.<step>.<field>.city}}` now resolves**. The token path was split at most
   three ways, so the field id became `user_location.city`. A token now walks into a structured answer
   to any depth, on `onboarding.*` and `responses.*`.
 
 **Location fields**
 
-- **The Location content block honours its settings** (#963, #964). Location Type, bias country,
+- **The Location content block honours its settings**. Location Type, bias country,
   language and minimum characters now apply, as on the form-step field. An unset type sends no type,
   as on iOS (it sent `address`), and a type the proxy does not accept is dropped instead of returning
   no suggestions. A suggestion no longer reads "Kyoto / Kyoto, Japan".
-- **Minimum characters counts the characters a user sees** (#1209). An emoji or a flag counted as
+- **Minimum characters counts the characters a user sees**. An emoji or a flag counted as
   two or four, so the search started early.
-- **The keyboard's Search key leaves a location field** (#1195), closing the dropdown and the
+- **The keyboard's Search key leaves a location field**, closing the dropdown and the
   keyboard as return does on iOS. Leaving the field also cancels a pending search.
 
 **Rich text**
 
-- **Rich text and an agreement's copy draw markdown as iOS draws it** (#1183, #1186). Android knew
+- **Rich text and an agreement's copy draw markdown as iOS draws it**. Android knew
   only `**bold**`, `*italic*` and `++underline++`, so `_emphasis_`, `__strong__`, `~~struck~~`, a code
   span and a backslash escape were drawn as typed, nested markers paired differently, a link with an
   invalid URL showed its raw markdown and an image showed `![alt](…)`. Inline markdown now follows
   CommonMark as iOS's parser does: `_` and `*` emphasis (an `_` inside a word stays text),
   strikethrough, code spans in a monospaced face, escapes, an invalid link's label as plain text, and
   an image's alt text. An agreement's copy no longer draws `++underline++`, which iOS never drew there.
-- **An HTML entity draws as its character, as on iOS** (#1221). `&amp;`, `&copy;`, `&nbsp;` and
+- **An HTML entity draws as its character, as on iOS**. `&amp;`, `&copy;`, `&nbsp;` and
   `&#35;` were drawn as typed; every HTML5 named reference (with its `;`) and every numeric one is now
   decoded, in text, a link's label and address, and an `<…>` autolink, but not inside a code span or
   after a backslash. An inline HTML tag is still drawn as typed, but the markdown inside it is no
   longer read.
-- **A link to an international host opens the same host as on iOS** (#1185). The host was converted
+- **A link to an international host opens the same host as on iOS**. The host was converted
   with IDNA2003, so a link to `straße.de` opened `strasse.de`, a different domain. It is now converted
   as iOS converts it (UTS #46, non-transitional): `straße.de` opens `xn--strae-oqa.de`, a zero-width
   joiner is kept only where its script allows it (otherwise the text draws without a link), and every
@@ -281,43 +280,43 @@ well as Mapbox; an onboarding flow survives a rotation and the OS ending the app
 
 **Surveys**
 
-- **An emoji answer's sentiment is read against the question's own scale** (#1011, #1037). Answers
+- **An emoji answer's sentiment is read against the question's own scale**. Answers
   on the console's default scale or any custom scale were neutral, and a CSAT question answered with
   an emoji was always neutral, so `on_positive` / `on_negative` follow-ups never ran.
-- **The feedback form is shown on the screen underneath the survey** (#898). It was built on the
+- **The feedback form is shown on the screen underneath the survey**. It was built on the
   closing survey screen and leaked its window.
-- **The feedback form records how it ended, and which survey it was** (#1010). A back press, a tap
+- **The feedback form records how it ended, and which survey it was**. A back press, a tap
   outside, or the host taking the screen away emitted nothing, and `survey_feedback_submitted` had
   no `survey_id`.
-- **A choice option's icon object draws its icon** (#999). It was ignored.
-- **A survey trigger's `neq`, `in` and `not_in` conditions are implemented** (#1064).
-- **A survey skipped for its love-score or minimum-sessions rule says so** in the debug log (#1115).
+- **A choice option's icon object draws its icon**. It was ignored.
+- **A survey trigger's `neq`, `in` and `not_in` conditions are implemented**.
+- **A survey skipped for its love-score or minimum-sessions rule says so** in the debug log.
 
 **Screens**
 
-- **A screen section draws its style** (#904, #981): background, gradient, padding, margin, radius,
+- **A screen section draws its style**: background, gradient, padding, margin, radius,
   border, shadow and opacity, and the screen's `layout.padding`. A section's bare `thumbnail_url` and
   `speed` keys are honoured.
 
 **Identity, targeting & networking**
 
-- **`identify` sends a `LocationData` trait as its answer map** (#1202, #1208, #1211). It used to send
+- **`identify` sends a `LocationData` trait as its answer map**. It used to send
   null and store the object's `toString()`. Any other non-JSON trait is dropped with a warning. A null
   trait (including the nulls in a React Native location answer) is kept, across a relaunch, and
   `{{user.x | fallback}}` takes its fallback for it.
-- **An audience operator the SDK does not implement matches nobody** (#1213). It used to match every
+- **An audience operator the SDK does not implement matches nobody**. It used to match every
   user. `not_exists` is implemented.
-- **A multi-select Select records its picks the same way everywhere** (#1147). Tapping an option over a
+- **A multi-select Select records its picks the same way everywhere**. Tapping an option over a
   stored single answer now leaves only the tapped option, as on iOS (it used to keep both), and picking an
   option whose `value` is empty records it, so a later `{{selected.<field_id>.label}}` reads it.
-- **A deferred deep link survives a failed first lookup** (#1063). A launch with no network used to
+- **A deferred deep link survives a failed first lookup**. A launch with no network used to
   lose the link for good; up to four failed attempts are retried on later launches.
-- **Compressed server responses are read** (#857). The SDK set `Accept-Encoding` itself, which stops
+- **Compressed server responses are read**. The SDK set `Accept-Encoding` itself, which stops
   OkHttp decompressing, so any gzip response failed to parse.
 
 ### Removed
 
-- **Inert config fields** (#992, #996): `affects_price`, `justify`, and the Lottie `lottie_json` /
+- **Inert config fields**: `affects_price`, `justify`, and the Lottie `lottie_json` /
   `color_overrides` keys. None of them was drawn; use `lottie_url` and `row_distribution`. A published
   document that still carries them decodes as before.
 
@@ -897,38 +896,38 @@ Wraps iOS 1.0.79. Publishable version and feature-parity marker move independent
 - A stray grey **"Skip"** drew under the CTA of *every* screen. The render was gated on the skip
   handler being non-null, and an earlier change had just made that handler unconditional — so the proxy for
   "is skipping allowed" stopped meaning anything. It reads `skip_enabled` now, which is the flag the
-  console actually writes. (#653)
+  console actually writes.
 - **`horizontal_align` did nothing on a width-constrained block.** A block with `element_width` of
   `75%` or `300px` got its sizing box first, and the alignment was then applied *inside* a box
   already shrunk to that width — so there was no room left to move in. A width-constrained block now
   gets an outer full-width box that carries the alignment, matching SwiftUI's frame order. Affected
-  any width-constrained block (for example a 75%-wide button) authored `center` or `right`. (#654, #659)
+  any width-constrained block (for example a 75%-wide button) authored `center` or `right`.
 - **Content sat behind the pinned bottom zone** and could not be scrolled to. The scroll area
   reserved a hardcoded 80dp under a zone that is routinely ~140dp (two buttons plus a legal line),
   so the last lines of a summary were unreachable — the scroll range ended before them. The reserve
   is the zone's measured height now, and stays 0 when there is no bottom zone so short centred
-  screens stay centred. (#655)
+  screens stay centred.
 - **Summary cards vanished** when a single token did not resolve. The SDK dropped the whole stat,
   so one missing key in the host payload took the row with it. A card is dropped only when it would
   say nothing at all: an unresolved *value* keeps the card and shows an em-dash, an unresolved
-  *label* keeps the value and drops the caption. (#660)
+  *label* keeps the value and drops the caption.
 - The **"or" text inside a social-login divider** was pinned to the theme's 60%-alpha on-surface
   colour, so the authored colour applied to the line and not to the word between its segments.
-  Reads `divider_text_color` now. (#615)
+  Reads `divider_text_color` now.
 
 ### Added
 - **Multi-buttons** — a group that lays its children out 1–3 per row, with the short last row either
   centred or stretched, and its own background and corner radius. The children are real `button`
   blocks carrying every Button setting, because each one triggers something different in the host
-  app. (#609)
+  app.
 - A button action that **refreshes the step in place**. Until now `onElementInteraction` was fired
   only by a fixed set of interactive blocks and never by a button, so a "Show more options" control
   had no way to ask the host for new content without also advancing. The host's reply can now
-  replace a named block's `field_options`, which is where a select's options actually live. (#657)
+  replace a named block's `field_options`, which is where a select's options actually live.
 - Paywalls: a **standalone Back button** with its own style, position, colour, size, delay and text,
-  independent of the close affordance. (#652)
+  independent of the close affordance.
 - Paywalls: **Restore background colour and corner radius**, and a corner radius on each extra CTA
-  button. (#651)
+  button.
 
 ## [1.0.50] — 2026-09-17
 

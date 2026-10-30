@@ -37,7 +37,7 @@ internal class SurveyManager(
     /**
      * `true` means "no feedback form is outstanding", which is the state before one is ever shown.
      *
-     * 🔴 #920 fixed this on iOS and the comment there said Android "gets this from its activity
+     * 🔴 iOS fixed this first and the comment there said Android "gets this from its activity
      * lifecycle" — true of the CLEANUP and not of the EVENT. `onActivityDestroyed` dismissed the
      * dialog and recorded nothing, and neither did a back press or an outside tap, so
      * `feedback_form_dismissed` under-counted on exactly the paths the user never chose. Worse,
@@ -346,7 +346,7 @@ internal class SurveyManager(
         val surveyId = currentSurveyId ?: config.name
 
         /*
-         * #897 — A STORE REVIEW PROMPT IS NEVER CONDITIONED ON THE ANSWER.
+         * A STORE REVIEW PROMPT IS NEVER CONDITIONED ON THE ANSWER.
          *
          * The sentiment branch above is the right shape for every OTHER follow-up: a feedback form
          * for unhappy users and a thank-you for happy ones are ordinary product decisions. A store
@@ -461,7 +461,7 @@ internal class SurveyManager(
                 .create()
 
             /*
-             * #898 — the dialog goes when its activity goes.
+             * The dialog goes when its activity goes.
              *
              * Skipping a finishing activity above stops the common case; this stops the race that
              * remains. An activity can finish between `show()` and the user's next tap — the host
@@ -513,7 +513,7 @@ internal class SurveyManager(
             @Suppress("UNCHECKED_CAST")
             val activities = activitiesField.get(thread) as? android.util.ArrayMap<Any, Any>
             /*
-             * #898 — PICK THE BEST ACTIVITY, in two passes. `paused` alone is not enough, and
+             * PICK THE BEST ACTIVITY, in two passes. `paused` alone is not enough, and
              * neither is simply rejecting a finishing one.
              *
              * A follow-up runs as the SurveyActivity is going away, and its pause had TIMED OUT

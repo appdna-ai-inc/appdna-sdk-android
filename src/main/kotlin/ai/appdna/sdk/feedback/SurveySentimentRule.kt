@@ -3,7 +3,7 @@ package ai.appdna.sdk.feedback
 /**
  * WHICH follow-up branch a completed survey takes — in one place both platforms are held to.
  *
- * 🔴 #1011 — this lived inline in both renderers and classified an emoji answer against a
+ * 🔴 This lived inline in both renderers and classified an emoji answer against a
  * HARD-CODED literal of the five default emoji. The Console's own default scale is not that list
  * (it writes 😟 and 🙂 where the SDKs had 😕 and 😊), so a survey created in the Console and
  * answered with either middle face came back NEUTRAL, and any custom scale came back neutral for
@@ -27,7 +27,7 @@ object SurveySentimentRule {
         val type = surveyType ?: ""
 
         /*
-         * 🔴 #1037 — A NUMERIC TYPE WITH A NON-NUMERIC ANSWER FALLS THROUGH. It must not stop here.
+         * 🔴 A NUMERIC TYPE WITH A NON-NUMERIC ANSWER FALLS THROUGH. It must not stop here.
          *
          * iOS reads `if ["csat","rating"].contains(type), let rating = intValue(answer)`, where the
          * binding is PART of the condition: a `csat` survey answered with an emoji drops out of the
@@ -39,7 +39,7 @@ object SurveySentimentRule {
          * author, "rate your satisfaction" with five faces — classified EVERY answer as neutral on
          * Android and correctly on iOS. With no `on_neutral` branch authored, `executeFollowUp`
          * returned at its second `?: return` and the feedback form never appeared, silently and
-         * with nothing in logcat. That is #1037, and it was invisible until a survey was answered
+         * with nothing in logcat. It was invisible until a survey was answered
          * on a device.
          *
          * The shared FILE existed on both platforms and the two still disagreed, because a Swift

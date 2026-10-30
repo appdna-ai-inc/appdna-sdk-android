@@ -6,7 +6,7 @@ import kotlin.math.pow
  * WHETHER Google's four-colour mark needs a white chip behind it. Mirror of iOS
  * `Core/GoogleMarkChip.swift`, and the same function both renderers call.
  *
- * 🔴 #1030 — the official mark is red, yellow, green and BLUE, and the Google provider's default
+ * 🔴 The official mark is red, yellow, green and BLUE, and the Google provider's default
  * button fill is `#4285F4`. On that fill the blue arm and crossbar vanish into the button and the
  * mark reads as a "C". Google's own guidelines put the mark on a white surface — a white button,
  * or a white circular chip when the button is coloured — so it is off-guideline as well as

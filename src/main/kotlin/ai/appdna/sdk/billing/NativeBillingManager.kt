@@ -929,7 +929,7 @@ class NativeBillingManager internal constructor(
                 if (token != null) offers?.find { it.offerToken == token }
                 else {
                     /*
-                     * #1113 — with no named offer, the FREE-TRIAL offer the paywall advertised, when
+                     * With no named offer, the FREE-TRIAL offer the paywall advertised, when
                      * Play returned one (it only does for a user who is eligible), chosen by the same
                      * rule that wrote the paywall's trial sentence. Otherwise the base plan (no
                      * offerId), never an arbitrary one. This used to be the base plan always, so the

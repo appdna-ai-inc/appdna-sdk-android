@@ -311,7 +311,7 @@ internal fun VideoSectionRenderer(section: ScreenSection, context: SectionContex
     ai.appdna.sdk.core.VideoBlockView(
         block = ai.appdna.sdk.core.VideoBlock(
             video_url = url,
-            // #981 — the screens editor writes `thumbnail_url` (SectionPropertiesPanel.tsx:521)
+            // The screens editor writes `thumbnail_url` (SectionPropertiesPanel.tsx:521)
             // and iOS's VideoSectionRenderer reads exactly that, so an authored poster frame
             // reached nothing here. The prefixed spelling stays first for a section pasted from a
             // content block.
@@ -336,7 +336,7 @@ internal fun LottieSectionRenderer(section: ScreenSection, context: SectionConte
     val url = section.data["lottie_url"] as? String ?: section.data["url"] as? String
     val height = (section.data["lottie_height"] as? Number)?.toFloat()
         ?: (section.data["height"] as? Number)?.toFloat() ?: 200f
-    // #996 — `lottie_json` is gone. It was read here, carried into the DTO, and drawn by NOTHING;
+    // `lottie_json` is gone. It was read here, carried into the DTO, and drawn by NOTHING;
     // the console could never set it, so no section in production has one.
     if (url == null) {
         Box(modifier = Modifier.fillMaxWidth().height(height.dp))
@@ -347,7 +347,7 @@ internal fun LottieSectionRenderer(section: ScreenSection, context: SectionConte
             lottie_url = url,
             autoplay = section.data["lottie_autoplay"] as? Boolean ?: section.data["autoplay"] as? Boolean ?: true,
             loop = section.data["lottie_loop"] as? Boolean ?: section.data["loop"] as? Boolean ?: true,
-            // #981 — same: the editor's Speed slider writes `speed`, which iOS reads, and this
+            // Same: the editor's Speed slider writes `speed`, which iOS reads, and this
             // read only the prefixed name, so every authored playback speed was 1.0 on Android.
             speed = (section.data["lottie_speed"] as? Number)?.toFloat()
                 ?: (section.data["speed"] as? Number)?.toFloat() ?: 1.0f,

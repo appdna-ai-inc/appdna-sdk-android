@@ -1,11 +1,11 @@
 package ai.appdna.sdk.billing
 
 /**
- * #933 — the STORE's billing period, as words a user can read.
+ * The STORE's billing period, as words a user can read.
  *
  * Both stores report a subscription's period structurally — StoreKit's `subscription.subscriptionPeriod`,
  * Play's `billingPeriod` — as an ISO-8601 duration: `P1W`, `P1M`, `P3M`, `P1Y`. The SDKs have
- * captured it since #923 ([PriceResolver]) and rendered NONE of it: the period beside a price was
+ * captured it since paywalls began showing store prices ([PriceResolver]) and rendered NONE of it: the period beside a price was
  * whatever an author typed in `plan.period`, which 0 of 81 production plans carried. So a paywall
  * showed the store's real price with no period at all, or with a period that nobody updated when
  * the product changed.

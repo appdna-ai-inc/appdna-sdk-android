@@ -12,13 +12,13 @@ import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
 
 /**
- * #939 — THE PART OF A REVIEW REQUEST THAT IS OURS, AND IS ASSERTABLE.
+ * THE PART OF A REVIEW REQUEST THAT IS OURS, AND IS ASSERTABLE.
  *
  * Neither store reports whether a prompt appeared — deliberately — so a device walk can show the
  * step arriving and the SDK asking, and nothing more. What IS ours is the rate limit: three a
  * year, ninety days apart, kept in `SharedPreferences`. Nothing tested it on either platform.
  *
- * 🔴 #928's class is why it matters. `request_store_review` was decoded and never encoded, so it
+ * 🔴 An earlier bug of the same class is why it matters. `request_store_review` was decoded and never encoded, so it
  * vanished from the cache on a cold start and a flow asked again every launch. The rate limit is
  * the same shape of state — if it did not survive a restart, a user would be asked on every cold
  * start, which is exactly what the limit exists to prevent.
@@ -69,7 +69,7 @@ class ReviewPromptRateLimitTest {
     }
 
     /**
-     * 🔴 THE COLD-START ASSERTION, which is the one #928 is a warning about.
+     * 🔴 THE COLD-START ASSERTION, which is the one that earlier bug is a warning about.
      *
      * `SharedPreferences` is the store, so the state outlives the process by construction — but
      * "by construction" is what was said about `request_store_review` reaching the cache, and it

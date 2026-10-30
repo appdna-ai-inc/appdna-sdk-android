@@ -3,7 +3,7 @@ package ai.appdna.sdk.billing
 /**
  * What a plan's price label says: the STORE's price, or the one an author typed.
  *
- * 🔴 Until #923 a paywall NEVER asked the store what a product costs. `price_display` was a
+ * 🔴 Until this substitution existed a paywall NEVER asked the store what a product costs. `price_display` was a
  * free-text field and the only thing a user ever saw, which meant a price change in Play Console
  * or App Store Connect did not reach the screen — the store charged the new price and the paywall
  * kept showing the old one. `PriceResolver` existed on this platform all along; its only callers
@@ -16,9 +16,9 @@ package ai.appdna.sdk.billing
  * the author typed: no product id, a product the store does not know, a lookup that threw, a lookup
  * that timed out, an empty display price.
  *
- * **Scope.** The PRICE, and only the price. The billing period stays authored (#913) and intro
+ * **Scope.** The PRICE, and only the price. The billing period stays authored and intro
  * offers stay unrendered, because both need localized words of OURS — the store localizes a price,
- * not the phrase "/month" — and that is a separate product decision (#933).
+ * not the phrase "/month" — and that is a separate product decision.
  *
  * Mirrors iOS `StorePriceSubstitution.swift`. Pinned on both by the shared fixture
  * `billing/store_price_substitution`.

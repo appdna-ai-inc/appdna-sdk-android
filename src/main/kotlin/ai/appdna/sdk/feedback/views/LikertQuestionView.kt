@@ -57,7 +57,7 @@ fun LikertQuestionView(
     questionTextStyle: TextStyle = TextStyle.Default,
 ) {
     val cfg = question.likertConfig
-    // Through LikertScaleRule, which the shared fixture drives — never re-stated here (#998).
+    // Through LikertScaleRule, which the shared fixture drives — never re-stated here.
     val b = LikertScaleRule.bounds(cfg?.min, cfg?.max)
     val safeMin = b.lo
     val safeMax = b.hi

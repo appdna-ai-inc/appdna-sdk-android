@@ -5,7 +5,7 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 /**
- * #952 — the threshold, and the reason it is where it is.
+ * The threshold, and the reason it is where it is.
  *
  * The watchdog itself needs a `Choreographer` and a foreground activity, so what is asserted here
  * is the decision it makes: which gaps count. That is the part a future change would get wrong —

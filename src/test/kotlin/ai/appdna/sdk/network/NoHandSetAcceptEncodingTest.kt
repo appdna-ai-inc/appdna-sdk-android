@@ -5,7 +5,7 @@ import org.junit.Test
 import java.io.File
 
 /**
- * #857 — NO PRODUCTION REQUEST MAY SET `Accept-Encoding` BY HAND.
+ * NO PRODUCTION REQUEST MAY SET `Accept-Encoding` BY HAND.
  *
  * OkHttp's `BridgeInterceptor` adds `Accept-Encoding: gzip` itself and transparently decompresses
  * the response — but only when the application has not set that header. Set it by hand and OkHttp

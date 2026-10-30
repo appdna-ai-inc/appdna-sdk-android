@@ -17,7 +17,7 @@ import ai.appdna.sdk.core.listOfMaps
 import ai.appdna.sdk.core.obj
 import ai.appdna.sdk.core.objMap
 
-/** #958 — what a mis-typed field in this document is reported against. */
+/** What a mis-typed field in this document is reported against. */
 private const val SURFACE = TypedRead.ONBOARDING
 
 /**
@@ -73,7 +73,7 @@ data class OnboardingFlowConfig(
 /**
  * How the DISMISS control looks — the ✕ that closes the flow.
  *
- * 🔴 #1004 — none of this was authorable on either platform. Android drew `Text("✕")` at a
+ * 🔴 None of this was authorable on either platform. Android drew `Text("✕")` at a
  * hardcoded 14sp in `onBackground` at 60% alpha, in a row inset 8dp from the screen edge, and the
  * report named all of it: "its size, its background color and the color of the X cannot be set,
  * and it is pushed as far as possible into the top-right corner, which makes it hard to tap".
@@ -143,7 +143,7 @@ data class OnboardingSettings(
     // Progress style + back button + content padding (iOS parity)
     val progress_style: String? = null,  // "dots" | "segmented_bar" | "continuous_bar" | "fraction" | "none"
     val back_button_style: BackButtonStyle? = null,
-    /** #1004 — how the ✕ looks. Null keeps the values that shipped hardcoded. */
+    /** How the ✕ looks. Null keeps the values that shipped hardcoded. */
     val dismiss_button_style: DismissButtonStyle? = null,
     val dismiss_allowed: Boolean? = null,
     /** Global horizontal content padding in points. Default 24. */
@@ -189,7 +189,7 @@ data class OnboardingStep(
     /** When true, the back button is hidden on this step (the step still counts toward total progress). */
     val hide_back: Boolean? = null,
     /**
-     * #896 — when true, the SDK asks Play for an in-app review as this step APPEARS.
+     * When true, the SDK asks Play for an in-app review as this step APPEARS.
      *
      * 🔴 On the step, not on a button. Apple's rule is to not call the review prompt in response
      * to a user action and Google's design guidelines forbid putting a prompt in front of theirs;
@@ -201,7 +201,7 @@ data class OnboardingStep(
      */
     val request_store_review: Boolean? = null,
     /**
-     * #921 — the step advances by itself after this many seconds.
+     * The step advances by itself after this many seconds.
      *
      * A splash screen and a step with a forgotten button are the same shape on the wire; this is
      * one of the two fields that tell them apart. [StepAutoAdvance] holds the precedence
@@ -210,7 +210,7 @@ data class OnboardingStep(
      */
     val auto_advance_seconds: Double? = null,
     /**
-     * #921 — the step is DECLARED host-driven: it holds until the app calls
+     * The step is DECLARED host-driven: it holds until the app calls
      * `AppDNA.advanceOnboardingStep()`, and never times out.
      *
      * Carries no rendering of its own. What it buys is that the console's publish warning and the
@@ -219,7 +219,7 @@ data class OnboardingStep(
      */
     val wait_for_host: Boolean? = null,
     /**
-     * #1014 — a tap ANYWHERE on the step advances it.
+     * A tap ANYWHERE on the step advances it.
      *
      * A splash that is nothing but an image has no button to hang a CTA on, and the only way past
      * it was "Allow skip" — a ✕ in the corner, which says "leave" rather than "continue". Composes
@@ -603,7 +603,7 @@ data class FormField(
     val options: ImmutableList<FormFieldOption>? = null,
     val config: FormFieldConfig? = null,
     /**
-     * #596 — the SAME `config` object, kept raw.
+     * The SAME `config` object, kept raw.
      *
      * `FormFieldConfig` is a typed class, so every key it does not declare is dropped at parse. The
      * console's Select field offers six display styles and roughly twenty option-styling keys; none
@@ -877,7 +877,7 @@ data class ElementInteractionResult @JvmOverloads constructor(
     /** Patches to merge into the step's `inputValues` (keyed by field_id). */
     val inputValuePatches: Map<String, Any>? = null,
     /**
-     * #657 — replacement options, keyed by blockId. The same shape `StepConfigOverride.fieldOptions`
+     * Replacement options, keyed by blockId. The same shape `StepConfigOverride.fieldOptions`
      * takes at render time.
      *
      * Without this the refresh action could not change the thing it exists to change: a select's
@@ -902,7 +902,7 @@ data class ElementInteractionResult @JvmOverloads constructor(
     val dataContext: Map<String, Any?>? = null,
 ) {
     /**
-     * The pre-#657 Java constructor `(Map, Map, boolean)`. #657 inserted
+     * The older Java constructor `(Map, Map, boolean)`. A later release inserted
      * `fieldOptions` BEFORE `advance`, so no `@JvmOverloads` overload has this parameter order; without
      * this, a Java host written against 1.0.50 stops compiling.
      */
@@ -990,7 +990,7 @@ data class AppliedInteraction @JvmOverloads constructor(
      */
     val inputValues: Map<String, Any>,
     val fieldConfigOverrides: Map<String, Map<String, Any>>,
-    /** #657 — per-block replacement options the renderer layers at read time. */
+    /** Per-block replacement options the renderer layers at read time. */
     val fieldOptionsOverrides: Map<String, List<InputOption>> = emptyMap(),
     val advance: Boolean,
     /** The raw `result.inputValuePatches`, passed through. */
@@ -1106,7 +1106,7 @@ internal object OnboardingConfigParser {
 
     @Suppress("UNCHECKED_CAST")
     private fun parseFlowConfig(id: String, map: Map<String, Any>): OnboardingFlowConfig {
-        // #958 — what a mis-typed field on the FLOW document is reported against; the nested
+        // What a mis-typed field on the FLOW document is reported against; the nested
         // objects below name their own sub-paths.
         val docPath = "flows[$id]"
         val stepsList = map.listOfMaps(SURFACE, docPath, "steps") ?: emptyList()
@@ -1157,7 +1157,7 @@ internal object OnboardingConfigParser {
             )
         }
 
-        // #1004 — the ✕'s own style, read the same way the back control's is.
+        // The ✕'s own style, read the same way the back control's is.
         val dismissStyleMap = settingsMap.objMap(SURFACE, docPath, "dismiss_button_style")
         val dismissButtonStyle = dismissStyleMap?.let { d ->
             DismissButtonStyle(
@@ -1215,7 +1215,7 @@ internal object OnboardingConfigParser {
 
     @Suppress("UNCHECKED_CAST")
     private fun parseStep(map: Map<String, Any>): OnboardingStep {
-        // #958 — what a mis-typed field in this step is reported against. The step ID, because that
+        // What a mis-typed field in this step is reported against. The step ID, because that
         // is what an author searches the console for; `?` when the step has no id, which is itself
         // worth seeing in a report.
         val path = "steps[${map["id"] as? String ?: "?"}]"
@@ -1386,7 +1386,7 @@ internal object OnboardingConfigParser {
                     validation = fieldValidation,
                     options = fieldOptions,
                     config = fieldConfig,
-                    // #596 — the same map, unfiltered, so the select styling keys survive.
+                    // The same map, unfiltered, so the select styling keys survive.
                     config_raw = fieldConfigMap,
                     depends_on = dependency,
                     style = fieldStyle,
@@ -1403,7 +1403,7 @@ internal object OnboardingConfigParser {
          * taken as the answer and the root was never read: the step renders blank on Android and
          * correctly on iOS, from one published document.
          *
-         * It matters now because the console is consolidating onto the root copy (#772). A writer
+         * It matters now because the console is consolidating onto the root copy. A writer
          * that leaves `content_blocks: []` behind instead of deleting the key would have blanked
          * every graph-authored step on Android only — the exact divergence a shared fixture exists
          * to catch, and the reason this is fixed BEFORE the console stops writing the duplicate.
@@ -1574,11 +1574,11 @@ internal object OnboardingConfigParser {
             // (mirrors iOS OnboardingConfig.swift LayoutFlagKeys decode).
             hide_progress = map.bool(SURFACE, path, "hide_progress") ?: configMap.bool(SURFACE, path, "hide_progress"),
             hide_back = map.bool(SURFACE, path, "hide_back") ?: configMap.bool(SURFACE, path, "hide_back"),
-            // Same root-then-layout ladder as the two flags above (#896).
+            // Same root-then-layout ladder as the two flags above.
             request_store_review = map.bool(SURFACE, path, "request_store_review")
                 ?: configMap.bool(SURFACE, path, "request_store_review"),
             /*
-             * #921 — the SAME root-then-layout ladder, and here it is the ONLY path that works for
+             * The SAME root-then-layout ladder, and here it is the ONLY path that works for
              * a graph-authored step: `updateNodeData` writes every Logic-panel flag into
              * `data.stepConfig`, which the console ships as the step's `layout` (= `configMap`).
              * The builder also hoists these two to the step root on save, so both are live.
@@ -1591,7 +1591,7 @@ internal object OnboardingConfigParser {
                 ?: (configMap.num(SURFACE, path, "auto_advance_seconds"))?.toDouble(),
             wait_for_host = map.bool(SURFACE, path, "wait_for_host")
                 ?: configMap.bool(SURFACE, path, "wait_for_host"),
-            // #1014 — step root first, then `layout`/`config`, like the two flags above: the
+            // Step root first, then `layout`/`config`, like the two flags above: the
             // editor writes some step settings into the nested map, and a reader that knows one
             // place misses half the flows.
             tap_anywhere_advances = map.bool(SURFACE, path, "tap_anywhere_advances")
@@ -1816,7 +1816,7 @@ internal object OnboardingConfigParser {
      */
     @Suppress("UNCHECKED_CAST")
     private fun decodeContentBlock(bm: Map<String, Any>, parentPath: String = "content_blocks"): ContentBlock {
-        // #958 — `steps[step_1].content_blocks[hero]`, so a report names the screen AND the block.
+        // `steps[step_1].content_blocks[hero]`, so a report names the screen AND the block.
         // Defaulted rather than required: a nested child is decoded through the same function and
         // its caller does not always know the step.
         val path = "$parentPath[${bm["id"] as? String ?: "?"}]"
@@ -1911,7 +1911,7 @@ internal object OnboardingConfigParser {
                         corner_radius = (pm.num(SURFACE, path, "corner_radius"))?.toFloat(),
                         icon_style = pm.str(SURFACE, path, "icon_style"),
                         icon_url = pm.str(SURFACE, path, "icon_url"),
-                        // #560 — Android maps every provider key by hand, so a field the console
+                        // Android maps every provider key by hand, so a field the console
                         // writes and this line omits is null forever and the renderer silently uses
                         // its default. That is the exact class this file's own comments record.
                         font_size = (pm.num(SURFACE, path, "font_size"))?.toFloat(),
@@ -2209,7 +2209,7 @@ internal object OnboardingConfigParser {
             artboard = bm.str(SURFACE, path, "artboard"),
             state_machine = bm.str(SURFACE, path, "state_machine"),
             /*
-             * 🔴 #1017 — THE CANONICAL KEY IS `inputs`, and this read only the alias.
+             * 🔴 THE CANONICAL KEY IS `inputs`, and this read only the alias.
              *
              * The console schema writes `inputs`; the renderer passed `block.rive_inputs` to the
              * Rive view and THIS parser never populated that field, so it was always null — while
@@ -2356,7 +2356,7 @@ internal object OnboardingConfigParser {
             gallery_spacing = (bm.num(SURFACE, path, "gallery_spacing"))?.toDouble(),
             gallery_align = bm.str(SURFACE, path, "gallery_align"),
             /*
-             * 🔴 #1021 — DECLARED, RENDERED, AND NEVER PARSED. `ContentBlockRenderer.kt:682/684`
+             * 🔴 DECLARED, RENDERED, AND NEVER PARSED. `ContentBlockRenderer.kt:682/684`
              * declares both and `MediaGalleryBlock` draws them, so a reader of either file would
              * say the gallery title works on this platform. It could not: nothing here read the
              * keys, so the fields were always null and the strip drew with no title at all while
@@ -2481,7 +2481,7 @@ internal object OnboardingConfigParser {
      * Extracted from the inline lambda it used to be. The spec requires that an option authored in
      * a set and the identical option authored inline render IDENTICALLY, and the surest way to break
      * that is to give the two sources their own parsers and let them drift a field at a time — which
-     * is exactly how this DTO reached 24 fields with a comment noting the last audit found them
+     * is exactly how this DTO reached 24 fields with a comment noting some of them had been found
      * dropped on parse.
      */
     internal fun parseInputOptionList(

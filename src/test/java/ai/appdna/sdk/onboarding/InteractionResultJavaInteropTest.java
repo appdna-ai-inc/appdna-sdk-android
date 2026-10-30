@@ -18,10 +18,10 @@ import org.junit.Test;
  * shape below is lost:
  *
  * <ul>
- *   <li>pre-#657 (Android 1.0.50): {@code ElementInteractionResult(Map, Map, boolean)} — restored by an
- *       explicit secondary constructor, because #657 inserted {@code fieldOptions} BEFORE {@code advance};
+ *   <li>before 1.0.51 (Android 1.0.50): {@code ElementInteractionResult(Map, Map, boolean)} — restored by an
+ *       explicit secondary constructor, because 1.0.51 inserted {@code fieldOptions} BEFORE {@code advance};
  *       {@code AppliedInteraction(Map, Map, boolean)} — restored by {@code @JvmOverloads};</li>
- *   <li>#657 (1.0.51–1.0.53): {@code ElementInteractionResult(Map, Map, Map, boolean)} and
+ *   <li>1.0.51–1.0.53: {@code ElementInteractionResult(Map, Map, Map, boolean)} and
  *       {@code AppliedInteraction(Map, Map, Map, boolean)};</li>
  *   <li>P1b (1.0.54): the full constructors with {@code dataContext} (and {@code inputValuePatches} on
  *       {@code AppliedInteraction}).</li>

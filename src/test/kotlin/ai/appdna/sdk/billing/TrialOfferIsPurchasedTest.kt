@@ -16,9 +16,9 @@ import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
 
 /**
- * #1113 — THE PURCHASE BUYS THE TRIAL THE PAYWALL STATED.
+ * THE PURCHASE BUYS THE TRIAL THE PAYWALL STATED.
  *
- * Measured live on #1062's first Play run: a paywall drew "1 week free trial" from Play's eligible
+ * Measured live on a first Play run: a paywall drew "1 week free trial" from Play's eligible
  * offers, and the CTA opened Play's sheet for the BASE PLAN — "Starting today 4,99 US$/month". The
  * purchase always picked the offer with no `offerId`, and Play applies no offer on its own: a
  * subscription purchase gets exactly the offer whose token it is handed.

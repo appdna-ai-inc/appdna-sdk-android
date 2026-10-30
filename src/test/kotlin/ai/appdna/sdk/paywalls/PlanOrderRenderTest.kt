@@ -13,22 +13,22 @@ import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
 
 /**
- * #1097 — DOES THE AUTHORED RANK DECIDE THE ORDER THE PLANS DRAW IN? Rendered, and read back by
+ * DOES THE AUTHORED RANK DECIDE THE ORDER THE PLANS DRAW IN? Rendered, and read back by
  * position.
  *
  * 🔴 WHY THIS EXISTS WHEN THE SHARED FIXTURE ALREADY ASSERTS THE SORT. `resolve_plan_order` calls
  * [PaywallPlanOrder.sorted] DIRECTLY, on both platforms. That proves the sorter sorts and cannot
  * see whether any renderer calls it — so deleting the call at every site leaves it green, which is
- * exactly how #1097 happened on iOS: the sort was wired into two sites that look a plan up BY ID,
+ * exactly how a plan-order bug happened on iOS: the sort was wired into two sites that look a plan up BY ID,
  * where order is irrelevant by construction, and not into the one site that draws. Same blind spot
- * as #1094 and #1095, where a runner that re-implemented the advance payload could not notice the
+ * as earlier bugs where a runner that re-implemented the advance payload could not notice the
  * production assembly breaking.
  *
  * Android's render site (`PaywallActivity.kt`, `"plans" ->`) does sort, so this is the regression
  * guard for the platform that was already right — and the assertion is the same on both, which is
  * what Rule 8 asks for.
  *
- * The plans live under `layout.sections[].config.plans`, where a real paywall keeps them (#923).
+ * The plans live under `layout.sections[].config.plans`, where a real paywall keeps them.
  */
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [34], qualifiers = "w411dp-h891dp-xxhdpi")

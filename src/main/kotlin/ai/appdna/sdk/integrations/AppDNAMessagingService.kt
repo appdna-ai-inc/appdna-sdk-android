@@ -335,7 +335,7 @@ internal class PushDismissReceiver : BroadcastReceiver() {
         val pushId = intent.getStringExtra("push_id") ?: return
         try {
             /*
-             * #968 — `delivery_id` was PUT ON THE INTENT and then dropped here, while the public
+             * `delivery_id` was PUT ON THE INTENT and then dropped here, while the public
              * events page documents `push_dismissed` as carrying `push_id · delivery_id`. So the
              * one event that says a push was rejected could not be joined to the delivery that
              * caused it. Sent only when present, like every other push event.

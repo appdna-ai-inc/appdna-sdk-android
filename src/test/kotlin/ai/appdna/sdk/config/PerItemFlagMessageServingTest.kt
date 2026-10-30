@@ -10,8 +10,8 @@ import org.robolectric.RuntimeEnvironment
 
 /**
  * Per-item flag + message serving (Android read side). Covers the exact logic where the
- * R1/R2 audit bugs lived: flag `.value` unwrap, null-flag → unset, prune-to-index-keyset (removal),
- * empty-set clear, and the R2 `parseMessages` cold-start wrapper-unwrap. Mirrors the iOS suite.
+ * earlier bugs lived: flag `.value` unwrap, null-flag → unset, prune-to-index-keyset (removal),
+ * empty-set clear, and the `parseMessages` cold-start wrapper-unwrap. Mirrors the iOS suite.
  */
 @RunWith(RobolectricTestRunner::class)
 class PerItemFlagMessageServingTest {

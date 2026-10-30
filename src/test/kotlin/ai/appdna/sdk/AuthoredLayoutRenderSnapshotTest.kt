@@ -21,11 +21,11 @@ import org.robolectric.annotation.Config
 import org.robolectric.annotation.GraphicsMode
 
 /**
- * Pixels for the two authored-layout defects that only pixels can settle — #654/#659 and #609.
+ * Pixels for the two authored-layout defects that only pixels can settle.
  *
  * `AuthoredLayoutRenderGatesTest` asserts the RULES (`needsOuterAlignmentBox`, `multiButtonRowPlan`) and
  * the shared fixture asserts the row arithmetic, but neither can see whether the renderer actually
- * USES them. That gap is not hypothetical here: #654/#659 were reported precisely because the rule
+ * USES them. That gap is not hypothetical here: the alignment bug was reported precisely because the rule
  * was right and the composition order was wrong — the sizing box was applied first, so the
  * alignment was then resolved inside a box already shrunk to 75%, leaving nowhere to move. A test
  * that only checks the function would have stayed green through the entire bug.
@@ -90,7 +90,7 @@ class AuthoredLayoutRenderSnapshotTest {
     private fun button(id: String, text: String) =
         mapOf<String, Any>("id" to id, "type" to "button", "text" to text, "action" to "next")
 
-    // ── #671 — a six-block image/heading/map/text/sound/CTA step, authored the way the console writes it ──
+    // ── a six-block image/heading/map/text/sound/CTA step, authored the way the console writes it ──
 
     /**
      * Reading code did not explain a report of a step whose screen was "frozen", so this renders a
@@ -124,7 +124,7 @@ class AuthoredLayoutRenderSnapshotTest {
         capture("authored_layout_six_block_map_step", sixBlockMapStepBlocks())
     }
 
-    // ── #671 — the map block's full-bleed crashed the whole Android screen ───────────────────
+    // ── the map block's full-bleed crashed the whole Android screen ───────────────────
 
     /**
      * Reported: on Android a step containing a map was "frozen — nothing on it moves/scrolls"; on
@@ -154,7 +154,7 @@ class AuthoredLayoutRenderSnapshotTest {
 
     // ── the sizing modes, as pictures ──────────────────────────────────────────────
     //
-    // 🔴 GOLDENS, BECAUSE EVERY MAP BUG IN THIS BATCH WAS A LAYOUT BUG. #671 was a negative inset
+    // 🔴 GOLDENS, BECAUSE EVERY MAP BUG IN THIS BATCH WAS A LAYOUT BUG. The crash was a negative inset
     // that a unit test would have called fine; the "frozen" report was a step that fits its viewport
     // and therefore has nothing to scroll. Neither is visible from an assertion about a number. A
     // picture is the only artefact that shows a map meeting both edges, or a step that lost its CTA
@@ -233,7 +233,7 @@ class AuthoredLayoutRenderSnapshotTest {
         )
     }
 
-    // ── #654 / #659 — horizontal_align on a width-constrained block ───────────────────────────
+    // ── horizontal_align on a width-constrained block ───────────────────────────
 
     /**
      * The reported screen: a 75%-wide button authored `center`, which rendered hard left.
@@ -284,7 +284,7 @@ class AuthoredLayoutRenderSnapshotTest {
         )
     }
 
-    // ── #609 — Multi-buttons ──────────────────────────────────────────────────────────────────
+    // ── Multi-buttons ──────────────────────────────────────────────────────────────────
 
     /** Three buttons, two per row: the layout that was asked for, with the short row centred. */
     @Test

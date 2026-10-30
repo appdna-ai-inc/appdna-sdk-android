@@ -36,7 +36,7 @@ fun ConfettiOverlay(
     }
 
     /*
-     * #1040 — ONE LIST, not a `when` per platform. This returned Compose's named constants for
+     * ONE LIST, not a `when` per platform. This returned Compose's named constants for
      * four of six values (`Color.Red` is #FF0000) where iOS returned SwiftUI's semantic colours
      * (`.red` is #FF3B30), so an unauthored celebration — the default the editor produces — drew
      * pure RGB here and Apple's palette there, four of seven values apart on plain confetti. An
@@ -47,12 +47,12 @@ fun ConfettiOverlay(
         .colors(effect.type, effect.colors)
         .map { StyleEngine.parseColor(it) }
 
-    // #1040 — the shared rule, so "circle or glyph" is one question with one answer.
+    // The shared rule, so "circle or glyph" is one question with one answer.
     val glyph = ai.appdna.sdk.core.CelebrationPalette.glyph(effect.type)
     val progress = remember { Animatable(0f) }
 
     /*
-     * 🔴 #956 — NO SECOND GATE on `effect.trigger`. Every caller already decides WHEN to pass
+     * 🔴 NO SECOND GATE on `effect.trigger`. Every caller already decides WHEN to pass
      * `trigger = true`: the paywall after a purchase, the survey on completion, a message on its
      * own condition. Re-checking the authored trigger here could only SUBTRACT, and it did — an
      * effect authored `on_purchase` was armed by the paywall and refused here, and

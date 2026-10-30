@@ -13,7 +13,7 @@ import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
 
 /**
- * #1073 — A PAYWALL WITH A TOP-LEVEL `cta` AND NO `cta` SECTION HAD NO BUY BUTTON ON ANDROID.
+ * A PAYWALL WITH A TOP-LEVEL `cta` AND NO `cta` SECTION HAD NO BUY BUTTON ON ANDROID.
  *
  * iOS has carried a fallback for this since its renderer was written: `PaywallRenderer.swift`'s
  * `} else if let cta = config.cta {` draws a pinned button from the document-root `cta` when the
@@ -27,11 +27,11 @@ import org.robolectric.annotation.Config
  *
  * 🔴 WHY A RENDER TEST AND NOT A FIXTURE. A shared fixture asserts a DTO; this defect is entirely
  * in which sections the SCREEN decides to pin, and the DTO was always correct — `config.cta`
- * parsed perfectly and nothing read it. That is the same gap #959 records: the parse was never the
+ * parsed perfectly and nothing read it. That is the same gap the numeric-price render test covers: the parse was never the
  * problem, reaching a pixel was.
  */
 /*
- * 🔴 THE CTA IS MATCHED BY SUBSTRING SINCE #1100, and the change in expectation is deliberate.
+ * 🔴 THE CTA IS MATCHED BY SUBSTRING, and the change in expectation is deliberate.
  *
  * On a paywall with more than one plan where no plan carries a `cta_text`, the CTA now appends the
  * selected plan's name — a button configured "Start Free Trial" draws "Start Free Trial — Monthly",
@@ -39,7 +39,7 @@ import org.robolectric.annotation.Config
  * lookup here sees the suffix.
  *
  * It exists because a plan tap that drifts far enough is claimed by the scrolling container, so the
- * selection does not change and the CTA buys the plan chosen before it (#1081, measured). Naming the
+ * selection does not change and the CTA buys the plan chosen before it (measured). Naming the
  * plan on the button is what makes that visible before the purchase rather than on the receipt
  * after. The exact-text assertions are what caught the change, which is them working.
  *
@@ -143,7 +143,7 @@ class RootCtaWithoutASectionRendersTest {
     }
 
     /*
-     * #1071 — and the button has to BUY THE SELECTED PLAN, not merely exist. This is the Android
+     * And the button has to BUY THE SELECTED PLAN, not merely exist. This is the Android
      * half of the contrast the iOS walk proves on a device: tapping the annual row changes which
      * product the CTA hands to billing.
      *

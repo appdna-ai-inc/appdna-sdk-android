@@ -16,12 +16,12 @@ import com.github.takahirom.roborazzi.captureRoboImage
 import java.io.File
 
 /**
- * #1110 — A PAYWALL'S PURCHASE CELEBRATION IS DRAWN, ON TOP OF THE PAYWALL, ON ANDROID.
+ * A PAYWALL'S PURCHASE CELEBRATION IS DRAWN, ON TOP OF THE PAYWALL, ON ANDROID.
  *
- * #1109 made `particle_effect` storable and published, and iOS proved the pixels on a device after
+ * The console now stores and publishes `particle_effect`, and iOS proved the pixels on a device after
  * a real StoreKit purchase. Android could not: the build Mac's emulator has no Play billing, so no
  * purchase there ever SUCCEEDS, and the celebration fires only on success. Decode (the shared
- * fixture) and trigger (#1103's `signalPurchaseCelebrate` from `handlePostPurchaseSuccess`) were
+ * fixture) and trigger (`signalPurchaseCelebrate` from `handlePostPurchaseSuccess`) were
  * proven; the frame was not — and the one risk named on the issue is a paywall-specific
  * composition difference, the confetti drawn UNDER the paywall's own layers.
  *

@@ -1,10 +1,10 @@
 package ai.appdna.sdk.feedback
 
 /*
- * #998 — THE LIKERT SCALE'S BOUNDS, AS ONE RULE BOTH PLATFORMS CALL.
+ * THE LIKERT SCALE'S BOUNDS, AS ONE RULE BOTH PLATFORMS CALL.
  *
  * Android had rendered a likert scale for releases while iOS drew nothing, and the clamp that
- * keeps a malformed config from crashing lived INSIDE each view. That is the shape #1037 was: a
+ * keeps a malformed config from crashing lived INSIDE each view. That is the shape of an earlier defect: a
  * rule written twice, in two languages, agreeing until one of them was edited — there, a Kotlin
  * `?: return` where Swift had an `if let` inside the condition, and a survey's follow-up silently
  * never ran.

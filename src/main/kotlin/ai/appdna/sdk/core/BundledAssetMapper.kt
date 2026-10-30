@@ -7,7 +7,7 @@ import coil.request.Options
 import java.io.IOException
 
 /**
- * #986 — BUNDLED ASSETS, ON ANDROID.
+ * BUNDLED ASSETS, ON ANDROID.
  *
  * `scripts/bundle-assets.ts` walks a downloaded config bundle, fetches the images it references
  * into an `appdna-assets/` folder, and rewrites each URL to the relative path

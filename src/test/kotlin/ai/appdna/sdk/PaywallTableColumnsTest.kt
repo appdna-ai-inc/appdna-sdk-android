@@ -8,7 +8,7 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 /**
- * #971 — the comparison table's column headers, from both shapes `columns` arrives in.
+ * The comparison table's column headers, from both shapes `columns` arrives in.
  *
  * ## The defect this locks
  *

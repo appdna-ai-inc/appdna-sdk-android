@@ -25,11 +25,11 @@ import org.robolectric.annotation.GraphicsMode
 import java.io.File
 
 /**
- * #954, #955 — DOES THE SOCIAL-PROOF SECTION DRAW ITS CAPTION AND ITS AUTHOR? Rendered, compared.
+ * DOES THE SOCIAL-PROOF SECTION DRAW ITS CAPTION AND ITS AUTHOR? Rendered, compared.
  *
  * The Android half of `SocialProofRenderTests.swift`, built the same way and for the same reason:
  * two fields decoded, travelled the wire and reached no view — `text` on the `app_rating` variant
- * (#954) and `author_name` anywhere (#955). Reading a renderer is how they got there; the only
+ * and `author_name` anywhere. Reading a renderer is how they got there; the only
  * statement worth making is about what ends up on screen.
  *
  * 🔴 NOT a golden snapshot, and not Roborazzi. A golden answers "does this match what we
@@ -125,7 +125,7 @@ class SocialProofRenderTest {
 
     private val rated = mapOf("sub_type" to "app_rating", "rating" to 4.8, "review_count" to 18240)
 
-    // ── #954: the caption ────────────────────────────────────────────────────────────────────
+    // ── the caption────────────────────────────────────────────────────────────────────
 
     @Test
     fun `the caption is drawn on the app_rating variant`() {
@@ -155,7 +155,7 @@ class SocialProofRenderTest {
         )
     }
 
-    // ── #955: the author ─────────────────────────────────────────────────────────────────────
+    // ── the author─────────────────────────────────────────────────────────────────────
 
     @Test
     fun `the author is drawn under the quote`() {
@@ -178,7 +178,7 @@ class SocialProofRenderTest {
         )
     }
 
-    // ── #947's defect, on the platform #947 did not touch ────────────────────────────────────
+    // ── the white-on-a-light-page defect, on the platform the iOS fix did not touch────────────────────────────────────
 
     /**
      * How many pixels are DARK — luminance under a quarter, i.e. ink rather than page or stars.
@@ -216,7 +216,7 @@ class SocialProofRenderTest {
     fun `the quote and the count are readable on a light page`() {
         /*
          * Both were `Color.White.copy(alpha = 0.7f)` — white at 70% over a WHITE page is nothing,
-         * so neither line was there on a light paywall. iOS retired the same constant when #947
+         * so neither line was there on a light paywall. iOS retired the same constant when a capture
          * measured 1,557 pixels changing between appearances; Android kept it, so the two
          * platforms disagreed about a line both of them draw.
          */

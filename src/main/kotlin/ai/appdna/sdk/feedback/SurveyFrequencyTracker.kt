@@ -24,7 +24,7 @@ internal class SurveyFrequencyTracker(context: Context) {
              * 🔴 `once`, NOT `true`. An unrecognised frequency used to be the MOST permissive
              * option, which made the two platforms opposites: iOS decodes an unknown value to
              * `.once` (`MessageFrequency(rawValue:) ?? .once`), so the console's `recurring` — a
-             * value no SDK implements, carried by 7 live surveys when #1064 measured it — was shown
+             * value no SDK implements, carried by 7 live surveys when it was measured — was shown
              * once ever on iOS and on EVERY trigger event here.
              *
              * `once` is the console's own documented default, so an unrecognised value now behaves

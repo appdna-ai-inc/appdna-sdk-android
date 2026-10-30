@@ -163,7 +163,7 @@ internal object LocationAnswer {
     /**
      * The two lines one autocomplete suggestion shows in the dropdown.
      *
-     * 🔴 ONE RULE FOR EVERY SURFACE AND BOTH PLATFORMS (#963). This used to be four rules: the two
+     * 🔴 ONE RULE FOR EVERY SURFACE AND BOTH PLATFORMS. This used to be four rules: the two
      * Android surfaces each split the address on its first comma — the form-step field with a
      * city/country fallback and the content block without — while on iOS the content block took
      * MapKit's own `title`/`subtitle` and the form-step field showed `city` over
@@ -195,7 +195,7 @@ internal object LocationAnswer {
  * The four Console settings that shape a location autocomplete search, resolved once for whichever
  * surface is asking.
  *
- * 🔴 EXTRACTED BECAUSE THE DUPLICATION WAS THE DEFECT (#963). The form-step Location field read all
+ * 🔴 EXTRACTED BECAUSE THE DUPLICATION WAS THE DEFECT. The form-step Location field read all
  * four keys and the `input_location` content block read none of them — it had grown its own copy of
  * the search call that dropped every parameter, so an author who set Type = "City" on a content
  * block got street addresses, silently. One resolver, used by both surfaces, is what makes that
@@ -232,8 +232,8 @@ internal data class LocationSearchSettings(
          * UNVALIDATED, and the Console's content-block Location Type select offered
          * **`coordinates`** — in no enum, no SDK, and refused by the proxy. Those blocks were
          * harmless only because this surface sent no `type` at all; the moment it started honouring
-         * the authored one (#963) every one of them would have gone silently dead. The picker is
-         * fixed too (#964), but published documents outlive a picker fix.
+         * the authored one every one of them would have gone silently dead. The picker is
+         * fixed too, but published documents outlive a picker fix.
          */
         private val PROXY_TYPES = setOf("city", "address", "region", "country")
 

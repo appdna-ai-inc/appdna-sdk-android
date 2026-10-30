@@ -134,7 +134,7 @@ internal class PriceResolver(
      * @return List of OfferDetails for the product.
      */
     /**
-     * #933 — the ISO billing period of each subscription's BASE plan, by product id, in ONE query.
+     * The ISO billing period of each subscription's BASE plan, by product id, in ONE query.
      *
      * 🔴 WHY THIS EXISTS RATHER THAN `getOffers`. The period lives on [OfferDetails], and
      * `getOffers` takes a single product id — so reading it for a three-plan paywall would be three
@@ -175,7 +175,7 @@ internal class PriceResolver(
     }
 
     /**
-     * #933 slice 3 — the FREE-TRIAL period per product, for products this user is eligible for.
+     * The FREE-TRIAL period per product, for products this user is eligible for.
      *
      * 🔴 THE ELIGIBILITY ANSWER IS STRUCTURAL, which is why there is no flag to read. Play returns
      * only "all base plans and offers the user is **eligible to purchase**"
@@ -213,7 +213,7 @@ internal class PriceResolver(
              * what makes a phase a free trial — an introductory PRICE is non-zero and is a
              * different promise, so it is deliberately not treated as one here.
              */
-            // #1062 — the decision itself lives in `StoreTrialPhase` so it can be exercised; this
+            // The decision itself lives in `StoreTrialPhase` so it can be exercised; this
             // reduces Play's types to what it reads and nothing more.
             val trial = StoreTrialPhase.firstFreeTrialPeriod(
                 details.subscriptionOfferDetails.orEmpty().map { offer ->

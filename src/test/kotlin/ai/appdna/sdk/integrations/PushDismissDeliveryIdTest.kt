@@ -24,7 +24,7 @@ import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 
 /**
- * #968 — `push_dismissed` carries `delivery_id`, which the receiver had been dropping.
+ * `push_dismissed` carries `delivery_id`, which the receiver had been dropping.
  *
  * 🔴 THE VALUE WAS ALREADY ON THE INTENT. `AppDNAMessagingService` builds the dismissal
  * PendingIntent with `putExtra("delivery_id", …)`, and `PushDismissReceiver` read only `push_id`

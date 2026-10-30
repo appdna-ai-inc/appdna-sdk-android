@@ -17,7 +17,7 @@ import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
 
 /**
- * #855 — "ONBOARDING FLOW NOT FOUND" MUST NOT BE SAID BEFORE ANYTHING HAS BEEN LOOKED UP.
+ * "ONBOARDING FLOW NOT FOUND" MUST NOT BE SAID BEFORE ANYTHING HAS BEEN LOOKED UP.
  *
  * `present()` returned `false` with that line both when a flow genuinely does not exist and when
  * the SDK had simply not loaded its config yet. A host could not tell the two apart — the return

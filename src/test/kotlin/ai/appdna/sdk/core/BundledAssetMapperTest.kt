@@ -12,7 +12,7 @@ import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
 
 /**
- * #986 — the bundled-asset mapper, with the fall-through that makes it safe.
+ * The bundled-asset mapper, with the fall-through that makes it safe.
  *
  * 🔴 THE FALL-THROUGH IS THE POINT, not the rewrite. iOS's `BundledImageResolver` returns nil for
  * a file that is not in the bundle and the view goes on to the network; a mapper that rewrote

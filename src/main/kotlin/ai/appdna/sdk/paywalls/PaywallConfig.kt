@@ -14,7 +14,7 @@ import ai.appdna.sdk.core.listOfMaps
 import ai.appdna.sdk.core.obj
 import ai.appdna.sdk.core.objMap
 
-/** #957 — what a mis-typed field in this document is reported against. */
+/** What a mis-typed field in this document is reported against. */
 private const val SURFACE = TypedRead.PAYWALL
 
 /**
@@ -90,7 +90,7 @@ data class PaywallLayout(
 )
 
 /**
- * #923 — a copy of this paywall with the STORE's price on every plan, wherever that plan lives.
+ * A copy of this paywall with the STORE's price on every plan, wherever that plan lives.
  *
  * 🔴 The root `plans` array and `sections[type=="plans"].data.plans` are two places a paywall's
  * plans can be written, and the renderer reads whichever is present
@@ -102,18 +102,18 @@ data class PaywallLayout(
  * An empty map returns the receiver untouched: a failed or timed-out lookup must change nothing.
  */
 /**
- * #933 — a copy with the STORE's ISO billing period on every plan, wherever that plan lives.
+ * A copy with the STORE's ISO billing period on every plan, wherever that plan lives.
  *
  * Deliberately the same shape as [applyingStorePrices], including the section walk: a real paywall
- * keeps its plans in `layout.sections[].config.plans`, and #923's first version of the price
+ * keeps its plans in `layout.sections[].config.plans`, and the first version of the price
  * substitution mapped ONLY the root array, so the whole feature reached nothing on every real
  * paywall. Repeating that here would repeat that bug.
  */
 /**
- * #933 slice 3 — a copy with the STORE's free-trial period on every ELIGIBLE plan.
+ * A copy with the STORE's free-trial period on every ELIGIBLE plan.
  *
  * The same three places as `applyingStorePrices` and `applyingStorePeriods`, for the reason
- * recorded on those: #923's first substitution walked only the root `plans` array and reached no
+ * recorded on those: the first price substitution walked only the root `plans` array and reached no
  * real paywall.
  */
 internal fun PaywallConfig.applyingStoreTrials(trials: Map<String, String>): PaywallConfig {
@@ -173,7 +173,7 @@ data class PaywallSection(
     val id: String? = null,
     val collapse_on_scroll: Boolean? = null,
     /**
-     * #884 — which zone this section lives in: "body" (scrolls) or "bottom" (pinned with the CTA).
+     * Which zone this section lives in: "body" (scrolls) or "bottom" (pinned with the CTA).
      *
      * Until now only the `cta` section, and a `legal` placed after it, could be pinned — so a
      * paywall's plan tiles scrolled away while the button that buys them stayed. On a short screen
@@ -209,7 +209,7 @@ data class PaywallSectionData(
     // Features list iterated by PaywallActivity FeaturesSection.
     val features: ImmutableList<String>? = null,
     /**
-     * #591 — the feature subtitle's own type, and the shape an item image is clipped to.
+     * The feature subtitle's own type, and the shape an item image is clipped to.
      * Section-level for the same reason `item_text_color` is: one setting keeps every subtitle in
      * a paywall looking alike, which is the concern that got subtitles removed from these items in
      * April. iOS parity: `itemSubtitleColor` / `itemSubtitleFontSize` / `itemImageShape`.
@@ -301,7 +301,7 @@ data class PaywallSectionData(
     val label_bg_color: String? = null,
     val label_font_size: Float? = null,
     /*
-     * #979 — the countdown's four remaining console controls. The editor has offered Label Font
+     * The countdown's four remaining console controls. The editor has offered Label Font
      * Weight, Digit Size, Digit Font Weight and Text Color since the section existed; no renderer
      * on any platform read them, so eight of its ten controls wrote keys nothing looked at.
      *
@@ -332,7 +332,7 @@ data class PaywallSectionData(
     /**
      * The sticky footer's Subtitle was drawn at a HARDCODED 10sp here and 10pt on
      * iOS, honouring no authored size or colour, while the Legal SECTION honoured its own. That is
-     * what made #648 read as a Legal bug: a 13pt legal paragraph really did render larger than this
+     * what made it read as a Legal bug: a 13pt legal paragraph really did render larger than this
      * line, which the author had sized to 16. Unset keeps 10sp / the secondary colour.
      */
     val legal_font_size: Float? = null,
@@ -387,12 +387,12 @@ data class PaywallSectionData(
     val description_color: String? = null,
     val icon: String? = null,
     /*
-     * #992 — `affects_price` was REMOVED here and from iOS's model. It was declared on both, read
+     * `affects_price` was REMOVED here and from iOS's model. It was declared on both, read
      * by NEITHER renderer, and written by no console control: a dead key in a PUBLIC model.
      *
      * The owner's call (2026-10-22) was to remove rather than build, and the reason is worth
-     * keeping where someone would be tempted to re-add it: unlike the styling keys #1053 built
-     * out, a toggle that recomposes a DISPLAYED PRICE is money. A wrong composition rule misquotes
+     * keeping where someone would be tempted to re-add it: unlike the styling keys that were
+     * built out, a toggle that recomposes a DISPLAYED PRICE is money. A wrong composition rule misquotes
      * what a user is charged, and the store-price ladder would have to compose too. It is only a
      * decode, so it comes back cheaply the day add-on pricing is actually designed.
      */
@@ -468,7 +468,7 @@ data class PaywallSectionData(
     val show_restore: Boolean? = null,
     val restore_position: String? = null, // "above" | "below"
     val restore_text_color: String? = null,
-    // #651 — Restore's own fill + radius, mirroring the pair the CTA already has.
+    // Restore's own fill + radius, mirroring the pair the CTA already has.
     val restore_bg_color: String? = null,
     val restore_corner_radius: Float? = null,
     val restore_font_size: Float? = null,
@@ -585,7 +585,7 @@ data class PaywallPlan(
     val label: String = "",
     val price_display: String = "",
     /**
-     * #923 — whether this plan's price comes from the STORE or from [price_display].
+     * Whether this plan's price comes from the STORE or from [price_display].
      *
      * 🔴 The DEFAULT IS THE STORE, so this is an opt-OUT and `null` means "ask". It exists for a
      * plan that deliberately shows a marketing price — a struck-through "was $19.99", a price the
@@ -594,13 +594,13 @@ data class PaywallPlan(
      */
     val use_store_price: Boolean? = null,
     /**
-     * #923 — Play's localized price for this plan's product, filled in by the PRESENTER just
+     * Play's localized price for this plan's product, filled in by the PRESENTER just
      before the screen is composed, or null when the lookup failed, timed out, or did not know the
      * product. Never parsed from a document.
      */
     val resolvedStorePrice: String? = null,
     /**
-     * #933 — the STORE's ISO billing period for this plan's product (`P1M`, `P1Y`), filled in by
+     * The STORE's ISO billing period for this plan's product (`P1M`, `P1Y`), filled in by
      * the presenter beside [resolvedStorePrice]. Never authored and never published: it is what
      * Play told this device, so it is accurate for the product the user will actually be charged
      * for.
@@ -608,7 +608,7 @@ data class PaywallPlan(
     val resolvedStorePeriod: String? = null,
 
     /**
-     * #933 slice 3 — the store's own free-trial period, as an ISO duration, filled by the presenter
+     * The store's own free-trial period, as an ISO duration, filled by the presenter
      * ONLY when the store says THIS user is eligible for it.
      *
      * 🔴 PROMISE ONLY ON A POSITIVE SIGNAL. A trial sentence is a promise, and showing "7 days
@@ -621,7 +621,7 @@ data class PaywallPlan(
      */
     val resolvedStoreTrial: String? = null,
     /**
-     * #1056 — NULLABLE, like iOS's `Int?`. This was `Int = 0`, which cannot tell "no rank" from
+     * NULLABLE, like iOS's `Int?`. This was `Int = 0`, which cannot tell "no rank" from
      * "rank 0" — and [PaywallPlanOrder]'s whole rule is `sort_order ?: index`, so collapsing the
      * two would have given every unranked plan rank 0 and made an explicit 0 indistinguishable from
      * silence. The parser below stopped coercing a missing value to 0 for the same reason.
@@ -643,13 +643,13 @@ data class PaywallPlan(
     /** Render `description` as a coloured pill instead of plain text. */
     val description_badge: PaywallDescriptionBadge? = null,
     /**
-     * #588 — this plan's price colour. Beats the section's `elements.price` style and the
+     * This plan's price colour. Beats the section's `elements.price` style and the
      * selected/unselected text colour, because the whole point is to make ONE tier's price stand
      * out from the others; anything that could override it would defeat it. iOS parity.
      */
     val price_color: String? = null,
     /**
-     * #587 — this plan's subtitle type. Section-level `elements.description` styles every plan
+     * This plan's subtitle type. Section-level `elements.description` styles every plan
      * identically, which is the opposite of what an author wants when one tier should read
      * differently.
      */
@@ -657,7 +657,7 @@ data class PaywallPlan(
     val subtitle_font_size: Float? = null,
     val subtitle_align: String? = null,
     /**
-     * #589 — `card` (default) or `text_only`: name and price on one centred line, with no border,
+     * `card` (default) or `text_only`: name and price on one centred line, with no border,
      * background, badge, subtitle or selection control. Still selectable — it is a plan.
      */
     val display_mode: String? = null,
@@ -672,7 +672,7 @@ data class PaywallPlan(
     // computed Codable accessors.
     val displayName: String get() = label.ifBlank { name }
     /**
-     * #933 — the period drawn beside the price, phrased in the device's language.
+     * The period drawn beside the price, phrased in the device's language.
      *
      * 🔴 AN AUTHORED `period` WINS. This is additive on purpose: an author who typed "mo" keeps
      * "mo", so no published paywall changes appearance, while a plan that authored nothing — which
@@ -687,7 +687,7 @@ data class PaywallPlan(
             )
 
     /**
-     * Display price — the STORE's, falling back to what the author typed (#923).
+     * Display price — the STORE's, falling back to what the author typed.
      *
      * Every layout reads this one property, which is why the substitution lives here rather than
      * at each render site that would have had to remember it.
@@ -700,7 +700,7 @@ data class PaywallPlan(
     ).priceDisplay
 
     /**
-     * Where [displayPrice] came from — `store`, or one of the three authored reasons (#923).
+     * Where [displayPrice] came from — `store`, or one of the three authored reasons.
      * Reported with `paywall_view` so a customer asking why their paywall shows the old price has
      * an answer in the data rather than a guess.
      */
@@ -715,11 +715,11 @@ data class PaywallPlan(
     // (the suffix used to be appended only at the iOS grid render site, so Android
     // showed "7-day" where iOS grid cards showed "7-day free trial").
     /**
-     * #933 — an ISO duration in `trial_duration` is PHRASED rather than printed raw.
+     * An ISO duration in `trial_duration` is PHRASED rather than printed raw.
      *
      * `trial_duration` is author-supplied text, and the two stores express a trial period as an ISO
      * duration (`P7D`, `P1W`). A config carrying the store's own spelling — an import, a hand-edited
-     * document or a generator, the same route #959's numeric price arrived by — rendered literally
+     * document or a generator, the same route a numeric price once arrived by — rendered literally
      * as **"P7D free trial"**. [BillingPeriodPhrase] turns that into "7 days free trial"; anything
      * it cannot parse is printed exactly as authored, so "7-day" is untouched.
      */
@@ -732,7 +732,7 @@ data class PaywallPlan(
             "$phrased free trial"
         }
         /*
-         * #989 — `trial.duration_days`, which was DECODED AND READ BY NOTHING on either platform.
+         * `trial.duration_days`, which was DECODED AND READ BY NOTHING on either platform.
          *
          * The schema requires `{ duration_days, label }` together, so most plans carry both and the
          * label wins — but 2 of 19 plans on dev have the object with no label, and those drew no
@@ -750,7 +750,7 @@ data class PaywallPlan(
             )?.let { "$it free trial" }
         }
         /*
-         * #933 slice 3 — nothing authored, so the STORE's trial, phrased.
+         * Nothing authored, so the STORE's trial, phrased.
          *
          * Last rung on purpose: an authored label and an authored duration both win, so no
          * published paywall changes wording. Only a plan that said nothing gains a sentence, and
@@ -776,9 +776,9 @@ data class PaywallCTA(
     val height: Double? = null,
     val font_size: Double? = null,
     val padding_vertical: Double? = null,
-    /** #1104 — `false` stops a multi-plan CTA naming the selected plan (default: it does, #1100). */
+    /** `false` stops a multi-plan CTA naming the selected plan (default: it does). */
     val name_plan: Boolean? = null,
-    /** #1104 — where the CTA text and the plan's name go: `{cta}` / `{plan}`, default `{cta} — {plan}`. */
+    /** Where the CTA text and the plan's name go: `{cta}` / `{plan}`, default `{cta} — {plan}`. */
     val plan_format: String? = null,
 )
 
@@ -796,7 +796,7 @@ data class PaywallExtraButton(
     val font_size: Float? = null,
     /** `filled` (default) draws a button; `text` draws a tappable label like the restore link. */
     val style: String? = null,
-    /** #651 — its own radius; unset inherits the CTA's so existing paywalls are untouched. */
+    /** Its own radius; unset inherits the CTA's so existing paywalls are untouched. */
     val corner_radius: Float? = null,
 )
 
@@ -813,11 +813,11 @@ data class PaywallDismiss(
     val position: String? = null,
     val color: String? = null,
     val size: Float? = null,
-    /** #652 — the Back button is its OWN control, configured independently of Close. */
+    /** The Back button is its OWN control, configured independently of Close. */
     val back: PaywallBackButton? = null,
 )
 
-/** #652 — the second dismissal affordance. iOS parity: `PaywallBackButton`. */
+/** The second dismissal affordance. iOS parity: `PaywallBackButton`. */
 data class PaywallBackButton(
     val enabled: Boolean? = null,
     /** `chevron` (default) | `arrow` | `text_link`. */
@@ -1052,7 +1052,7 @@ internal object PaywallConfigParser {
 
     @Suppress("UNCHECKED_CAST")
     private fun parsePaywallConfig(id: String, map: Map<String, Any>): PaywallConfig {
-        // #958 — what a mis-typed field on the DOCUMENT itself is reported against. Each nested
+        // What a mis-typed field on the DOCUMENT itself is reported against. Each nested
         // object below names its own sub-path instead ("dismiss.back", "haptic.triggers"), because
         // "a boolean where a string belongs" is unactionable without knowing which object.
         val docPath = "paywalls[$id]"
@@ -1110,7 +1110,7 @@ internal object PaywallConfigParser {
                 position = it.str(SURFACE, "dismiss", "position"),
                 color = it.str(SURFACE, "dismiss", "color"),
                 size = (it.num(SURFACE, "dismiss", "size"))?.toFloat(),
-                // #652 — the Back button's own config.
+                // The Back button's own config.
                 back = (it.objMap(SURFACE, docPath, "back"))?.let { b ->
                     PaywallBackButton(
                         enabled = b.bool(SURFACE, "dismiss.back", "enabled"),
@@ -1332,12 +1332,12 @@ internal object PaywallConfigParser {
             ?: (map.objMap(SURFACE, sectionHandle, "config"))
 
         /*
-         * #957 — the reads below NOTICE a present-but-wrong-typed field instead of absorbing it.
+         * The reads below NOTICE a present-but-wrong-typed field instead of absorbing it.
          *
          * `as?` yields null for "absent", "null" and "wrong type" alike, so a `corner_radius` the
          * console sent as `"12"` was indistinguishable from one nobody set — the author's value was
          * dropped and nothing anywhere knew. iOS has always known, because `Codable` throws; this
-         * is the Android half of that, reported through the same path #935 built.
+         * is the Android half of that, reported through the same configuration-issue path.
          *
          * `path` names the field for the report. The section's own id is the most specific handle
          * the parser has here, and it is what an author sees in the console.
@@ -1723,7 +1723,7 @@ internal object PaywallConfigParser {
 
     @Suppress("UNCHECKED_CAST")
     /**
-     * #905 — the same parser the renderer uses, reachable from the shared fixture.
+     * The same parser the renderer uses, reachable from the shared fixture.
      *
      * A fixture that re-implemented this would assert its own arithmetic; the point of the seam is
      * that the value the test compares is the value the screen gets.
@@ -1732,8 +1732,8 @@ internal object PaywallConfigParser {
         parseElementStyle(map)
 
     private fun parseElementStyle(map: Map<String, Any>): ai.appdna.sdk.core.ElementStyleConfig {
-        // #958 — a mis-typed style value is reported rather than absorbed. Element styles are
-        // where #905, #910, #913 and #947 all lived, and a colour sent as a number or a radius
+        // A mis-typed style value is reported rather than absorbed. Element styles are
+        // where several rendering defects have lived, and a colour sent as a number or a radius
         // sent as a string is the shape an author or a generator actually produces.
         val path = "style.elements"
         val bgMap = map.objMap(SURFACE, path, "background")
@@ -1789,7 +1789,7 @@ internal object PaywallConfigParser {
             corner_radius = (map.num(SURFACE, path, "corner_radius"))?.toDouble(),
             opacity = (map.num(SURFACE, path, "opacity"))?.toDouble(),
             text_style = textStyle,
-            // #905 — the console's own spelling for a per-element container style.
+            // The console's own spelling for a per-element container style.
             element_style = nested,
         )
     }
@@ -1825,7 +1825,7 @@ internal object PaywallConfigParser {
 
     @Suppress("UNCHECKED_CAST")
     /**
-     * #913 — the same plan parser the renderer uses, reachable from the shared fixture.
+     * The same plan parser the renderer uses, reachable from the shared fixture.
      *
      * Same reasoning as `parseElementStyleForTest`: a fixture that re-implemented the decode would
      * assert its own arithmetic, and the point of the seam is that the value the test compares is
@@ -1834,7 +1834,7 @@ internal object PaywallConfigParser {
     internal fun parsePlanForTest(map: Map<String, Any>): PaywallPlan = parsePlanFromMap(map)
 
     private fun parsePlanFromMap(map: Map<String, Any>): PaywallPlan {
-        // #958 — a mis-typed plan field is reported rather than absorbed. The product id is the
+        // A mis-typed plan field is reported rather than absorbed. The product id is the
         // handle an author recognises; `id` is the fallback when a plan carries no product.
         val path = "plans[${map["product_id"] as? String ?: map["id"] as? String ?: "?"}]"
         // Parse structured trial object (legacy `trial_duration` string still supported)
@@ -1858,7 +1858,7 @@ internal object PaywallConfigParser {
             is_default = map.bool(SURFACE, path, "is_default"),
             label = map.str(SURFACE, path, "label") ?: "",
             price_display = map.looseStr(SURFACE, path, "price_display") ?: "",
-            // #923 — absent means "ask the store", so only an explicit `false` opts out.
+            // Absent means "ask the store", so only an explicit `false` opts out.
             use_store_price = map.bool(SURFACE, path, "use_store_price"),
             sort_order = (map.num(SURFACE, path, "sort_order"))?.toInt(),
             //
@@ -1882,7 +1882,7 @@ internal object PaywallConfigParser {
                     corner_radius = (b.num(SURFACE, "$path.description_badge", "corner_radius"))?.toFloat(),
                 )
             },
-            // #587 / #588 / #589 — per-plan presentation. Sizes read loosely (`Number`, or a
+            // Per-plan presentation. Sizes read loosely (`Number`, or a
             // numeric string) for the same reason the prices above do: the console writes them
             // through a slider, but an imported or AI-generated paywall can carry "13".
             price_color = map.str(SURFACE, path, "price_color"),

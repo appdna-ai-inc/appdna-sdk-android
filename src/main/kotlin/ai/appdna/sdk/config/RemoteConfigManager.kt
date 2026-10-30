@@ -804,7 +804,7 @@ internal class RemoteConfigManager(
      * Only populates empty caches — remote and cached data take priority.
      */
     @Suppress("UNCHECKED_CAST")
-    /** #856 — the sections [loadBundledConfig] actually reads; a bundle with none of them is inert. */
+    /** The sections [loadBundledConfig] actually reads; a bundle with none of them is inert. */
     private val RECOGNISED_BUNDLE_KEYS = listOf(
         "paywalls",
         "onboarding",
@@ -819,7 +819,7 @@ internal class RemoteConfigManager(
 
     fun loadBundledConfig(json: Map<String, Any>) {
         /*
-         * #856 — SAY SO WHEN A BUNDLE CONTAINS NOTHING WE RECOGNISE.
+         * SAY SO WHEN A BUNDLE CONTAINS NOTHING WE RECOGNISE.
          *
          * Every section below is optional, so a bundle with none of them parsed silently and the
          * SDK carried on with no config at all: valid JSON, right size, right place, and it does

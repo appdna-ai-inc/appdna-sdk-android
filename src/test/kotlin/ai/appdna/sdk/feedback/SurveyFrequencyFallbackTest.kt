@@ -10,7 +10,7 @@ import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
 
 /**
- * #1064 — AN UNRECOGNISED FREQUENCY MUST NOT BE THE MOST PERMISSIVE OPTION.
+ * AN UNRECOGNISED FREQUENCY MUST NOT BE THE MOST PERMISSIVE OPTION.
  *
  * The console's enum carried `recurring`, which neither SDK implements. iOS decodes an unknown
  * frequency to `.once` (`MessageFrequency(rawValue:) ?? .once`); this tracker answered `else ->

@@ -132,7 +132,7 @@ class SessionDataStore private constructor(private val prefs: SharedPreferences)
      */
     /**
      * Re-reads the persisted copy, as a cold start does — `init` runs the same loaders. The shared fixture
-     * `location_data_after_relaunch` (#1150) drives it so both platforms prove an answer survives a relaunch.
+     * `location_data_after_relaunch` drives it so both platforms prove an answer survives a relaunch.
      */
     internal fun reloadFromDisk() {
         synchronized(this) {
@@ -225,7 +225,7 @@ class SessionDataStore private constructor(private val prefs: SharedPreferences)
     }
 
     /**
-     * #1150 — a nested `JSONObject` / `JSONArray` comes back as the `Map` / `List` it was written from, so a stored
+     * A nested `JSONObject` / `JSONArray` comes back as the `Map` / `List` it was written from, so a stored
      * location selection or a multi-select answer reads the same after a relaunch as before it. A `null` inside an
      * object is dropped, as at the top level; one inside an array keeps its place.
      */
@@ -236,7 +236,7 @@ class SessionDataStore private constructor(private val prefs: SharedPreferences)
     }
 
     /**
-     * #1150 — the JSON form of [value], deep. Android's `org.json` stores a `Map` or `List` given to `put` as-is and
+     * The JSON form of [value], deep. Android's `org.json` stores a `Map` or `List` given to `put` as-is and
      * writes it as its `toString()`, so a selected location answer used to persist as `"{formatted_address=…}"` and
      * read back as text. Throws `JSONException` for what JSON cannot hold — a NaN / infinite number or a non-JSON
      * type, at any depth — so the caller leaves that one entry out, as it already did for a top-level NaN.

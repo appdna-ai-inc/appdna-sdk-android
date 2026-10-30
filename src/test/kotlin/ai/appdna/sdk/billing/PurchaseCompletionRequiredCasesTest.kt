@@ -25,7 +25,7 @@ import org.robolectric.annotation.Config
 import java.util.concurrent.TimeUnit
 
 /**
- * The cases the implementation audit found untested, each driven
+ * The cases a review found untested, each driven
  * through the production entry points (`PurchaseCompletion.run`, the Play listener, the drain,
  * `AppDNA.billingAfterIdentify`) with [FakeBillingClient] and a scripted server.
  */

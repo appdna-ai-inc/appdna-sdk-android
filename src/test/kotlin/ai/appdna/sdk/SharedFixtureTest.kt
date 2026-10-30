@@ -297,7 +297,7 @@ class SharedFixtureTest(
             "resolve_segmented_presentation" -> runSegmentedPresentation(action, spy)
             "resolve_rive_input_kind" -> runRiveInputKind(action, spy)
             "track_events_with_observer" -> runEventObserver(action, spy)
-            // #772 — WHICH copy of content_blocks the real parser resolves, per step shape.
+            // WHICH copy of content_blocks the real parser resolves, per step shape.
             "resolve_content_blocks" -> runResolveContentBlocks(action, spy)
             "countdown_initial_seconds" -> runCountdownInitialSeconds(action, spy)
             "form_date_bounds" -> runFormDateBounds(action, spy)
@@ -645,7 +645,7 @@ class SharedFixtureTest(
             // copy deleted.
             OnboardingCTAFlag.ACTION_NAME -> {
                 /*
-                 * #1094 — the PAYLOAD comes from the SDK's own `StepAdvancePayload.build`, not from
+                 * The PAYLOAD comes from the SDK's own `StepAdvancePayload.build`, not from
                  * a copy assembled here. This branch used to merge the flag into its own map, so
                  * the fixture passed with the renderer's merge deleted — measured by poisoning it:
                  * 1878 tests, 0 failures. The runner was driving the real `parse` and `applyTo`
@@ -676,7 +676,7 @@ class SharedFixtureTest(
             // a route leak into the next flow and still pass.
             PendingCompletionRoute.ACTION_NAME -> {
                 /*
-                 * #1096 — the step's own answers travel with this advance, because production
+                 * The step's own answers travel with this advance, because production
                  * calls the same collecting advance `next` does. This branch used to pass
                  * setup-only responses, so no fixture could see the payload half. The payload
                  * comes from the SDK's own assembly, not a copy.
@@ -1298,7 +1298,7 @@ class SharedFixtureTest(
         )
     }
 
-    /** #1158 — `session_data.responses`, the stored step responses the `onboarding.*` / `responses.*` roots read. */
+    /** `session_data.responses`, the stored step responses the `onboarding.*` / `responses.*` roots read. */
     @Suppress("UNCHECKED_CAST")
     private fun storedResponses(): Map<String, Map<String, Any>> =
         (sessionData.optJSONObject("responses")?.asMap() ?: emptyMap())
@@ -1455,12 +1455,12 @@ class SharedFixtureTest(
      * the named block would still pass.
      */
     /**
-     * #657 — a refresh button's interaction, driven through the REAL public functions: the result
+     * A refresh button's interaction, driven through the REAL public functions: the result
      * type the bridges build, the pure applier, and the same read-time option override the renderer
      * uses. Nothing here reimplements the behaviour, which is the only way this fixture can fail
      * when the behaviour regresses.
      */
-    /** #609 — the Multi-buttons arrangement, through the real parser and the real row-plan rule. */
+    /** The Multi-buttons arrangement, through the real parser and the real row-plan rule. */
     private fun runMultiButtonsLayout(action: JSONObject, spy: Spy) {
         val cfg = config ?: error("setup.config missing")
         val stepMap = mapOf<String, Any>(
@@ -1486,13 +1486,13 @@ class SharedFixtureTest(
                 plan.isNotEmpty() && plan.last() != perRow
         spy.state["group_background"] = group.block_style?.background_color ?: ""
 
-        // #609 follow-up — the per-child settings that shipped on the panel and nothing read.
+        // The per-child settings that shipped on the panel and nothing read.
         // "Border color doesn't apply … on device or in preview" was true on all three surfaces:
         // each hardcoded a 1.5 ring in the BACKGROUND colour and drew it only for `outline`, so a
         // filled button at width 40 drew nothing. Resolved through the SAME pure helpers the
         // renderer uses, so a fixture cannot pass while the screen stays wrong.
         spy.state["child_border_widths"] = children.map {
-            // #1007 — the colour is PASSED, exactly as the renderer passes it.
+            // The colour is PASSED, exactly as the renderer passes it.
             ai.appdna.sdk.onboarding.authoredButtonBorderWidth(
                 it.border_width,
                 it.variant,
@@ -1633,7 +1633,7 @@ class SharedFixtureTest(
      * drifted underneath it. The token comes from the fixture rather than `AppDNA.mapboxToken` so
      * the expected string is deterministic and no test needs a configured SDK.
      */
-    /** #1104 — REAL: `CtaPlanName.compose`, the one function every Android CTA site names the plan with. */
+    /** REAL: `CtaPlanName.compose`, the one function every Android CTA site names the plan with. */
     private fun runComposeCtaPlanName(action: JSONObject, spy: Spy) {
         val cases = action.optJSONArray("cases") ?: unsupported("compose_cta_plan_name needs action.cases")
         spy.state["labels"] = (0 until cases.length()).map { i ->
@@ -1713,18 +1713,18 @@ class SharedFixtureTest(
                 spy.state["parsed_label_position"] = block.field_style?.label_position
                 spy.state["parsed_label_align"] = block.field_style?.label_align
                 spy.state["parsed_label_font_family"] = block.field_style?.label_font_family
-                // #560 follow-up — per-provider label size. Two providers, one with and one
+                // Per-provider label size. Two providers, one with and one
                 // without, so an omitted size must decode as null rather than 0.
                 val provs = block.providers.orEmpty()
                 spy.state["parsed_provider_count"] = provs.size
                 spy.state["parsed_provider0_font_size"] = provs.getOrNull(0)?.font_size?.toDouble()
                 spy.state["parsed_provider0_text_color"] = provs.getOrNull(0)?.text_color
                 spy.state["parsed_provider1_font_size"] = provs.getOrNull(1)?.font_size?.toDouble()
-                // #581 — the Style section, same shape as iOS.
+                // The Style section, same shape as iOS.
                 spy.state["parsed_image_frame"] = block.image_frame
                 spy.state["parsed_frame_color"] = block.field_config?.get("frame_color") as? String
                 spy.state["parsed_frame_glow_color"] = block.field_config?.get("frame_glow_color") as? String
-                // #580 — the Sound Button's authored icon.
+                // The Sound Button's authored icon.
                 // The warning banner's subtitle, alignment, own chrome and
                 // per-role typography. All in `field_config`: ContentBlock is at 245 of the JVM's
                 // 255-param ceiling, so these could not be top-level fields at any price.
@@ -1738,7 +1738,7 @@ class SharedFixtureTest(
                 spy.state["parsed_banner_corner_radius"] = (block.field_config?.get("banner_corner_radius") as? Number)?.toDouble()
                 spy.state["parsed_banner_title_size"] = (block.field_config?.get("banner_title_size") as? Number)?.toDouble()
                 spy.state["parsed_banner_subtitle_size"] = (block.field_config?.get("banner_subtitle_size") as? Number)?.toDouble()
-                // #1005 — icon placement, a colour per text, and the link under the subtitle.
+                // Icon placement, a colour per text, and the link under the subtitle.
                 spy.state["parsed_banner_hide_icon"] = block.field_config?.get("banner_hide_icon") as? Boolean
                 spy.state["parsed_banner_icon_align"] = block.field_config?.get("banner_icon_align") as? String
                 spy.state["parsed_banner_title_color"] = block.field_config?.get("banner_title_color") as? String
@@ -1750,7 +1750,7 @@ class SharedFixtureTest(
                 spy.state["parsed_sound_icon"] = block.field_config?.get("sound_icon") as? String
                 spy.state["parsed_sound_icon_color"] = block.field_config?.get("sound_icon_color") as? String
                 spy.state["parsed_sound_icon_size"] = (block.field_config?.get("sound_icon_size") as? Number)?.toDouble()
-                // #578 — the divider slot. Android folds `divider_position` into field_config
+                // The divider slot. Android folds `divider_position` into field_config
                 // (JVM arg ceiling), so it is read from there, not top-level.
                 spy.state["parsed_divider_position"] = block.field_config?.get("divider_position") as? String
                 spy.state["parsed_divider_after_index"] = (block.field_config?.get("divider_after_index") as? Number)?.toDouble()
@@ -1762,7 +1762,7 @@ class SharedFixtureTest(
                 spy.state["parsed_opt0_sheet_first_type"] = fopts.getOrNull(0)?.sheet_blocks?.firstOrNull()?.type
                 spy.state["parsed_opt0_sheet_last_type"] = fopts.getOrNull(0)?.sheet_blocks?.lastOrNull()?.type
                 spy.state["parsed_opt1_sheet_block_count"] = fopts.getOrNull(1)?.sheet_blocks?.size ?: 0
-                // #585 — the min-selection gate, in BOTH directions plus the untouched state.
+                // The min-selection gate, in BOTH directions plus the untouched state.
                 //
                 // Driven through the REAL `RequiredFieldGate`, the same object the CTA consults, so
                 // a gate that stops reading `min_selections` fails here rather than shipping a
@@ -1789,7 +1789,7 @@ class SharedFixtureTest(
 
                 // The gate, exercised in BOTH directions plus the deadlock case.
                 if (block.type == "summary_screen") {
-                    // #595 — derived through the SDK's OWN `summaryStatFieldId`, not by reading
+                    // Derived through the SDK's OWN `summaryStatFieldId`, not by reading
                     // `field_id` directly. A stat that carries an `input` but no `field_id` used to
                     // be invisible here exactly as it was invisible to the renderer and the gate, so
                     // the empty-card bug could never have been caught by this driver. The exact
@@ -1883,7 +1883,7 @@ class SharedFixtureTest(
                     val rawStats = r.field_config?.get("summary_stats") as? List<*>
                     val firstStat = rawStats?.firstOrNull() as? Map<*, *>
                     spy.state["resolved_stat0_value"] = (firstStat?.get("value") as? String) ?: ""
-                    // #660 — a stat that cannot resolve and has a usable LABEL keeps its place and
+                    // A stat that cannot resolve and has a usable LABEL keeps its place and
                     // shows a placeholder; one with nothing to say is still dropped. The count plus
                     // the per-index values are what prove no raw token reaches a renderer either way.
                     spy.state["resolved_stat_count"] = rawStats?.size ?: 0
@@ -1902,7 +1902,7 @@ class SharedFixtureTest(
                     if (resolvedKids.size > 1) {
                         spy.state["resolved_child1_text"] = resolvedKids[1].text ?: ""
                     }
-                    // #558 — a stat BOUND to an earlier answer that also hosts a control must open on
+                    // A stat BOUND to an earlier answer that also hosts a control must open on
                     // the RESOLVED value, not the authored default. Read off `r`, not the raw block:
                     // the first version of this read the unresolved `{{responses.group_size}}`, found
                     // it non-numeric, fell back to the default and asserted 9 — the very bug it is
@@ -1941,7 +1941,7 @@ class SharedFixtureTest(
                 spy.state["parsed_post_purchase_failure_action"] = parsed.post_purchase?.on_failure?.action
                 spy.state["parsed_post_purchase_failure_allow_dismiss"] =
                     parsed.post_purchase?.on_failure?.allow_dismiss
-                // #1109 — the console now persists and publishes these; read off the parsed paywall.
+                // The console now persists and publishes these; read off the parsed paywall.
                 spy.state["parsed_particle_effect_type"] = parsed.particle_effect?.type
                 spy.state["parsed_particle_effect_trigger"] = parsed.particle_effect?.trigger
                 spy.state["parsed_particle_effect_intensity"] = parsed.particle_effect?.intensity
@@ -1959,12 +1959,12 @@ class SharedFixtureTest(
                 // objects, not the raw map, so a field the model silently drops shows up here.
                 val plansSection = parsed.sections.firstOrNull { it.type == "plans" }
                 spy.state["parsed_price_layout"] = plansSection?.data?.price_layout
-                // #960 — which plan LAYOUT the document asked for. Both dispatches end in a
+                // Which plan LAYOUT the document asked for. Both dispatches end in a
                 // default arm, so a value that fails to reach the DTO is indistinguishable from
                 // the vertical stack an author did not ask for.
                 spy.state["parsed_plan_display_style"] = plansSection?.data?.plan_display_style
                 /*
-                 * #979 — the countdown section's vocabulary. Eight of its ten console controls
+                 * The countdown section's vocabulary. Eight of its ten console controls
                  * wrote a key no renderer read, and the generator wrote two more of its own, so a
                  * value failing to reach the DTO was indistinguishable from an unstyled countdown.
                  * The four at the end (`label_font_weight`, `digit_*`, `text_color`) had no field
@@ -2063,7 +2063,7 @@ class SharedFixtureTest(
 
     /** The REAL `MessageManager.parseWindowDate`, with the device time zone set to `action.device_timezone`. */
     /**
-     * #885 — ONE answer per colour string, and it has to be the same answer as iOS gives.
+     * ONE answer per colour string, and it has to be the same answer as iOS gives.
      *
      * This drives [StyleEngine.parseColor], which is now the SDK's only colour parser:
      * `PaywallActivity.parseHexColor` and `SurveyActivity.parseColor` delegate to it. Before that
@@ -2075,7 +2075,7 @@ class SharedFixtureTest(
      * pins what the one copy must return.
      */
     /**
-     * #893 — a blockquote becomes the italic syntax both parsers already render.
+     * A blockquote becomes the italic syntax both parsers already render.
      *
      * Drives the REAL `normaliseMarkdown` the rich_text renderer calls, so the two platforms are
      * held to one answer for a chevron that used to reach the screen verbatim.
@@ -2094,7 +2094,7 @@ class SharedFixtureTest(
     }
 
     /**
-     * #905 — the per-element container style, through the REAL parser and accessor: the entry is
+     * The per-element container style, through the REAL parser and accessor: the entry is
      * parsed by `PaywallConfigParser.parseElementStyle` and resolved by `elementContainer`, which
      * is what the renderer reads.
      */
@@ -2116,7 +2116,7 @@ class SharedFixtureTest(
     }
 
     /**
-     * #913 — a plan's billing period, through the REAL plan parser.
+     * A plan's billing period, through the REAL plan parser.
      *
      * This side has rendered `plan.period` at five sites all along; iOS declared a style for it and
      * drew nothing, and NOTHING could author one. An empty string resolves to null, because both
@@ -2129,12 +2129,12 @@ class SharedFixtureTest(
             val raw = case.getJSONObject("value")
             val plan = ai.appdna.sdk.paywalls.PaywallConfigParser.parsePlanForTest(jsonToMap(raw))
             /*
-             * #933 — a case may carry a `store_period` BESIDE its `value`, because the store's ISO
+             * A case may carry a `store_period` BESIDE its `value`, because the store's ISO
              * period is filled in by the presenter and is never part of a published document, so it
              * cannot live inside the plan the parser reads.
              *
              * `displayPeriod` rather than `period`: for every case without a `store_period` the two
-             * are identical, which is why the assertions written before #933 still stand unchanged.
+             * are identical, which is why the assertions written before `store_period` existed still stand unchanged.
              */
             val withStore = if (case.has("store_period")) {
                 plan.copy(resolvedStorePeriod = case.getString("store_period"))
@@ -2146,7 +2146,7 @@ class SharedFixtureTest(
     }
 
     /**
-     * #963 — the Console's four location settings, resolved for the surface that offers them.
+     * The Console's four location settings, resolved for the surface that offers them.
      *
      * 🔴 FOUR SURFACES, NOT TWO. A form-step Location field takes its config as a typed
      * `FormFieldConfig`; an `input_location` content block takes a free-form `field_config` map. The
@@ -2200,7 +2200,7 @@ class SharedFixtureTest(
     }
 
     /**
-     * #919 — a wrongly-typed field must not delete its block, and an undecodable element must not
+     * A wrongly-typed field must not delete its block, and an undecodable element must not
      * truncate the ones after it. Through the REAL step parse, so the path is production's.
      *
      * This platform has always been lenient — every scalar is read as `as? Number` / `as? String`,
@@ -2407,14 +2407,14 @@ class SharedFixtureTest(
     }
 
     /**
-     * #1052 — how tall a compact date pill is, through the REAL `CompactPickerHeight`.
+     * How tall a compact date pill is, through the REAL `CompactPickerHeight`.
      *
      * 🔴 Driven through the production rule, never re-stated: the whole point is that this
      * platform and iOS now agree, and a driver computing its own answer could only agree with
      * itself (Rule 25).
      */
     /**
-     * #1013 — whether a block is drawn, through the REAL `evaluateVisibilityCondition` the renderer
+     * Whether a block is drawn, through the REAL `evaluateVisibilityCondition` the renderer
      * calls, with the step's live inputs in scope.
      *
      * 🔴 Driven through the production evaluator, never re-stated: the whole point is that this
@@ -2447,12 +2447,12 @@ class SharedFixtureTest(
     }
 
     /**
-     * #1013 — whether a Segmented input draws a segmented control, through the REAL
+     * Whether a Segmented input draws a segmented control, through the REAL
      * `SegmentedPresentation` the renderer calls.
      */
 
     /**
-     * #1053 — the three `field_style` keys both natives DECODED, neither drew, and no console
+     * The three `field_style` keys both natives DECODED, neither drew, and no console
      control wrote, through the resolvers the renderer actually calls.
      *
      * 🔴 The font size is a ladder of THREE spellings of one pixel. The console's two sliders write
@@ -2520,7 +2520,7 @@ class SharedFixtureTest(
 
 
     /**
-     * #1056 — the order a paywall's plans draw in, through the REAL [PaywallPlanOrder].
+     * The order a paywall's plans draw in, through the REAL [PaywallPlanOrder].
      *
      * 🔴 `sort_order` was DECODED by both platforms and read by NEITHER, so order came from the
      * array's own order and a document carrying an explicit rank drew its plans in whatever order
@@ -2529,7 +2529,7 @@ class SharedFixtureTest(
      * 🔴 WHAT THIS DRIVER DOES NOT PROVE, stated because it previously claimed otherwise. It called
      * the sorter "the renderer calls on all three of its plan-resolution sites" — and a driver that
      * calls [PaywallPlanOrder.sorted] directly can see that the SORTER sorts and nothing about
-     * whether any renderer calls it. #1097 is what that bought: on iOS the sort was wired into the
+     * whether any renderer calls it. That is how a real bug slipped through: on iOS the sort was wired into the
      * two sites that look a plan up BY ID, never into the one that draws, and this fixture stayed
      * green on both platforms throughout. The render-order claim is `PlanOrderRenderTest` (Android)
      * and `PlanOrderRenderTests` (iOS), which read back what was DRAWN; this one pins the ordering
@@ -2557,7 +2557,7 @@ class SharedFixtureTest(
 
 
     /**
-     * #1056 — where the progress bar's "Skip" link goes, through the REAL [ProgressSkipTarget] both
+     * Where the progress bar's "Skip" link goes, through the REAL [ProgressSkipTarget] both
      * renderers call.
      *
      * The three `null` reasons are the point: no target, an empty/whitespace target, and a target
@@ -2577,7 +2577,7 @@ class SharedFixtureTest(
 
 
     /**
-     * #1066 — how far a countdown has run, through the REAL [CountdownProgress] both indicators
+     * How far a countdown has run, through the REAL [CountdownProgress] both indicators
      * read.
      *
      * The ring was frozen at `sweepAngle = 270f` here and `trim(to: 0.75)` on iOS — the preview's
@@ -2596,7 +2596,7 @@ class SharedFixtureTest(
 
 
     /**
-     * #980 — which variant a paywall countdown draws, through the REAL [PaywallCountdownVariant]
+     * Which variant a paywall countdown draws, through the REAL [PaywallCountdownVariant]
      * the renderer dispatches on. The fallback is the part that would diverge between platforms,
      * so the off-list and empty-string cases carry as much weight as the four real values.
      */
@@ -2612,7 +2612,7 @@ class SharedFixtureTest(
 
 
     /**
-     * #1067 — which library a BARE icon string belongs to, through the REAL [NamedIcon] both
+     * Which library a BARE icon string belongs to, through the REAL [NamedIcon] both
      * feature renderers call.
      *
      * The unknown-name case is the one that matters: it must answer `lucide` and never `emoji`,
@@ -2635,7 +2635,7 @@ class SharedFixtureTest(
     }
 
     /**
-     * #1024 — which kind of Rive input an authored value means, through the REAL [RiveInputKind]
+     * Which kind of Rive input an authored value means, through the REAL [RiveInputKind]
      * the renderer calls.
      *
      * 🔴 The values come out of the fixture's JSON, which is the SAME path a published document
@@ -2643,7 +2643,7 @@ class SharedFixtureTest(
      * driver chose.
      */
     /**
-     * #1047 — `onEventTracked` fires for every event, through the REAL `EventTracker.track` and the
+     * `onEventTracked` fires for every event, through the REAL `EventTracker.track` and the
      * REAL lifecycle delegate.
      *
      * 🔴 Driven through the production chokepoint, never re-stated: the claim is that a host sees
@@ -2714,7 +2714,7 @@ class SharedFixtureTest(
     }
 
     /**
-     * #998 — a likert scale's bounds and anchor visibility, through the REAL `LikertScaleRule`.
+     * A likert scale's bounds and anchor visibility, through the REAL `LikertScaleRule`.
      *
      * 🔴 Driven through the production rule, never re-stated: the clamp exists because a reversed
      * range draws ZERO buttons on this platform and TRAPS on the other, and a driver computing its
@@ -2737,7 +2737,7 @@ class SharedFixtureTest(
     }
 
     /**
-     * #923 — whether a plan shows the STORE's price or the one an author typed, through the REAL
+     * Whether a plan shows the STORE's price or the one an author typed, through the REAL
      * policy both renderers call.
      *
      * The authored string is the FALLBACK on every failure path, so most cases here are failures:
@@ -2759,7 +2759,7 @@ class SharedFixtureTest(
     }
 
     /**
-     * #921 — whether a step advances by itself, through the REAL step PARSER and the real policy.
+     * Whether a step advances by itself, through the REAL step PARSER and the real policy.
      *
      * Parsing the step is the load-bearing half: the console writes these two fields inside the
      * step's `layout`, so a reader handed a constructed `OnboardingStep` would pass while every
@@ -2779,7 +2779,7 @@ class SharedFixtureTest(
     }
 
     /**
-     * #903 — whether a pinned bottom zone is too tall to stay pinned, through the REAL
+     * Whether a pinned bottom zone is too tall to stay pinned, through the REAL
      * `PaywallBottomZone.overflows`. Values are `[pinnedPx, viewportPx]`.
      */
     private fun runBottomZoneOverflows(action: JSONObject, spy: Spy) {
@@ -2791,7 +2791,7 @@ class SharedFixtureTest(
     }
 
     /**
-     * #891 — the colour a paywall gives text nobody authored, through the REAL
+     * The colour a paywall gives text nobody authored, through the REAL
      * `PaywallTextDefaults.readableHex`.
      */
     private fun runDefaultTextColour(action: JSONObject, spy: Spy) {
@@ -2804,7 +2804,7 @@ class SharedFixtureTest(
     }
 
     /**
-     * #895 — the header's reserved footprint, through the REAL `PaywallHeaderInset.resolve`.
+     * The header's reserved footprint, through the REAL `PaywallHeaderInset.resolve`.
      *
      * A `null` case means no `dismiss` object at all, which is the common authored shape and the
      * one that must still reserve: absent means dismissable.
@@ -2830,7 +2830,7 @@ class SharedFixtureTest(
     }
 
     /**
-     * #886 — the four values a shadow draws with, through the REAL `StyleEngine.resolveShadow`.
+     * The four values a shadow draws with, through the REAL `StyleEngine.resolveShadow`.
      *
      * `[colorArgbHex, radiusDp, dxDp, dyDp]`, or null when the shadow does not draw at all —
      * which is the case Android used to get wrong in the other direction, drawing a shadow for a
@@ -2892,7 +2892,7 @@ class SharedFixtureTest(
     }
 
     /**
-     * #772 — which copy of `content_blocks` the REAL step parser resolves, per step shape.
+     * Which copy of `content_blocks` the REAL step parser resolves, per step shape.
      *
      * 🔴 The `layout_empty_falls_through_to_root` case is the one that diverged. iOS has always
      * fallen back on EMPTY (`if (decoded.content_blocks ?? []).isEmpty`); Android used an elvis that
@@ -3021,7 +3021,7 @@ class SharedFixtureTest(
         try {
             @Suppress("UNCHECKED_CAST")
             store.setOnboardingResponses(responses as Map<String, Any>)
-            // #1150 — read it back from the persisted copy, the way a cold start does.
+            // Read it back from the persisted copy, the way a cold start does.
             if (action.optBoolean("relaunch")) store.reloadFromDisk()
             val loc = AppDNA.getLocationData(fieldId)
             val actual: Map<String, Any?>? = loc?.let { locationDataProjection(it) }
@@ -3038,7 +3038,7 @@ class SharedFixtureTest(
      * SessionDataStore and read back through `AppDNA.getLocationData`. Both outputs strict.
      */
     /**
-     * #963 — the dropdown's two lines, through the REAL `LocationAnswer.displayLines`.
+     * The dropdown's two lines, through the REAL `LocationAnswer.displayLines`.
      *
      * The case data goes through the REAL `parseLocationSuggestion` first, the same parser the search
      * uses, so it is a server suggestion rather than a hand-built [LocationSuggestion].
@@ -3463,7 +3463,7 @@ class SharedFixtureTest(
     }
 
     /**
-     * #968 — a push swiped away, through the REAL `PushDismissReceiver`.
+     * A push swiped away, through the REAL `PushDismissReceiver`.
      *
      * The receiver is what the SYSTEM invokes on the delete intent the notification carries, so
      * driving it with the same intent shape is the closest a JVM test gets to the swipe itself.
@@ -3708,7 +3708,7 @@ class SharedFixtureTest(
         ai.appdna.sdk.paywalls.PaywallActivity.postPurchaseOverlay = null
         manager.handlePurchase(activity, paywallId, plan, paywall, emptyMap(), RecordingPaywallDelegate(spy))
         repeat(10) { idle() }
-        // #1105 — what the authored `on_failure` route hands the renderer: the banner's text.
+        // What the authored `on_failure` route hands the renderer: the banner's text.
         ai.appdna.sdk.paywalls.PaywallActivity.postPurchaseOverlay?.let { overlay ->
             spy.state["failure_banner_message"] = overlay.message
             spy.state["failure_banner_retry_text"] = overlay.retryText

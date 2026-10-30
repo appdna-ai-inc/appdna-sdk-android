@@ -12,7 +12,7 @@ internal object SectionRegistry {
     }
 
     /**
-     * #904 — the authored section style is applied HERE, once, rather than at each of the eight
+     * The authored section style is applied HERE, once, rather than at each of the eight
      * `Render` call sites across [ScreenHostActivity] and [AppDNAScreenSlot]. iOS applies it at the
      * two places it builds a section view; a per-call-site wrapper on this side would be eight
      * chances to forget one, which is how the style came to be dropped on every one of them.

@@ -477,7 +477,7 @@ class PurchaseCompletionConcurrencyTest {
     }
 
     /**
-     * #1110 — a paywall purchase that COMPLETES through billing raises the celebrate signal, and one
+     * A paywall purchase that COMPLETES through billing raises the celebrate signal, and one
      * that does not complete never does. `PaywallPurchaseCelebrationDrawsTest` proves what the paywall
      * draws when the signal rises; this proves the signal rises from a real purchase, through
      * `handlePurchase` → `AppDNA.billing.purchase` → `handlePostPurchaseSuccess`, with Play faked at

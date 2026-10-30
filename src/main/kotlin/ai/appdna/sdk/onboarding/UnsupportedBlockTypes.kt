@@ -25,7 +25,7 @@ internal object UnsupportedBlockTypes {
             "${ai.appdna.sdk.AppDNA.sdkVersion} and renders as nothing. Update the SDK."
         ai.appdna.sdk.AppDNA.reportInitDegraded(IllegalStateException(detail))
         /*
-         * #935 — and to the fleet, and to the lifecycle delegate.
+         * And to the fleet, and to the lifecycle delegate.
          *
          * `onInitDegraded` has carried this since it was written, which is the HOST half. What
          * nobody had was the other one: how often this happens in the field. The event answers

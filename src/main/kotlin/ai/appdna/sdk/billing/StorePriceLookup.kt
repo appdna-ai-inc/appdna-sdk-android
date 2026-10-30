@@ -6,7 +6,7 @@ import kotlinx.coroutines.withTimeoutOrNull
 /**
  * Asks Play what a paywall's products cost, bounded, and never fails.
  *
- * #923 — the renderer's door to Play Billing. [PriceResolver] could already do this and its only
+ * The renderer's door to Play Billing. [PriceResolver] could already do this and its only
  * callers were `PurchaseCompletion` and `NativeBillingManager`, both enriching analytics AFTER a
  * purchase. So a paywall showed whatever an author typed, and a price change in Play Console never
  * reached it.
@@ -28,7 +28,7 @@ import kotlinx.coroutines.withTimeoutOrNull
 internal object StorePriceLookup {
 
     /**
-     * #933 — what the store knows about a product: its localized price and its ISO billing period.
+     * What the store knows about a product: its localized price and its ISO billing period.
      *
      * 🔴 CORRECTED WHILE WRITING THIS. The first version claimed both came off one `ProductInfo`
      * and read `info.billingPeriod` — which does not exist. `ProductInfo` carries no period at all;
@@ -70,7 +70,7 @@ internal object StorePriceLookup {
         }
 
         /*
-         * #933 slice 3 — the trial half, same shape as the period half. Play filters
+         * The trial half, same shape as the period half. Play filters
          * `subscriptionOfferDetails` to the offers THIS USER may buy, so a zero-price phase among
          * them is an eligibility answer rather than a product fact. A user who already used the
          * trial gets no such offer back and therefore no sentence.

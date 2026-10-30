@@ -1,9 +1,9 @@
 package ai.appdna.sdk.paywalls
 
 /**
- * #895 — the dismiss control's footprint, as a value both platforms can be held to.
+ * The dismiss control's footprint, as a value both platforms can be held to.
  *
- * #881 computed this inline on each platform and pinned it with a SOURCE gate. A gate that reads
+ * This used to be computed inline on each platform and pinned it with a SOURCE gate. A gate that reads
  * the arithmetic cannot tell you the two renderers agree, only that they contain similar text —
  * and they did not agree: iOS reserved space for a `swipe` dismiss and this side did not, so one
  * authored paywall wrapped its title differently on each platform and nothing said so.
@@ -30,7 +30,7 @@ object PaywallHeaderInset {
 }
 
 /**
- * #891 — the page's own background hex, when it is a flat colour.
+ * The page's own background hex, when it is a flat colour.
  *
  * A gradient or an image yields null and the defaults fall back to light-on-dark, which is what
  * this surface has always assumed for those.

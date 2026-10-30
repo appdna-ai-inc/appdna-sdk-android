@@ -1,7 +1,7 @@
 package ai.appdna.sdk.onboarding
 
 /**
- * #1094 — what a step advance CARRIES, as a pure function both the renderer and the fixture runner
+ * What a step advance CARRIES, as a pure function both the renderer and the fixture runner
  * call.
  *
  * 🔴 It exists because a test that re-implements the thing under test can only ever agree with it.

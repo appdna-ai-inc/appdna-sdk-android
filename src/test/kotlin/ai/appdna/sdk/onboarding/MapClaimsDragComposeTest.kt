@@ -26,7 +26,7 @@ import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
 
 /**
- * #951 — A MAP INSIDE A STEP GETS THE DRAG, AND EVERYWHERE ELSE STILL SCROLLS.
+ * A MAP INSIDE A STEP GETS THE DRAG, AND EVERYWHERE ELSE STILL SCROLLS.
  *
  * The customer's report was *"the Google map barely reacts to dragging. A pan moves it only a tiny
  * amount, and only when the gesture is picked up at all."* The cause is gesture arbitration, not
@@ -44,7 +44,7 @@ import org.robolectric.annotation.Config
  * 🔴 EVERY ASSERTION HERE HAS ITS CONTROL IN THE SAME CLASS. `scrolls when nothing claims the drag`
  * is what makes `does not scroll while a map holds the gesture` mean anything: without it, a
  * harness that cannot scroll at all would pass the second test for the worst possible reason —
- * which is exactly how #809's first test passed.
+ * which is exactly how an earlier first test passed.
  */
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [34], qualifiers = "w411dp-h891dp-xxhdpi")

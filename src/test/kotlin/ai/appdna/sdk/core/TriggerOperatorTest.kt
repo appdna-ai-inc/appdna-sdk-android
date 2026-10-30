@@ -6,7 +6,7 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 /**
- * #1064 — THE OPERATOR VOCABULARY, AND WHAT AN UNKNOWN ONE MUST DO.
+ * THE OPERATOR VOCABULARY, AND WHAT AN UNKNOWN ONE MUST DO.
  *
  * The console's survey schema allowed `neq`, `in` and `not_in`, which no SDK implemented. iOS
  * decoded an unrecognised operator to `eq`, so a `neq` condition selected precisely the audience

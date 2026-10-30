@@ -239,7 +239,7 @@ class SurveyConfigParsingTest {
         assertEquals(3, q.options!!.size)
         assertEquals("opt1", q.options!![0].id)
         assertEquals("Option A", q.options!![0].text)
-        // #999 — an option icon is an `IconReference` now, not a bare String: the object form
+        // An option icon is an `IconReference` now, not a bare String: the object form
         // `IconRefSchema` accepts used to leave Android drawing no icon at all (and iOS dropping
         // the whole option). A bare string still decodes, and classifies itself the way every
         // other surface does.

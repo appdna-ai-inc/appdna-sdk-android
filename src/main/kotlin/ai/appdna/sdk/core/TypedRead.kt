@@ -1,12 +1,12 @@
 package ai.appdna.sdk.core
 
 /**
- * #957 — READS THAT NOTICE WHEN A FIELD IS THE WRONG TYPE.
+ * READS THAT NOTICE WHEN A FIELD IS THE WRONG TYPE.
  *
  * Android parses published config out of `Map<String, Any?>` with `as?` casts. A wrongly-typed
  * field yields `null`, the parser carries on with a default, and nothing anywhere knows a value
  * was lost. iOS knows, because `Codable` THROWS and `FailableDecodable` catches it with a coding
- * path — which is why #935's reporting ended up asymmetric: the platform whose parser is more
+ * path — which is why configuration-issue reporting ended up asymmetric: the platform whose parser is more
  * forgiving is the one that reports less, and a reader would reasonably conclude it has fewer
  * problems.
  *
@@ -82,7 +82,7 @@ internal fun Map<String, Any?>.bool(surface: String, path: String, key: String):
 /**
  * A list, or null — reporting when the key is present and is something else.
  *
- * This is the one that cost a whole document on iOS before #936: a survey on dev held a DICTIONARY
+ * This is the one that once cost a whole document on iOS: a survey held a DICTIONARY
  * under `questions[0].options` where the DTO declared an array. Android has always read `as? List`
  * and got null; now it says so.
  */

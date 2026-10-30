@@ -15,7 +15,7 @@ import org.robolectric.Shadows.shadowOf
 import org.robolectric.annotation.Config
 
 /**
- * #1170 — a test that ends with a Compose dispatch still queued must not break the tests after it.
+ * A test that ends with a Compose dispatch still queued must not break the tests after it.
  *
  * The three run in name order in one JVM. `b` leaves a dispatch pending, as a test does whose last
  * Compose work lands after its last looper idle. `c` then needs the main Compose dispatcher. Without

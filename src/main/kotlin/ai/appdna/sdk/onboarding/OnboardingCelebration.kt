@@ -4,7 +4,7 @@ package ai.appdna.sdk.onboarding
  * WHEN an onboarding flow's authored celebration fires. Mirror of iOS
  * `Onboarding/OnboardingCelebration.swift`, and the same function both renderers call.
  *
- * 🔴 #1026 — the console has offered a "Celebration Effect" in the flow settings panel since it
+ * 🔴 The console has offered a "Celebration Effect" in the flow settings panel since it
  * shipped. This file's own `OnboardingConfig.kt` parsed it and no composable read it; iOS did not
  * parse it at all. `ConfettiOverlay` existed on both platforms the whole time.
  *
@@ -13,7 +13,7 @@ package ai.appdna.sdk.onboarding
  * completion — and `on_purchase` has no meaning inside onboarding; the paywall has its own effect.
  *
  * Shared because the last two particle defects were both two platforms disagreeing about when an
- * effect fires: #997's double gate, and `PaywallConfig.kt` defaulting to a trigger that could not
+ * effect fires: a double gate, and `PaywallConfig.kt` defaulting to a trigger that could not
  * fire. Driven by the `onboarding_celebration_moment` fixture.
  */
 object OnboardingCelebration {

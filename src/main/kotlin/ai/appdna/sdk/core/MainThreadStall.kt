@@ -9,7 +9,7 @@ import ai.appdna.sdk.Log
 import java.util.concurrent.atomic.AtomicBoolean
 
 /**
- * #952 — NAME THE CALL THAT HELD THE MAIN THREAD, instead of learning afterwards that something did.
+ * NAME THE CALL THAT HELD THE MAIN THREAD, instead of learning afterwards that something did.
  *
  * A customer's logcat carried two lines from the system and nothing from us:
  *

@@ -214,7 +214,7 @@ internal class PaywallManager(
             }
         }
         /*
-         #923 — the view event fires AFTER the store lookup (below), not here, so it describes the
+         The view event fires AFTER the store lookup (below), not here, so it describes the
          screen the user actually saw. It carries `price_source` per plan: `store`, or one of
          `authored_opt_out` / `authored_no_product` / `authored_lookup_failed`. That is what
          answers "why is my paywall showing the old price" — without it the question has no answer
@@ -237,7 +237,7 @@ internal class PaywallManager(
         } catch (_: Throwable) { /* never block presentation on prefetch */ }
 
         /*
-         #923 — ASK PLAY WHAT THESE PRODUCTS COST, before the Activity starts.
+         ASK PLAY WHAT THESE PRODUCTS COST, before the Activity starts.
 
          Until this, `price_display` was a free-text field and the only thing a user ever saw: a
          price change in Play Console did not reach the paywall, so Play charged the new price
@@ -258,7 +258,7 @@ internal class PaywallManager(
         // A snapshot, because `config` above is a captured `var` and Kotlin will not smart-cast one.
         val presented = config
         scope.launch {
-            // #933 — price and period resolved together, inside the same budget, so a paywall
+            // Price and period resolved together, inside the same budget, so a paywall
             // cannot show this month's price against last month's cadence.
             val facts = ai.appdna.sdk.billing.StorePriceLookup.facts(
                 resolver = ai.appdna.sdk.AppDNA.billing.manager?.priceResolver,
@@ -266,7 +266,7 @@ internal class PaywallManager(
             )
             val prices = facts.mapNotNull { (id, f) -> f.price?.let { id to it } }.toMap()
             val periods = facts.mapNotNull { (id, f) -> f.periodIso?.let { id to it } }.toMap()
-            // #933 slice 3 — present ONLY for a product Play returned a free-trial offer for, which
+            // Present ONLY for a product Play returned a free-trial offer for, which
             // is Play saying this user is eligible (it filters the offer list). A user who has
             // already used the trial yields no entry and therefore no sentence.
             val trials = facts.mapNotNull { (id, f) -> f.trialIso?.let { id to it } }.toMap()
@@ -286,7 +286,7 @@ internal class PaywallManager(
 
     /**
      * The Activity launch, lifted out of [present] so the store-price lookup above can await
-     * before it without burying the whole call in one coroutine body (#923).
+     * before it without burying the whole call in one coroutine body.
      */
     private fun launchPaywallActivity(
         activity: Activity,
@@ -314,12 +314,12 @@ internal class PaywallManager(
                 listener?.onPaywallDismissed(paywallId = id)
             },
             /*
-             * #1074 — CTA_TAPPED MOVED OUT OF HERE, to the tap site.
+             * CTA_TAPPED MOVED OUT OF HERE, to the tap site.
              *
              * It used to fire from this closure, which the renderer reaches only once its
              * `plan != null` guard has passed — so a tap that could not become a purchase told the
              * host nothing at all, and "the SDK never heard it" and "the store refused" were the
-             * same silence (#1072). The action means "the user tapped the CTA", so it belongs
+             * same silence. The action means "the user tapped the CTA", so it belongs
              * wherever they did.
              */
             onAction = { action ->
@@ -541,7 +541,7 @@ internal class PaywallManager(
         paywallId: String,
         listener: AppDNAPaywallDelegate?,
     ) {
-        // #1103 — the purchase really did succeed, so an authored `on_purchase` effect fires HERE,
+        // The purchase really did succeed, so an authored `on_purchase` effect fires HERE,
         // before any branch. Every branch reaches this line; only `show_message` sets an overlay
         // payload, which is why the celebration needs a signal of its own. Mirrors iOS posting
         // `.paywallPurchaseCelebrate` at the top of its own handler.
@@ -636,7 +636,7 @@ internal class PaywallManager(
             }
             "show_error", "retry" -> {
                 PaywallActivity.postPurchaseOverlay = PostPurchaseOverlayState(
-                    // #1105 — an EMPTY message falls back to the default, as on iOS and in the console
+                    // An EMPTY message falls back to the default, as on iOS and in the console
                     // preview. `?:` alone kept "", and the overlay skips an empty message entirely, so
                     // this document drew no banner here and an empty one on iOS.
                     message = config.message?.takeIf { it.isNotEmpty() } ?: "Payment failed. Please try again.",
@@ -649,7 +649,7 @@ internal class PaywallManager(
                     // console-configured retry button text + retry-vs-dismiss
                     // action were silently dropped.
                     // The default is applied HERE, as iOS applies it in its manager, so both hand the
-                    // renderer the same text (#1105's fixture reads it at this boundary).
+                    // renderer the same text (the shared fixture reads it at this boundary).
                     retryText = config.retry_text?.takeIf { it.isNotEmpty() } ?: "Try Again",
                     action = config.action,
                     allowDismiss = config.allow_dismiss ?: true,

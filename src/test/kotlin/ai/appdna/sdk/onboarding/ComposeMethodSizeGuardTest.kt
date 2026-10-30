@@ -84,7 +84,7 @@ class ComposeMethodSizeGuardTest {
         // Measured on the pre-P1b build (HEAD 63ad606eb, 2026-09-28): BlockBasedStepView = 2,535 bytes
         // (max_locals 58). Ceiling = max(16 KiB, 1.25 × 2,535) = 16,384 bytes.
         assertMethodCeiling(methods, "BlockBasedStepView", maxBytesBlockBasedStepView)
-        // Audit — the flow host's own method. Measured pre-P1b (63ad606eb): 11,683 bytes
+        // The flow host's own method. Measured pre-P1b (63ad606eb): 11,683 bytes
         // (max_locals 254). Ceiling = max(16 KiB, 1.25 × 11,683) = 16,384 bytes.
         assertMethodCeiling(methods, "OnboardingFlowHost", maxOf(16 * 1024, (11_683 * 1.25).toInt()))
     }

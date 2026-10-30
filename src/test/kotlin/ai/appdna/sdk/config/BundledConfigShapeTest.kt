@@ -91,7 +91,7 @@ class BundledConfigShapeTest {
     private companion object { const val PAYWALLS = 40 }
 
     /**
-     * #856 — A BUNDLE THE SDK CANNOT READ MUST SAY SO.
+     * A BUNDLE THE SDK CANNOT READ MUST SAY SO.
      *
      * Every section above is optional, so a bundle carrying none of them parsed in silence and the
      * SDK carried on with no config at all: valid JSON, right size, right place, and inert.

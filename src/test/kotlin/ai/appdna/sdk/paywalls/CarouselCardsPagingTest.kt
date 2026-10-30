@@ -14,7 +14,7 @@ import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
 
 /**
- * #962 — `carousel_cards` IS PAGED, not merely drawn.
+ * `carousel_cards` IS PAGED, not merely drawn.
  *
  * The Console offers `horizontal_scroll` and `carousel_cards` as two separate choices and Android
  * rendered them with ONE arm — a peeking pager — so an author who picked the second silently got
@@ -42,7 +42,7 @@ class CarouselCardsPagingTest {
         const val SECOND = "Annual"
     }
 
-    /** Plans under `layout.sections[].config.plans`, where a real paywall keeps them (#923). */
+    /** Plans under `layout.sections[].config.plans`, where a real paywall keeps them. */
     private fun paywallMap(style: String): Map<String, Any> = mapOf(
         "id" to "pw_carousel",
         "name" to "Carousel",

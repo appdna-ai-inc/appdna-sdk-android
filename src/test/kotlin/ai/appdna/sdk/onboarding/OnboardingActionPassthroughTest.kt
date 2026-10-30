@@ -20,8 +20,8 @@ import org.junit.Test
  * `actionValue` to the host as `data["action_value"]` (or as the
  * type-specific key for `social_login` / `permission`).
  *
- * If `OnboardingActivity.handleAction` ever drifts from this table the
- * implementation audit (Phase L) will catch it because both reference
+ * If `OnboardingActivity.handleAction` ever drifts from this table, a
+ * parity check will catch it because both reference
  * the same iOS source-of-truth: `OnboardingRenderer.swift:1507-1546`.
  */
 class OnboardingActionPassthroughTest {
@@ -152,7 +152,7 @@ class OnboardingActionPassthroughTest {
  * `onboarding/OnboardingActivity.kt:1017-1085`.
  *
  * If the live dispatcher's branches change, update both here AND the
- * Compose-scoped function. The Phase L audit checks parity.
+ * Compose-scoped function, so the two stay at parity.
  */
 internal object OnboardingActionDispatcher {
     private val authActions = setOf(

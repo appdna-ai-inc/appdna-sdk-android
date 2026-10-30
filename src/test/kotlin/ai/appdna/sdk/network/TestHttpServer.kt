@@ -26,7 +26,7 @@ internal class TestHttpServer(
     /** Extra headers written on every answer, e.g. `Cache-Control` to see whether a client caches. */
     private val responseHeaders: Map<String, String> = emptyMap(),
     /**
-     * #857 — gzip every answer and label it `Content-Encoding: gzip`, the way a CDN in front of the
+     * Gzip every answer and label it `Content-Encoding: gzip`, the way a CDN in front of the
      * backend does. A client that advertises `Accept-Encoding` by hand gets the raw bytes back from
      * OkHttp and chokes; one that leaves the header to OkHttp gets a decompressed body. Nothing but
      * a real compressed round trip can tell those two apart.
@@ -37,7 +37,7 @@ internal class TestHttpServer(
     private val server = ServerSocket(0, 50, InetAddress.getLoopbackAddress())
     val baseUrl: String = "http://127.0.0.1:${server.localPort}"
     val requests: MutableList<Pair<String, String>> = Collections.synchronizedList(mutableListOf())
-    /** #857 — every request's headers, lower-cased, so a test can assert what the client advertised. */
+    /** Every request's headers, lower-cased, so a test can assert what the client advertised. */
     val requestHeaders: MutableList<Map<String, String>> = Collections.synchronizedList(mutableListOf())
     /** Every request's body as sent (`requests` decodes it as UTF-8, which a deflated body does not survive). */
     val rawBodies: MutableList<Pair<String, ByteArray>> = Collections.synchronizedList(mutableListOf())

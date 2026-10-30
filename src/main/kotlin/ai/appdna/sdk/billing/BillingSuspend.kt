@@ -10,7 +10,7 @@ import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlin.coroutines.resume
 
 /*
- * #1112 — THE TWO SUSPEND WRAPPERS `billing-ktx` USED TO PROVIDE, over the plain Play Billing Library 8.
+ * THE TWO SUSPEND WRAPPERS `billing-ktx` USED TO PROVIDE, over the plain Play Billing Library 8.
  *
  * Play refuses an app built on Play Billing Library 7, and `billing-ktx` 8.x is compiled with Kotlin 2.1
  * metadata that this module's Kotlin 1.9 compiler — and an integrator still on 1.9 — cannot read. Those

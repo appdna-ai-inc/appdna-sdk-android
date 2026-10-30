@@ -22,7 +22,7 @@ import org.json.JSONObject
  * Both `OnboardingActivity.handleHookResult` and `resultName` live inside
  * a `@Composable` scope and cannot be invoked from a JVM unit test. We
  * mirror their dispatch tables in [StayBannerPolicy] and [StayResultName]
- * — the implementation audit (Phase L) cross-checks both against the
+ * — keep both in step with the
  * Compose-scoped originals at
  * `onboarding/OnboardingActivity.kt:442-481`.
  */

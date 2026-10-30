@@ -21,7 +21,7 @@ plugins {
 
 android {
     namespace = "ai.appdna.sample"
-    // compileSdk/targetSdk 34 → 35 (Play 2025 policy); 35 → 36 (#1112 — Play refused the sample's first
+    // compileSdk/targetSdk 34 → 35 (Play 2025 policy); 35 → 36 (Play refused the sample's first
     // upload: "must target at least API level 36").
     compileSdk = 36
 
@@ -29,14 +29,14 @@ android {
         applicationId = "ai.appdna.sample"
         minSdk = 24
         targetSdk = 36
-        // Play keeps every version code it has received: 1 is the bundle it refused on Billing 7 / API 35
-        // (#1112), 2 the first it accepted, 3 the first carrying a production key (#1062), 4 the first
-        // that buys the free-trial offer it shows (#1113).
+        // Play keeps every version code it has received: 1 is the bundle it refused on Billing 7 / API 35,
+        // 2 the first it accepted, 3 the first carrying a production key, 4 the first
+        // that buys the free-trial offer it shows.
         versionCode = 4
         versionName = "1.0.3"
 
         /*
-         * #951 — a Maps key the sample can be GIVEN, defaulting to empty.
+         * A Maps key the sample can be GIVEN, defaulting to empty.
          *
          * The SDK reads `com.google.android.geo.API_KEY` from the MERGED manifest, so a map block
          * renders its interactive tier only when the HOST declares one. The sample declared none at
@@ -55,7 +55,7 @@ android {
         /*
          * The base URL a DEVICE WALK points the SDK at, same shape as the maps key above.
          *
-         * iOS has had this since #908 — `sdk-host-ios.ts --base-url` writes
+         * iOS already has this — `sdk-host-ios.ts --base-url` writes
          * `APPDNA_BASE_URL_OVERRIDE` into the built .app — and Android had no equivalent, so every
          * Android walk patched `AndroidManifest.xml` by hand and `sdk:sync` wiped the patch again
          * (the trap `sdk-sync-wipes-sample-patches` records). A build argument cannot be wiped.
@@ -70,7 +70,7 @@ android {
             (project.findProperty("appdnaBaseUrl") as String?) ?: ""
 
         /*
-         * #1062 — the SDK key and the paywall the "Show Paywall" button opens, same shape again.
+         * The SDK key and the paywall the "Show Paywall" button opens, same shape again.
          *
          * A build installed from a Play testing track is a RELEASE build, so the base-URL override
          * above does not apply to it and it talks to production — which needs a real sandbox key and

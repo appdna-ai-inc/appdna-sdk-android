@@ -13,7 +13,7 @@ import org.robolectric.annotation.Config
 import org.robolectric.shadows.ShadowLooper
 
 /**
- * #1063 — A TRANSPORT FAILURE MUST NOT SPEND THE ONE CHANCE.
+ * A TRANSPORT FAILURE MUST NOT SPEND THE ONE CHANCE.
  *
  * A deferred deep link is resolvable exactly once, on the first launch ever. `markLaunched()` used
  * to run on every path out of the fetch, the failure listener and the missing-Firestore branch

@@ -1,7 +1,7 @@
 package ai.appdna.sdk.onboarding
 
 /**
- * #984 — the ONE format rule both platforms apply, written down once per platform and kept
+ * The ONE format rule both platforms apply, written down once per platform and kept
  * character-for-character identical.
  *
  * 🔴 `android.net.Uri.parse` is NOT the rule, and that is the whole reason this object exists. It

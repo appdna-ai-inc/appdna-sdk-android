@@ -16,11 +16,11 @@ import org.robolectric.Shadows.shadowOf
 import org.robolectric.annotation.Config
 
 /**
- * #957 — A WRONGLY-TYPED FIELD IS NOTICED, NOT ABSORBED.
+ * A WRONGLY-TYPED FIELD IS NOTICED, NOT ABSORBED.
  *
  * Android parses published config out of `Map<String, Any?>` with `as?` casts, so a field of the
  * wrong type yields null and the parser carries on with a default. iOS knows — `Codable` throws
- * and `FailableDecodable` catches it with a coding path — which is why #935's reporting came out
+ * and `FailableDecodable` catches it with a coding path — which is why configuration-issue reporting came out
  * asymmetric: the platform whose parser is more forgiving reported less, and a reader would
  * reasonably conclude it had fewer problems.
  *

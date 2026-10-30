@@ -5,8 +5,8 @@ package ai.appdna.sdk.core
  * in-app messages.
  *
  * 🔴 `SurveyManager` and `MessageManager` each carried a private copy of this `when`, identical by
- * hand. That is the shape that let a shared rule diverge between Swift and Kotlin before, and on
- * #1064 the two platforms had already drifted on what an UNKNOWN operator means: iOS decoded it to
+ * hand. That is the shape that let a shared rule diverge between Swift and Kotlin before, and
+ * the two platforms had already drifted on what an UNKNOWN operator means: iOS decoded it to
  * `eq` (so a condition authored `neq` selected precisely the audience the author excluded) while
  * Android answered false. A new operator added here now reaches both surfaces or neither.
  *

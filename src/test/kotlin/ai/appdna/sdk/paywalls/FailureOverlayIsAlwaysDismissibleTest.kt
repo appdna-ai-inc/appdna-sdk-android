@@ -12,8 +12,8 @@ import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
 
 /**
- * #1101 — A FAILED PURCHASE CAN ALWAYS BE DISMISSED, whatever `allow_dismiss` says.
- * #1105 — and it is a BOTTOM BANNER with no scrim, the presentation iOS draws, so the paywall
+ * A FAILED PURCHASE CAN ALWAYS BE DISMISSED, whatever `allow_dismiss` says.
+ * And it is a BOTTOM BANNER with no scrim, the presentation iOS draws, so the paywall
  * behind it stays reachable.
  *
  * (History, kept because it is why the reachability test below exists:)
@@ -22,7 +22,7 @@ import org.robolectric.annotation.Config
  * `allow_dismiss: false` on a FAILURE therefore trapped the user: the button that buys is behind the
  * scrim, the plan rows are behind it, and the only exits are the system back button or killing the
  * app. Worse, a tap lands on the scrim, so it runs no action, logs nothing and calls no delegate —
- * indistinguishable from a store that refused, which is the shape #1072 is about.
+ * indistinguishable from a store that refused.
  *
  * The flag keeps its meaning for a SUCCESS overlay (hold the celebration, then route) and for the
  * paywall itself (forced engagement for N seconds). It is only the failure path that is forced open.
@@ -144,7 +144,7 @@ class FailureOverlayIsAlwaysDismissibleTest {
     }
 
     /**
-     * #1105 — THE SAME FAILURE TWICE, THEN ONE TAP: THE BANNER STAYS GONE.
+     * THE SAME FAILURE TWICE, THEN ONE TAP: THE BANNER STAYS GONE.
      *
      * Found on the api34 emulator walk: a user whose card is declined, who taps the purchase button
      * again and is declined again, taps the banner — and it comes straight back. The poller only took
@@ -176,7 +176,7 @@ class FailureOverlayIsAlwaysDismissibleTest {
     }
 
     /**
-     * #1107 — THE RETRY IS A SECOND TAP ON THE CTA: it buys the selected plan AND puts the CTA in its
+     * THE RETRY IS A SECOND TAP ON THE CTA: it buys the selected plan AND puts the CTA in its
      * in-progress state. The old retry was a cut-down copy that bought without it, so the CTA stayed
      * tappable mid-purchase (seen on the api34 emulator) — buying alone cannot tell the two apart,
      * which is why "Processing..." is asserted too.
@@ -202,7 +202,7 @@ class FailureOverlayIsAlwaysDismissibleTest {
     }
 
     /**
-     * #1105 — WITH THE BANNER UP, THE CTA STILL BUYS.
+     * WITH THE BANNER UP, THE CTA STILL BUYS.
      *
      * This is the behaviour the presentation change exists for: iOS's banner leaves the plan rows
      * and the button that buys reachable, so a retry is one tap. Android's old centred card sat
@@ -231,7 +231,7 @@ class FailureOverlayIsAlwaysDismissibleTest {
     }
 
     /**
-     * #1105 — THE BANNER SITS ABOVE THE CTA, NOT ON IT.
+     * THE BANNER SITS ABOVE THE CTA, NOT ON IT.
      *
      * iOS places it at `max(80, pinnedZoneHeight + 16)` above the bottom, where the pinned zone is
      * MEASURED, so it clears the CTA however tall the pinned group is. A banner merely anchored to

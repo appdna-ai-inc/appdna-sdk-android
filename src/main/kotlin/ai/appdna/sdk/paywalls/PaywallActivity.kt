@@ -92,7 +92,7 @@ import ai.appdna.sdk.R
 class PaywallActivity : ComponentActivity() {
 
     /*
-     * #952 — a debuggable host measures its own main-thread stalls while this surface is in front.
+     * A debuggable host measures its own main-thread stalls while this surface is in front.
      *
      * A customer's logcat carried `wm_failed_to_pause` for `PaywallActivity` at the moment an
      * onboarding map step ended, and nothing of ours said what was running. A release build pays
@@ -109,7 +109,7 @@ class PaywallActivity : ComponentActivity() {
     }
 
 
-    // OB-5 audit-2 HIGH-3 — instance-level snapshot
+    // Instance-level snapshot
     // of the dismiss callback so `onDestroy` can fire it as a backstop when
     // the OS / user kills the Activity outside the regular dismissal paths
     // (task swipe in recents, low-memory kill, finish() from elsewhere).
@@ -272,7 +272,7 @@ class PaywallActivity : ComponentActivity() {
         val onRestoreCb = slots.onRestore
         val onActionCb = slots.onAction
 
-        // OB-5 audit-2 HIGH-3 — capture onDismiss
+        // Capture onDismiss
         // on the instance so onDestroy can fire it when the regular paths
         // (Compose onDismiss, onBackPressed) didn't run.
         snapshotOnDismiss = onDismiss
@@ -286,7 +286,7 @@ class PaywallActivity : ComponentActivity() {
             // SurveyActivity pattern landed by Phase D for surveys.
             val isDark = isSystemInDarkTheme()
             MaterialTheme(colorScheme = if (isDark) androidx.compose.material3.darkColorScheme() else androidx.compose.material3.lightColorScheme()) {
-                // #1076 — PROVIDED, not passed: one more parameter on PaywallScreen made ART
+                // PROVIDED, not passed: one more parameter on PaywallScreen made ART
                 // reject the class outright (see LocalPaywallAction).
                 androidx.compose.runtime.CompositionLocalProvider(
                     LocalPaywallAction provides { action -> onActionCb?.invoke(action) },
@@ -349,7 +349,7 @@ class PaywallActivity : ComponentActivity() {
     }
 
     override fun onDestroy() {
-        // OB-5 audit-2 HIGH-3 — backstop for
+        // Backstop for
         // dismissal paths that don't go through `onBackPressed` or the
         // Compose `onDismiss` callback (OS kill, task-recents swipe,
         // external `finish()`). Without this an onboarding-presented
@@ -409,12 +409,12 @@ class PaywallActivity : ComponentActivity() {
             val onPromoCodeSubmit: ((String, (Boolean) -> Unit) -> Unit)? = null,
             val onRestore: (() -> Unit)? = null,
             /**
-             * #1074 / #1076 — what the USER DID, reported separately from what it achieved.
+             * What the USER DID, reported separately from what it achieved.
              *
              * `CTA_TAPPED` used to be emitted by `PaywallManager.onPlanSelected`, which is reached
              * only once the renderer's `plan != null` guard has passed. So a tap that could not
              * proceed told the host nothing, and "the SDK never heard it" and "the store refused"
-             * were the same silence (#1072).
+             * were the same silence.
              *
              * One slot for the whole `PaywallAction` set rather than one per case: the renderer
              * decides WHICH action happened, and a per-case slot would have to be threaded through
@@ -563,7 +563,7 @@ class PaywallActivity : ComponentActivity() {
         }
 
         /**
-         * A purchase SUCCEEDED and an authored `particle_effect` should now celebrate it — #1103.
+         * A purchase SUCCEEDED and an authored `particle_effect` should now celebrate it.
          *
          * 🔴 ITS OWN SIGNAL, and the four `on_success` branches are why. The effect used to start on
          * the CTA TAP (with no trigger check at all here), so a user who cancelled or was declined
@@ -603,7 +603,7 @@ internal data class PostPurchaseOverlayState(
 )
 
 /**
- * #1105 — a failed purchase is a BOTTOM BANNER, the same presentation iOS draws
+ * A failed purchase is a BOTTOM BANNER, the same presentation iOS draws
  * (`PaywallRenderer.swift`, "Post-purchase error banner").
  *
  * It used to be a centred card over a full-screen scrim, so one authored `post_purchase.on_failure`
@@ -621,7 +621,7 @@ internal data class PostPurchaseOverlayState(
  *    no inset of its own; only the 80 floor is lifted above the bar, as iOS's floor sits above the
  *    home indicator. Adding `navigationBarsPadding()` here counted the inset twice — a ~40dp gap
  *    on the api34 emulator where iOS leaves 16;
- *  - tapping the banner dismisses it (iOS #1072): a tap aimed at a CTA it overlaps recovers.
+ *  - tapping the banner dismisses it, as on iOS: a tap aimed at a CTA it overlaps recovers.
  */
 @Composable
 internal fun PurchaseFailureBanner(
@@ -672,7 +672,7 @@ internal fun PurchaseFailureBanner(
 // Parity: maps a console font-weight string (normal | medium | semibold | bold) to a Compose
 // FontWeight. Mirrors iOS resolveCTAFontWeight semantics.
 //
-// #979 — the fallback is a PARAMETER because the countdown needs two of them: its label has
+// The fallback is a PARAMETER because the countdown needs two of them: its label has
 // always drawn SemiBold and its digits Bold, so one shared default would have changed the pixels
 // of every countdown already in the field.
 fun resolveWeight(w: String?, fallback: FontWeight): FontWeight = when (w?.lowercase()) {
@@ -697,12 +697,12 @@ fun PaywallScreen(
     // `dark` overrides from console-designed paywall content based on this.
     @Suppress("UNUSED_PARAMETER") isDark: Boolean = false,
 ) {
-    // #1076 — out-of-band, because one more PARAMETER on this composable made ART reject it
+    // Out-of-band, because one more PARAMETER on this composable made ART reject it
     // (see LocalPaywallAction).
     val onAction = LocalPaywallAction.current
     var selectedPlanId by remember { mutableStateOf<String?>(null) }
     var showDismiss by remember { mutableStateOf(false) }
-    // #652 — the Back button has its OWN delay, so it cannot ride on `showDismiss`.
+    // The Back button has its OWN delay, so it cannot ride on `showDismiss`.
     var showBack by remember { mutableStateOf(false) }
     var isPurchasing by remember { mutableStateOf(false) }
     var isDismissing by remember { mutableStateOf(false) }
@@ -725,7 +725,7 @@ fun PaywallScreen(
         // The purchase-ended signal as of this composition; a later bump re-enables
         // the CTA (see [PaywallActivity.signalPurchaseEnded]).
         var seenPurchaseEnded = PaywallActivity.purchaseEndedSignal.get()
-        // #1103 — the celebrate signal, read the same way as the ended one.
+        // The celebrate signal, read the same way as the ended one.
         var seenCelebrate = PaywallActivity.purchaseCelebrateSignal.get()
         // Poll the companion-object slot for new overlay payloads. Cheap
         // (one variable read per frame) — and we only enter this loop while
@@ -745,7 +745,7 @@ fun PaywallScreen(
             }
             val pending = PaywallActivity.postPurchaseOverlay
             /*
-             * #1105 — take ANY pending payload. The slot is cleared below on every take, so there is
+             * Take ANY pending payload. The slot is cleared below on every take, so there is
              * nothing to de-duplicate, and comparing it to what is on screen was a bug: the state is
              * a data class, so a second IDENTICAL failure (the same card declined twice) compared
              * equal, was never taken, and sat in the slot. Tapping the banner away then left the slot
@@ -805,7 +805,7 @@ fun PaywallScreen(
             .firstOrNull { it.type == "plans" }
             ?.data?.plans
             ?: emptyList<PaywallPlan>()
-        // #1056 — the authored rank, which both platforms decoded and neither read.
+        // The authored rank, which both platforms decoded and neither read.
         val plans = PaywallPlanOrder.sorted(if (sectionPlans.isEmpty()) (config.plans ?: emptyList()) else sectionPlans)
         selectedPlanId = plans.firstOrNull { it.is_default == true }?.id
             ?: plans.firstOrNull()?.id
@@ -849,7 +849,7 @@ fun PaywallScreen(
         showDismiss = true
     }
 
-    // #652 — the Back button reveals on its own schedule. Deliberately NOT gated on
+    // The Back button reveals on its own schedule. Deliberately NOT gated on
     // `dismiss.allowed`: that flag is about the close affordance on a force-choice paywall, and an
     // author who switched Back on has said what they want.
     LaunchedEffect(config.dismiss?.back?.enabled, config.dismiss?.back?.delay_seconds) {
@@ -918,26 +918,26 @@ fun PaywallScreen(
                 .firstOrNull { it.type == "plans" }
                 ?.data?.plans
                 ?: emptyList<PaywallPlan>()
-            // #1056 — the authored rank, which both platforms decoded and neither read.
+            // The authored rank, which both platforms decoded and neither read.
             return PaywallPlanOrder.sorted(if (sectionPlans.isEmpty()) (config.plans ?: emptyList()) else sectionPlans)
         }
 
         /*
-         * #1107 — ONE "the CTA buys the selected plan", iOS's `handleCTATap()`. There were three copies
+         * ONE "the CTA buys the selected plan", iOS's `handleCTATap()`. There were three copies
          * (the pinned CTA, a CTA section in the body or bottom zone, the sticky footer) and fixes kept
-         * landing in one of them: #1103 moved the celebration off the tap in the pinned copy only, so
-         * the other two still started it on the tap (#1109). And the failure banner's retry was a
+         * landing in one of them: one fix moved the celebration off the tap in the pinned copy only, so
+         * the other two still started it on the tap. And the failure banner's retry was a
          * FOURTH, cut-down copy — no in-progress state, so the CTA stayed tappable mid-purchase, and an
          * empty metadata map, so a validated promo code and the toggles were dropped from the retry.
          * The retry now runs this too: retrying IS tapping the CTA again, as on iOS.
          */
         fun purchaseSelectedPlan() {
-            // #1074 — the tap, reported before the guard decides whether it can become a purchase.
+            // The tap, reported before the guard decides whether it can become a purchase.
             onAction(PaywallAction.CTA_TAPPED)
             val plan = effectivePlans().firstOrNull { p -> p.id == selectedPlanId } ?: return
             isPurchasing = true
             HapticEngine.triggerIfEnabled(currentView, config.haptic?.triggers?.on_button_tap, config.haptic)
-            // #1103 — no celebration here: it starts from PaywallActivity.signalPurchaseCelebrate()
+            // No celebration here: it starts from PaywallActivity.signalPurchaseCelebrate()
             // once the purchase has actually succeeded, and it honours `trigger` there.
             val md = toggleStates.toMutableMap<String, Any>()
             if (promoState == "success" && promoCode.isNotBlank()) md["promo_code"] = promoCode
@@ -949,7 +949,7 @@ fun PaywallScreen(
         // @Composable scope from PaywallScreen. The helper that previously
         // lived here was dead code.
 
-        // #903 — the pinned-zone cap's state, declared HERE because the viewport is measured on
+        // The pinned-zone cap's state, declared HERE because the viewport is measured on
         // the Column below and Kotlin cannot see a variable declared after the lambda that reads it.
         var pinnedHeightPx by remember { mutableStateOf(0) }
         var viewportHeightPx by remember { mutableStateOf(0) }
@@ -959,7 +959,7 @@ fun PaywallScreen(
         Column(
             modifier = Modifier
                 .fillMaxSize()
-                // #903 — the viewport the pinned-zone cap is measured against. It has to be
+                // The viewport the pinned-zone cap is measured against. It has to be
                 // measured in THIS scope: the state the cap reads lives here, and the root Box
                 // further down the file is a different composable that cannot see it.
                 .onSizeChanged { viewportHeightPx = it.height },
@@ -996,7 +996,7 @@ fun PaywallScreen(
             // can be PINNED to the bottom zone (iOS safeAreaInset(.bottom),
             // PaywallRenderer.swift:141-230) instead of floating mid-screen.
             /*
-             * 🔴 #1073 — A PAYWALL WITH A TOP-LEVEL `cta` AND NO `cta` SECTION HAD NO BUY BUTTON.
+             * 🔴 A PAYWALL WITH A TOP-LEVEL `cta` AND NO `cta` SECTION HAD NO BUY BUTTON.
              *
              * iOS has carried a fallback for this since the renderer was written —
              * `PaywallRenderer.swift`'s `} else if let cta = config.cta {` draws a pinned button
@@ -1031,7 +1031,7 @@ fun PaywallScreen(
             }
 
             /*
-             * #884 — ANY section can be pinned to the bottom zone, not only the CTA.
+             * ANY section can be pinned to the bottom zone, not only the CTA.
              *
              * > Owner, 2026-10-16: "don't you think this whole section should be tied to low zone
              * > not to top to look better in therms of UI/UX?" — about the plan tiles.
@@ -1053,7 +1053,7 @@ fun PaywallScreen(
             }
 
             /*
-             * #903 — the cap this comment has been describing. `PINNED_ZONE_MAX_FRACTION` was named
+             * The cap this comment has been describing. `PINNED_ZONE_MAX_FRACTION` was named
              * here and existed in no file; `PaywallBottomZone` is it, measured rather than guessed.
              *
              * 🔴 LATCHED, because the decision feeds back into what it measures. Unpinning shrinks
@@ -1074,7 +1074,7 @@ fun PaywallScreen(
             }
 
             /*
-             * #881 — the dismiss control's footprint, computed ONCE and handed to the header.
+             * The dismiss control's footprint, computed ONCE and handed to the header.
              *
              * The SAME resolution the overlay uses (`dismissType`, PaywallActivity.kt:1220) and the
              * same gate (`neverDismissable`, :685), so the inset and the control can never disagree
@@ -1085,7 +1085,7 @@ fun PaywallScreen(
              *
              * The arithmetic matches the control: `.padding(16.dp).size((glyphSize * 2).dp)`.
              */
-            // #895 — through `PaywallHeaderInset`, the one function the shared fixture drives on
+            // Through `PaywallHeaderInset`, the one function the shared fixture drives on
             // both platforms. It was inline on each side and pinned by a source gate, which cannot
             // tell you the two agree: they did not, because iOS reserved space for a `swipe`
             // dismiss and this side did not.
@@ -1152,7 +1152,7 @@ fun PaywallScreen(
                             isPurchasing = isPurchasing,
                             onPlanSelect = { planId ->
                                 selectedPlanId = planId
-                                // #1076 — the user CHOSE this plan (see the sibling sites).
+                                // The user CHOSE this plan (see the sibling sites).
                                 onAction(PaywallAction.PLAN_CHANGED)
                                 // Haptic on plan select
                                 HapticEngine.triggerIfEnabled(
@@ -1187,14 +1187,14 @@ fun PaywallScreen(
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(bottom = (config.layout.footer_padding ?: 8f).dp)
-                    // #903 — the pinned group's own height, which is what the cap is measured on.
+                    // The pinned group's own height, which is what the cap is measured on.
                     .onSizeChanged { pinnedHeightPx = it.height },
             ) {
             // CTA pinned to the bottom zone: below the scroll
             // body (weight(1f)), above the pinned legal + sticky footer. Same
             // horizontal inset as the scrolled content. Mirrors iOS
             // safeAreaInset(.bottom) ordering (PaywallRenderer.swift:141-230).
-            // #884 — the authored bottom-zone sections, above the CTA, in authored order.
+            // The authored bottom-zone sections, above the CTA, in authored order.
             bottomZoneSections.forEach { pinned ->
                 Column(modifier = Modifier.fillMaxWidth().padding(horizontal = (config.layout.padding ?: 20f).dp)) {
                     PaywallSectionView(
@@ -1204,7 +1204,7 @@ fun PaywallScreen(
                         isPurchasing = isPurchasing,
                         onPlanSelect = { planId ->
                             selectedPlanId = planId
-                            // #1076 — the user CHOSE this plan. Only a tap reaches here; the
+                            // The user CHOSE this plan. Only a tap reaches here; the
                             // default selection is seeded directly, so it is not reported as a
                             // change the user made.
                             onAction(PaywallAction.PLAN_CHANGED)
@@ -1232,7 +1232,7 @@ fun PaywallScreen(
                         isPurchasing = isPurchasing,
                         onPlanSelect = { planId ->
                             selectedPlanId = planId
-                            // #1076 — the user CHOSE this plan. Only a tap reaches here; the
+                            // The user CHOSE this plan. Only a tap reaches here; the
                             // default selection is seeded directly, so it is not reported as a
                             // change the user made.
                             onAction(PaywallAction.PLAN_CHANGED)
@@ -1370,19 +1370,19 @@ fun PaywallScreen(
                 val isFailure = overlay.action == "retry" || overlay.action == "show_error"
                 if (isFailure) {
                     /*
-                     * 🔴 #1103 — STOP CELEBRATING on a failure. The CTA tap starts the particle effect
+                     * 🔴 STOP CELEBRATING on a failure. The CTA tap starts the particle effect
                      * (`if (config.particle_effect != null) showConfetti = true`, with no trigger check
                      * at all) and nothing ever set it back, so a user who cancelled or was declined
                      * watched a congratulatory animation run on top of a payment-failed message,
                      * indefinitely. iOS clears it in its `onFailure` observer for the same reason.
                      *
                      * This removes the user-visible half. Moving the trigger to the success path proper
-                     * is the other half and is recorded on #1103.
+                     * is the other half.
                      */
                     showConfetti = false
                     /*
-                     * #1105 — the bottom banner iOS draws, not a centred card over a scrim. With no
-                     * scrim there is nothing covering the plan rows or the CTA, so #1101's trap (a
+                     * The bottom banner iOS draws, not a centred card over a scrim. With no
+                     * scrim there is nothing covering the plan rows or the CTA, so the old trap (a
                      * failure authored `allow_dismiss: false` behind a full-screen scrim) cannot recur:
                      * the banner is always tap-to-dismiss and everything else stays reachable.
                      */
@@ -1391,7 +1391,7 @@ fun PaywallScreen(
                         retryText = if (overlay.action == "retry") overlay.retryText ?: "Try Again" else null,
                         pinnedZoneHeight = with(androidx.compose.ui.platform.LocalDensity.current) { pinnedHeightPx.toDp() } +
                             (config.layout.footer_padding ?: 8f).dp,
-                        // #1107 — retrying is tapping the CTA again: the same purchase path, in-progress
+                        // Retrying is tapping the CTA again: the same purchase path, in-progress
                         // state and metadata (iOS: `showErrorBanner = false; handleCTATap()`).
                         onRetry = {
                             postPurchaseOverlay = null
@@ -1402,7 +1402,7 @@ fun PaywallScreen(
                 } else {
                     // Message-only SUCCESS overlay (no lottie configured) — a centred card atop the
                     // paywall. `allow_dismiss: false` keeps its meaning here: hold the celebration
-                    // until the success action routes (#1101's control).
+                    // until the success action routes.
                     Box(
                         modifier = Modifier
                             .fillMaxSize()
@@ -1434,7 +1434,7 @@ fun PaywallScreen(
             }
         }
 
-        // #652 — the Back button, rendered INDEPENDENTLY of the close control.
+        // The Back button, rendered INDEPENDENTLY of the close control.
         //
         // The first pass made "back" a dismiss STYLE, so a paywall could have a chevron or an X but
         // never both, and they shared one position/colour/size. They are two buttons. iOS parity:
@@ -1443,7 +1443,7 @@ fun PaywallScreen(
             if (back.enabled == true && showBack) {
                 val backCd = stringResource(R.string.appdna_a11y_paywall_close)
                 val backSize = back.size ?: 16f
-                // #946 — the chevron is drawn on the PAGE.
+                // The chevron is drawn on the PAGE.
                 val backColor = back.color?.let { parseHexColor(it) }
                     ?: PaywallTextDefaults.readable(config.pageBackgroundHex())
                 val backOnLeft = (back.position ?: "top_left") == "top_left"
@@ -1507,7 +1507,7 @@ fun PaywallScreen(
                     ) {
                         Text(
                             text = loc("dismiss.text", config.dismiss?.text ?: "No thanks"),
-                            // #946 — "No thanks" is drawn on the page, not on a control.
+                            // "No thanks" is drawn on the page, not on a control.
                             color = PaywallTextDefaults.readable(config.pageBackgroundHex())
                                 .copy(alpha = 0.6f),
                             fontSize = 14.sp,
@@ -1523,7 +1523,7 @@ fun PaywallScreen(
                             .width(36.dp)
                             .height(5.dp)
                             .clip(RoundedCornerShape(3.dp))
-                            // #946 — the grabber is the only affordance on a swipe-down paywall,
+                            // The grabber is the only affordance on a swipe-down paywall,
                             // and white at 50% over a white page is no affordance at all.
                             .background(
                                 PaywallTextDefaults.readable(config.pageBackgroundHex()).copy(alpha = 0.5f),
@@ -1539,7 +1539,7 @@ fun PaywallScreen(
                 else -> { // back_button chevron, or x_button (the default)
                     val closeCd = stringResource(R.string.appdna_a11y_paywall_close)
                     val glyphSize = (config.dismiss?.size ?: 16f)
-                    // #946 — the ✕ is drawn on the PAGE, so its default is read off the page.
+                    // The ✕ is drawn on the PAGE, so its default is read off the page.
                     val glyphColor = config.dismiss?.color?.let { parseHexColor(it) }
                         ?: PaywallTextDefaults.readable(config.pageBackgroundHex())
                     val onLeft = (config.dismiss?.position ?: "top_right") == "top_left"
@@ -1575,11 +1575,11 @@ fun PaywallScreen(
 }
 
 /**
- * Append the selected plan's name to an ALREADY-LOCALISED CTA label — #1100 / #1102.
+ * Append the selected plan's name to an ALREADY-LOCALISED CTA label.
  *
- * 🔴 The order is the whole point. #1100 made a multi-plan CTA name the plan it will buy, because a
+ * 🔴 The order is the whole point. A multi-plan CTA names the plan it will buy, because a
  * plan tap that drifts far enough is claimed by the scrolling container and the CTA then buys the
- * plan chosen before it (#1081) with nothing on screen saying so. The first version built the whole
+ * plan chosen before it with nothing on screen saying so. The first version built the whole
  * string and handed it to `loc("cta.text", …)` as the FALLBACK, so a paywall carrying a translation
  * got the translation and lost the name — the mitigation disappearing on exactly the paywalls
  * hardest to check, since a walk in the default locale would never show it.
@@ -1599,7 +1599,7 @@ private fun appendPlanName(
     selectedPlanId: String?,
     loc: (String, String) -> String,
 ): String {
-    // #1104 — the author can switch naming off for the whole paywall (it defaults on).
+    // The author can switch naming off for the whole paywall (it defaults on).
     if (config.cta?.name_plan == false) return localised
     // Resolved here rather than passed in, because the caller's list is built inside a `run {}`
     // block whose scope the argument list cannot see. Same resolution as iOS `resolvedPlans` and
@@ -1612,7 +1612,7 @@ private fun appendPlanName(
     val selected = plans[idx]
     if (!selected.cta_text.isNullOrBlank()) return localised
     val name = loc("plan.$idx.name", selected.displayName).trim()
-    // #1104 — the format is localised too, so a locale can change the separator or the order.
+    // The format is localised too, so a locale can change the separator or the order.
     val format = loc("cta.plan_format", config.cta?.plan_format ?: CtaPlanName.DEFAULT_FORMAT)
     return CtaPlanName.compose(localised, name, format)
 }
@@ -1729,7 +1729,7 @@ private fun PaywallBackground(background: PaywallBackground?) {
             // bg.color="transparent" rendered BLACK on Android and CLEAR on iOS.
             // Special-case those literals here before parseHexColor is called.
             //
-            // 🔴 #909 — an UNSET colour is WHITE, not black.
+            // 🔴 An UNSET colour is WHITE, not black.
             //
             // iOS has always resolved this to white (`PaywallRenderer.swift`:
             // `bg?.color ?? bg?.value ?? "#FFFFFF"`) and this side resolved it to BLACK, so one
@@ -1843,7 +1843,7 @@ private fun PaywallExtraButtons(
     loc: (String, String) -> String,
 ) {
     val context = androidx.compose.ui.platform.LocalContext.current
-    val onAction = LocalPaywallAction.current   // #1076
+    val onAction = LocalPaywallAction.current   // the host's onPaywallAction
     for (button in buttons) {
         val label = loc("cta.extra.${button.text ?: ""}", button.text ?: "")
         if (label.isBlank()) continue
@@ -1853,12 +1853,12 @@ private fun PaywallExtraButtons(
                 "purchase" -> onCTATap()
                 "restore" -> onRestore()
                 "link" -> {
-                    onAction(PaywallAction.LINK_TAPPED)   // #1076
+                    onAction(PaywallAction.LINK_TAPPED)   // tell the host before opening the link
                     button.url?.let { ai.appdna.sdk.core.URLSafety.open(context, it) }
                 }
                 "dismiss" -> onDismiss()
                 else -> {
-                    // #1076 — an authored action this SDK does not know. It still dismisses, which
+                    // An authored action this SDK does not know. It still dismisses, which
                     // is what the unauthored default has always done, but the host is told: that
                     // is the only meaning an action "defined in the paywall config" can have.
                     onAction(PaywallAction.CUSTOM)
@@ -1879,7 +1879,7 @@ private fun PaywallExtraButtons(
         } else {
             Button(
                 onClick = onTap,
-                // #651 — an extra button had a Background but always inherited the CTA's radius, so
+                // An extra button had a Background but always inherited the CTA's radius, so
                 // a pill CTA forced every extra button to be a pill too. Unset still inherits.
                 shape = RoundedCornerShape((button.corner_radius ?: cornerRadius).dp),
                 colors = ButtonDefaults.buttonColors(
@@ -1925,7 +1925,7 @@ internal fun PaywallSectionView(
     onPromoCodeChange: (String) -> Unit = {},
     onPromoStateChange: (String) -> Unit = {},
     /**
-     * #881 — the width the floating dismiss control occupies in the top corner, reserved on BOTH
+     * The width the floating dismiss control occupies in the top corner, reserved on BOTH
      * sides of the header so centred text stays centred.
      *
      * The header title is centred across the FULL width and the dismiss control is an overlay with
@@ -1940,12 +1940,12 @@ internal fun PaywallSectionView(
      */
     headerCloseInset: Dp = 0.dp,
 ) {
-    val onAction = LocalPaywallAction.current   // #1076
+    val onAction = LocalPaywallAction.current   // the host's onPaywallAction
     /*
-     * #946 — the page, published once for every composable beneath this one.
+     * The page, published once for every composable beneath this one.
      *
      * Twelve of them resolved colours by assuming a backdrop, and the two that were measured
-     * came back as blank white rectangles on a light page (#938). Threading one string through
+     * came back as blank white rectangles on a light page. Threading one string through
      * twelve signatures is what kept that from being fixed; a CompositionLocal costs each of
      * them one line and no signature at all.
      *
@@ -1964,7 +1964,7 @@ internal fun PaywallSectionView(
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(top = 40.dp)
-                    // #881 — the dismiss control's footprint, reserved on BOTH sides. Computed by
+                    // The dismiss control's footprint, reserved on BOTH sides. Computed by
                     // the caller (`headerCloseInset`), the way iOS does it, so this branch names no
                     // paywall-level config of its own.
                     .padding(horizontal = headerCloseInset)
@@ -2000,7 +2000,7 @@ internal fun PaywallSectionView(
                     // `style.elements["title"].text_style` matching iOS
                     // HeaderSection.swift:10-15 precedence.
                     val titleStyle = StyleEngine.applyTextStyle(
-                        // #891 — read off the PAGE, not off the theme. `onSurface` is the device's
+                        // Read off the PAGE, not off the theme. `onSurface` is the device's
                         // night-mode answer and iOS's `.primary` was the same mistake in the other
                         // direction: a paywall with a dark authored background drew a dark title on
                         // a light-appearance phone, and the words were gone. The author cannot see
@@ -2014,8 +2014,8 @@ internal fun PaywallSectionView(
                         // Paywall hero/header title is the
                         // accessibility heading for the screen, mirroring iOS
                         // `accessibilityAddTraits(.isHeader)`.
-                        // #910 — and its authored container style, which the console has always
-                        // offered and this platform ignored until #905 made the key decode.
+                        // And its authored container style, which the console has always
+                        // offered and this platform ignored until the key was made to decode.
                         modifier = Modifier
                             .semantics { heading() }
                             .run {
@@ -2036,7 +2036,7 @@ internal fun PaywallSectionView(
                     Text(
                         text = loc("section-header.subtitle", it),
                         style = subtitleStyle,
-                        // #910 — the subtitle's authored container, as the title has.
+                        // The subtitle's authored container, as the title has.
                         modifier = Modifier.run {
                             with(StyleEngine) {
                                 applyContainerStyle(section.style?.elements?.get("subtitle")?.elementContainer)
@@ -2048,12 +2048,12 @@ internal fun PaywallSectionView(
         }
         "features" -> {
             /*
-             * 🔴 THE PAGE-READABLE INK, NOT WHITE (#1067). This defaulted to `Color.White`, so on a
+             * 🔴 THE PAGE-READABLE INK, NOT WHITE. This defaulted to `Color.White`, so on a
              * light paywall every feature line was WHITE ON WHITE — the text was drawn the whole
              * time and nobody could see it. A device walk read five bullet points with no words
              * beside them, which looks like missing data rather than a colour.
              *
-             * It is #946's fix, which every other section on this screen already has (the countdown
+             * It is the page-readable text fix, which every other section on this screen already has (the countdown
              * and the comparison table both read `PaywallTextDefaults.readable`), and which the
              * features list never received. iOS has used it since: `FeatureList.swift` draws with
              * `PaywallTextDefaults.readable(on: pageBackgroundHex)`.
@@ -2062,13 +2062,13 @@ internal fun PaywallSectionView(
                 TextStyle(color = PaywallTextDefaults.readable(LocalPaywallPageHex.current), fontSize = 16.sp),
                 section.style?.elements?.get("item")?.text_style
             )
-            // #910 — the item's authored container, from `item_text` or its `item` alias, resolved
+            // The item's authored container, from `item_text` or its `item` alias, resolved
             // ONCE and applied at BOTH text sites below.
             //
             // 🔴 This section renders the same item text TWICE, from two different data keys: the
             // legacy `data.features` list of strings and the rich `data.items` list of objects
             // (see the RICH ITEMS note below). Wiring only the first one is exactly the defect
-            // #905 shipped on the plans section — the border was authored, served and absent from
+            // that once shipped on the plans section — the border was authored, served and absent from
             // the screen, because the branch production actually uses was the other one. The
             // device frame is what caught it both times. iOS does not have this hazard: its
             // `itemText(_:)` is one function that both loops call.
@@ -2080,7 +2080,7 @@ internal fun PaywallSectionView(
                     )
                 }
             }
-            // #910 — and the `icon` element's container, which the console offers beside the icon
+            // And the `icon` element's container, which the console offers beside the icon
             // colour it already honoured. Applied per branch rather than by wrapping the `when` in
             // a Box: a Box is a layout node whether or not the author set anything, and the five
             // icon shapes below are already aligned by their Row.
@@ -2103,7 +2103,7 @@ internal fun PaywallSectionView(
                         Row(
                             verticalAlignment = Alignment.CenterVertically,
                             /*
-                             * #1076 — the row is TAPPABLE and reports `FEATURE_SELECTED`.
+                             * The row is TAPPABLE and reports `FEATURE_SELECTED`.
                              *
                              * 🔴 `clickable`, with no ripple and no visual change: a paywall's
                              * feature list lives inside a vertical scroll, and this repo has
@@ -2143,20 +2143,20 @@ internal fun PaywallSectionView(
                     // iOS drew it in full (FeatureList.swift `richItemRow`). Nothing failed loudly;
                     // the section was simply absent.
                     //
-                    // Found while implementing #591: a per-item subtitle has nowhere to land on a
+                    // Found while adding per-item subtitles: a per-item subtitle has nowhere to land on a
                     // platform that does not render the items at all.
                     //
                     // The legacy `features` loop above is KEPT rather than replaced. Both keys can
                     // be present on an older document, and rendering only one of them would trade
                     // this bug for its mirror image.
                     val richItems = section.data?.items.orEmpty()
-                    // #1067 — the subtitle takes the same readable ink as the line above it,
+                    // The subtitle takes the same readable ink as the line above it,
                     // at the 70% iOS uses, rather than a white that vanishes on a light page.
                     val subtitleColor = section.data?.item_subtitle_color?.takeIf { it.isNotBlank() }
                         ?.let { StyleEngine.parseColor(it) }
                         ?: PaywallTextDefaults.readable(LocalPaywallPageHex.current).copy(alpha = 0.7f)
                     val subtitleSize = (section.data?.item_subtitle_font_size ?: 12f).sp
-                    // #591 — `rounded` (default, unchanged), `circle` or `square`. iOS parity:
+                    // `rounded` (default, unchanged), `circle` or `square`. iOS parity:
                     // FeatureList.swift `imageClipShape`.
                     val imageShape = when (section.data?.item_image_shape) {
                         "circle" -> CircleShape
@@ -2169,7 +2169,7 @@ internal fun PaywallSectionView(
                             // `Top`, not `CenterVertically`: with a subtitle the row is two lines,
                             // and centring floats the icon against the gap between them.
                             verticalAlignment = Alignment.Top,
-                            // #1076 — a RICH item row is tappable too, and this is the branch a
+                            // A RICH item row is tappable too, and this is the branch a
                             // real paywall uses: the console writes `config.items`, so the device
                             // walk found `clickable="false"` on the only rows anybody actually
                             // renders while the plain-string branch beside it was already wired.
@@ -2192,7 +2192,7 @@ internal fun PaywallSectionView(
                                         contentScale = androidx.compose.ui.layout.ContentScale.Crop,
                                     )
                                 /*
-                                 * #1067 — THROUGH THE RESOLVER, not as raw text. The console
+                                 * THROUGH THE RESOLVER, not as raw text. The console
                                  * writes `icon: "check"`, and drawing the string printed the WORD
                                  * "check" down the page where the feature list should be. That is
                                  * right for an emoji and wrong for a NAME, so `NamedIcon` decides
@@ -2228,7 +2228,7 @@ internal fun PaywallSectionView(
                                     style = featureItemStyle,
                                     modifier = featureItemModifier,
                                 )
-                                // #591 — the second line, when the author wrote one.
+                                // The second line, when the author wrote one.
                                 item.subtitle?.takeIf { it.isNotBlank() }?.let { sub ->
                                     Text(
                                         text = loc("${'$'}{section.id}.items.$index.subtitle", sub),
@@ -2249,13 +2249,13 @@ internal fun PaywallSectionView(
             // `config.plans` when section has no plans (matches iOS
             // PaywallRenderer.swift:511-512 effectivePlans logic).
             val sectionPlansRaw = section.data?.plans ?: emptyList()
-            // #1056 — the authored rank, which both platforms decoded and neither read.
+            // The authored rank, which both platforms decoded and neither read.
             val plans = PaywallPlanOrder.sorted(if (sectionPlansRaw.isEmpty()) (config.plans ?: emptyList()) else sectionPlansRaw)
 
             // Card styling from config
             val cardRadius = (section.data?.card_corner_radius ?: 12f).dp
             val cardPad = (section.data?.card_padding ?: 16f).dp
-            // Audit pass-8 — default the unauthored card_gap to 12 to match iOS'
+            // Default the unauthored card_gap to 12 to match iOS'
             // primary vertical-stack default (PaywallRenderer.swift:1698
             // `cardStyle.cardGap ?? 12`) and the console/preview default
             // (SectionContentEditor.tsx:385, PaywallPreview.tsx:458). Was 8f, so
@@ -2285,7 +2285,7 @@ internal fun PaywallSectionView(
 
             // Text styles
             /*
-             * #891 — white, and deliberately, because THIS platform's unselected tile is dark.
+             * White, and deliberately, because THIS platform's unselected tile is dark.
              *
              * The first attempt resolved this from the authored page the way iOS does, and a
              * device frame refused it: with no authored colours the plan NAME disappeared. The
@@ -2299,7 +2299,7 @@ internal fun PaywallSectionView(
              * guessing a backdrop here.
              */
             /*
-             * #905 — the CONTAINER style an element asks for, which the console has always offered
+             * The CONTAINER style an element asks for, which the console has always offered
              * and neither platform read. Its editor gives every element a TextStylePanel and an
              * ElementStylePanel; the second writes `element_style`, and the DTO had nowhere to put
              * it. `applyContainerStyle` is the same function a SECTION container uses, so an
@@ -2321,7 +2321,7 @@ internal fun PaywallSectionView(
             val priceElementModifier = Modifier.run {
                 with(StyleEngine) { applyContainerStyle(elementStyle("price")) }
             }
-            // #910 — the other two plan elements the console styles. `trial_label` already had its
+            // The other two plan elements the console styles. `trial_label` already had its
             // text style honoured and nothing else; `feature` had NEITHER — the per-plan feature
             // rows drew a hardcoded 13sp on all three layouts that render them, so the Style tab's
             // feature controls did nothing on either platform.
@@ -2332,7 +2332,7 @@ internal fun PaywallSectionView(
                 with(StyleEngine) { applyContainerStyle(elementStyle("feature")) }
             }
             val planFeatureTextStyle = section.style?.elements?.get("feature")?.text_style
-            // #913 — the `period` element's container. Android has rendered the period's TEXT at
+            // The `period` element's container. Android has rendered the period's TEXT at
             // five sites all along; what it never had is the container half, and what NOTHING had
             // was a way to author `plan.period` at all (no schema field, no console control, 0 of
             // 81 production plans). Both are real now, and iOS draws the period too.
@@ -2340,7 +2340,7 @@ internal fun PaywallSectionView(
                 with(StyleEngine) { applyContainerStyle(elementStyle("period")) }
             }
             /*
-             * #946 — the plans section's own ink, read off the page.
+             * The plans section's own ink, read off the page.
              *
              * `planNameStyle` and `priceStyle` default to white below, which is right on a tile
              * filled with the brand accent and wrong on every arm that draws straight onto the
@@ -2385,7 +2385,7 @@ internal fun PaywallSectionView(
             val badgeBg = section.data?.badge_bg_color?.let { parseHexColor(it) } ?: ai.appdna.sdk.AppDNA.brandAccentColor()
             val badgeTxt = section.data?.badge_text_color?.let { parseHexColor(it) } ?: Color.White
             val badgeFontSize = (section.data?.badge_font_size ?: 11f).sp
-            // Audit pass-8 — resolve the badge text style from the Style-tab element
+            // Resolve the badge text style from the Style-tab element
             // `section.style.elements["badge"].text_style` FIRST (iOS PlanCard.badgeView
             // PlanCard.swift:30-32,:312 is badgeTextStyle-first for font/size/color/weight),
             // falling back to the flat badge_font_size + badge_text_color when the element
@@ -2406,7 +2406,7 @@ internal fun PaywallSectionView(
             val badgeCorner = when (badgeShapeStr) {
                 "square", "rectangle" -> RoundedCornerShape(2.dp)
                 /*
-                 * #988 — 6dp, not 4. iOS's `badgeShape` has returned
+                 * 6dp, not 4. iOS's `badgeShape` has returned
                  * `RoundedRectangle(cornerRadius: 6)` for `rounded` since it shipped
                  * (`PlanCard.swift:632`), so the same authored badge had a visibly tighter corner
                  * on Android. Two pixels, on the one element a paywall uses to say "most popular".
@@ -2447,7 +2447,7 @@ internal fun PaywallSectionView(
                             else Modifier,
                         )
                         .padding(horizontal = 8.dp, vertical = 2.dp)
-                        // #905 — the badge's authored container style, applied OUTSIDE its own
+                        // The badge's authored container style, applied OUTSIDE its own
                         // chrome so an authored border or padding surrounds it rather than
                         // replacing it.
                         .run { with(StyleEngine) { applyContainerStyle(elementStyle("badge")) } },
@@ -2502,7 +2502,7 @@ internal fun PaywallSectionView(
              * Hoisting is the fix; regenerating the baseline would bury it.
              */
             /*
-             * 🔴 #938 — the ink, not an assumed white. `composite("#FFFFFF", page, 0.1)` is the page
+             * 🔴 The ink, not an assumed white. `composite("#FFFFFF", page, 0.1)` is the page
              * itself when the page IS white, so the unselected tile had no edge on a light paywall
              * — the screenshot showed the second plan as bare text with no card. Compositing the
              * READABLE ink gives a faint gray there and, on any dark page, `readable` returns
@@ -2518,7 +2518,7 @@ internal fun PaywallSectionView(
             val customSelectedBg = section.data?.selected_bg_color?.let { parseHexColor(it) }
 
             /*
-             * #966 — the SELECTED tile, as a hex, derived the same way its unselected sibling is.
+             * The SELECTED tile, as a hex, derived the same way its unselected sibling is.
              *
              * 🔴 THE SELECTED CARD WAS THE ONE THAT DISAPPEARED, which is the inverse of the usual
              * failure and was sitting in a committed golden:
@@ -2533,7 +2533,7 @@ internal fun PaywallSectionView(
              *
              * The comment on `planTextColor` already argued this exact point — "the text can no
              * longer be left to the theme: on a white page a white label on a near-white tile is
-             * exactly the 1:1 defect #909 fixed" — and then applied it to the UNSELECTED branch
+             * exactly the 1:1 defect already fixed for the selected tile" — and then applied it to the UNSELECTED branch
              * only. One branch of one expression.
              *
              * A higher alpha than the unselected tile's 0.1 on purpose: the two must be
@@ -2551,7 +2551,7 @@ internal fun PaywallSectionView(
             @Composable
             fun PlanCard(plan: PaywallPlan, planIdx: Int, modifier: Modifier = Modifier) {
                 val isSelected = selectedPlanId == plan.id
-                // #589 — everything the card gives a plan, deliberately absent: no border, no
+                // Everything the card gives a plan, deliberately absent: no border, no
                 // background, no badge, no subtitle, no selection control. Just the name and price
                 // on one centred line.
                 //
@@ -2584,13 +2584,13 @@ internal fun PaywallSectionView(
                 val unselectedBorder = unselectedBorderColor
                 val selectedBg = customSelectedBg ?: ai.appdna.sdk.AppDNA.brandAccentColor().copy(alpha = 0.1f)
                 /*
-                 * #926 — COMPOSITED OVER THE PAGE, the way iOS does it and the way the contrast
+                 * COMPOSITED OVER THE PAGE, the way iOS does it and the way the contrast
                  * repair already reasons about it.
                  *
                  * `Color.White.copy(alpha = 0.1f)` is a TRANSLUCENT wash, and what it washes over
                  * here is this activity's Material surface — which is themed DARK whatever the
                  * page says. So one published document gave a near-white tile on iOS and a dark
-                 * navy one on Android, and #891's text colour had to be hardcoded white to stay
+                 * navy one on Android, and the text colour had to be hardcoded white to stay
                  * readable against a backdrop nobody authored.
                  *
                  * Compositing the same 10% white over the authored page yields an OPAQUE colour
@@ -2601,7 +2601,7 @@ internal fun PaywallSectionView(
                  * sections on dev author one, and none of them changes.
                  */
                 /*
-                 * 🔴 #938 — the READABLE ink composited over the page, not an assumed white.
+                 * 🔴 The READABLE ink composited over the page, not an assumed white.
                  * `composite("#FFFFFF", page, 0.1)` returns the page itself when the page IS white,
                  * so this tile had no edge at all on a light paywall. Surfaced by
                  * `check:authorability` once its scans stopped reading comments as code, and it is
@@ -2614,15 +2614,15 @@ internal fun PaywallSectionView(
                 /*
                  * PW-9: text color flips when selected if author provided one.
                  *
-                 * #966 — and when the author provided NONE it follows the TILE, on both states.
+                 * And when the author provided NONE it follows the TILE, on both states.
                  * Both branches used to be `Color.Unspecified`, which inherits the Activity's
                  * DARK-themed `onSurface` and so comes out near-white.
                  *
                  * 🔴 THIS IS THE SHARED CARD, so that one expression reached five arms —
                  * `grid`, `mini_cards`, `horizontal_scroll`, `carousel_cards` and `single_hero`.
                  * Recorded on a `#FFFFFF` page, `grid` drew "Monthly $9.99" and "Annual $49.99" in
-                 * white on a near-white card; only the grey descriptions were legible. #946 swept
-                 * the SECTIONS and #961 the dispatch arms, and this card sat between them: it is
+                 * white on a near-white card; only the grey descriptions were legible. Earlier
+                 * fixes swept the SECTIONS and the dispatch arms, and this card sat between them: it is
                  * not a section and it is not an arm.
                  *
                  * The selected tile here is the ACCENT at 10% over the page — this card's own fill,
@@ -2738,7 +2738,7 @@ internal fun PaywallSectionView(
                                             .padding(horizontal = 6.dp, vertical = 2.dp),
                                     )
                                 } else {
-                                    // #587 — the plan's own subtitle type wins over the section
+                                    // The plan's own subtitle type wins over the section
                                     // style, for the same reason the price colour does. Alignment
                                     // needs `fillMaxWidth` as well as `textAlign`: without a width
                                     // to align WITHIN, a centred subtitle stays left-hugging and
@@ -2772,7 +2772,7 @@ internal fun PaywallSectionView(
                             val strikeGap = (section.data?.strikethrough_gap ?: 4f).dp
                             val struck = plan.original_price_display?.takeIf { it.isNotBlank() }
                             val chargedTotal = plan.price_total_display?.takeIf { it.isNotBlank() }
-                            // #588 — this plan's own price colour beats BOTH the section's price
+                            // This plan's own price colour beats BOTH the section's price
                             // style and the selected/unselected text colour. Section styling paints
                             // every plan the same; the point of the field is to make one tier's
                             // price stand out, so anything that could override it would defeat it.
@@ -2790,17 +2790,17 @@ internal fun PaywallSectionView(
                                             modifier = priceElementModifier,
                                         )
                                         Spacer(Modifier.width(2.dp))
-                                    // #913 — the period, small beside the price. See the note
+                                    // The period, small beside the price. See the note
                                     // below the branch.
-                                    // #933 — `displayPeriod`, not `period`: an authored period wins,
+                                    // `displayPeriod`, not `period`: an authored period wins,
                                     // and a plan that authored none now reads the STORE's, phrased
                                     // in the device's language instead of drawing nothing.
                                     plan.displayPeriod?.takeIf { it.isNotBlank() }?.let {
                                         Text(
                                             text = loc("plan.$planIdx.period", it),
-                                            // #913 — the period follows the TILE, like the price does.
+                                            // The period follows the TILE, like the price does.
                                             // `periodStyle`'s own default is white at 70%, which assumes a
-                                            // dark tile; on the selected tile — light, once #909 aligned it —
+                                            // dark tile; on the selected tile — light, once the tiles were aligned —
                                             // that is white-on-white. Measured on a device: the period was
                                             // absent from the selected tile while rendering fine on the
                                             // unselected one beside it. Mirrors iOS `.opacity(0.7)`.
@@ -2854,14 +2854,14 @@ internal fun PaywallSectionView(
                                         modifier = priceElementModifier,
                                         color = planPriceColor,
                                     )
-                                    // #913 — the period, small beside the price. See the note
+                                    // The period, small beside the price. See the note
                                     // below the branch.
                                     plan.displayPeriod?.takeIf { it.isNotBlank() }?.let {
                                         Text(
                                             text = loc("plan.$planIdx.period", it),
-                                            // #913 — the period follows the TILE, like the price does.
+                                            // The period follows the TILE, like the price does.
                                             // `periodStyle`'s own default is white at 70%, which assumes a
-                                            // dark tile; on the selected tile — light, once #909 aligned it —
+                                            // dark tile; on the selected tile — light, once the tiles were aligned —
                                             // that is white-on-white. Measured on a device: the period was
                                             // absent from the selected tile while rendering fine on the
                                             // unselected one beside it. Mirrors iOS `.opacity(0.7)`.
@@ -2877,13 +2877,13 @@ internal fun PaywallSectionView(
                                 }
                             }
                             /*
-                             * 🔴 #913 — the standalone `plan.period` line is BACK, because all
+                             * 🔴 The standalone `plan.period` line is BACK, because all
                              * three reasons for dropping it have stopped being true.
                              *
-                             * Audit pass-8 removed it "to match iOS PlanCard, which never renders
+                             * An earlier pass removed it "to match iOS PlanCard, which never renders
                              * plan.period", because "the console preview omits it", and because
                              * "`period` isn't authored via the console (not in PlanSchema)". Each
-                             * was accurate at the time. As of #913 iOS renders it beside the price,
+                             * was accurate at the time. Now iOS renders it beside the price,
                              * `PaywallPreview.tsx` draws it, and `PlanSchema` carries the field
                              * with a control in the paywall editor.
                              *
@@ -2942,7 +2942,7 @@ internal fun PaywallSectionView(
                                             .padding(horizontal = 6.dp, vertical = 2.dp),
                                     )
                                 } else {
-                                    // #587 — the plan's own subtitle type wins over the section
+                                    // The plan's own subtitle type wins over the section
                                     // style, for the same reason the price colour does. Alignment
                                     // needs `fillMaxWidth` as well as `textAlign`: without a width
                                     // to align WITHIN, a centred subtitle stays left-hugging and
@@ -3085,7 +3085,7 @@ internal fun PaywallSectionView(
                     }
                     "carousel_cards" -> {
                         /*
-                         * #962 — ONE CARD PER PAGE, WITH DOTS, like iOS.
+                         * ONE CARD PER PAGE, WITH DOTS, like iOS.
                          *
                          * 🔴 This value used to share the arm above, so Android drew
                          * `carousel_cards` and `horizontal_scroll` IDENTICALLY — while the Console
@@ -3101,7 +3101,7 @@ internal fun PaywallSectionView(
                          *
                          * Full-width pages (no `contentPadding` peek) is the behavioural difference
                          * that matters; the dots are what a reader uses to know how many plans
-                         * there are, and they read off the PAGE (#938) rather than assuming a dark
+                         * there are, and they read off the PAGE rather than assuming a dark
                          * backdrop.
                          */
                         val pagerState = rememberPagerState(
@@ -3152,7 +3152,7 @@ internal fun PaywallSectionView(
                         val segActiveBorder = customSelectedBorder ?: ai.appdna.sdk.AppDNA.brandAccentColor()
                         val segInactiveBg = unselectedBgColor ?: Color.Transparent
                         /*
-                         * #946 — BOTH halves, read off what they are actually drawn on.
+                         * BOTH halves, read off what they are actually drawn on.
                          *
                          * The inactive half's border and label were white, and on a `#FFFFFF` page
                          * the capture showed one segment and an empty rectangle where the author's
@@ -3202,7 +3202,7 @@ internal fun PaywallSectionView(
                                         maxLines = 1,
                                         // Compose defaults overflow to Clip, which cuts a long price MID-GLYPH
                                         // with no indication anything is missing. Ellipsis at least tells the
-                                        // reader the value is truncated. Same long-string class as #545.
+                                        // reader the value is truncated.
                                         overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
                                     )
                                 }
@@ -3238,14 +3238,14 @@ internal fun PaywallSectionView(
                                     modifier = Modifier
                                         .clip(cardShape)
                                         /*
-                                         * #938 — the unselected pill, READ OFF THE PAGE.
+                                         * The unselected pill, READ OFF THE PAGE.
                                          *
                                          * Both of these were white: the tile at 10% and the border
                                          * at 30%, which over a WHITE page is a pill that is not
                                          * there at all — no fill, no outline, just its label. The
-                                         * vertical_stack tile already composites (#926/#891) and
+                                         * vertical_stack tile already composites and
                                          * this arm is a separate implementation that did not, the
-                                         * same split that hid #905's borders and #913's period.
+                                         * same split that once hid authored borders and the period.
                                          *
                                          * On a dark page both are byte-identical to what they were.
                                          */
@@ -3266,7 +3266,7 @@ internal fun PaywallSectionView(
                                     contentAlignment = Alignment.Center,
                                 ) {
                                     /*
-                                     * 🔴 #938/#891 — the label, read off the PILL rather than
+                                     * 🔴 The label, read off the PILL rather than
                                      * assumed. `planNameStyle` and `priceStyle` default to white,
                                      * which is right on the accent-filled selected pill and wrong
                                      * on the unselected one the moment the page is light: the first
@@ -3319,7 +3319,7 @@ internal fun PaywallSectionView(
                                     )
                                     .border(
                                         if (isSelected) 2.dp else 1.dp,
-                                        // #946 — the unselected row's only edge. White at 20%
+                                        // The unselected row's only edge. White at 20%
                                         // over a white page is a plan the author cannot see.
                                         if (isSelected) ai.appdna.sdk.AppDNA.brandAccentColor()
                                         else planSubtleInk.copy(alpha = 0.2f),
@@ -3334,13 +3334,13 @@ internal fun PaywallSectionView(
                                     onClick = { onPlanSelect(plan.id) },
                                     colors = androidx.compose.material3.RadioButtonDefaults.colors(
                                         selectedColor = ai.appdna.sdk.AppDNA.brandAccentColor(),
-                                        // #946 — the unselected radio ring, read off the page.
+                                        // The unselected radio ring, read off the page.
                                         unselectedColor = planInk.copy(alpha = 0.5f),
                                     ),
                                 )
                                 Spacer(Modifier.width(8.dp))
                                 /*
-                                 * #946 — this row's text, read off the PAGE.
+                                 * This row's text, read off the PAGE.
                                  *
                                  * Both rows draw onto the page: the unselected one is transparent
                                  * and the selected one is the brand accent at 10%, which over a
@@ -3376,7 +3376,7 @@ internal fun PaywallSectionView(
                         plans.forEachIndexed { planIdx, plan ->
                             val isSelected = selectedPlanId == plan.id
                             /*
-                             * #966 — the text follows the tile, on BOTH states.
+                             * The text follows the tile, on BOTH states.
                              *
                              * 🔴 MEASURED, NOT READ. Recorded on a `#FFFFFF` page, this arm drew
                              * `Monthly` and `$9.99` in WHITE on a near-white card and the second
@@ -3386,7 +3386,7 @@ internal fun PaywallSectionView(
                              *
                              * `vertical_stack` solved exactly this and accordion never got the
                              * same treatment, which is what a capture per arm is for: the golden
-                             * for this style did not exist until #966.
+                             * for this style did not exist until recently.
                              */
                             val accTileHex = if (isSelected) selectedTileHex else unselectedTileHex
                             val accTextColor = (if (isSelected) selectedTextColor else null)
@@ -3530,7 +3530,7 @@ internal fun PaywallSectionView(
                     }
                     "tab_groups" -> {
                         /*
-                         * #960 — a tab bar, one tab per plan, with the SELECTED plan's full card
+                         * A tab bar, one tab per plan, with the SELECTED plan's full card
                          * beneath it. The console has offered this style in its picker since it
                          * shipped and neither renderer had an arm for it, so an author picked
                          * "Tab groups", saw the console preview draw it, published, and every
@@ -3550,7 +3550,7 @@ internal fun PaywallSectionView(
                             .coerceAtLeast(0)
                         val selectedPlan = plans.getOrNull(selectedIdx)
                         val tabAccent = customSelectedBorder ?: ai.appdna.sdk.AppDNA.brandAccentColor()
-                        // #946 — read off the PAGE, not a constant. A 20%-ink rule is visible on a
+                        // Read off the PAGE, not a constant. A 20%-ink rule is visible on a
                         // dark paywall and on a light one; `Color.White` would be invisible on the
                         // second, which is the defect that sweep existed for.
                         val tabRule = unselectedBorderColor ?: planSubtleInk.copy(alpha = 0.2f)
@@ -3614,7 +3614,7 @@ internal fun PaywallSectionView(
                             ) {
                                 Text(
                                     text = if (isHeroExpanded) "Hide options" else "More options",
-                                    // #961 — was `Color.White.copy(alpha = 0.85f)`. On a light
+                                    // Was `Color.White.copy(alpha = 0.85f)`. On a light
                                     // paywall this is the only way to reach the other plans, and
                                     // it was invisible: the flow looked like it had one plan.
                                     // `readable` returns the old white on any dark page.
@@ -3661,7 +3661,7 @@ internal fun PaywallSectionView(
                                     .planSelectionAnimation(config.animation?.plan_selection_animation, isSelected),
                                 shape = cardShape,
                                 /*
-                                 * #961 — EVERY row is accent-filled, matching iOS
+                                 * EVERY row is accent-filled, matching iOS
                                  * (`PaywallRenderer.swift` `case "product_as_cta"`, which fills
                                  * unconditionally with `cardStyle.selectedBorderColor ?? accent`).
                                  *
@@ -3741,7 +3741,7 @@ internal fun PaywallSectionView(
                                         .size(12.dp)
                                         .clip(androidx.compose.foundation.shape.CircleShape)
                                         .background(
-                                            // #961 — the unselected dot was `Color.White` at 40%,
+                                            // The unselected dot was `Color.White` at 40%,
                                             // so on a light page the timeline lost every stop but
                                             // the current one.
                                             if (isSelected) ai.appdna.sdk.AppDNA.brandAccentColor() else planSubtleInk.copy(alpha = 0.4f),
@@ -3753,7 +3753,7 @@ internal fun PaywallSectionView(
                         }
                     }
                     /*
-                     * #962 — `minimal_chips` and `toggle_cards` USED TO BE RENDERED HERE and iOS
+                     * `minimal_chips` and `toggle_cards` USED TO BE RENDERED HERE and iOS
                      * never had either, so the same document drew a pill selector / toggle cards on
                      * one platform and a plain vertical stack on the other. (`minimal_chips` was an
                      * ALIAS on the `pill_selector` arm; `toggle_cards` had eleven lines of its own.)
@@ -3781,7 +3781,7 @@ internal fun PaywallSectionView(
                             // iOS PlanCard.swift:39,51-56 — authored colors win.
                             val selBorder = customSelectedBorder ?: ai.appdna.sdk.AppDNA.brandAccentColor()
                             /*
-                             * #926 — GRAY, not white, and iOS fixed this same line already: its
+                             * GRAY, not white, and iOS fixed this same line already: its
                              * comment reads "(was white.opacity(0.15) — invisible on light paywall
                              * backgrounds)". White at 30% over a white page is nothing, and once
                              * the tile composites over that page there is no fill to see either —
@@ -3791,22 +3791,22 @@ internal fun PaywallSectionView(
                             val unselBorder = unselectedBorderColor ?: Color.Gray.copy(alpha = 0.3f)
                             val radioColor = if (isSelected) (selectedTextColor ?: selBorder) else unselBorder
                             /*
-                             * #926 — THE TILE AND ITS TEXT MOVE TOGETHER, or one of them is wrong.
+                             * THE TILE AND ITS TEXT MOVE TOGETHER, or one of them is wrong.
                              *
                              * This arm is the `vertical_stack` default and a SEPARATE implementation
-                             * from `fun PlanCard` — the same split that hid #905's borders and
-                             * #913's period. Its unselected tile was `Color(0xFF1B2540)`, a navy
+                             * from `fun PlanCard` — the same split that once hid authored borders
+                             * and the period. Its unselected tile was `Color(0xFF1B2540)`, a navy
                              * constant, and its text was `Color.Unspecified`, which inherits the
                              * activity's DARK-themed `onSurface` and so came out light. Both
                              * assumptions were about a backdrop nobody authored.
                              *
                              * Composited over the page, the tile follows the document — which means
                              * the text can no longer be left to the theme: on a white page a white
-                             * label on a near-white tile is exactly the 1:1 defect #909 fixed for
+                             * label on a near-white tile is exactly the 1:1 defect already fixed for
                              * the selected tile. So the colour is DERIVED from the tile the user
                              * will actually see, authored or composited.
                              */
-                            // #966 — BOTH branches derive from the tile the user will see. The
+                            // BOTH branches derive from the tile the user will see. The
                             // selected one used to fall to `Color.Unspecified`, i.e. the Activity's
                             // dark theme, which is why the selected plan's name and price vanished
                             // on a white page while its unselected sibling rendered correctly.
@@ -3852,7 +3852,7 @@ internal fun PaywallSectionView(
                                         // so it stays theme-aware + distinct; fall back to a subtle navy.
                                         containerColor = if (isSelected) (customSelectedBg ?: StyleEngine.parseColor(selectedTileHex ?: "#FFFFFF"))
                                             else (unselectedBgColor
-                                                // #926 — the page's own 10% wash, opaque, so this
+                                                // The page's own 10% wash, opaque, so this
                                                 // tile matches iOS instead of a navy constant.
                                                 ?: unselectedTileHex?.let { StyleEngine.parseColor(it) }
                                                 ?: customSelectedBg?.let { androidx.compose.ui.graphics.lerp(it, Color.Black, 0.40f) }
@@ -3937,18 +3937,18 @@ internal fun PaywallSectionView(
                                                             modifier = priceElementModifier,
                                                         )
                                                         Spacer(Modifier.width(2.dp))
-                                                    // #913 — the period, beside the price. This
+                                                    // The period, beside the price. This
                                                     // `else` arm is the DEFAULT vertical_stack
                                                     // layout and a separate implementation from
                                                     // `fun PlanCard`; wiring only the latter is how
-                                                    // #905 and #910 each reached a device with a
-                                                    // field that drew nowhere.
+                                                    // fields have reached a device and drawn
+                                                    // nowhere.
                                                     plan.displayPeriod?.takeIf { it.isNotBlank() }?.let {
                                                         Text(
                                                             text = loc("plan.$planIdx.period", it),
-                                                            // #913 — the period follows the TILE, like the price does.
+                                                            // The period follows the TILE, like the price does.
                                                             // `periodStyle`'s own default is white at 70%, which assumes a
-                                                            // dark tile; on the selected tile — light, once #909 aligned it —
+                                                            // dark tile; on the selected tile — light, once the tiles were aligned —
                                                             // that is white-on-white. Measured on a device: the period was
                                                             // absent from the selected tile while rendering fine on the
                                                             // unselected one beside it. Mirrors iOS `.opacity(0.7)`.
@@ -4000,18 +4000,18 @@ internal fun PaywallSectionView(
                                                         color = planTextColor,
                                                         modifier = priceElementModifier,
                                                     )
-                                                    // #913 — the period, beside the price. This
+                                                    // The period, beside the price. This
                                                     // `else` arm is the DEFAULT vertical_stack
                                                     // layout and a separate implementation from
                                                     // `fun PlanCard`; wiring only the latter is how
-                                                    // #905 and #910 each reached a device with a
-                                                    // field that drew nowhere.
+                                                    // fields have reached a device and drawn
+                                                    // nowhere.
                                                     plan.displayPeriod?.takeIf { it.isNotBlank() }?.let {
                                                         Text(
                                                             text = loc("plan.$planIdx.period", it),
-                                                            // #913 — the period follows the TILE, like the price does.
+                                                            // The period follows the TILE, like the price does.
                                                             // `periodStyle`'s own default is white at 70%, which assumes a
-                                                            // dark tile; on the selected tile — light, once #909 aligned it —
+                                                            // dark tile; on the selected tile — light, once the tiles were aligned —
                                                             // that is white-on-white. Measured on a device: the period was
                                                             // absent from the selected tile while rendering fine on the
                                                             // unselected one beside it. Mirrors iOS `.opacity(0.7)`.
@@ -4251,13 +4251,13 @@ internal fun PaywallSectionView(
             val showRestoreLink = section.data?.show_restore == true
             val restorePosition = section.data?.restore_position ?: "below"
             val restoreText = section.data?.restore_text ?: "Restore Purchases"
-            // #910 — the restore link's DEFAULT colour was `Color.White.copy(alpha = 0.6f)`, a
+            // The restore link's DEFAULT colour was `Color.White.copy(alpha = 0.6f)`, a
             // colour that assumes a dark paywall. On the light one this walk published it drew
             // white-on-white: the link was in the view tree, had its authored border, and could be
             // tapped — and was invisible. iOS has always used `.secondary`, which is grey in light
             // appearance, so one published document gave two different screens.
             //
-            // Exactly #891's defect in a different control, so it takes #891's answer: the shared
+            // An earlier text-colour defect in a different control, so it takes the same answer: the shared
             // WCAG ladder, which the console and both SDKs agree on. 0.6 alpha is kept so an
             // authored-colour-free restore link still reads as secondary to the CTA.
             val restoreColor = section.data?.restore_text_color?.let { parseHexColor(it) }
@@ -4274,11 +4274,11 @@ internal fun PaywallSectionView(
                     "restore" -> onRestore()
                     "dismiss" -> onDismiss()
                     "link" -> {
-                        onAction(PaywallAction.LINK_TAPPED)   // #1076
+                        onAction(PaywallAction.LINK_TAPPED)   // tell the host before opening the link
                         url?.let { ai.appdna.sdk.core.URLSafety.open(ctaCtx, it) }
                     }
                     "purchase" -> onCTATap()
-                    // #1076 — an unrecognised authored action still purchases, as every
+                    // An unrecognised authored action still purchases, as every
                     // unauthored CTA always has, and the host is told it was a custom one.
                     else -> {
                         onAction(PaywallAction.CUSTOM)
@@ -4298,14 +4298,14 @@ internal fun PaywallSectionView(
                 // Start; without `Alignment.CenterHorizontally` on the column
                 // OR `.fillMaxWidth() + textAlign = Center` on the text, the
                 // Restore link sticks to the left edge.
-                // #651 — Restore could be recoloured and resized but never given a FILL, so it
+                // Restore could be recoloured and resized but never given a FILL, so it
                 // could not be made to look like a second button next to the CTA. Unset renders the
                 // plain centred link exactly as before; the clip/background go on before the
                 // clickable so the ripple follows the authored shape.
                 val restoreBg = section.data?.restore_bg_color
                     ?.takeIf { it.isNotEmpty() }?.let { parseHexColor(it) }
                 val restoreRadius = (section.data?.restore_corner_radius ?: 0f).dp
-                // #910 — the `restore_text` element, both halves. iOS has honoured its text style
+                // The `restore_text` element, both halves. iOS has honoured its text style
                 // since the element existed and Android read NEITHER half, so a restore link
                 // styled in the console looked right on one platform and plain on the other.
                 val restoreElementStyle = section.style?.elements?.get("restore_text")
@@ -4377,7 +4377,7 @@ internal fun PaywallSectionView(
                         .background(
                             brush = if (explicitCtaBg == null && ctaBrush != null) ctaBrush
                                 else androidx.compose.ui.graphics.SolidColor(buttonBgColor),
-                            // Audit pass-8 — the CTA-section `data.cta.corner_radius` is
+                            // The CTA-section `data.cta.corner_radius` is
                             // near-always null; the console authors the main CTA radius via
                             // `cta.style.corner_radius`, parsed into `config.cta.corner_radius`
                             // (PaywallConfig.kt:885) + surfaced through ctaStyleMap. Resolve the
@@ -4393,7 +4393,7 @@ internal fun PaywallSectionView(
                             ).dp),
                         )
                         .alpha(if (ctaEnabled) 1f else 0.5f)
-                        // #910 — the `button` ELEMENT's own container, which is a different thing
+                        // The `button` ELEMENT's own container, which is a different thing
                         // from the section's.
                         //
                         // 🔴 AFTER `.background(…)`, not before it. Compose draws modifiers in
@@ -4452,7 +4452,7 @@ internal fun PaywallSectionView(
                             // an unauthored paywall read "Continue" on Android vs "Subscribe" on
                             // iOS. Inlined (not via helper) because PaywallSectionView is a
                             // separate @Composable scope from PaywallScreen.
-                            // #1102 — the plan's name is appended AFTER loc(), not handed to it as
+                            // The plan's name is appended AFTER loc(), not handed to it as
                             // a fallback. Passing the whole string as the fallback meant a paywall
                             // carrying a translation for `cta.text` got the translation and LOST the
                             // name, so the mitigation vanished on exactly the paywalls hardest to
@@ -4479,10 +4479,10 @@ internal fun PaywallSectionView(
                                         ?: section.data?.text?.takeIf { it.isNotBlank() }
                                         ?: "Subscribe"
                                     /*
-                                     * #1100 — and when nothing names the plan, the button says it
+                                     * And when nothing names the plan, the button says it
                                      * anyway. A plan tap that drifts ~14pt is claimed by the
                                      * scrolling container, so the selection does not change and the
-                                     * CTA buys the plan chosen before it (#1081, measured on iOS).
+                                     * CTA buys the plan chosen before it (measured on iOS).
                                      * The platform behaviour is deliberately left alone; what made
                                      * it a wrong purchase rather than a visible mistake is that
                                      * nothing named what was about to be bought. Measured on dev:
@@ -4517,7 +4517,7 @@ internal fun PaywallSectionView(
                         buttons = extras,
                         // `cta.style.corner_radius` is what the console actually writes, parsed
                         // into `config.cta.corner_radius` — the same resolution this file's own
-                        // audit-pass-8 comment documents a few lines below. A section-data fallback
+                        // CTA corner-radius comment documents. A section-data fallback
                         // was dropped: check:authorability showed no console control writes it, so
                         // it would have been a dead reference. (Deliberately not naming that field
                         // here — the gate scans raw source, so a comment mentioning it recreates
@@ -4574,12 +4574,12 @@ internal fun PaywallSectionView(
                     }
                     else -> { // app_rating
                         /*
-                         * 🔴 #947's defect, on the platform #947 did not touch.
+                         * 🔴 A defect iOS had already fixed, on the platform that fix did not touch.
                          *
                          * This was `Color.White.copy(alpha = 0.7f)` — white at 70% over a WHITE
                          * page is nothing, so the review count and the quote simply were not there
                          * on any light paywall. iOS retired the same constant on its side when
-                         * #947 measured 1,557 pixels changing between appearances; Android kept
+                         * a measurement found 1,557 pixels changing between appearances; Android kept
                          * it, so the two platforms disagreed about a line both of them draw.
                          *
                          * On a dark page this is byte-identical to the old constant — `readable`
@@ -4593,7 +4593,7 @@ internal fun PaywallSectionView(
                             TextStyle(color = socialProofSecondary, fontSize = 13.sp),
                             section.style?.elements?.get("value")?.text_style
                         )
-                        // #910 — the `value` element's container, beside the text style it
+                        // The `value` element's container, beside the text style it
                         // already honoured (iOS SocialProof.swift).
                         val socialValueModifier = Modifier.run {
                             with(StyleEngine) {
@@ -4601,7 +4601,7 @@ internal fun PaywallSectionView(
                             }
                         }
                         /*
-                         * #954 — the caption, above the stars.
+                         * The caption, above the stars.
                          *
                          * `data.text` decoded, travelled and was drawn by the `countdown` and
                          * `trial_badge` branches and by NOTHING in this one, so an author could
@@ -4667,7 +4667,7 @@ internal fun PaywallSectionView(
                             Text(
                                 text = "\"${loc("social_proof.testimonial", it)}\"",
                                 /*
-                                 * #954 — the QUOTE's own element, not the review count's.
+                                 * The QUOTE's own element, not the review count's.
                                  *
                                  * It shared `value` with the count, so an author who restyled one
                                  * restyled both and neither could be set alone. iOS gave the quote
@@ -4690,7 +4690,7 @@ internal fun PaywallSectionView(
                                 },
                             )
                             /*
-                             * #955 — the attribution, which the generator writes and this section
+                             * The attribution, which the generator writes and this section
                              * could not draw. 12 of 22 saved sections on dev carry an `author`,
                              * because the paywall prompt asked for one; it decoded as `author_name`
                              * and reached no renderer. The `testimonial` SECTION has drawn it all
@@ -4772,7 +4772,7 @@ internal fun PaywallSectionView(
                             TextStyle(fontSize = 15.sp, fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.onSurface),
                             section.style?.elements?.get("title")?.text_style
                         )
-                        // #913 — the guarantee section's own `title` container.
+                        // The guarantee section's own `title` container.
                         Text(
                             text = loc("guarantee.title", title),
                             style = titleStyle,
@@ -4882,11 +4882,11 @@ internal fun PaywallSectionView(
             // Was hardcoded "quote" layout regardless of console value.
             val testimonialLayout = section.data?.layout ?: "quote"
             /*
-             * #961 follow-up — the testimonial section's ink reads the PAGE, not the phone.
+             * The testimonial section's ink reads the PAGE, not the phone.
              *
              * These three were `Color.White`, `Color.White.copy(alpha = 0.9f)` and
              * `Color.White.copy(alpha = 0.7f)`: a white quote with a white attribution on a light
-             * paywall, which is the identical defect #946/#947/#966 swept out of the plan-display
+             * paywall, which is the identical defect earlier fixes swept out of the plan-display
              * arms. The section was missed because it is not a plan arm — the sweep was scoped to
              * `plan_display_style`, and this renders above them.
              *
@@ -4913,10 +4913,10 @@ internal fun PaywallSectionView(
                 TextStyle(color = testimonialInk.copy(alpha = 0.7f), fontSize = 12.sp),
                 section.style?.elements?.get("author_role")?.text_style
             )
-            // #913 — the three testimonial elements' containers, from the ElementStylePanel the
+            // The three testimonial elements' containers, from the ElementStylePanel the
             // console shows beside each TextStylePanel. Resolved once; the quote is drawn at TWO
-            // sites below (the `minimal` layout has its own), and wiring only one is how #905 and
-            // #910 each reached a device with a border that drew nowhere.
+            // sites below (the `minimal` layout has its own), and wiring only one is how
+            // borders have reached a device and drawn nowhere.
             val quoteElementModifier = Modifier.run {
                 with(StyleEngine) { applyContainerStyle(section.style?.elements?.get("quote")?.elementContainer) }
             }
@@ -5068,7 +5068,7 @@ private fun PaywallCountdownSection(
     section: PaywallSection,
     loc: (String, String) -> String,
     /*
-     * #978 — what `on_expire_action: auto_advance` calls. Defaulted to a no-op so the other call
+     * What `on_expire_action: auto_advance` calls. Defaulted to a no-op so the other call
      * sites of this composable are unaffected, and wired to the paywall's OWN dismiss rather than
      * to `finish()`: the Activity keeps a single dismiss path, and a section reaching past it
      * would skip the guard that stops the SDK dismissing twice.
@@ -5129,7 +5129,7 @@ private fun PaywallCountdownSection(
             onExpireAction = section.data?.on_expire_action,
             expiredText = section.data?.expired_text?.let { loc("countdown.expired_text", it) },
             onExpire = onDismiss,
-            // #980 — the Variant the console offers and no renderer read.
+            // The Variant the console offers and no renderer read.
             variant = section.data?.variant,
         )
     }
@@ -5143,7 +5143,7 @@ private fun PaywallLegalSection(
     loc: (String, String) -> String,
     onRestore: () -> Unit = {},
 ) {
-    // #946 — the readable colour FOR THIS PAGE. Every use below keeps the alpha it had, so a
+    // The readable colour FOR THIS PAGE. Every use below keeps the alpha it had, so a
     // dark paywall draws exactly the pixels it drew before and a light one becomes legible.
     val ink = PaywallTextDefaults.readable(LocalPaywallPageHex.current)
     val textColor = section.data?.color?.let { parseHexColor(it) } ?: ink.copy(alpha = 0.5f)
@@ -5165,7 +5165,7 @@ private fun PaywallLegalSection(
             // console's Link Color now maps onto at the sync boundary).
             val legalLinkColor = section.data?.accent_color?.let { parseHexColor(it) }
             val annotated = buildAnnotatedStringWithLinks(text, legalLinkColor)
-            // #910 — the `text` element, which the console's Style tab offers for this section and
+            // The `text` element, which the console's Style tab offers for this section and
             // NEITHER half of which was read on either platform: not the text style, not the
             // container. An author styling the legal paragraph got nothing at all.
             val legalTextElement = section.style?.elements?.get("text")
@@ -5361,7 +5361,7 @@ private fun PaywallCardSection(
     section: PaywallSection,
     loc: (String, String) -> String,
 ) {
-    // #946 — the readable colour FOR THIS PAGE. Every use below keeps the alpha it had, so a
+    // The readable colour FOR THIS PAGE. Every use below keeps the alpha it had, so a
     // dark paywall draws exactly the pixels it drew before and a light one becomes legible.
     val ink = PaywallTextDefaults.readable(LocalPaywallPageHex.current)
     val radius = section.data?.corner_radius ?: 16f
@@ -5417,7 +5417,7 @@ private fun PaywallCarouselSection(
     val pages = section.data?.pages ?: return
     if (pages.isEmpty()) return
     /*
-     * #938/#891 — a carousel page's title and subtitle were hard-coded white, so a carousel on a
+     * A carousel page's title and subtitle were hard-coded white, so a carousel on a
      * light paywall showed its heading as nothing. `ink` is the readable colour for THIS page and
      * each use keeps the alpha it had: a dark paywall draws exactly what it drew before.
      */
@@ -5467,7 +5467,7 @@ private fun PaywallCarouselSection(
             Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                 repeat(pages.size) { idx ->
                     /*
-                     * #938 — an indicator nobody authored, READ OFF THE PAGE. Both of these were
+                     * An indicator nobody authored, READ OFF THE PAGE. Both of these were
                      * white — the active dot opaque, the rest at 30% — so a carousel on a light
                      * paywall showed no dots at all and the reader had no way to know how many
                      * pages there were. Byte-identical on a dark page.
@@ -5506,7 +5506,7 @@ private fun PaywallTimelineSection(
     section: PaywallSection,
     loc: (String, String) -> String,
 ) {
-    // #946 — the readable colour FOR THIS PAGE. Every use below keeps the alpha it had, so a
+    // The readable colour FOR THIS PAGE. Every use below keeps the alpha it had, so a
     // dark paywall draws exactly the pixels it drew before and a light one becomes legible.
     val ink = PaywallTextDefaults.readable(LocalPaywallPageHex.current)
     val items = section.data?.items ?: return
@@ -5607,7 +5607,7 @@ private fun PaywallIconGridSection(
     section: PaywallSection,
     loc: (String, String) -> String,
 ) {
-    // #946 — the readable colour FOR THIS PAGE. Every use below keeps the alpha it had, so a
+    // The readable colour FOR THIS PAGE. Every use below keeps the alpha it had, so a
     // dark paywall draws exactly the pixels it drew before and a light one becomes legible.
     val ink = PaywallTextDefaults.readable(LocalPaywallPageHex.current)
     val items = section.data?.items ?: return
@@ -5618,7 +5618,7 @@ private fun PaywallIconGridSection(
 
     val titleStyle = section.style?.elements?.get("title")?.text_style
     val descStyle = section.style?.elements?.get("description")?.text_style
-    // #913 — and their containers, from the ElementStylePanel beside each TextStylePanel.
+    // And their containers, from the ElementStylePanel beside each TextStylePanel.
     val titleElementModifier = Modifier.run {
         with(StyleEngine) { applyContainerStyle(section.style?.elements?.get("title")?.elementContainer) }
     }
@@ -5907,7 +5907,7 @@ private fun PaywallToggleSection(
     loc: (String, String) -> String,
     toggleStates: MutableMap<String, Boolean> = mutableMapOf(),
 ) {
-    // #946 — the readable colour FOR THIS PAGE. Every use below keeps the alpha it had, so a
+    // The readable colour FOR THIS PAGE. Every use below keeps the alpha it had, so a
     // dark paywall draws exactly the pixels it drew before and a light one becomes legible.
     val ink = PaywallTextDefaults.readable(LocalPaywallPageHex.current)
     val toggleKey = section.data?.label ?: "toggle_${section.type}"
@@ -5962,7 +5962,7 @@ private fun PaywallToggleSection(
 private fun PaywallReviewsCarouselSection(
     section: PaywallSection,
     /**
-     * #938 — the page this section is drawn on, so a colour nobody authored can be read off it.
+     * The page this section is drawn on, so a colour nobody authored can be read off it.
      *
      * The hex rather than the whole `PaywallConfig`: this composable needs one fact about the
      * document and taking all of it would make the dependency look larger than it is. iOS reads
@@ -5974,7 +5974,7 @@ private fun PaywallReviewsCarouselSection(
     val reviews = section.data?.reviews ?: return
     if (reviews.isEmpty()) return
     /*
-     * #938/#891 — every colour below was a hard-coded white, so this whole section was legible
+     * Every colour below was a hard-coded white, so this whole section was legible
      * only on a dark page: the quote, the author, the date, the avatar circle and the pager dots.
      * `ink` is the readable colour FOR THIS PAGE and each use keeps the alpha it had, so a dark
      * paywall draws exactly the pixels it drew before and a light one becomes readable.
@@ -5987,7 +5987,7 @@ private fun PaywallReviewsCarouselSection(
     val starClr = section.data.star_color?.let { parseHexColor(it) } ?: Color(0xFFFBBF24)
     val textStyleConfig = section.style?.elements?.get("text")?.text_style
     val authorStyleConfig = section.style?.elements?.get("author")?.text_style
-    // #910 — the container halves of the same two elements. `card` already had one; the console's
+    // The container halves of the same two elements. `card` already had one; the console's
     // ElementStylePanel writes one for `text` and `author` too, and neither was read.
     val quoteElementModifier = Modifier.run {
         with(StyleEngine) { applyContainerStyle(section.style?.elements?.get("text")?.elementContainer) }
@@ -6008,8 +6008,8 @@ private fun PaywallReviewsCarouselSection(
             Column(
                 horizontalAlignment = Alignment.CenterHorizontally,
                 verticalArrangement = Arrangement.Center,
-                // #910 — the `card` element's container, which iOS has applied to this very view
-                // since #905 (`cardStyle: elements["card"].container`) and Android never read.
+                // The `card` element's container, which iOS has applied to this very view
+                // (`cardStyle: elements["card"].container`) and Android never read.
                 // An authored review card drew a border on one platform and nothing on the other;
                 // the cross-platform half of the element gate is what found it.
                 modifier = Modifier
@@ -6124,7 +6124,7 @@ private fun PaywallReviewsCarouselSection(
                     modifier = Modifier
                         .size(6.dp)
                         .clip(CircleShape)
-                        // #938 — same page-derived default as the carousel indicators above: a
+                        // Same page-derived default as the carousel indicators above: a
                         // white dot over a white page is one dot's worth of nothing.
                         .background(
                             if (idx == pagerState.currentPage) ink
@@ -6149,7 +6149,7 @@ private fun PaywallReviewsCarouselSection(
 
 // Countdown timer for social proof
 /*
- * #978 — the six fields that were decoded here and read by NOTHING.
+ * The six fields that were decoded here and read by NOTHING.
  *
  * A timer reached zero and sat at `00:00:00`, which is the one outcome none of
  * `on_expire_action`'s three values describes. They were in `PaywallSectionData`, so every reader
@@ -6164,7 +6164,7 @@ private fun CountdownTimer(
     seconds: Int,
     valueTextStyle: ai.appdna.sdk.core.TextStyleConfig? = null,
     /*
-     * #979 — the digits' own three console controls. Unset, they keep exactly the values this
+     * The digits' own three console controls. Unset, they keep exactly the values this
      * composable hard-coded (22sp, Bold, the page-readable ink), so a countdown nobody has styled
      * draws the pixels it drew before. `valueTextStyle` still applies ON TOP: it is the
      * design-system channel and the more specific of the two.
@@ -6180,7 +6180,7 @@ private fun CountdownTimer(
     expiredText: String? = null,
     onExpire: (() -> Unit)? = null,
     /*
-     * #980 — `digital` | `circular` | `flip` | `bar`. The console's Variant select offered all four,
+     * `digital` | `circular` | `flip` | `bar`. The console's Variant select offered all four,
      * `CountdownConfigSchema` persisted all four, the generator wrote one on every countdown it
      * produced, and NO renderer on any platform read it: every paywall countdown drew `digital`.
      *
@@ -6192,7 +6192,7 @@ private fun CountdownTimer(
      */
     variant: String? = null,
 ) {
-    // #946 — the readable colour FOR THIS PAGE. Every use below keeps the alpha it had, so a
+    // The readable colour FOR THIS PAGE. Every use below keeps the alpha it had, so a
     // dark paywall draws exactly the pixels it drew before and a light one becomes legible.
     val ink = PaywallTextDefaults.readable(LocalPaywallPageHex.current)
     var remaining by remember { mutableIntStateOf(seconds) }
@@ -6255,12 +6255,12 @@ private fun CountdownTimer(
     val labels = shown.map { it.second }
     /*
      * How much is left, 0..1 — the ring's sweep and the bar's width, from the SAME shared rule iOS
-     * and the onboarding block use (#1066, where this was a frozen 0.75 and the ring never moved).
+     * and the onboarding block use (where this was a frozen 0.75 and the ring never moved).
      */
     val fraction = ai.appdna.sdk.onboarding.CountdownProgress
         .remainingFraction(remaining.toLong(), seconds.toLong()).toFloat()
 
-    // #980 — the authored variant, through the shared rule that owns the fallback.
+    // The authored variant, through the shared rule that owns the fallback.
     when (PaywallCountdownVariant.resolve(variant)) {
         "circular" -> {
             // A ring that empties as the timer runs, with the joined time centred in it.
@@ -6271,7 +6271,7 @@ private fun CountdownTimer(
                         val arcSize = androidx.compose.ui.geometry.Size(this.size.width - sw, this.size.height - sw)
                         drawArc(
                             // The TRACK, from the page-readable ink rather than a hardcoded light
-                            // grey (#946's lesson; `check:authorability` caught the literal).
+                            // grey (`check:authorability` caught the literal).
                             color = digitInk.copy(alpha = 0.2f),
                             startAngle = 0f, sweepAngle = 360f, useCenter = false,
                             style = Stroke(width = sw, cap = StrokeCap.Round),
@@ -6405,18 +6405,18 @@ private fun PaywallStickyFooter(
     loc: (String, String) -> String,
     // Round-MZ — selected plan's per-plan cta_text (overrides section cta_text when non-empty).
     selectedPlanCtaText: String? = null,
-    // #1104 — what the sticky CTA needs to name the selected plan, as iOS's sticky CTA always has
+    // What the sticky CTA needs to name the selected plan, as iOS's sticky CTA always has
     // (`ctaDisplayText(…, locKey: "sticky_footer.cta", …)`); Android's drew the bare text.
     config: PaywallConfig? = null,
     selectedPlanId: String? = null,
 ) {
-    val onAction = LocalPaywallAction.current   // #1076
+    val onAction = LocalPaywallAction.current   // the host's onPaywallAction
     // Default background #FFFFFF matches iOS
     // PaywallRenderer.swift:1054. Was Color.Black 0.95 alpha → light-mode
     // paywalls rendered dark footer.
     val bgColor = section.data?.background_color?.let { parseHexColor(it) } ?: Color.White
     /*
-     * #976 — `blur_background`, which this section DECODED and never drew. iOS fills the footer
+     * `blur_background`, which this section DECODED and never drew. iOS fills the footer
      * with `.ultraThinMaterial` when it is true (`PaywallRenderer.swift`), so a footer authored to
      * float over the page as frosted glass was frosted on iOS and an opaque slab on Android: one
      * document, two paywalls, the divergence class ADR-001 exists to prevent.
@@ -6478,7 +6478,7 @@ private fun PaywallStickyFooter(
                 when (section.data.secondary_action) {
                     "restore" -> onRestore()
                     "link" -> {
-                        onAction(PaywallAction.LINK_TAPPED)   // #1076
+                        onAction(PaywallAction.LINK_TAPPED)   // tell the host before opening the link
                         // Allowlisted, like every other config-driven URL.
                         ai.appdna.sdk.core.URLSafety.open(context, section.data.secondary_url)
                     }
@@ -6505,7 +6505,7 @@ private fun PaywallStickyFooter(
                 // `.foregroundColor(.secondary)` at PaywallRenderer.swift:1103.
                 // Now authorable. Unset keeps this exact colour and 10sp, so a
                 // published paywall is unchanged; what changes is that an author CAN size it. The
-                // hardcoded 10sp is why #648 read as a Legal-section bug: the Legal SECTION honoured
+                // hardcoded 10sp is why this read as a Legal-section bug: the Legal SECTION honoured
                 // its authored 13, this line did not honour the 16 set beside it, so the legal
                 // paragraph really did render larger.
                 color = section.data?.legal_text_color?.let { parseHexColor(it) }

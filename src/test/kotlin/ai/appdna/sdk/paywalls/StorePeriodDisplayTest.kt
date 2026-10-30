@@ -5,9 +5,9 @@ import org.junit.Assert.assertNull
 import org.junit.Test
 
 /**
- * #933 slice 2 — the STORE's billing period reaches the screen, and an authored one still wins.
+ * The STORE's billing period reaches the screen, and an authored one still wins.
  *
- * Both stores report a subscription's period structurally and the SDKs have captured it since #923
+ * Both stores report a subscription's period structurally and the SDKs have captured it since store prices were first looked up
  * ([ai.appdna.sdk.billing.PriceResolver]) while rendering none of it: the period beside a price was
  * whatever an author typed, and **0 of 81 production plans typed anything**. So a paywall showed
  * the store's real price with no cadence beside it.
@@ -72,7 +72,7 @@ class StorePeriodDisplayTest {
     @Test
     fun `applyingStorePeriods reaches the SECTION's plans, not only the root array`() {
         /*
-         * 🔴 THE #923 BUG, NOT REPEATED. The first version of the store-PRICE substitution mapped
+         * 🔴 THE STORE-PRICE BUG, NOT REPEATED. The first version of the store-PRICE substitution mapped
          * only the root `plans` array, while every real paywall carries its plans in
          * `layout.sections[].config.plans` — so the feature passed its fixture and reached nothing.
          */
@@ -121,7 +121,7 @@ class StorePeriodDisplayTest {
         assertEquals("mo", config.applyingStorePeriods(emptyMap()).plans?.first()?.displayPeriod)
     }
 
-    // ── #933 slice 3 — the STORE's free trial, and the promise rule ─────────────────────────────
+    // ── the STORE's free trial, and the promise rule ─────────────────────────────
 
     private fun trialPlan(authoredLabel: String?, authoredDuration: String?, storeTrial: String?) =
         PaywallPlan(
@@ -163,7 +163,7 @@ class StorePeriodDisplayTest {
 
     @Test
     fun `applyingStoreTrials reaches the SECTION's plans, not only the root array`() {
-        // The #923 bug, not repeated: every real paywall keeps its plans in the section.
+        // The store-price bug, not repeated: every real paywall keeps its plans in the section.
         val map = mapOf(
             "id" to "pw_t", "name" to "Trials",
             "plans" to listOf(mapOf("id" to "root", "product_id" to "app.premium.annual", "name" to "Annual")),

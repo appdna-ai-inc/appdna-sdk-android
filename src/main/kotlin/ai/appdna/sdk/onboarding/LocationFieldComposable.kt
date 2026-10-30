@@ -65,14 +65,14 @@ fun LocationFieldComposable(
     // iOS LocationFieldView.swift:43-44
     // defaults to 2 keystrokes before triggering autocomplete. Android
     // was at 3, delaying suggestions on short city names.
-    // #963 — resolved by the shared LocationSearchSettings, the same one the `input_location`
+    // Resolved by the shared LocationSearchSettings, the same one the `input_location`
     // content block uses, so the two surfaces cannot drift apart again.
     val search = LocationSearchSettings.from(config, defaultMinChars = 2)
     val placeholder = config?.location_placeholder
         ?: field.placeholder
         ?: "Search for a location..."
     /*
-     * #964 — an unauthored type sends NOTHING, as iOS already does.
+     * An unauthored type sends NOTHING, as iOS already does.
      *
      * This was `?: "address"`, and that substitution was the third of three answers to one
      * question. With no `type` in the request the proxy applies its own default
@@ -232,7 +232,7 @@ fun LocationFieldComposable(
                     // formatted address (street/POI), secondary = the
                     // remainder so users can disambiguate "Springfield, IL"
                     // vs "Springfield, MA" at a glance.
-                    // #963 — the rule itself is `LocationAnswer.displayLines`, shared with the
+                    // The rule itself is `LocationAnswer.displayLines`, shared with the
                     // content block and with both iOS surfaces, so the four copies that used to
                     // disagree on the fallback cannot drift again.
                     val (primary, secondary) = LocationAnswer.displayLines(suggestion)
@@ -323,7 +323,7 @@ private class LocationFieldFocus {
  *   ends the search). The replaced field losing focus is not the user leaving. The field on screen losing
  *   focus is, even when the generation has already moved on: a blur ends the input method's composition,
  *   and committing it can be the first edit of Google's line, which bumps the generation from inside the
- *   field's own focus change, before this field hears of it (#1147). That field leaves for real: it
+ *   field's own focus change, before this field hears of it. That field leaves for real: it
  *   reports the leaving, and the field drawn next does not take the focus back;
  * - [field] is handed `isCurrent`: a value delivered by the replaced field (its input session ending)
  *   must be ignored;
@@ -372,7 +372,7 @@ internal fun LocationTextFieldGeneration(
                     // The field on screen lost focus: the user left it. Not gated on [isCurrent]: when
                     // the blur's own commit was the first edit of Google's line, the generation has
                     // already moved on, and ignoring the leaving here made the next field take the focus
-                    // back and let the search the commit started run (#1147). A field already replaced
+                    // back and let the search the commit started run. A field already replaced
                     // (a newer generation composed) losing focus as it is removed is not the user.
                     hadFocus[0] = false
                     focus.focused = false

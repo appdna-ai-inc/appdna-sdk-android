@@ -648,7 +648,7 @@ private fun ScreenHostBody(
                         if (config.layout.type == "fixed") mod
                         else mod.verticalScroll(rememberScrollState())
                     }
-                    // #904 — the authored screen padding. iOS applies `config.layout.padding` to
+                    // The authored screen padding. iOS applies `config.layout.padding` to
                     // the scroll container in all three presentation modes (ScreenRenderer.swift
                     // :44, :53, :70); Android read `spacing` and `safeArea` out of the same object
                     // and never this, so an authored 20pt inset put the content flush to the edge

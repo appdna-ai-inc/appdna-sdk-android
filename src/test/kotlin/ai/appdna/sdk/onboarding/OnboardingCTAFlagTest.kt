@@ -129,7 +129,7 @@ class OnboardingCTAFlagTest {
         assertEquals(emptyMap<String, Any>(), OnboardingCTAFlag.merge(emptyMap(), emptyMap()))
     }
 
-    // MARK: - the derived stat key (#595)
+    // MARK: - the derived stat key
 
     @Test
     fun `an authored stat field id wins`() {

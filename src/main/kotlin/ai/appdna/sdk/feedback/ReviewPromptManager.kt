@@ -24,7 +24,7 @@ object ReviewPromptManager {
     /**
      * Open the app's Play listing, where the user can leave a review themselves.
      *
-     * #896 — this is the OTHER half of asking for a review, and the halves are not
+     * This is the OTHER half of asking for a review, and the halves are not
      * interchangeable. [triggerReview] asks the OS for the in-place sheet and MUST NOT be called
      * in response to a tap: Apple names that rule explicitly and Google's design guidelines say
      * the same about putting a prompt in front of theirs. Opening the store listing from a button
@@ -56,7 +56,7 @@ object ReviewPromptManager {
             return
         }
         /*
-         * #974 — `store` is the property a funnel can GROUP BY. This event used to carry only
+         * `store` is the property a funnel can GROUP BY. This event used to carry only
          * `package` here and only `app_store_id` on iOS, two disjoint keys, so a report grouped by
          * either saw one platform's traffic and presented it as the whole number. `google_play` /
          * `app_store` is the same vocabulary `Subscription.store` uses, not a third spelling.
@@ -151,7 +151,7 @@ object ReviewPromptManager {
     }
 
     /*
-     * #897 — `triggerTwoStepReview` WAS HERE, AND IT IS NOT COMING BACK.
+     * `triggerTwoStepReview` WAS HERE, AND IT IS NOT COMING BACK.
      *
      * It showed an AlertDialog titled "Enjoying <app>?" with "Yes! 😊" / "Not really", and
      * launched the native Play review flow only on "Yes". That is review gating, and Google's

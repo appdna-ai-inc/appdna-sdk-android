@@ -37,7 +37,7 @@ import com.google.maps.android.compose.rememberCameraPositionState
 /**
  * Tier 2 — a REAL, pannable, zoomable map, drawn by the bundled Google Maps SDK.
  *
- * This is the tier #671 asked for. Before it, `map_interactive: true` on a Flutter host silently
+ * Before this tier existed, `map_interactive: true` on a Flutter host silently
  * produced a still image, because the only interactive path went through
  * `AppDNA.registerMapView` — an API the Flutter wrapper never exposed.
  *
@@ -55,7 +55,7 @@ import com.google.maps.android.compose.rememberCameraPositionState
  * field. A host that does nothing therefore gets the map it gets today, not a regression.
  */
 /**
- * #951 — the step's scroll stands down while a finger is on the map.
+ * The step's scroll stands down while a finger is on the map.
  *
  * 🔴 WHY THE MAP BARELY PANNED. A map block renders inside `ThreeZoneBlockLayout`, whose content
  * column is a `Modifier.verticalScroll(...)`. `GoogleMap` is an `AndroidView` wrapping a `MapView`,
@@ -82,7 +82,7 @@ import com.google.maps.android.compose.rememberCameraPositionState
  * `changes.none { it.pressed }` is the same question asked where the answer always exists.
  *
  * 🔴 Turning the step's scroll OFF entirely was the other option and is wrong: a step whose content
- * is taller than the viewport would be stranded, which is exactly the #598 regression.
+ * is taller than the viewport would be stranded, unable to scroll.
  */
 internal val LocalStepScrollEnabled = compositionLocalOf<MutableState<Boolean>?> { null }
 
@@ -116,7 +116,7 @@ internal fun GoogleInteractiveMap(block: ContentBlock, rawResolved: Boolean = fa
         }
     }
 
-    // #951 — raised while a finger is on the map, so the step's scroll stands down. Null when the
+    // Raised while a finger is on the map, so the step's scroll stands down. Null when the
     // map is drawn outside a scrolling step (the screens surface), where there is nothing to yield.
     val stepScroll = LocalStepScrollEnabled.current
     // A step whose scroll never came back is worse than the bug this fixes, so the flag is restored
@@ -262,7 +262,7 @@ internal fun hasGoogleMapsManifestKey(context: Context): Boolean = runCatching {
 }.getOrDefault(false)
 
 /**
- * #951 — observe the pointer without consuming it, and park the step's scroll while it is down.
+ * Observe the pointer without consuming it, and park the step's scroll while it is down.
  *
  * `motionEventSpy`'s contract is that the watcher does not take part in dispatch, so every
  * `MotionEvent` still reaches the `MapView` underneath exactly as it would without this: the map

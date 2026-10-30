@@ -11,7 +11,7 @@ import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
 
 /**
- * #857 — a gzip-encoded answer must reach the JSON parser DECODED.
+ * A gzip-encoded answer must reach the JSON parser DECODED.
  *
  * It did not. `ApiClient` installed an interceptor that set `Accept-Encoding: gzip, deflate` on
  * every request, with a comment claiming OkHttp would decompress "automatically". The opposite is

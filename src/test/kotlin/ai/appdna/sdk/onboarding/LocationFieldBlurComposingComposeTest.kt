@@ -27,7 +27,7 @@ import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
 
 /**
- * Leaving a location field while the input method is composing after Google's line (#1147), on each
+ * Leaving a location field while the input method is composing after Google's line, on each
  * REAL location composable: the form step's field and the `input_location` content block, each with a
  * second text field to move to.
  *
@@ -178,7 +178,7 @@ class LocationFieldBlurComposingComposeTest {
         )
     }
 
-    /** #1147: composing after Google's line, then tapping the other field. */
+    /** Composing after Google's line, then tapping the other field. */
     private fun composeAfterGooglesLineThenLeave(show: (Any) -> () -> Any?) {
         val recorder = Recorder().also { locationGeocodeTransport = it }
         val stored = show(google)

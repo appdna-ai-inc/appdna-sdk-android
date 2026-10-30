@@ -11,9 +11,9 @@ import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
 
 /**
- * #1076 — ALL FOUR of the remaining `PaywallAction` cases, reported from the real screen.
+ * ALL FOUR of the remaining `PaywallAction` cases, reported from the real screen.
  *
- * `cta_tapped` was given an emitter in #1074. The other four were declared, documented on four
+ * `cta_tapped` was given an emitter first. The other four were declared, documented on four
  * doc pages and delivered by nothing on either platform — a host implementing `onPaywallAction`
  * waited for callbacks that could not arrive. The owner asked for all four.
  *
@@ -70,7 +70,7 @@ class PaywallActionsAreReportedTest {
         val config = PaywallConfigParser.parseSinglePaywall("pw_actions", paywallMap())
             ?: error("paywall did not parse")
         compose.setContent {
-            // #1076 — PROVIDED, not passed. The callback travels as a CompositionLocal because one
+            // PROVIDED, not passed. The callback travels as a CompositionLocal because one
             // more parameter on `PaywallScreen` made ART reject the class on a real device
             // (see LocalPaywallAction) — a VerifyError every JVM test was blind to.
             androidx.compose.runtime.CompositionLocalProvider(

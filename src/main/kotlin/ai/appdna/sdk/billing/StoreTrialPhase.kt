@@ -1,13 +1,13 @@
 package ai.appdna.sdk.billing
 
 /**
- * Which phase of a Play subscription's offers is a FREE TRIAL — #1062.
+ * Which phase of a Play subscription's offers is a FREE TRIAL.
  *
  * 🔴 EXTRACTED SO IT CAN BE EXERCISED. This decision lived inline inside
  * [PriceResolver.getSubscriptionTrials], behind a live `BillingClient`, so the only thing any test
- * could reach was the query — and #1053's lesson is that a rule nothing can call is a rule nobody
- * has watched work. The iOS side of the same promise is proven against a real StoreKit with a
- * manufactured ineligible user (#933's `StoreTrialEligibilityHostedTests`); Play has no
+ * could reach was the query — and a rule nothing can call is a rule nobody has watched work.
+ * The iOS side of the same promise is proven against a real StoreKit with a manufactured
+ * ineligible user (`StoreTrialEligibilityHostedTests`); Play has no
  * `SKTestSession` equivalent, so this is the half that CAN be proven here, and it is the half we
  * own: Play decides which offers this user may buy, and we decide which of them is a free trial.
  *
@@ -43,7 +43,7 @@ internal object StoreTrialPhase {
         firstFreeTrialOffer(offers)?.let { i -> offers[i].first { it.isFreeTrial() }.billingPeriod }
 
     /**
-     * #1113 — the index of the offer [firstFreeTrialPeriod] reads its trial from, or null.
+     * The index of the offer [firstFreeTrialPeriod] reads its trial from, or null.
      *
      * The PURCHASE uses this offer, so the trial the paywall states and the trial the purchase sheet
      * starts are one decision, not two. They were two: the paywall read a zero-price phase from any

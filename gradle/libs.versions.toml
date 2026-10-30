@@ -72,7 +72,7 @@ firebaseFirestore = "25.1.1"
 firebaseMessaging = "24.1.0"
 
 # Billing / Play
-# #1112 — Play refuses an app built on Play Billing Library 7 ("must update to at least version 8.0.0"),
+# Play refuses an app built on Play Billing Library 7 ("must update to at least version 8.0.0"),
 # and this is the version every integrating app ships.
 # 8.0.0 and not later: billing-ktx 8.1.0+ depends on kotlin-stdlib 2.2.10, whose metadata this module's
 # Kotlin 1.9 compiler cannot read (and neither can an integrator still on Kotlin 1.9). 8.0.0 depends
@@ -125,7 +125,7 @@ kotlinx-coroutines-test      = { module = "org.jetbrains.kotlinx:kotlinx-corouti
 kotlinx-collections-immutable = { module = "org.jetbrains.kotlinx:kotlinx-collections-immutable", version.ref = "kotlinxCollectionsImmutable" }
 
 # Billing / Play
-# #1112 — the plain library, not billing-ktx: billing-ktx 8.x carries Kotlin 2.1 metadata this module's
+# The plain library, not billing-ktx: billing-ktx 8.x carries Kotlin 2.1 metadata this module's
 # Kotlin 1.9 compiler cannot read. The two suspend wrappers it provided live in billing/BillingSuspend.kt.
 billing                      = { module = "com.android.billingclient:billing", version.ref = "billing" }
 play-review-ktx              = { module = "com.google.android.play:review-ktx", version.ref = "playReview" }

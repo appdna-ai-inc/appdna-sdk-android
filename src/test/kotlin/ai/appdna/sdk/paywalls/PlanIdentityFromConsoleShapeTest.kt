@@ -32,7 +32,7 @@ import org.robolectric.annotation.Config
  * fallback and every plan shares `""` — every row reports itself selected, a tap stores a value
  * that changes nothing, and the CTA buys whichever plan is FIRST whatever the user chose.
  *
- * The plans live under `layout.sections[].config.plans`, where a real paywall keeps them (#923).
+ * The plans live under `layout.sections[].config.plans`, where a real paywall keeps them.
  */
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [34], qualifiers = "w411dp-h891dp-xxhdpi")

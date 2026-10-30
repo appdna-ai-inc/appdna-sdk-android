@@ -296,7 +296,7 @@ dependencies {
     // annotating with `@Serializable`; existing DTOs are unchanged in this PR.
     implementation(libs.kotlinx.serialization.json)
 
-    // Google Play Billing Library (#1112 — plain, not -ktx; see libs.versions.toml)
+    // Google Play Billing Library (plain, not -ktx; see libs.versions.toml)
     implementation(libs.billing)
 
     // Google Play In-App Review

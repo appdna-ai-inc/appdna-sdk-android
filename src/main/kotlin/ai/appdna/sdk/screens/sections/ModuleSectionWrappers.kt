@@ -626,7 +626,7 @@ private fun PaywallVideoSection(section: ScreenSection) {
 @Composable
 private fun PaywallLottieSection(section: ScreenSection) {
     val url = section.data["lottie_url"] as? String ?: section.data["url"] as? String
-    // #996 — `lottie_json` is gone: read here, carried into the DTO, drawn by nothing.
+    // `lottie_json` is gone: read here, carried into the DTO, drawn by nothing.
     if (url == null) {
         val h = (section.data["lottie_height"] as? Number)?.toFloat()
             ?: (section.data["height"] as? Number)?.toFloat() ?: 160f

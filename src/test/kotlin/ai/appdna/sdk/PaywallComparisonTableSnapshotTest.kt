@@ -17,7 +17,7 @@ import org.robolectric.annotation.Config
 import org.robolectric.annotation.GraphicsMode
 
 /**
- * #971 — the comparison table's column headers, RENDERED.
+ * The comparison table's column headers, RENDERED.
  *
  * ## Why a pixel capture and not only the parser test
  *
@@ -25,7 +25,7 @@ import org.robolectric.annotation.GraphicsMode
  * prove the renderer then DRAWS those labels — and the defect was a headerless table on a real
  * ACTIVE paywall, which is a render claim. Robolectric draws the REAL `PaywallSectionView` on the
  * JVM and `captureRoboImage` writes the actual pixels, which is the instrument that caught the
- * invisible selected plan in #966 when reading the code had not.
+ * invisible selected plan when reading the code had not.
  *
  * ## The three captures are a discriminating set
  *

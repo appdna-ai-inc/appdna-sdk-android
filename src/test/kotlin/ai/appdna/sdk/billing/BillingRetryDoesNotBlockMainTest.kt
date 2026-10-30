@@ -16,7 +16,7 @@ import org.robolectric.annotation.Config
 import java.util.concurrent.TimeUnit
 
 /**
- * #902 — does the billing reconnection backoff BLOCK the main thread?
+ * Does the billing reconnection backoff BLOCK the main thread?
  *
  * An ANR was seen once on the sample host, and the one named suspect was this loop: five retries
  * with exponential backoff, logged from the main thread's own id, spread across ~13 seconds on a

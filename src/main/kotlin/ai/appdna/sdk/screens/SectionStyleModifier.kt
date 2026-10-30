@@ -12,7 +12,7 @@ import ai.appdna.sdk.core.ShadowStyleConfig
 import ai.appdna.sdk.core.StyleEngine
 
 /**
- * #904 — the authored section style, applied.
+ * The authored section style, applied.
  *
  * iOS has applied the whole of `SectionStyle` since this surface existed (`ScreenRenderer.swift`
  * `applySectionStyle`). Android PARSED all of it — background, gradient, padding, margin, radius,
@@ -31,7 +31,7 @@ import ai.appdna.sdk.core.StyleEngine
  * way, and "fixing" the naming on one side would replace a missing-style divergence with a
  * spacing one. The inversion itself is filed separately, for both platforms at once.
  *
- * The shadow goes through [StyleEngine.resolveShadow] and [StyleEngine.appdnaShadow] (#886), so it
+ * The shadow goes through [StyleEngine.resolveShadow] and [StyleEngine.appdnaShadow], so it
  * cannot drift from what a block or a paywall section does with the same five fields — and it is
  * applied BEFORE the background, because a clip or a background later in the chain would otherwise
  * cut away the offset, blurred part a shadow consists of.

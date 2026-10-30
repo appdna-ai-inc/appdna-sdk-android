@@ -12,7 +12,7 @@ import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
 
 /**
- * #959 — A NUMERIC PLAN PRICE REACHES THE SCREEN, not just the DTO.
+ * A NUMERIC PLAN PRICE REACHES THE SCREEN, not just the DTO.
  *
  * iOS coerces five plan scalars (`PaywallPlan.looseString`) because its all-or-nothing `Codable`
  * used to nil a whole paywall over one numeric price. Android read `price` with `as? String`, got
@@ -21,7 +21,7 @@ import org.robolectric.annotation.Config
  *
  * 🔴 WHY THIS EXISTS WHEN THE SHARED FIXTURE ALREADY ASSERTS THE PARSE. The fixture proves
  * `displayPrice` is `"49.99"`. It does not prove the price REACHES A PIXEL, and the repo has paid
- * for that gap twice: #923's store-price substitution passed its fixture and its live-StoreKit test
+ * for that gap twice: the store-price substitution passed its fixture and its live-StoreKit test
  * while reaching nothing, because real paywalls carry plans in `layout.sections[].config.plans`
  * rather than at the root, and only a render test found it. So this renders the REAL
  * `PaywallSectionView` over a plans section and reads the text back.
@@ -42,7 +42,7 @@ class NumericPlanPriceRenderTest {
      * A plans section whose single plan carries ONLY a numeric `price` — no `price_display`, so
      * `displayPrice` has to fall through to it, which is the path that was broken.
      *
-     * The plans live under `layout.sections[].config.plans`, where a real paywall keeps them (#923),
+     * The plans live under `layout.sections[].config.plans`, where a real paywall keeps them,
      * not at the document root — a fixture that put them at the root would pass against code that
      * reaches no real paywall.
      */
@@ -118,7 +118,7 @@ class NumericPlanPriceRenderTest {
     fun `THE CONTROL — an authored STRING price renders, so this harness can see a price at all`() {
         // Without this, "the numeric price is drawn" could pass for the worst possible reason: a
         // harness that finds any text it is asked for, or one that renders nothing and asserts
-        // nothing. #923's first render test read an EMPTY accessibility tree and its absence
+        // nothing. The store-price substitution's first render test read an EMPTY accessibility tree and its absence
         // assertion passed.
         renderPrice("$12.34")
         compose.onNodeWithText("$12.34", substring = true).assertIsDisplayed()

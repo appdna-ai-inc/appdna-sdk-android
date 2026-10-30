@@ -89,7 +89,7 @@ import java.net.URL
 class OnboardingActivity : ComponentActivity() {
 
     /*
-     * #952 — a debuggable host measures its own main-thread stalls while this surface is in front.
+     * A debuggable host measures its own main-thread stalls while this surface is in front.
      *
      * A customer's logcat carried `wm_failed_to_pause` for `PaywallActivity` at the moment an
      * onboarding map step ended, and nothing of ours said what was running. A release build pays
@@ -302,7 +302,7 @@ class OnboardingActivity : ComponentActivity() {
         }
 
         /*
-         * #952 — WARM THE MAPS RENDERER BEFORE THE STEP THAT NEEDS IT.
+         * WARM THE MAPS RENDERER BEFORE THE STEP THAT NEEDS IT.
          *
          * 🔴 MEASURED, NOT GUESSED. The main-thread sampler caught the block and named it:
          *
@@ -652,7 +652,7 @@ internal fun NavGlyph(glyph: String, color: Color, size: androidx.compose.ui.uni
 /**
  * The ✕ that closes an onboarding flow, with its authored style.
  *
- * 🔴 #1004 — every value here was hardcoded: `Text("✕")` at 14sp in `onBackground` at 60% alpha,
+ * 🔴 Every value here was hardcoded: `Text("✕")` at 14sp in `onBackground` at 60% alpha,
  * in a row inset 8dp from the screen edge. The report named all of it. Mirrors iOS `DismissGlyph`,
  * including the 44dp minimum tap target, which does NOT shrink with the glyph: an author making the
  * ✕ smaller must not make it harder to hit, which is half of what was reported.
@@ -773,7 +773,7 @@ internal fun OnboardingFlowHost(
     // reads `lastOrNull()` as the user's previous step. Mirrors iOS
     // `navigationHistory: [String]`.
     //
-    // Audit-8 D2: hoisted into OnboardingViewModel so it survives
+    // Hoisted into OnboardingViewModel so it survives
     // Activity recreation alongside currentIndex / responses. Test path
     // (no VM available) falls back to a `remember` list — recreation
     // wouldn't apply there.
@@ -917,7 +917,7 @@ internal fun OnboardingFlowHost(
             val d = delegate
 
             /*
-             * #896 — ask the OS for a review as the step APPEARS, never from a tap.
+             * Ask the OS for a review as the step APPEARS, never from a tap.
              *
              * Inside the per-step effect, so it fires once per arrival and not on recomposition.
              * `triggerReview` is itself rate-limited (3 a year, 90 days apart) on top of the OS
@@ -1335,7 +1335,7 @@ internal fun OnboardingFlowHost(
     }
 
     /**
-     * What the progress bar's "Skip" link does — #1056.
+     * What the progress bar's "Skip" link does.
      *
      * 🔴 `settings.skip_to_step` WAS DECODED BY BOTH PLATFORMS AND READ BY NEITHER. It sits one
      * field away from `progress_skip_label` in `OnboardingSettings`, and this link was the only
@@ -1371,7 +1371,7 @@ internal fun OnboardingFlowHost(
     }
 
     /**
-     * #1014 — THE STEP'S TAP-ANYWHERE ADVANCE, in one place.
+     * THE STEP'S TAP-ANYWHERE ADVANCE, in one place.
      *
      * 🔴 The guard takes the index it is asked about rather than reading `currentIndex`, because
      * the step view's own handler fires for the step it is drawing — which during a transition is
@@ -1394,7 +1394,7 @@ internal fun OnboardingFlowHost(
     advanceOrCompleteRef = { advanceOrComplete() }
 
     /*
-     * #921 — a step that advances by itself.
+     * A step that advances by itself.
      *
      * A `LaunchedEffect` keyed on `currentIndex`, which is cancellation for free and the reason
      * this is simpler than iOS's explicit timer: Compose cancels the coroutine when the index
@@ -1464,7 +1464,7 @@ internal fun OnboardingFlowHost(
 
     Box(modifier = Modifier.fillMaxSize()) {
         /*
-         * #1026 — THE FLOW'S OWN CELEBRATION, which the console has offered since it shipped.
+         * THE FLOW'S OWN CELEBRATION, which the console has offered since it shipped.
          *
          * `settings.particle_effect` was parsed right here in `OnboardingConfig.kt` and read by no
          * composable, and iOS did not parse it at all — so the "Celebration Effect" control in the
@@ -1757,7 +1757,7 @@ internal fun OnboardingFlowHost(
                 (flow.settings.back_button_style?.close_on_first == true)
             if (navBackVisible || navDismissAllowed) {
             // Navigation bar
-            // #1004 — "pushed as far as possible into the top-right corner, which makes it hard
+            // "pushed as far as possible into the top-right corner, which makes it hard
             // to tap". 8 is what shipped; an author can now move it in. Shared with iOS.
             val dismissStyle = flow.settings.dismiss_button_style
             Row(
@@ -1906,7 +1906,7 @@ internal fun OnboardingFlowHost(
                     },
                     label = "step_transition",
                     /*
-                     * #1014 — a tap ANYWHERE advances the step.
+                     * A tap ANYWHERE advances the step.
                      *
                      * 🔴 `pointerInput` with `awaitEachGesture` on the PASS of `Final`, not
                      * `clickable`: a clickable container consumes the tap, so a step with this on
@@ -1978,7 +1978,7 @@ internal fun OnboardingFlowHost(
                 OnboardingStepView(
                     step = step,
                     effectiveConfig = effectiveConfig,
-                    // #1014 — the step's tap-anywhere advance, handed to the root keyboard-dismiss
+                    // The step's tap-anywhere advance, handed to the root keyboard-dismiss
                     // handler, which is what actually receives a tap anywhere in the step.
                     onContentTap = { tapAnywhereAdvance(stepIdx) },
                     // The UN-merged override (the host-data pipeline merges it after
@@ -2052,7 +2052,7 @@ internal fun OnboardingFlowHost(
                             responses.putAll(OnboardingCTAFlag.applyTo(responses, step, safeData))
                         }
                         // Persist responses incrementally so TemplateEngine has fresh data for next step.
-                        // Spec audit-4 — was unsafe
+                        // Was an unsafe
                         // `as Map<String, Map<String, Any>>` cast that
                         // throws ClassCastException whenever a step writes
                         // a primitive top-level value (very common). Drop
@@ -2662,7 +2662,7 @@ fun OnboardingStepView(
     onNext: (Map<String, Any>?) -> Unit,
     onSkip: () -> Unit,
     /**
-     * #1014 — WHAT A TAP ON THIS STEP SHOULD DO, besides dismissing the keyboard.
+     * WHAT A TAP ON THIS STEP SHOULD DO, besides dismissing the keyboard.
      *
      * 🔴 The tap-anywhere gesture lived on the AnimatedContent OUTSIDE this view and never fired.
      * Measured, after two device walks that learned nothing and a diagnostic that did:
@@ -2873,7 +2873,7 @@ private fun OnboardingStepBody(
         CompositionLocalProvider(LocalLocationAdvanceSettlement provides locationSettlement) {
             // Block-based rendering with layout variants
             BlockBasedStepView(
-                // #1014 — forwarded to the root handler that receives every tap in the step.
+                // Forwarded to the root handler that receives every tap in the step.
                 onContentTap = onContentTap,
                 effectiveConfig = effectiveConfig,
                 blocks = blocks,
@@ -3231,7 +3231,7 @@ internal fun emitSocialLoginAction(
 // vertical rhythm wrong vs iOS. The keyboard would also push the CTA off
 // the screen on Android, while iOS pinned it via safeAreaInset.
 /**
- * How much room the scrolling content must leave for the pinned bottom zone (#655).
+ * How much room the scrolling content must leave for the pinned bottom zone.
  *
  * `measured` is 0 on the first composition, before the zone has been laid out. Falling back to the
  * old 80dp there keeps the first frame identical to previous releases; once the real height arrives
@@ -3249,7 +3249,7 @@ internal fun ThreeZoneBlockLayout(
     blocks: List<ContentBlock>,
     onAction: (String) -> Unit,
     /**
-     * #1014 — what a tap on the step should do besides dismissing the keyboard. The root-level
+     * What a tap on the step should do besides dismissing the keyboard. The root-level
      * `detectTapGestures` below is what actually RECEIVES every tap in the step — it consumes
      * them, which is why the tap-anywhere gesture outside this layout never fired.
      */
@@ -3267,7 +3267,7 @@ internal fun ThreeZoneBlockLayout(
     // breaking conditional content rendering on Android.
     responses: Map<String, Any> = emptyMap(),
     hookData: Map<String, Any>? = null,
-    /** #1013 — the presented step's id, so a `visibility_condition` naming a field on THIS step
+    /** The presented step's id, so a `visibility_condition` naming a field on THIS step
      *  evaluates against what the control holds right now ([VisibilityScope]). Empty = no merge. */
     stepId: String = "",
     modifier: androidx.compose.ui.Modifier = androidx.compose.ui.Modifier,
@@ -3275,7 +3275,7 @@ internal fun ThreeZoneBlockLayout(
     // threaded to every zone's ContentBlockRendererView.
     onInteract: (String, String, String?) -> Unit = { _, _, _ -> },
     fieldConfigOverrides: Map<String, Map<String, Any>> = emptyMap(),
-    // #657 — per-block replacement options from a refresh interaction, threaded to the renderer.
+    // Per-block replacement options from a refresh interaction, threaded to the renderer.
     fieldOptionsOverrides: Map<String, List<InputOption>> = emptyMap(),
 ) {
     // Apply `visibility_condition` BEFORE partitioning,
@@ -3296,8 +3296,8 @@ internal fun ThreeZoneBlockLayout(
     // just the column this layout draws.
     val stepGateBlocks = LocalStepGateBlocks.current ?: blocks
     /*
-     * #951 — false only while a map child has a finger down on it; true everywhere else, so a step
-     * taller than the viewport still scrolls (removing the scroll wholesale is the #598 regression).
+     * False only while a map child has a finger down on it; true everywhere else, so a step
+     * taller than the viewport still scrolls (removing the scroll wholesale would strand a tall step).
      *
      * Reading `.value` HERE invalidates this composable, so the step's content recomposes when the
      * flag moves. That is affordable because the flag moves exactly TWICE per gesture — once on the
@@ -3330,7 +3330,7 @@ internal fun ThreeZoneBlockLayout(
             else -> top.add(block)
         }
     }
-    // 🔴 #655 — the scrolling content reserved a FIXED 80dp for the pinned bottom zone.
+    // 🔴 The scrolling content reserved a FIXED 80dp for the pinned bottom zone.
     //
     // The bottom zone is an overlay (`align(Alignment.BottomCenter)`), so that number is the only
     // thing keeping content out from underneath it. Two stacked buttons plus a line of legal text —
@@ -3351,7 +3351,7 @@ internal fun ThreeZoneBlockLayout(
     // formula in dp so wider screens (foldables, tablets) get proportional
     // breathing room and small phones stay at the 24dp floor.
     // The ONE definition of the step's horizontal inset, shared with the full-bleed modifier that
-    // has to cancel it (#1006). A constant there and a formula here is how a background "reaching
+    // has to cancel it. A constant there and a formula here is how a background "reaching
     // the screen edges" stopped short on iOS.
     val horizontalPadding = BlockFullBleed.stepHorizontalInset(configuration.screenWidthDp.toDouble()).dp
 
@@ -3367,7 +3367,7 @@ internal fun ThreeZoneBlockLayout(
             // nav-bar gutter, or progress-bar gutter left the keyboard up
             // and the user got stuck.
             /*
-             * #1014 — `onContentTap` is keyed in alongside `Unit` so the lambda the gesture holds
+             * `onContentTap` is keyed in alongside `Unit` so the lambda the gesture holds
              * is replaced when the step changes. Keyed on `Unit` alone it would capture the first
              * step's closure for the life of the flow, which is a silent "it worked once".
              */
@@ -3384,7 +3384,7 @@ internal fun ThreeZoneBlockLayout(
             // Only center content — vertically centre it WHEN IT FITS, and scroll from the top
             // when it does not.
             //
-            // 🔴 #598 — this was `fillMaxSize()` + `Arrangement.Center` with no scroll container.
+            // 🔴 This was `fillMaxSize()` + `Arrangement.Center` with no scroll container.
             // It is correct for the small case the comment named (a loading spinner), but a step
             // whose blocks all sit in the CENTER zone takes this branch too — a cross-sell screen,
             // for instance — and once that content is taller than the viewport, centring pushes its
@@ -3399,7 +3399,7 @@ internal fun ThreeZoneBlockLayout(
                 Column(
                     modifier = Modifier
                         .fillMaxWidth()
-                        // #951 — `enabled = false` while a map child holds the gesture.
+                        // `enabled = false` while a map child holds the gesture.
                         .verticalScroll(rememberScrollState(), enabled = stepScrollClaimable)
                         .heightIn(min = viewportHeight)
                         .padding(horizontal = horizontalPadding)
@@ -3437,7 +3437,7 @@ internal fun ThreeZoneBlockLayout(
             // iOS-canonical gap top→center = 12 + 20 = 32pt is preserved.
             // Was Spacer(20dp) only = 20dp, drift 12dp.
             /*
-             * #993 — the scroll state is HOISTED so blocks authored `collapse_on_scroll` can be
+             * The scroll state is HOISTED so blocks authored `collapse_on_scroll` can be
              * told how far the step has scrolled. iOS reads the same number off a preference key;
              * here it is the state's own value, converted from pixels to dp because every authored
              * threshold is in points.
@@ -3448,7 +3448,7 @@ internal fun ThreeZoneBlockLayout(
                 modifier = Modifier
                     .fillMaxSize()
                     .padding(bottom = bottomZoneReserve(bottom.isNotEmpty(), measuredBottomHeight))
-                    // #951 — `enabled = false` while a map child holds the gesture.
+                    // `enabled = false` while a map child holds the gesture.
                     .verticalScroll(stepScroll, enabled = stepScrollClaimable)
                     .padding(horizontal = horizontalPadding),
                 verticalArrangement = Arrangement.spacedBy(12.dp),
@@ -3512,7 +3512,7 @@ internal fun ThreeZoneBlockLayout(
                 modifier = Modifier
                     .align(Alignment.BottomCenter)
                     .fillMaxWidth()
-                    // #655 — report the real height so the scrolling content above reserves exactly
+                    // Report the real height so the scrolling content above reserves exactly
                     // this much and no authored bottom zone can bury the end of the content.
                     .onGloballyPositioned { coords ->
                         val h = with(density) { coords.size.height.toDp() }
@@ -3622,7 +3622,7 @@ private val AUTH_ACTIONS_REQUIRING_VALIDATION = setOf(
  * Whether the built-in "Skip" affordance renders on a legacy step (a block-based step never draws one:
  * its Skip is a button block).
  *
- * Two independent things were conflated before #653: `skip_enabled` (the AUTHOR asked for a Skip
+ * Two independent things used to be conflated: `skip_enabled` (the AUTHOR asked for a Skip
  * link) and the presence of a skip handler (the SDK is ABLE to skip). A later change made the handler
  * unconditional so a CTA with `action: "skip"` would stop being a dead button; anything gating a
  * RENDER on the handler therefore started drawing itself everywhere.
@@ -3636,7 +3636,7 @@ internal fun shouldRenderSkipAffordance(skipEnabled: Boolean?, hasSkipHandler: B
 
 @Composable
 private fun BlockBasedStepView(
-    /** #1014 — what a tap on the step should do besides dismissing the keyboard; forwarded
+    /** What a tap on the step should do besides dismissing the keyboard; forwarded
      *  to `ThreeZoneBlockLayout`, whose root handler is what actually receives it. */
     onContentTap: () -> Unit = {},
     effectiveConfig: StepConfig,
@@ -4006,30 +4006,30 @@ private fun BlockBasedStepView(
         }
 
         /*
-         * #1092 — THE ONE COLLECTING ADVANCE. Four callers built this map independently
+         * THE ONE COLLECTING ADVANCE. Four callers built this map independently
          * (`next`/`continue`, the completion-route CTA, the flag CTA and the unrecognised-action
-         * fallback), and #1091 was exactly a case of one advance path carrying the step's answers
+         * fallback), and a past defect was exactly a case of one advance path carrying the step's answers
          * while another did not. Three copies of "what an advance carries" is three places to
          * forget the next key.
          *
          * A LOCAL fun, not a method: `inputValues` and `toggleValues` are `remember(step.id)`
          * inside this composable, so a class-level function cannot see them — the trap that made
-         * the first attempt at #1091's fix uncompilable.
+         * the first attempt at this fix uncompilable.
          *
          * iOS has had one `advanceCollectingStepData(extra:)` all along; this is the mirror.
          * `extra` is merged LAST so a form field cannot silently overwrite a flag the CTA recorded.
          */
         fun advanceCollectingStepData(extra: Map<String, Any> = emptyMap()) {
-            // #1094 — the assembly itself lives in `StepAdvancePayload` so a unit test can reach
+            // The assembly itself lives in `StepAdvancePayload` so a unit test can reach
             // it. It cannot reach this local fun: `inputValues` and `toggleValues` are
             // `remember(step.id)` inside the composable.
             onNext(StepAdvancePayload.build(inputValues, toggleValues, extra))
         }
 
         when (rawAction) {
-            // #1091 — `continue` is an authored SYNONYM of `next`. It used to fall to `else`,
-            // which called `onNext(null)` and threw the step's answers away. The #963 walk flow
-            // authors its CTA exactly that way, and a selected location was lost every time.
+            // `continue` is an authored SYNONYM of `next`. It used to fall to `else`,
+            // which called `onNext(null)` and threw the step's answers away. A flow that
+            // authors its CTA exactly that way lost a selected location every time.
             "next", "continue" -> {
                 // (permission-step-via-"next" is handled above, before validation)
                 // Match iOS OnboardingRenderer.swift:1518-1527.
@@ -4144,13 +4144,12 @@ private fun BlockBasedStepView(
                 }
             }
             /*
-             * #896 — a button that takes the user to the store to leave a review.
+             * A button that takes the user to the store to leave a review.
              *
              * 🔴 It opens the LISTING; it does not ask the OS for the in-place sheet. Apple's rule
              * is explicit — don't call the review prompt in response to a user action — and a tap
              * is exactly that. The sheet is asked for when a step APPEARS
              * (`step.request_store_review`), which is a moment in a flow rather than a request.
-             * #897 is why the distinction is drawn this carefully.
              *
              * No auto-advance, for the same reason `link` does not: the user leaves the app, and
              * advancing behind their back means they come back to a screen they never saw.
@@ -4160,16 +4159,16 @@ private fun BlockBasedStepView(
             "rate_app" -> ai.appdna.sdk.feedback.ReviewPromptManager.openStoreListing(activityCtx)
             else -> {
                 /*
-                 * 🔴 #1091 — COLLECT, DO NOT DISCARD. This was `onNext(null)`, which advanced the
+                 * 🔴 COLLECT, DO NOT DISCARD. This was `onNext(null)`, which advanced the
                  * step and threw away everything the user had entered on it, because the SDK did
                  * not recognise the BUTTON's action name. The answers belong to the step, not to
                  * the button: there is no action for which losing them is right, and advancing
                  * with the data is otherwise identical.
                  *
-                 * The structural half of #1091, and the larger one — a new action the console
+                 * The structural half of that fix, and the larger one — a new action the console
                  * ships before an SDK release supports it, an action one platform has and the
                  * other does not, or a plain typo all took this branch and cost the user their
-                 * answers, silently. Same silence class as #1074 and #1080, so it says so now.
+                 * answers, silently. So it says so now.
                  */
                 Log.warning("Onboarding: unrecognised block action \"$rawAction\" — advancing and keeping the step's answers")
                 advanceCollectingStepData()
@@ -4207,7 +4206,7 @@ private fun BlockBasedStepView(
     val stepInteraction = rememberStepInteraction(coordinator, ::handleInteract) { liveParamsState.value.pending }
 
     /*
-     * #951 — the step's scroll stands down while a finger is on an embedded map.
+     * The step's scroll stands down while a finger is on an embedded map.
      *
      * A `GoogleMap` is an `AndroidView` around a `MapView`, and the content column it sits in is a
      * `Modifier.verticalScroll`. Both want the drag, and the Compose scroll wins it before the
@@ -5076,7 +5075,7 @@ private fun CustomStep(config: StepConfig, onNext: (Map<String, Any>?) -> Unit) 
 }
 
 /**
- * #952 — does any step in this flow draw an interactive map?
+ * Does any step in this flow draw an interactive map?
  *
  * Cheap and total: the whole flow is already in memory, and a map block is the only thing that
  * triggers the Maps SDK's dynamite load.

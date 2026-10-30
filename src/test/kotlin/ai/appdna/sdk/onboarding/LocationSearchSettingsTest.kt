@@ -5,7 +5,7 @@ import org.junit.Assert.assertNull
 import org.junit.Test
 
 /**
- * #963 — the Console's four location settings, resolved once for every surface.
+ * The Console's four location settings, resolved once for every surface.
  *
  * 🔴 WHAT WENT WRONG. There are four location surfaces, not two: a form-step field and an
  * `input_location` content block, on each platform. The form-step field read all four settings; the
@@ -144,7 +144,7 @@ class LocationSearchSettingsTest {
     @Test
     fun `a type the PROXY does not accept resolves to UNSET, not forwarded`() {
         /*
-         * 🔴 THE REGRESSION #963 WOULD HAVE SHIPPED. The proxy validates `type` against
+         * 🔴 THE REGRESSION FORWARDING AN UNCHECKED TYPE WOULD HAVE SHIPPED. The proxy validates `type` against
          * `z.enum(['city','address','region','country'])` and answers anything else with a
          * ValidationError — which both SDKs read as "no suggestions". So forwarding a bad value
          * turns the whole autocomplete OFF rather than degrading it.

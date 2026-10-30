@@ -5,10 +5,10 @@ import org.junit.Assert.assertNull
 import org.junit.Test
 
 /**
- * #933 — the store's ISO period, phrased.
+ * The store's ISO period, phrased.
  *
  * 🔴 WHAT THIS IS REALLY GUARDING. The two stores emit `P1W` / `P1M` / `P3M` / `P1Y`, and the SDKs
- * have captured that since #923 while rendering none of it — the period beside a price was whatever
+ * have captured that since store prices were first looked up, while rendering none of it — the period beside a price was whatever
  * an author typed, and 0 of 81 production plans typed anything. So every assertion here is about a
  * string that currently reaches no screen, and the point of pinning them now is that iOS and
  * Android must produce the SAME words from the same input (Rule 8); `BillingPeriodPhraseTests.swift`
@@ -116,11 +116,11 @@ class BillingPeriodPhraseTest {
 }
 
 /**
- * #933 — the one place the table reaches a screen in this slice.
+ * The one place the table reaches a screen in this slice.
  *
  * `trial_duration` is author-supplied text, and both stores spell a trial period as an ISO
  * duration. A config carrying `P7D` — from an import, a hand-edited document or a generator, the
- * route #959's numeric price arrived by — used to render "P7D free trial" on a live paywall.
+ * route a numeric price once arrived by — used to render "P7D free trial" on a live paywall.
  */
 class TrialLabelPhrasesAnIsoDurationTest {
 

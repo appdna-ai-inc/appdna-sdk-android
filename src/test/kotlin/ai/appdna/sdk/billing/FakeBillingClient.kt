@@ -87,7 +87,7 @@ internal class FakeBillingClient(private val listener: PurchasesUpdatedListener)
     @Volatile var holdSetup: Boolean = false
     @Volatile var heldSetupListener: BillingClientStateListener? = null
 
-    /** #902 — how many times a connection was attempted, so a backoff can be counted. */
+    /** How many times a connection was attempted, so a backoff can be counted. */
     @Volatile var setupAttempts: Int = 0
         private set
 
@@ -162,7 +162,7 @@ internal class FakeBillingClient(private val listener: PurchasesUpdatedListener)
         val requested = requestedProducts(params)
         val answer = {
             val out = requested.mapNotNull { (id, type) -> productDetails[id]?.takeIf { it.productType == type } }
-            // Play Billing 8 answers with a QueryProductDetailsResult (#1112); nothing is "unfetched"
+            // Play Billing 8 answers with a QueryProductDetailsResult; nothing is "unfetched"
             // here — a product the fake does not know is simply absent, as before.
             listener.onProductDetailsResponse(result(BillingResponseCode.OK), QueryProductDetailsResult.create(out, emptyList()))
         }
@@ -218,7 +218,7 @@ internal class FakeBillingClient(private val listener: PurchasesUpdatedListener)
 
     // -- unused surface ------------------------------------------------------------------------
 
-    // queryPurchaseHistoryAsync and querySkuDetailsAsync are gone from Play Billing 8 (#1112).
+    // queryPurchaseHistoryAsync and querySkuDetailsAsync are gone from Play Billing 8.
 
     override fun showInAppMessages(activity: Activity, params: InAppMessageParams, listener: InAppMessageResponseListener): BillingResult =
         result(BillingResponseCode.FEATURE_NOT_SUPPORTED)

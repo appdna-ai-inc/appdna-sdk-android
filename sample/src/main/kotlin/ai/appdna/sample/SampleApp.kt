@@ -11,7 +11,7 @@ import ai.appdna.sdk.Environment
 import ai.appdna.sdk.paywalls.AppDNAPaywallDelegate
 
 /**
- * #1071 — the delegate a device walk reads, and why the sample carries one.
+ * The delegate a device walk reads, and why the sample carries one.
  *
  * A walk can only assert what it can observe, and the one fact a plan-selection walk is about —
  * WHICH product the CTA handed to billing — is not on the screen. `EventTracker` logs
@@ -29,7 +29,7 @@ import ai.appdna.sdk.paywalls.AppDNAPaywallDelegate
  */
 private object SamplePaywallLog : AppDNAPaywallDelegate {
     /**
-     * #1076 — what the USER did, which is not a tracked event and so reaches no other log.
+     * What the USER did, which is not a tracked event and so reaches no other log.
      * A device walk reads this line to prove a feature row, a plan row or a link is live.
      */
     override fun onPaywallAction(paywallId: String, action: ai.appdna.sdk.paywalls.PaywallAction) {
@@ -74,7 +74,7 @@ class SampleApp : Application() {
             apiKey = "appdna_sandbox_demo_key".let { SampleConfig.apiKey(this) ?: it },
             environment = Environment.SANDBOX,
             /*
-             * #1043 — DEBUG, so a device walk can read what the SDK did.
+             * DEBUG, so a device walk can read what the SDK did.
              *
              * `trigger_winback` is the one survey follow-up that RENDERS NOTHING: it fires
              * `survey_followup_winback` and expects the host to launch a campaign. A walk reads

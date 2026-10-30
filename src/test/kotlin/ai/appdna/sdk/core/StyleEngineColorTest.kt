@@ -82,7 +82,7 @@ class StyleEngineColorTest {
         // R64 reverted shorthand expansion to match iOS
         // PaywallHelperViews.swift:81-87 (`count == 6 || count == 8`
         // only). 3/4-char shorthand falls through to Color.Transparent.
-        // Android previously expanded `#1234` → `#11223344`, producing
+        // Android previously expanded the 4-char `1234` → `11223344`, producing
         // visible color on Android but transparent on iOS for identical
         // payloads.
         assertRgba(StyleEngine.parseColor("#1234"), r = 0, g = 0, b = 0, a = 0)

@@ -5,7 +5,7 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 /**
- * #984 — the URL rule, exercised rather than read.
+ * The URL rule, exercised rather than read.
  *
  * 🔴 The cases are the point, not the regex. `android.net.Uri.parse("not a url")` returns a Uri
  * with a null scheme rather than throwing, so a check written the obvious way accepts everything —

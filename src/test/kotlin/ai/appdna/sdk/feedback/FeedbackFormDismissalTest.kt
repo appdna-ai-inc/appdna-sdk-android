@@ -28,9 +28,9 @@ import org.robolectric.annotation.Config
 import org.robolectric.shadows.ShadowAlertDialog
 
 /**
- * #1010 — WHAT HAPPENED TO THE FEEDBACK FORM, ON THE PATHS NOBODY CHOSE.
+ * WHAT HAPPENED TO THE FEEDBACK FORM, ON THE PATHS NOBODY CHOSE.
  *
- * #920 fixed this on iOS, and the comment it left said Android "gets this from its activity
+ * iOS fixed this first, and the comment that fix left said Android "gets this from its activity
  * lifecycle". That is true of the CLEANUP and false of the EVENT: `onActivityDestroyed` took the
  * dialog down and recorded nothing, and a back press or a tap outside the dialog — two paths iOS
  * does not even have, because a `UIAlertController` alert cannot be dismissed that way — recorded

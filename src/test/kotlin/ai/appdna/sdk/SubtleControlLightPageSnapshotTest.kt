@@ -17,9 +17,9 @@ import org.robolectric.annotation.Config
 import org.robolectric.annotation.GraphicsMode
 
 /**
- * #938 — the three sections whose defaults were hard-coded white, rendered ON A WHITE PAGE.
+ * The three sections whose defaults were hard-coded white, rendered ON A WHITE PAGE.
  *
- * #938 refused to change those defaults without SEEING one fail, and this is the seeing. Each
+ * Those defaults were not changed without SEEING one fail, and this is the seeing. Each
  * capture is the real Compose section through `PaywallSectionView`, on a `#FFFFFF` page, with no
  * colours authored — the exact document an author produces by choosing a light background and
  * touching nothing else.
@@ -107,7 +107,7 @@ class SubtleControlLightPageSnapshotTest {
         ),
     )
 
-    // ── #946: the sections that were white THROUGHOUT ────────────────────────────────────────
+    // ── the sections that were white THROUGHOUT────────────────────────────────────────
     //
     // Six more composables resolved their colours by assuming a dark page. Each capture below is
     // the shape an author gets by choosing a light background and touching nothing else, and each
@@ -225,14 +225,14 @@ class SubtleControlLightPageSnapshotTest {
     @Test fun plansFeatureMatrixOnAWhitePage() = planStyle("feature_matrix")
 
     /*
-     * #966 — the seven arms that had NO light-page capture at all, which is why the selected-card
+     * The seven arms that had NO light-page capture at all, which is why the selected-card
      * defect sat unseen in `paywall_light_page_plans_vertical_stack.png` (the selected plan there
      * renders no name and no price) and why `accordion` was never looked at.
      *
      * 🔴 WHICH OF THESE ARE BROKEN IS A QUESTION TO MEASURE. `accordion` passes `planNameStyle`
      * with no colour override and that style defaults to `color = Color.White`, so reading the code
      * predicts invisible names — but `single_hero`, `product_as_cta` and `timeline_reveal` were
-     * changed for #961 without a light-page capture either, and a prediction is not a measurement.
+     * changed earlier without a light-page capture either, and a prediction is not a measurement.
      */
     @Test fun plansAccordionOnAWhitePage() = planStyle("accordion")
     @Test fun plansGridOnAWhitePage() = planStyle("grid")
@@ -243,7 +243,7 @@ class SubtleControlLightPageSnapshotTest {
     @Test fun plansCarouselCardsOnAWhitePage() = planStyle("carousel_cards")
 
     /*
-     * #988 — THE BADGE'S CORNER, which no other capture pins.
+     * THE BADGE'S CORNER, which no other capture pins.
      *
      * `badge_shape` defaults to `capsule`, so every capture above draws a full pill and none of
      * them would move if the `rounded` radius changed. iOS has drawn 6pt since it shipped and

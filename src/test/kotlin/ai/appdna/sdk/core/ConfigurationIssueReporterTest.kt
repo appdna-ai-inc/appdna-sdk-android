@@ -14,7 +14,7 @@ import org.robolectric.annotation.Config
 import android.os.Looper
 
 /**
- * #935 — A DROPPED BLOCK REACHES SOMEBODY, AND SAYS WHAT WAS WRONG.
+ * A DROPPED BLOCK REACHES SOMEBODY, AND SAYS WHAT WAS WRONG.
  *
  * The iOS half is `ConfigurationIssueReporterTests.swift`, asserting the same three things: the
  * host is told, the report carries the DETAIL rather than a count, and the same problem is

@@ -50,8 +50,7 @@ import kotlinx.coroutines.withContext
  * 🔴 [RiveBlock.trigger_on_step_complete] is decoded and fired by
  * NOBODY, on either platform. This docstring used to say it was
  * "fired by callers via fireTrigger"; there is no `fireTrigger`,
- * and no console control writes the key. Tracked on #1056 with the
- * other decoded-and-unread keys.
+ * and no console control writes the key.
  */
 data class RiveBlock(
     val rive_url: String,
@@ -165,7 +164,7 @@ fun RiveBlockView(block: RiveBlock) {
 private fun applyInputs(view: RiveAnimationView, block: RiveBlock) {
     val inputs = block.inputs ?: return
     /*
-     * 🔴 #1024 — THE BAIL WAS SILENT. `state_machine ?: return` meant an authored input did
+     * 🔴 THE BAIL WAS SILENT. `state_machine ?: return` meant an authored input did
      * nothing at all on this platform unless the machine was named too, with no log line and no
      * visible difference from an input that was applied and had no effect. The requirement is
      * real — every setter below takes the machine name — so what changes is that it SAYS so.

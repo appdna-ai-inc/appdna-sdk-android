@@ -1059,7 +1059,7 @@ class PaywallConfigParsingTest {
         assertEquals("#FFFFFF", d.label_color_val)
         assertEquals("#AAAAAA", d.description_color)
         assertEquals("calendar", d.icon)
-        // #992 — `affects_price` was removed from the model. The wire key STAYS in the input
+        // `affects_price` was removed from the model. The wire key STAYS in the input
         // above on purpose: a published paywall may still carry it, and the parser must ignore
         // an unknown key rather than refusing the section.
     }

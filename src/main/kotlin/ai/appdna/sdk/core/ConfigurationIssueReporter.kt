@@ -5,9 +5,9 @@ import ai.appdna.sdk.Log
 import java.util.concurrent.ConcurrentHashMap
 
 /**
- * #935 — A DROPPED BLOCK OR SECTION REACHES SOMEBODY.
+ * A DROPPED BLOCK OR SECTION REACHES SOMEBODY.
  *
- * #919 made the iOS decode lenient and logged every drop with its coding path. That is a large
+ * iOS made its decode lenient and logged every drop with its coding path. That is a large
  * improvement over a silent vanish and it is still only a log: nothing leaves the device, so a
  * customer cannot report what their console is producing and neither can we. Nobody can answer
  * "how often is this happening in the field", which is the question that decides whether it

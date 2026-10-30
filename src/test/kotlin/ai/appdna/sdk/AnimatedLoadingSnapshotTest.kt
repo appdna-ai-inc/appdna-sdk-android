@@ -24,7 +24,7 @@ import org.robolectric.annotation.GraphicsMode
 /**
  * The two `animated_loading` variants whose animation NEVER SETTLES.
  *
- * 🔴 #1045 — these are the two snapshots that OOMed while recording, on every machine and at
+ * 🔴 These are the two snapshots that OOMed while recording, on every machine and at
  * every heap from 1g to 6g, and they are the reason `verifyRoborazziDebug` has never been wired
  * into CI. Raising the heap did not fix it (6g got the 7 GB runner reclaimed instead) and neither
  * did `forkEvery`, because it is not accumulation across the suite: filtering the run down to

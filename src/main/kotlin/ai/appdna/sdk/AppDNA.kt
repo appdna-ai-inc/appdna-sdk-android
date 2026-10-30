@@ -115,7 +115,7 @@ object AppDNA {
     }
 
     /**
-     * #935 — read access for the SDK's own reporters, and a Kotlin-idiomatic setter.
+     * Read access for the SDK's own reporters, and a Kotlin-idiomatic setter.
      *
      * `setLifecycleDelegate` is the Java-facing entry and stays; `ConfigurationIssueReporter` needs
      * to READ the delegate, which was private with no accessor at all.
@@ -126,7 +126,7 @@ object AppDNA {
         set(value) { lifecycleDelegate = value }
 
     /**
-     * #1047 — hand every tracked event to the host's observer, if it set one.
+     * Hand every tracked event to the host's observer, if it set one.
      *
      * 🔴 The `runCatching` is the contract, not caution. `onEventTracked` is an OBSERVER: a host
      * that throws must not be able to affect whether analytics are sent — and this is called AFTER
@@ -640,7 +640,7 @@ object AppDNA {
      * what fires for fetched values. What it does guarantee is that any BUNDLED config has been
      * loaded, because that happens before this flips.
      *
-     * 🔴 #855 — this exists because a host could not tell two very different answers apart.
+     * 🔴 This exists because a host could not tell two very different answers apart.
      * `present()` returns `false` both when a flow does not exist and when the SDK simply has not
      * loaded its config yet, and on a COLD FIRST LAUNCH that second window is long: measured at
      * ~20-25s on a Pixel-class emulator, because `configure` reaches `loadConfigBundle()` only
@@ -670,8 +670,8 @@ object AppDNA {
     // to dedup re-delivery across Activity re-creation / process death (PushIdempotency).
     internal const val KEY_LAST_HANDLED_PUSH_TAP = "appdna.last_handled_push_tap_id"
     // The last [PushIdempotency.TAP_CAP] handled taps (a JSON array, oldest first) — one key was not
-    // enough: tap A, tap B, process death, the Activity restored with intent A re-fired A (impl audit
-    // ). The single key above is still read, for a tap handled by an older SDK version.
+    // enough: tap A, tap B, process death, the Activity restored with intent A re-fired A. The
+    // single key above is still read, for a tap handled by an older SDK version.
     internal const val KEY_HANDLED_PUSH_TAPS = "appdna.handled_push_tap_ids"
     // Pre-init overflow drops can't touch the persisted DroppedEventsCounter yet
     // (no app Context before configure()), so accrue them in memory and fold into the durable counter
@@ -1765,7 +1765,7 @@ object AppDNA {
             flowId = flowId,
             listener = listener
         ) ?: run {
-            // #855 — name the remedy, not just the state. This fires when the manager does not
+            // Name the remedy, not just the state. This fires when the manager does not
             // exist yet (very early in configure); `OnboardingFlowManager.present` covers the
             // later window where the manager IS wired but no config has loaded. iOS was SILENT on
             // this branch until a device run caught it — 17 of 20 calls logging nothing at all.

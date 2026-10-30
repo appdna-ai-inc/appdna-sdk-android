@@ -46,7 +46,7 @@ class MainActivity : ComponentActivity() {
     }
 
     /*
-     * #1086 — LOG THE STORED LOCATION ANSWER, so a device walk can assert what was PERSISTED
+     * LOG THE STORED LOCATION ANSWER, so a device walk can assert what was PERSISTED
      * rather than what the dropdown drew.
      *
      * A suggestion row proves the provider answered. It says nothing about whether the structured

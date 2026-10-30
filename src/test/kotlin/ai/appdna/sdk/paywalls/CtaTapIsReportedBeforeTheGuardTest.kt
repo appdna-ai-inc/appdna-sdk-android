@@ -13,7 +13,7 @@ import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
 
 /**
- * #1074 — THE TAP IS REPORTED EVEN WHEN IT CANNOT BECOME A PURCHASE.
+ * THE TAP IS REPORTED EVEN WHEN IT CANNOT BECOME A PURCHASE.
  *
  * `CTA_TAPPED` used to be emitted by `PaywallManager.onPlanSelected`, which the renderer reaches
  * only once its `plan != null` guard has passed. iOS had the same shape twice (`handleCTATap`
@@ -22,10 +22,10 @@ import org.robolectric.annotation.Config
  * So a CTA tap that could not resolve a plan returned SILENTLY on both platforms: no delegate
  * call, no event, no log. A user saw a button do nothing, the host learned nothing, and from
  * outside the app "the SDK never heard the tap" and "the store refused" were the same silence —
- * which is why #1072 could not be diagnosed.
+ * which is why a report of a dead CTA could not be diagnosed.
  *
  * 🔴 THE CASE THAT MATTERS IS THE ONE THAT CANNOT PROCEED, so that is what this drives: a paywall
- * with a root `cta` and NO plans at all. The CTA draws (#1073's fallback), the tap lands, and the
+ * with a root `cta` and NO plans at all. The CTA draws (the root-`cta` fallback), the tap lands, and the
  * guard refuses it. The action must still be reported, and no purchase must be started.
  */
 @RunWith(RobolectricTestRunner::class)
@@ -61,7 +61,7 @@ class CtaTapIsReportedBeforeTheGuardTest {
         val config = PaywallConfigParser.parseSinglePaywall("pw_cta_report", paywallMap(plans))
             ?: error("paywall did not parse")
         compose.setContent {
-            // Only CTA taps are counted here — a plan tap reports PLAN_CHANGED (#1076) and would
+            // Only CTA taps are counted here — a plan tap reports PLAN_CHANGED and would
             // otherwise be indistinguishable from the thing under test.
             androidx.compose.runtime.CompositionLocalProvider(
                 LocalPaywallAction provides { if (it == PaywallAction.CTA_TAPPED) onTap() },
@@ -84,7 +84,7 @@ class CtaTapIsReportedBeforeTheGuardTest {
      *
      * iOS does NOT agree on the `cta`-section path (`CTAButton` is `.disabled(isPurchasing)` and
      * nothing else), so the same paywall shows a bright, tappable, inert button there. That
-     * divergence is **#1075** and is not this test's subject — but it is why #1074's report has to
+     * divergence is not this test's subject — but it is why the tap report has to
      * fire before the guards rather than relying on the button being unreachable.
      */
     @Test

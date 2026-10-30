@@ -4,9 +4,9 @@ package ai.appdna.sdk.onboarding
  * WHICH mark a warning/info banner draws, and at what size. Mirror of iOS
  * `Onboarding/BannerIconResolution.swift`, and the same function both renderers call.
  *
- * 🔴 #1005 — reported against a rebuild of a real app's info banner, which carries the app's own
- * icon. Ten emoji presets and a box to paste any other emoji makes the capability visible (the
- * #601 fix) and is still not a way to set a brand's mark. So an image can be uploaded, and the
+ * 🔴 Reported against a rebuild of a real app's info banner, which carries the app's own
+ * icon. Ten emoji presets and a box to paste any other emoji makes the capability visible
+ * and is still not a way to set a brand's mark. So an image can be uploaded, and the
  * precedence has to be identical on both platforms: an uploaded URL wins, an empty one falls back
  * to the authored glyph, and an unauthored glyph falls back to the variant's own icon, which the
  * caller passes in because the variant table lives with the colours.

@@ -141,7 +141,7 @@ class ImageTileLayoutSnapshotTest {
      * control the user is supposed to touch. Only pixels can tell those two states apart.
      */
     /**
-     * #581 / #580 — the new Image styles and the Sound Button icon.
+     * The new Image styles and the Sound Button icon.
      *
      * A fixture proves the keys are DECODED; only a snapshot proves they are DRAWN, and both
      * features are entirely visual. Deliberately the same four cases iOS records, so the pair can
@@ -194,7 +194,7 @@ class ImageTileLayoutSnapshotTest {
     }
 
     /**
-     * #578 — the divider between two SPECIFIC providers, and the end slot beside it.
+     * The divider between two SPECIFIC providers, and the end slot beside it.
      *
      * A decode test cannot catch this: a renderer that reads the slot and then places the divider
      * at the end parses everything correctly. And the end case matters on its own — guarding it on

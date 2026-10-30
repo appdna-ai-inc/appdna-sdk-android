@@ -137,7 +137,7 @@ data class ElementStyleConfig(
     val opacity: Double? = null,
     val text_style: TextStyleConfig? = null,
     /**
-     * #905 — the container style the CONSOLE writes for a per-element entry.
+     * The container style the CONSOLE writes for a per-element entry.
      *
      * Its editor offers a TextStylePanel and an ElementStylePanel per element, and writes
      * `{ text_style: {…}, element_style: {…} }`. The SDK modelled an element entry AS the style,
@@ -159,7 +159,7 @@ data class ElementStyleConfig(
         }
 
     /**
-     * #910 — the same container minus its background, for a site that has ALREADY drawn it.
+     * The same container minus its background, for a site that has ALREADY drawn it.
      *
      * The CTA button resolves its fill from the authored chain and paints it itself, with its own
      * corner radius. Handing the whole container to `applyContainerStyle` as well would paint that
@@ -206,7 +206,7 @@ object StyleEngine {
         // of clobbering with hardcoded 16sp / Normal / Start / 1.4 *
         // 16. iOS resolves each field independently
         // (ContentBlockRendererView.swift:274-275 / 944-959), so a
-        // partial `style: { color: "#000" }` keeps h1's 28sp/Bold
+        // partial `style: { color: "#000000" }` keeps h1's 28sp/Bold
         // and rich_text legal's 12sp/Center defaults instead of
         // collapsing them to 16sp/Normal/Start.
         // Apply `opacity` even when `color` is null.
@@ -278,7 +278,7 @@ object StyleEngine {
                 bottom = (p.bottom ?: 0.0).dp,
             )
         }
-        // Shadow — #886. BEFORE the clip below, because a clip earlier in the chain cuts away
+        // Shadow — BEFORE the clip below, because a clip earlier in the chain cuts away
         // everything a later draw puts outside the shape, which is exactly where an offset,
         // blurred shadow lives. `applyBlockStyle` has always ordered it this way.
         mod = mod.appdnaShadow(resolveShadow(style.shadow), shape)
@@ -436,7 +436,7 @@ object StyleEngine {
     }
 
     /**
-     * #886 — draw an authored shadow: colour, blur AND offset, following `shape` exactly.
+     * Draw an authored shadow: colour, blur AND offset, following `shape` exactly.
      *
      * `Modifier.shadow` takes an ELEVATION and draws Compose's own ambient/spot shadow. It has no
      * offset at all, and its colour arguments only tint an elevation curve — so an authored soft
@@ -476,7 +476,7 @@ object StyleEngine {
     }
 
     /**
-     * #886 — the four values a shadow really draws with, or null when it draws nothing.
+     * The four values a shadow really draws with, or null when it draws nothing.
      *
      * A SEAM rather than inline arithmetic, so a shared fixture can drive the REAL resolution on
      * both platforms. Android used to pass only `blur` to `Modifier.shadow` as an elevation — no

@@ -27,8 +27,8 @@ import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
 
 /**
- * Android implementation-audit regressions (M1, m1–m8, and the cross-platform
- * findings from the iOS audit). Compose cases render the SHIPPING renderer and tap it; the rest
+ * Android host-data regressions, including the cross-platform
+ * ones also found on iOS. Compose cases render the SHIPPING renderer and tap it; the rest
  * drive the same non-Compose seams the step view uses.
  */
 @OptIn(ExperimentalCoroutinesApi::class)

@@ -24,7 +24,7 @@ import java.lang.reflect.Method
  *     with `AppNotIdleException: Compose did not get idle`;
  *   - an activity's `LaunchedEffect`s never start, so an onboarding step is never reported viewed.
  *
- * Measured on #1170: one test that does nothing but `CoroutineScope(AndroidUiDispatcher.Main).launch {}`
+ * Measured: one test that does nothing but `CoroutineScope(AndroidUiDispatcher.Main).launch {}`
  * and returns made `CompletionRouteCtaDispatchTest` fail 4 of 12 at its `setContent` (60 s each) and
  * `OnboardingProcessDeathResumeTest` fail "the resumed step must be reported viewed, once, as step 3
  * expected:<[2]> but was:<[]>" — the exact failures of a 69-failure full run that was

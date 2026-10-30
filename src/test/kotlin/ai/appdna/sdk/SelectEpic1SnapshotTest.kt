@@ -953,7 +953,7 @@ class SelectEpic1SnapshotTest {
 
     @Test
     fun socialLoginProviderFontSize() {
-        // #560 — per-provider label size. The DTO fixture proves the number is DECODED; only a
+        // Per-provider label size. The DTO fixture proves the number is DECODED; only a
         // snapshot proves it is DRAWN, which is the half a decode-only test would let ship broken.
         // Two providers at different sizes, so the golden fails on a renderer that reads the field
         // and then ignores it as much as on one that never reads it.

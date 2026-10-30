@@ -111,7 +111,7 @@ All paths are relative to the `firestorePath` returned by bootstrap (format: `or
 | `survey_feedback_submitted` | `feedback` | Free-text feedback submitted (negative follow-up) |
 | `feedback_form_dismissed` | (none) | Feedback form canceled |
 | `review_prompt_shown` | `prompt_type` ("direct" or "two_step") | Review prompt displayed |
-<!-- #897 — `review_prompt_accepted` / `review_prompt_declined` were removed with the two-step
+<!-- `review_prompt_accepted` / `review_prompt_declined` were removed with the two-step
      pre-screen that emitted them. Both stores forbid gating a review prompt on sentiment, and
      neither reports whether a user actually reviewed, so the outcome is not knowable. -->
 | `push_token_registered` | `token_hash`, `platform` | Push token registered or changed |

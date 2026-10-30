@@ -5,10 +5,10 @@ import org.junit.Assert.assertNull
 import org.junit.Test
 
 /**
- * #1062 — WHICH PHASE OF A PLAY OFFER IS A FREE TRIAL.
+ * WHICH PHASE OF A PLAY OFFER IS A FREE TRIAL.
  *
  * The iOS side of this promise is proven against a real StoreKit with a manufactured INELIGIBLE
- * user (#933). Play has no `SKTestSession` equivalent — no API writes a transaction into a test
+ * user. Play has no `SKTestSession` equivalent — no API writes a transaction into a test
  * store from inside a test process — so this platform's trial rule was proven only by SHAPE, by a
  * static gate reading the source. This exercises the half we actually own: Play decides which
  * offers this user may buy, we decide which of them is a free trial.
@@ -42,7 +42,7 @@ class StoreTrialPhaseTest {
 
     @Test fun `no offers at all is no trial`() {
         // What Play returns for a user who has already consumed the trial: the offer is simply
-        // absent from the filtered list. This is the state #933 manufactures on iOS.
+        // absent from the filtered list. The iOS tests manufacture the same state.
         assertNull(StoreTrialPhase.firstFreeTrialPeriod(emptyList()))
         assertNull(StoreTrialPhase.firstFreeTrialPeriod(listOf(emptyList())))
     }
@@ -66,7 +66,7 @@ class StoreTrialPhaseTest {
         assertEquals("P1W", StoreTrialPhase.firstFreeTrialPeriod(offers))
     }
 
-    // #1113 — the OFFER the purchase uses is the one the sentence was read from.
+    // The OFFER the purchase uses is the one the sentence was read from.
 
     @Test fun `the trial offer is the one the period came from`() {
         val offers = listOf(

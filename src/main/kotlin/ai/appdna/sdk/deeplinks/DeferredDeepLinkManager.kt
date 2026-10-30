@@ -59,7 +59,7 @@ internal class DeferredDeepLinkManager(
         private const val FIRST_LAUNCH_KEY = "ai.appdna.sdk.first_launch_completed"
         private const val EXPIRY_HOURS = 72L
 
-        /** Failed attempts so far, so a transport error does not spend the one chance (#1063). */
+        /** Failed attempts so far, so a transport error does not spend the one chance. */
         private const val FAILED_ATTEMPTS_KEY = "ai.appdna.sdk.ddl_failed_attempts"
 
         /**
@@ -111,7 +111,7 @@ internal class DeferredDeepLinkManager(
 
             val db = AppDNA.firestoreDB
             if (db == null) {
-                // 🔴 NOT an answer either: without a Firestore handle nothing was asked (#1063).
+                // 🔴 NOT an answer either: without a Firestore handle nothing was asked.
                 recordFailedAttempt("Firestore is not available")
                 callback(null)
                 return@launch
@@ -304,8 +304,7 @@ internal class DeferredDeepLinkManager(
 
     /**
      * Count a check that never got an answer, and give up once it has happened
-     * [MAX_FAILED_ATTEMPTS] times — at which point the chance IS spent, so the SDK stops asking
-     * (#1063).
+     * [MAX_FAILED_ATTEMPTS] times — at which point the chance IS spent, so the SDK stops asking.
      */
     private fun recordFailedAttempt(reason: String) {
         val prefs = context.getSharedPreferences("ai.appdna.sdk", Context.MODE_PRIVATE)

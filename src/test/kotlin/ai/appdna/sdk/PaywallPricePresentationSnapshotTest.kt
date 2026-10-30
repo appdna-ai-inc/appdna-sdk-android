@@ -25,7 +25,7 @@ import org.robolectric.annotation.GraphicsMode
  * that the pill hugs its text and that the headline layout stacks the way iOS does.
  *
  * The strings are the production ones from the reported paywall. `25,00 zł miesięcznie` is 20
- * characters where `$4.99` is 5, and that length is the whole reason #545 existed — a short
+ * characters where `$4.99` is 5, and that length is the whole reason the layout broke — a short
  * synthetic price would make this pass against broken layout code.
  *
  * Record:  ./gradlew recordRoborazziDebug

@@ -4,7 +4,7 @@ package ai.appdna.sdk.onboarding
  * HOW FAR a block authored `collapse_on_scroll` has collapsed, given how far the step has scrolled.
  * Mirror of iOS `Onboarding/BlockCollapseOnScroll.swift`, and the same function both call.
  *
- * 🔴 #993 — iOS applied this and Android decoded it and stopped there: `collapse_on_scroll` and
+ * 🔴 IOS applied this and Android decoded it and stopped there: `collapse_on_scroll` and
  * `collapse_threshold` were two declarations in this module and no use, while every application of
  * the key lived in `PaywallActivity`, a different surface. One authored document, a block that
  * faded away on one platform and sat still on the other.

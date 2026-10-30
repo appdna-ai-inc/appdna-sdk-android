@@ -9,7 +9,7 @@ import org.junit.Test
 
 
 /**
- * #938 — the POLICY behind the three defaults that were hard-coded white.
+ * The POLICY behind the three defaults that were hard-coded white.
  *
  * `SubtleControlLightPageSnapshotTest` is the other half: it renders the three sections on a white
  * page so the pixels can be looked at and counted. This one asserts the rule those pixels follow,
@@ -17,7 +17,7 @@ import org.junit.Test
  *
  * 🔴 ON A DARK PAGE THE RESOLVED COLOUR IS THE CONSTANT IT REPLACED. `readable` returns `#FFFFFF`
  * for any page dark enough for white to pass WCAG AA, so `subtleOnPage` is `Color.White` at the
- * same 30% alpha and a live dark paywall draws exactly the pixels it drew before. #938 said plainly
+ * same 30% alpha and a live dark paywall draws exactly the pixels it drew before. The rule here is
  * that "a guess that moves pixels on live paywalls is worse than a known inconsistency"; this is
  * how the change avoids being one. An image cannot assert "identical to what this used to be" — a
  * value comparison can.

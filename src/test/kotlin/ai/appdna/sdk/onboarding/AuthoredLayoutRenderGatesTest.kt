@@ -7,7 +7,7 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 /**
- * The render rules behind #653, #654/#659, #655 and #609.
+ * The render rules behind a batch of authored-layout bugs on Android.
  *
  * Each of these bugs shipped because the rule lived inside a Composable, where the only way to check
  * it was to look at a screen. They are pure functions now precisely so a regression fails here
@@ -15,7 +15,7 @@ import org.junit.Test
  */
 class AuthoredLayoutRenderGatesTest {
 
-    // ── #653 — the stray "Skip" on every Android screen ──────────────────────────────────────
+    // ── the stray "Skip" on every Android screen ──────────────────────────────────────
 
     @Test
     fun `skip affordance needs BOTH the flag and a handler`() {
@@ -35,7 +35,7 @@ class AuthoredLayoutRenderGatesTest {
         assertFalse(shouldRenderSkipAffordance(skipEnabled = null, hasSkipHandler = false))
     }
 
-    // ── #654 / #659 — horizontal_align ignored on a width-constrained block ───────────────────
+    // ── horizontal_align ignored on a width-constrained block ───────────────────
 
     @Test
     fun `a percent-width block with an alignment needs the outer alignment box`() {
@@ -60,7 +60,7 @@ class AuthoredLayoutRenderGatesTest {
         assertFalse(needsOuterAlignmentBox(elementWidth = "300px", horizontalAlign = null))
     }
 
-    // ── #609 — Multi-buttons row planning ─────────────────────────────────────────────────────
+    // ── Multi-buttons row planning ─────────────────────────────────────────────────────
 
     @Test
     fun `three buttons at two per row is the two-then-one layout that was asked for`() {
@@ -81,7 +81,7 @@ class AuthoredLayoutRenderGatesTest {
         assertEquals(listOf(3, 1), multiButtonRowPlan(childCount = 4, perRow = 9))
     }
 
-    // ── #654 / #659 / #663 — a button could be SIZED or ALIGNED, never both ──────────────────
+    // ── a button could be SIZED or ALIGNED, never both ──────────────────
 
     /*
      * Three reports, one defect. The button hardcoded fillMaxWidth(), so `element_width: "auto"` —
@@ -108,7 +108,7 @@ class AuthoredLayoutRenderGatesTest {
         assertTrue(buttonFillsWidth("240px"))
     }
 
-    // ── #609 — the per-child button border that nothing read ─────────────────────────────────
+    // ── the per-child button border that nothing read ─────────────────────────────────
 
     /*
      * Reported after the element itself passed: "Border color doesn't apply — the border never
@@ -178,7 +178,7 @@ class AuthoredLayoutRenderGatesTest {
         assertEquals(emptyList<Int>(), multiButtonRowPlan(childCount = 0, perRow = 2))
     }
 
-    // ── #655 — content buried under the pinned bottom zone ────────────────────────────────────
+    // ── content buried under the pinned bottom zone ────────────────────────────────────
 
     @Test
     fun `the reserve is the measured height of the bottom zone`() {

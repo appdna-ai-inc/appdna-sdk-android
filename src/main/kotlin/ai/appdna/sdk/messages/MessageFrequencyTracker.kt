@@ -46,7 +46,7 @@ internal class MessageFrequencyTracker(context: Context) {
              * fallback semantics". iOS has no ungated fallback at all: `MessageFrequency` decodes
              * an unrecognised value to `.once` (`MessageConfig.swift`), so `canShow` takes the
              * `.once` arm. Answering `true` here made an unknown frequency mean "show every time"
-             * on Android and "show once, ever" on iOS — the #1064 divergence, in the message
+             * on Android and "show once, ever" on iOS — the same divergence, in the message
              * surface as well as the survey one.
              *
              * `once` is the documented default, so an unrecognised value now behaves as if the

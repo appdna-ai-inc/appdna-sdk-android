@@ -14,7 +14,7 @@ package ai.appdna.sdk.core
  * WHICH COLOURS a celebration draws when a document authors none. Mirror of iOS
  * `Onboarding/OnboardingCelebration.swift`, and the same list both overlays read.
  *
- * 🔴 #1040 — the two overlays disagreed and nothing could see it. iOS returned SwiftUI's semantic
+ * 🔴 The two overlays disagreed and nothing could see it. iOS returned SwiftUI's semantic
  * colours (`.red` is #FF3B30) and this platform returned Compose's named constants (`Color.Red` is
  * #FF0000) for four of six, so every `fireworks` and every plain `confetti` with no authored
  * `colors` — the default the editor produces — drew pure RGB here and Apple's palette there. Four

@@ -144,7 +144,7 @@ object TemplateEngine {
                 } else {
                     val step = context.onboardingResponses[parts[1]] ?: return null
                     step[parts[2]]?.let { return answerText(it, context) }
-                    // #1158 — `{{onboarding.<step>.<field>.city}}`: the path is split at most three ways, so a key
+                    // `{{onboarding.<step>.<field>.city}}`: the path is split at most three ways, so a key
                     // inside a structured answer (a location selection) arrives as `field.city`. Walk it.
                     val keys = parts[2].split(".")
                     var value: Any? = step[keys[0]]

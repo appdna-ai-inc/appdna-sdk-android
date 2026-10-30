@@ -8,7 +8,7 @@ import kotlin.math.min
 import kotlin.math.pow
 
 /**
- * #891 — a text colour nobody authored, resolved from the BACKGROUND rather than from the theme.
+ * A text colour nobody authored, resolved from the BACKGROUND rather than from the theme.
  *
  * A paywall's defaults assumed a background instead of reading one. This side hard-coded
  * `Color.White` on the plan tiles and took `MaterialTheme.colorScheme.onSurface` for the header,
@@ -25,11 +25,11 @@ import kotlin.math.pow
  * Driven by the `paywall_default_text_colour` shared fixture on both platforms.
  */
 /**
- * #946 — the page the paywall is drawn on, available to every composable beneath it.
+ * The page the paywall is drawn on, available to every composable beneath it.
  *
  * Twelve composables resolved their colours by assuming a backdrop, because the alternative was
  * threading one string through twelve signatures — and the two that were measured came back as
- * blank white rectangles on a light page (#938). A CompositionLocal costs each of them one line
+ * blank white rectangles on a light page. A CompositionLocal costs each of them one line
  * and no signature at all, which is what makes the sweep possible rather than merely desirable.
  *
  * iOS reads the same value from `\.paywallBackgroundHex` in the environment; this is the Android
@@ -58,7 +58,7 @@ object PaywallTextDefaults {
     fun readable(background: String?): Color = StyleEngine.parseColor(readableHex(background))
 
     /**
-     * #938 — the alpha a DECORATIVE control takes when nobody authored its colour.
+     * The alpha a DECORATIVE control takes when nobody authored its colour.
      *
      * An inactive segmented pill's border, a carousel's unselected indicator and a pager's
      * unselected dot are all meant to be present without competing. 30% is the figure iOS's plan
@@ -67,11 +67,11 @@ object PaywallTextDefaults {
     const val SUBTLE_ALPHA = 0.3f
 
     /**
-     * #938 — a decorative control's colour, READ OFF THE PAGE instead of assumed.
+     * A decorative control's colour, READ OFF THE PAGE instead of assumed.
      *
      * Three of these were `Color.White.copy(alpha = 0.3f)`: white at 30% over a WHITE page is
      * nothing, so an author who set no indicator colour on a light paywall shipped controls that
-     * are not there. #926 found the same constant on the unselected plan tile's border and the
+     * are not there. The same constant was found on the unselected plan tile's border and the
      * device frame showed the whole card disappear; iOS had already retired it on its side with
      * the comment *"(was white.opacity(0.15) — invisible on light paywall backgrounds)"*.
      *

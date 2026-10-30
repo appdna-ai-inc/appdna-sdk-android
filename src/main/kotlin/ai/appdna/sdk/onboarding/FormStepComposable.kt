@@ -249,7 +249,7 @@ fun FormStep(
                     }
 
                     /*
-                     * #984 — `min_length` and `validate_format` were DECODED BY BOTH PLATFORMS AND
+                     * `min_length` and `validate_format` were DECODED BY BOTH PLATFORMS AND
                      * READ BY NEITHER, so neither ever rejected anything.
                      *
                      * `max_length` has always truncated in `FormFieldRendererExtras`, which is what
@@ -259,7 +259,7 @@ fun FormStep(
                      * authored and did nothing.
                      *
                      * Both messages are shared verbatim with iOS and pinned by
-                     * `scripts/__tests__/default-user-copy-parity.test.ts` — the gate #977 exists for.
+                     * `scripts/__tests__/default-user-copy-parity.test.ts`.
                      */
                     val minLength = field.config?.min_length
                     if (minLength != null && minLength > 0 && errors[field.id] == null) {
@@ -996,7 +996,7 @@ private fun SelectField(
     val multiSelect = field.config?.multi_select == true
     val maxSelections = field.config?.max_selections
 
-    // #596 — a form Select renders through the SAME engine the `input_select` CONTENT block uses
+    // A form Select renders through the SAME engine the `input_select` CONTENT block uses
     // whenever the author picked a layout other than the dropdown.
     //
     // The console offers six display styles on a form Select and this composable honoured NONE of

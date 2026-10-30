@@ -280,7 +280,7 @@ fun AppDNAScreenSlot(name: String) {
                             if (layoutType == "fixed") mod
                             else mod.verticalScroll(rememberScrollState())
                         }
-                        // #904 — the authored `layout.padding`, which iOS applies to the same
+                        // The authored `layout.padding`, which iOS applies to the same
                         // container and this side parsed and never read.
                         .padding((config.layout.padding ?: 0.0).dp),
                     verticalArrangement = Arrangement.spacedBy(spacing),

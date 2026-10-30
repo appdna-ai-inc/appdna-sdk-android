@@ -558,7 +558,7 @@ internal fun applyInteractionReply(
         result.fieldConfigPatches?.forEach { (id, patch) ->
             fieldConfigOverrides[id] = (fieldConfigOverrides[id] ?: emptyMap()) + patch
         }
-        // #657 — options are REPLACED wholesale, not merged: "the next four venues" is a new list.
+        // Options are REPLACED wholesale, not merged: "the next four venues" is a new list.
         result.fieldOptions?.forEach { (id, options) -> fieldOptionsOverrides[id] = options }
     }
 }

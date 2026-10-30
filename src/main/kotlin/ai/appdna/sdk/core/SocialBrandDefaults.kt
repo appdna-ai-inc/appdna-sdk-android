@@ -4,7 +4,7 @@ package ai.appdna.sdk.core
  * The brand colours a social-login provider falls back to when an author sets none. Mirror of iOS
  * `Core/SocialBrandDefaults.swift`.
  *
- * 🔴 #1030 — once the chip rule needed a MEASURABLE background, the table existed twice on each
+ * 🔴 Once the chip rule needed a MEASURABLE background, the table existed twice on each
  * platform: as `Color`s in the renderer and as hexes beside them. Two copies of a constant table
  * is how `#24292E` and `#24292F` ended up one character apart across platforms, and
  * `check:authorability` reads a bare hex in a renderer as a colour an author cannot reach —

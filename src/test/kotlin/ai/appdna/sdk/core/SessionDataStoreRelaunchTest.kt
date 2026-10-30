@@ -12,7 +12,7 @@ import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 
 /**
- * #1150 — what the store persists reads back with the shape it was written in, after a relaunch.
+ * What the store persists reads back with the shape it was written in, after a relaunch.
  *
  * Android's `org.json` stores a `Map` or `List` given to `put` as-is and writes it as its `toString()`,
  * so a nested answer used to come back from disk as the string `"{city=Porto, …}"` / `"[a, b]"`.
