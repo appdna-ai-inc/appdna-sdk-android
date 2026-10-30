@@ -106,6 +106,12 @@ well as Mapbox; an onboarding flow survives a rotation and the OS ending the app
   "bubble_scroll"` draws one horizontally scrolling row of pills, opening on its first option. A
   block's `visibility_condition` can name a field on the same step and reacts as it changes. A
   Segmented block honours its `display_style`.
+- **A dropdown-style Select can be multi-select.** With `multi_select`, the default dropdown is a
+  multi-pick menu: each pick toggles that option, a check marks each picked option, and the field
+  shows the picked labels in pick order. The menu closes after each pick. The answer is a list, the
+  options are recorded for `{{selected.<field_id>.<n>.…}}` in pick order, and `max_selections` caps
+  the picks, exactly as in the list styles. Before, a dropdown stored one value whatever
+  `multi_select` said.
 - **A media gallery can carry a title** (`gallery_title`, `gallery_title_color`).
 - **Bundled assets**. A config whose images were bundled into the app (`appdna-assets/…`)
   loads them from the app's assets, falling back to the network for any file that is not there.
@@ -224,6 +230,11 @@ well as Mapbox; an onboarding flow survives a rotation and the OS ending the app
   step's answers**. It used to advance and discard them.
 - **Coming back to a question step shows the options the user chose**, with Continue enabled.
 - **A dropdown-style select opens the picked option's bottom sheet**.
+- **A multi-select field's stored value draws and records the same way on iOS and Android.** A list
+  counts as the selection only when every element is a String. A single answer, a number or a list
+  holding one (`[1]`, `["a", 2]`) draws nothing checked, also when a host writes it mid-step, so the
+  next tap starts from an empty list. A selection on a host-data-scoped Select is pruned only when it
+  is such a list.
 - **A step whose `layout.content_blocks` is empty falls back to the step's root blocks**, as
   on iOS. It used to render blank.
 - **A circular countdown's ring sweeps**. It sat at 75% for the whole countdown.

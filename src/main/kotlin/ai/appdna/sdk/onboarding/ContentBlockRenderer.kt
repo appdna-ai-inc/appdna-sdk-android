@@ -11165,7 +11165,7 @@ private fun FormInputSelectBlock(
             // The category row: the same pills in ONE horizontally scrolling line.
             "bubble_scroll" -> style.SelectBubbleOptions(options, isSelectedFn, pickFn, scrolls = true)
             "list" -> style.SelectListOptions(options, isSelectedFn, pickFn)
-            else -> style.SelectDropdownOptions(options, fieldId, inputValues, selectedValueState) { sheetOption = it }
+            else -> style.SelectDropdownOptions(options, fieldId, inputValues, selectedValueState, isMulti, isSelectedFn) { sheetOption = it }
         }
 
         SelectGridTooltip(block, displayStyle)
@@ -12084,6 +12084,8 @@ private fun SelectOptionStyle.SelectDropdownOptions(
     fieldId: String,
     inputValues: MutableMap<String, Any>,
     selectedValueState: MutableState<String>,
+    isMulti: Boolean,
+    isOptionSelected: (String) -> Boolean,
     onSheet: (InputOption) -> Unit,
 ) {
     var selectedValue by selectedValueState
@@ -12100,7 +12102,11 @@ private fun SelectOptionStyle.SelectDropdownOptions(
     // pruned value is gone from `inputValues` (and the record cleared), so it still
     // shows the placeholder. Reading `revision` subscribes to record/clear.
     SelectedOptionStore.revision.intValue
-    val selectedLabel = dropdownSelectedLabel(
+    // A multi-pick dropdown draws the picked labels in pick order (the stored list, by the same rule the
+    // pick toggles), or the placeholder when nothing is picked.
+    val selectedLabel = if (isMulti) {
+        dropdownMultiLabel(options, inputValues[fieldId], block.field_placeholder ?: "Select...")
+    } else dropdownSelectedLabel(
         options, selectedValue, SelectedOptionStore.snapshot()[fieldId],
         block.field_placeholder ?: "Select...",
     )
@@ -12154,12 +12160,17 @@ private fun SelectOptionStyle.SelectDropdownOptions(
                             Text(option.label)
                         }
                     },
+                    // A multi-pick dropdown draws a check beside each picked option.
+                    trailingIcon = if (isMulti && isOptionSelected(option.value)) {
+                        { Text("\u2713", fontSize = 16.sp, fontWeight = FontWeight.Bold) }
+                    } else null,
                     onClick = {
-                        selectedValue = option.value
+                        if (!isMulti) selectedValue = option.value
                         // The choice is recorded first (the value, and the full option for
                         // `{{selected.<field_id>.…}}` on a later screen); an option that owns a sheet
                         // opens it once the menu has closed. Picking it again opens it again, as a
-                        // re-tap does in the other styles.
+                        // re-tap does in the other styles. With `multi_select` the pick toggles that
+                        // option in the stored list, and the menu closes as it does on iOS.
                         pendingSheet = dropdownOptionPick(block, options, option.value, inputValues)
                         expanded = false
                     },

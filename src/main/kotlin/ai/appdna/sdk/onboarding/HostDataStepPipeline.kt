@@ -686,7 +686,7 @@ internal fun storedMultiSelection(value: Any?): List<String> {
  * The option pick every Select writes — shared by the Select views and the fixture runner so the
  * bookkeeping (`inputValues` + `SelectedOptionStore`) cannot drift between them.
  */
-internal fun recordOptionPick(block: ContentBlock, options: List<InputOption>, value: String, inputValues: MutableMap<String, Any>) {
+internal fun recordOptionPick(block: ContentBlock, options: List<InputOption>, value: String, inputValues: MutableMap<String, Any>): Boolean {
     val fieldId = block.field_id ?: block.id
     val isMulti = block.multi_select == true || (block.field_config?.get("multi_select") as? Boolean) == true
     // The option a pick names: by the value the view passes (`option.value`), else by its stored answer
@@ -697,7 +697,7 @@ internal fun recordOptionPick(block: ContentBlock, options: List<InputOption>, v
         val current = storedMultiSelection(inputValues[fieldId])
         val next = if (value in current) current - value else {
             val maxSel = (block.field_config?.get("max_selections") as? Number)?.toInt()
-            if (maxSel != null && current.size >= maxSel) return
+            if (maxSel != null && current.size >= maxSel) return false
             current + value
         }
         inputValues[fieldId] = next
@@ -706,6 +706,7 @@ internal fun recordOptionPick(block: ContentBlock, options: List<InputOption>, v
         inputValues[fieldId] = value
         optionFor(value)?.let { SelectedOptionStore.record(fieldId, it) }
     }
+    return true
 }
 
 /**
@@ -723,6 +724,11 @@ internal fun optionSheetFor(options: List<InputOption>, value: String): InputOpt
  * `{{selected.<field_id>.…}}`). The return is the option whose sheet the pick opens, or null; the
  * sheet only presents, so nothing about it is reported. A value no rendered option carries records
  * nothing and opens nothing.
+ *
+ * With `multi_select` the pick TOGGLES that option through the tap path's own write ([recordOptionPick]):
+ * the list in `inputValues`, the options in pick order in [SelectedOptionStore], and `max_selections` on
+ * the add path (a refused add records nothing and opens nothing). iOS's `DropdownSelectPick` does the
+ * same through `SelectOptionTap.apply`.
  */
 internal fun dropdownOptionPick(
     block: ContentBlock,
@@ -732,9 +738,24 @@ internal fun dropdownOptionPick(
 ): InputOption? {
     val option = options.firstOrNull { it.value == value } ?: return null
     val fieldId = block.field_id ?: block.id
+    val isMulti = block.multi_select == true || (block.field_config?.get("multi_select") as? Boolean) == true
+    if (isMulti) {
+        return if (recordOptionPick(block, options, value, inputValues)) optionSheetFor(options, value) else null
+    }
     inputValues[fieldId] = option.value
     SelectedOptionStore.record(fieldId, option)
     return optionSheetFor(options, value)
+}
+
+/**
+ * The text a multi-pick dropdown draws: the labels of the stored picks in pick order (a value no rendered
+ * option carries draws as itself), or the placeholder when nothing counts as picked. The stored value is
+ * read by [storedMultiSelection], the rule the pick toggles.
+ */
+internal fun dropdownMultiLabel(options: List<InputOption>, stored: Any?, placeholder: String): String {
+    val picked = storedMultiSelection(stored)
+    if (picked.isEmpty()) return placeholder
+    return picked.joinToString(", ") { v -> options.firstOrNull { it.value == v }?.label ?: v }
 }
 
 /**
