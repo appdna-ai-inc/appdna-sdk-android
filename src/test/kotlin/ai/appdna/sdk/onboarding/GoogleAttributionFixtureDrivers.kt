@@ -50,31 +50,49 @@ internal object GoogleAttributionFixtureDrivers {
             val name = c["name"] as? String ?: throw AssertionError("a case needs a name")
             val step = OnboardingConfigParser.parseStepForTest(stripNulls(c["step"]) as Map<String, Any>)
                 ?: throw AssertionError("$name: the SDK's parser refused the step")
-            var backdrop = GoogleMapsAttribution.backdrop(ofStep = step.config, type = step.type)
-            (c["block_id"] as? String)?.let { blockId ->
-                val path = chain(blockId, step.config.content_blocks.orEmpty())
-                    ?: throw AssertionError("$name: no block $blockId")
-                for (b in path) backdrop = GoogleMapsAttribution.backdrop(ofBlock = b, behind = backdrop)
-                // `dropdown`: what is behind the logo under the block's location dropdown, the call the
-                // block's composable makes with what is behind the dropdown.
-                // The surface is the default Material light scheme's, which is what an app with no theme
-                // of its own draws an unstyled dropdown with.
-                if (c["dropdown"] == true) {
-                    backdrop = GoogleMapsAttribution.backdrop(
-                        ofLocationDropdown = path.last().field_config,
-                        behind = backdrop,
-                        surface = androidx.compose.material3.lightColorScheme().surface,
-                    )
+            // What is behind the logo, given the surface an unstyled dropdown is filled with.
+            fun backdropWith(surface: androidx.compose.ui.graphics.Color): GoogleMapsAttribution.Backdrop {
+                var backdrop = GoogleMapsAttribution.backdrop(ofStep = step.config, type = step.type)
+                (c["block_id"] as? String)?.let { blockId ->
+                    val path = chain(blockId, step.config.content_blocks.orEmpty())
+                        ?: throw AssertionError("$name: no block $blockId")
+                    for (b in path) backdrop = GoogleMapsAttribution.backdrop(ofBlock = b, behind = backdrop)
+                    // `dropdown`: what is behind the logo under the block's location dropdown, the call the
+                    // block's composable makes with what is behind the dropdown.
+                    if (c["dropdown"] == true) {
+                        backdrop = GoogleMapsAttribution.backdrop(
+                            ofLocationDropdown = path.last().field_config,
+                            behind = backdrop,
+                            surface = surface,
+                        )
+                    }
                 }
+                return backdrop
             }
-            val described = when (val b = backdrop) {
+            fun variantName(b: GoogleMapsAttribution.Backdrop, dark: Boolean) =
+                GoogleMapsAttribution.variant(b, darkAppearance = dark).name.lowercase()
+            // The onboarding host's colour scheme, which follows the system appearance: an unstyled dropdown
+            // is filled with its surface.
+            val light = backdropWith(androidx.compose.material3.lightColorScheme().surface)
+            if (c["appearances"] == true) {
+                // The variant in each appearance, as the step draws it there. No backdrop: an unstyled fill
+                // is a theme colour on this platform and the system background on iOS, and the variant is
+                // what the two must agree on.
+                val dark = backdropWith(androidx.compose.material3.darkColorScheme().surface)
+                return@map linkedMapOf(
+                    "name" to name,
+                    "variant_light" to variantName(light, dark = false),
+                    "variant_dark" to variantName(dark, dark = true),
+                )
+            }
+            val described = when (val b = light) {
                 is GoogleMapsAttribution.Backdrop.Plain -> b.hex?.let { "plain:$it" } ?: "plain"
                 GoogleMapsAttribution.Backdrop.Busy -> "busy"
             }
             linkedMapOf(
                 "name" to name,
                 "backdrop" to described,
-                "variant_light" to GoogleMapsAttribution.variant(backdrop, darkAppearance = false).name.lowercase(),
+                "variant_light" to variantName(light, dark = false),
             )
         }
     }
