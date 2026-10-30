@@ -44,7 +44,7 @@ dependencyResolutionManagement {
 ```kotlin
 // app/build.gradle.kts
 dependencies {
-    implementation("ai.appdna:sdk-android:1.0.55")
+    implementation("ai.appdna:sdk-android:1.0.56")
 }
 ```
 
@@ -64,7 +64,7 @@ dependencyResolutionManagement {
 ```kotlin
 // app/build.gradle.kts
 dependencies {
-    implementation("com.github.appdna-ai:appdna-sdk-android:v1.0.55")
+    implementation("com.github.appdna-ai:appdna-sdk-android:v1.0.56")
 }
 ```
 
