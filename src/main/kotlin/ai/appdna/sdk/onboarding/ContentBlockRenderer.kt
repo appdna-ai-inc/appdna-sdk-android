@@ -11102,26 +11102,12 @@ private fun FormInputSelectBlock(
         }
     }
     fun toggleMulti(value: String) {
-        // Toggle against the step's CURRENT value (a pruned value is gone from it),
-        // not the view's copy, which the sync above only refreshes after the next composition.
-        val current = chipSelectionOf(inputValues[fieldId])
-        selectedValues = if (current.contains(value)) {
-            current - value
-        } else {
-            // Enforce the console-configured cap on the ADD path only;
-            // removing a selection must always work.
-            val maxSel = (cfg?.get("max_selections") as? Number)?.toInt()
-            if (maxSel != null && current.size >= maxSel) return
-            current + value
-        }
-        inputValues[fieldId] = selectedValues.toList()
-        // Record the full OPTIONS alongside the values, in selection order, so a later
-        // screen can say `{{selected.<field_id>.0.label}}`. inputValues keeps carrying the values
-        // alone, which is what reaches responses and therefore customer webhooks.
-        SelectedOptionStore.record(
-            fieldId,
-            selectedValues.mapNotNull { v -> allOptions.firstOrNull { (it.value ?: it.id) == v } },
-        )
+        // The one pick write the fixture drivers also run (`recordOptionPick`): the toggle against the
+        // step's CURRENT value, the cap on the add path, `inputValues`, and the full options in
+        // selection order in `SelectedOptionStore` for a later `{{selected.<field_id>.0.label}}`. Then the
+        // view follows what was stored.
+        recordOptionPick(block, allOptions, value, inputValues)
+        selectedValues = chipSelectionOf(inputValues[fieldId])
     }
     fun isOptionSelected(value: String): Boolean =
         if (isMulti) selectedValues.contains(value) else selectedValue == value

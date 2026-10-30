@@ -669,7 +669,13 @@ internal fun pruneHostDataSelections(
 internal fun recordOptionPick(block: ContentBlock, options: List<InputOption>, value: String, inputValues: MutableMap<String, Any>) {
     val fieldId = block.field_id ?: block.id
     val isMulti = block.multi_select == true || (block.field_config?.get("multi_select") as? Boolean) == true
+    // The option a pick names: by the value the view passes (`option.value`), else by its stored answer
+    // (`value`, or its `id` when it has none), which is what a stored or host-written answer holds.
+    fun optionFor(v: String): InputOption? =
+        options.firstOrNull { it.value == v } ?: options.firstOrNull { it.storedAnswer() == v }
     if (isMulti) {
+        // The current multi selection is the stored LIST; a stored single answer is not part of it (the
+        // Swift twin, `SelectOptionTap.apply`, toggles against the list the view holds).
         val current = (inputValues[fieldId] as? List<*>)?.mapNotNull { it?.toString() }.orEmpty()
         val next = if (value in current) current - value else {
             val maxSel = (block.field_config?.get("max_selections") as? Number)?.toInt()
@@ -677,10 +683,10 @@ internal fun recordOptionPick(block: ContentBlock, options: List<InputOption>, v
             current + value
         }
         inputValues[fieldId] = next
-        SelectedOptionStore.record(fieldId, next.mapNotNull { v -> options.firstOrNull { it.storedAnswer() == v } })
+        SelectedOptionStore.record(fieldId, next.mapNotNull(::optionFor))
     } else {
         inputValues[fieldId] = value
-        options.firstOrNull { it.storedAnswer() == value }?.let { SelectedOptionStore.record(fieldId, it) }
+        optionFor(value)?.let { SelectedOptionStore.record(fieldId, it) }
     }
 }
 
