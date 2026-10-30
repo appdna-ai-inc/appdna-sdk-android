@@ -1,5 +1,7 @@
 package ai.appdna.sdk.onboarding
 
+import androidx.compose.foundation.relocation.BringIntoViewRequester
+import androidx.compose.foundation.relocation.bringIntoViewRequester
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -54,6 +56,7 @@ import org.json.JSONObject
  * The IME action is `Search` so the keyboard's enter key submits the
  * query. Mirrors iOS `Onboarding/OnboardingStepViews/LocationFieldView.swift`.
  */
+@OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
 @Composable
 fun LocationFieldComposable(
     field: FormField,
@@ -137,8 +140,11 @@ fun LocationFieldComposable(
     var fieldValue by remember(holder) { mutableStateOf(TextFieldValue(text, TextRange(text.length))) }
     val shownValue = if (fieldValue.text == text) fieldValue else TextFieldValue(text, TextRange(text.length))
 
+    // The field's container: the logo kept beside a Google answer brings it (field and logo) into view.
+    val fieldContainer = remember { BringIntoViewRequester() }
     Column(
-        modifier = modifier.fillMaxWidth(),
+        modifier = modifier.fillMaxWidth()
+            .bringIntoViewRequester(fieldContainer),
         verticalArrangement = Arrangement.spacedBy(6.dp),
     ) {
         // Drawn afresh after each text set the holder makes (and after a first edit of Google's line that
@@ -287,8 +293,8 @@ fun LocationFieldComposable(
             } }
         } else if (LocationAnswer.carriesPlaceId(values[field.id])) {
             // A Google answer keeps its attribution after the dropdown closes, and when it is restored
-            // on returning to the step: the field shows Google content.
-            GoogleMapsLogo(backdrop = LocalGoogleAttributionBackdrop.current)
+            // on returning to the step: the field shows Google content. It is kept in view with the field.
+            GoogleMapsLogoBesideField(backdrop = LocalGoogleAttributionBackdrop.current, fieldContainer = fieldContainer)
         }
     }
 }

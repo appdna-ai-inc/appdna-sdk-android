@@ -124,7 +124,9 @@ well as Mapbox; an onboarding flow survives a rotation and the OS ending the app
   when the user comes back to the field or rotates the device.
 - **Google as a location-search provider**. With a Google key under Settings >
   Location search, the dropdown shows the Google Maps logo at the top of its list, directly under
-  the field (so it stays on screen with the keyboard up), and a step that displays a Google
+  the field (so it stays on screen with the keyboard up), a field holding a Google answer keeps
+  the logo in view with it (on a short screen, such as landscape, the step scrolls them above the
+  pinned buttons together), and a step that displays a Google
   answer draws a small "Google Maps" credit (an option's bottom sheet draws its own). Where an
   answer is stored or sent rather than shown (an option's value, a default value, a link or media
   URL, a header, and any template on a paywall, message, survey or push) the user's typed text is

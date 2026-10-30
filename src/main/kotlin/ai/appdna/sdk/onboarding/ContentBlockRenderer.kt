@@ -7,6 +7,8 @@
 
 package ai.appdna.sdk.onboarding
 
+import androidx.compose.foundation.relocation.BringIntoViewRequester
+import androidx.compose.foundation.relocation.bringIntoViewRequester
 import androidx.compose.foundation.background
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.foundation.border
@@ -13227,8 +13229,11 @@ private fun FormInputLocationPlaceholder(
         ?.mapNotNull { (it as? String)?.let { hex -> StyleEngine.parseColor(hex) } }
         ?.takeIf { it.size >= 2 }
 
+    // The field's container: the logo kept beside a Google answer brings it (field and logo) into view.
+    val fieldContainer = remember { BringIntoViewRequester() }
     Column(
-        modifier = Modifier.fillMaxWidth(),
+        modifier = Modifier.fillMaxWidth()
+            .bringIntoViewRequester(fieldContainer),
         verticalArrangement = Arrangement.spacedBy(6.dp),
     ) {
         FormFieldLabel(block)
@@ -13385,8 +13390,8 @@ private fun FormInputLocationPlaceholder(
             }
         } else if (LocationAnswer.carriesPlaceId(inputValues[fieldId])) {
             // A Google answer keeps its attribution after the dropdown closes, and when it is restored
-            // on returning to the step: the field shows Google content.
-            GoogleMapsLogo(backdrop = LocalGoogleAttributionBackdrop.current)
+            // on returning to the step: the field shows Google content. It is kept in view with the field.
+            GoogleMapsLogoBesideField(backdrop = LocalGoogleAttributionBackdrop.current, fieldContainer = fieldContainer)
         }
     }
 }

@@ -4,6 +4,9 @@ import ai.appdna.sdk.core.SessionDataStore
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.size
+import androidx.compose.ui.platform.testTag
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.layout.height
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
@@ -279,6 +282,52 @@ class GoogleAttributionRenderTest {
             assertFalse("$provider: the dropdown closed", compose.onAllNodes(hasText("IL, USA")).fetchSemanticsNodes().isNotEmpty())
             assertEquals("$provider: the stored answer", expected, LocationAnswer.carriesPlaceId(inputValues["where"]))
             assertEquals("$provider: the field's logo", expected, logoShown())
+        }
+    }
+
+    /**
+     * The logo kept beside a resolved field stays ON SCREEN with the field. Each surface holds a Google
+     * answer (the state a rotation, Back or a process-death resume restores) and sits at the bottom of a
+     * short scrolling viewport (a landscape step above its pinned zone): its field fits, the logo under it
+     * would fall below the fold. The field and its logo are brought into view together.
+     * RED CONTROL: the logo drawn without bringing its field into view → the logo ends below the viewport.
+     */
+    @Test
+    fun aResolvedFieldsLogoIsBroughtIntoViewWithTheField() {
+        val viewportDp = 260
+        for (surface in listOf("block", "form step")) {
+            show {
+                androidx.compose.foundation.layout.Column(
+                    Modifier.size(width = 360.dp, height = viewportDp.dp)
+                        .testTag("viewport")
+                        .verticalScroll(androidx.compose.foundation.rememberScrollState()),
+                ) {
+                    // Pushes the field to the viewport's bottom edge: the field (56–64 dp) fits, while the logo,
+                    // which ends 88–96 dp below the container's top, falls below the fold.
+                    androidx.compose.foundation.layout.Spacer(Modifier.height((viewportDp - 66).dp))
+                    if (surface == "block") {
+                        ContentBlockRendererView(blocks = locationBlocks(), onAction = {}, toggleValues = mutableMapOf(),
+                            inputValues = mutableStateMapOf<String, Any>("where" to google))
+                    } else {
+                        LocationFieldComposable(field = formStep().config.fields!!.first(),
+                            values = mutableStateMapOf<String, Any?>("where" to google), errors = mutableMapOf())
+                    }
+                }
+            }
+            compose.mainClock.advanceTimeBy(1_000)
+            compose.waitForIdle()
+            assertTrue("$surface: the field holds a Google answer", logoShown())
+            val viewport = compose.onAllNodes(hasTestTag("viewport")).fetchSemanticsNodes().single().boundsInRoot
+            // UNCLIPPED: a node scrolled out of the viewport reports an empty clipped rect (0–0), which
+            // would pass any inside-the-viewport check. Its position and size say where it really is.
+            val logoNode = compose.onAllNodes(hasTestTag(GoogleMapsAttribution.LOGO_TAG)).fetchSemanticsNodes().single()
+            val logo = Rect(logoNode.positionInRoot, androidx.compose.ui.geometry.Size(logoNode.size.width.toFloat(), logoNode.size.height.toFloat()))
+            val fieldNode = compose.onAllNodes(hasSetTextAction()).fetchSemanticsNodes().single()
+            val field = Rect(fieldNode.positionInRoot, androidx.compose.ui.geometry.Size(fieldNode.size.width.toFloat(), fieldNode.size.height.toFloat()))
+            println("[in-view] $surface: viewport ${viewport.top}-${viewport.bottom} field ${field.top}-${field.bottom} logo ${logo.top}-${logo.bottom}")
+            assertTrue("$surface: the field is in the viewport (field ${field.top}–${field.bottom})", field.top >= viewport.top && field.bottom <= viewport.bottom)
+            assertTrue("$surface: the logo is inside the viewport (logo ${logo.top}–${logo.bottom}, viewport ${viewport.top}–${viewport.bottom})",
+                logo.top >= viewport.top && logo.bottom <= viewport.bottom)
         }
     }
 

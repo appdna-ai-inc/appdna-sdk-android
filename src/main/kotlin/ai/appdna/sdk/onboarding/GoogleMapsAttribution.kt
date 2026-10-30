@@ -329,3 +329,27 @@ internal fun GoogleMapsTextAttribution(backdrop: GoogleMapsAttribution.Backdrop,
         modifier = modifier.testTag(GoogleMapsAttribution.TEXT_TAG),
     )
 }
+
+/**
+ * The logo kept beside a field that holds a Google answer, kept ON SCREEN with the field.
+ *
+ * A step scrolls in a viewport that ends at the pinned bottom zone's top edge. On a short screen
+ * (landscape, a small phone, large text) the field's Google line can sit at the viewport's bottom with
+ * its logo just below the fold, so Google's content shows without its attribution until the user
+ * scrolls. When this logo appears (the tap that resolves the answer, or the answer restored on Back,
+ * after a rotation or after a process-death resume), it waits one frame for layout and brings the
+ * field's container (field and logo together) into view. Where both already fit it does nothing, so a
+ * layout that showed them is unchanged.
+ */
+@OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
+@Composable
+internal fun GoogleMapsLogoBesideField(
+    backdrop: GoogleMapsAttribution.Backdrop,
+    fieldContainer: androidx.compose.foundation.relocation.BringIntoViewRequester,
+) {
+    GoogleMapsLogo(backdrop = backdrop)
+    androidx.compose.runtime.LaunchedEffect(Unit) {
+        androidx.compose.runtime.withFrameNanos { }
+        fieldContainer.bringIntoView()
+    }
+}
