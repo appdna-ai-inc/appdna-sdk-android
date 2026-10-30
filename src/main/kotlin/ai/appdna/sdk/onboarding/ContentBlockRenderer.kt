@@ -10775,12 +10775,10 @@ private class SelectOptionStyle(val block: ContentBlock) {
     // under a comment saying "parse but ignore". They are gone from the console and from this
     // parse: an Option Set is the real mechanism, and reading a key in order to ignore it is how
     // a dead control looks alive to anyone grepping for it.
-    // Multi-select branch. iOS
-    // FormInputBlockViews.swift:403-406 selects between single + multi
-    // based on `block.multi_select == true`. For multi-mode the value
-    // written to inputValues is List<String> (list of selected values),
-    // for single-mode it remains a single String. Dropdown layout is
-    // single-only on both platforms (multi-dropdown is rare UX).
+    // Multi-select, as iOS `SelectOptionTap.isMultiSelect` reads it: `multi_select` on the block or in
+    // `field_config`. For multi-mode the value written to inputValues is List<String> (the selected
+    // values, in pick order); for single-mode it remains a single String. Every display style honours
+    // it, the dropdown included: its menu toggles each pick through `dropdownOptionPick`.
     val isMulti = (block.multi_select == true) ||
         ((block.field_config?.get("multi_select") as? Boolean) == true)
     // Hotfix-1.0.33 — field_config block-level styling reads, mirroring iOS

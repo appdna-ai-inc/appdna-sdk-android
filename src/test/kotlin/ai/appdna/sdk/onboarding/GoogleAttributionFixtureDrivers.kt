@@ -245,9 +245,10 @@ internal object GoogleAttributionFixtureDrivers {
             } else resolvedPick.blocks
             val block = findBlock(pick["block_id"] as? String, pickBlocks)
                 ?: throw AssertionError("the picked block is not on the resolved step")
-            // Each picked option is TAPPED through the production write (`recordOptionPick`), in order, so a
+            // Each picked option goes through the write the Select's own presentation runs, in order, so a
             // fixture can only assert a pick its own Select can make: several ids on a single Select leave the
-            // last one picked, as a user's taps would.
+            // last one picked, as a user's taps would. A dropdown-style Select picks through its menu's seam
+            // (`dropdownOptionPick`); the tap-path styles through `recordOptionPick`.
             val ids = (pick["option_ids"] as? List<*>)?.filterIsInstance<String>()
                 ?: listOfNotNull(pick["option_id"] as? String)
             val all = block.field_options.orEmpty()
@@ -257,7 +258,11 @@ internal object GoogleAttributionFixtureDrivers {
             }
             if (options.isEmpty()) throw AssertionError("the pick names no option")
             val tapInputs = mutableMapOf<String, Any>()
-            for (option in options) recordOptionPick(block, all, option.storedAnswer(), tapInputs)
+            val dropdown = drawsAsDropdown(block)
+            for (option in options) {
+                if (dropdown) dropdownOptionPick(block, all, option.value, tapInputs)
+                else recordOptionPick(block, all, option.storedAnswer(), tapInputs)
+            }
             selectedLabel = options.last().label
             selected = SelectedOptionStore.snapshot()
         }
@@ -431,6 +436,19 @@ internal object GoogleAttributionFixtureDrivers {
      * [body] run with the shared `SelectedOptionStore` holding [selected] — the store the view-level pass
      * reads the `selected` root from — and emptied after.
      */
+    /**
+     * Whether a picked block draws as a dropdown, as the Select view decides it: an `input_select` whose
+     * `display_style` (default `dropdown`) is not a tap-path style, or a Segmented drawn through the Select.
+     */
+    private fun drawsAsDropdown(block: ContentBlock): Boolean {
+        val style = block.field_config?.get("display_style") as? String
+        val select = block.type == "input_select" ||
+            (block.type == "input_segmented" && !SegmentedPresentation.drawsSegmentedControl(style))
+        return select && (style ?: "dropdown") !in TAP_PATH_STYLES
+    }
+
+    private val TAP_PATH_STYLES = setOf("stacked", "grid", "image_tiles", "bubble", "bubble_scroll", "list")
+
     private fun <T> withShared(selected: Map<String, Any?>, body: () -> T): T {
         SelectedOptionStore.resetForTesting()
         for ((field, value) in selected) if (value != null) SelectedOptionStore.seedForTesting(field, value)
