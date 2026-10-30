@@ -22,7 +22,7 @@ import org.junit.Test
  *   - `Events/EventQueue.swift` `maxRetries = 3`, `retryDelays = [1, 2, 4]`
  *   - `Events/EventQueue.swift` `maxConsecutiveFailures = 5`
  */
-class Spec070AEventQueuePolicyTest {
+class EventQueuePolicyTest {
 
     // MARK: - A.17 In-memory cap
 

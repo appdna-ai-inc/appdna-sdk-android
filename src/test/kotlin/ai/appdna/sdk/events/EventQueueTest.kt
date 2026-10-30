@@ -9,7 +9,7 @@ import org.junit.Test
  *
  * Mirrors `Tests/AppDNASDKTests/EventQueueTests.swift`. The bulk of the
  * Android EventQueue policy contract is already covered by
- * [Spec070AEventQueuePolicyTest] (retry policy, in-memory cap, jitter).
+ * [EventQueuePolicyTest] (retry policy, in-memory cap, jitter).
  * This file adds two further checks that the iOS suite has and the
  * Android one was missing:
  *
@@ -18,7 +18,7 @@ import org.junit.Test
  *      always send the freshest signal — never the freshest event itself.
  *
  * The class names of the live constants ([EventQueue.MAX_IN_MEMORY_EVENTS]
- * etc.) are validated in [Spec070AEventQueuePolicyTest]; this file owns
+ * etc.) are validated in [EventQueuePolicyTest]; this file owns
  * the additional behavioral assertions iOS calls out separately.
  */
 class EventQueueTest {

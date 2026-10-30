@@ -165,7 +165,7 @@ class RootCtaWithoutASectionRendersTest {
          here because no billing provider answers. With the clock auto-advancing, the test rule
          never reaches idle: this run burned the whole 900-second bridge budget and took an
          unrelated Espresso test down with it (`AppNotIdleException` in
-         `HostDataAuditRegressionTest`, a file this change does not touch), which reads as a
+         `HostDataRegressionTest`, a file this change does not touch), which reads as a
          regression somewhere else entirely.
          */
         compose.mainClock.autoAdvance = false

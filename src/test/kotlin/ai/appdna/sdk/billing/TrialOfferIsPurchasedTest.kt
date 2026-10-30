@@ -58,7 +58,7 @@ class TrialOfferIsPurchasedTest {
           {"offer_id":null,"token":"tok_base","phases":[{"micros":4990000,"period":"P1M"}]},
           {"offer_id":"freetrial-1w","token":"tok_trial","phases":[{"micros":0,"period":"P1W"},{"micros":4990000,"period":"P1M"}]}
         ]""")
-        assertTrue("the trial offer was not purchased — the paywall promised a trial and the sheet charges from day one (#1113): $tokens", "tok_trial" in tokens)
+        assertTrue("the trial offer was not purchased — the paywall promised a trial and the sheet charges from day one: $tokens", "tok_trial" in tokens)
         assertFalse("the base plan was purchased instead of the trial: $tokens", "tok_base" in tokens)
     }
 

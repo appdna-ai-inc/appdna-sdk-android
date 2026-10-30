@@ -112,7 +112,7 @@ class PlanOrderRenderTest {
         )
         assertTrue(
             "Bravo carries sort_order 0 and Alpha 1, so Bravo must draw ABOVE Alpha — if it does " +
-                "not, the rank was dropped and the plans drew in serialisation order (#1097)",
+                "not, the rank was dropped and the plans drew in serialisation order",
             compose.topOf("Bravo") < compose.topOf("Alpha"),
         )
     }

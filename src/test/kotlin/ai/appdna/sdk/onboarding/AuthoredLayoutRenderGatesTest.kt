@@ -22,7 +22,7 @@ class AuthoredLayoutRenderGatesTest {
         // The regression: a change made the handler unconditional, and a render gated on the
         // handler alone started drawing "Skip" under the CTA of every step.
         assertFalse(
-            "a handler without skip_enabled must NOT render Skip — this is #653",
+            "a handler without skip_enabled must NOT render Skip",
             shouldRenderSkipAffordance(skipEnabled = null, hasSkipHandler = true),
         )
         assertFalse(shouldRenderSkipAffordance(skipEnabled = false, hasSkipHandler = true))

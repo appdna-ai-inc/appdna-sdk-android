@@ -19,7 +19,7 @@ import org.junit.Test
  *
  * Every test here runs with NO Activity and NO Compose tree. That is the point.
  */
-class Spec070BSkipCompletionPermissionTest {
+class SkipCompletionPermissionTest {
 
     private fun step(id: String) = OnboardingStep(
         id = id,

@@ -16,7 +16,7 @@ import java.util.zip.InflaterInputStream
  * (..., COMPRESSION_ZLIB)`). The output must NOT be gzip-framed (no 0x1f 0x8b
  * magic bytes) so the backend's `Content-Encoding: deflate` decoder accepts it.
  */
-class Spec070ADeflateCompressionTest {
+class RequestBodyDeflateTest {
 
     @Test
     fun `A_15 deflate output has no gzip magic bytes`() {
@@ -37,7 +37,7 @@ class Spec070ADeflateCompressionTest {
 
     @Test
     fun `A_15 deflate roundtrip via Inflater nowrap=true`() {
-        val original = "AppDNA SPEC-070-A A.15 deflate parity test 📦"
+        val original = "AppDNA request body deflate parity test 📦"
         val compressed = ApiClient.deflateCompress(original.toByteArray(Charsets.UTF_8))
 
         val inflater = Inflater(/* nowrap = */ true)

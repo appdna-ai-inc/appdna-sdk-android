@@ -135,7 +135,7 @@ class SocialProofRenderTest {
 
         assertFalse(
             "authoring `text` on an app_rating section must CHANGE the screen — identical renders "
-                + "mean the caption reached no view, which is #954 verbatim",
+                + "mean the caption reached no view, which is the defect this test exists for",
             withCaption.contentEquals(without),
         )
         assertFalse(
@@ -162,7 +162,7 @@ class SocialProofRenderTest {
         val quote = mapOf("sub_type" to "app_rating", "testimonial" to "Two weeks in and I have not missed a day")
         assertFalse(
             "authoring `author_name` must CHANGE the screen — the generator has been writing an "
-                + "author all along and this section drew nothing for it (#955)",
+                + "author all along and this section drew nothing for it",
             render(quote + ("author_name" to "Sofia R.")).contentEquals(
                 render(quote),
             ),

@@ -107,7 +107,7 @@ class FailureOverlayIsAlwaysDismissibleTest {
         compose.waitForIdle()
 
         assertTrue(
-            "a failure banner authored allow_dismiss:false did not dismiss on tap — that is #1101",
+            "a failure banner authored allow_dismiss:false did not dismiss on tap",
             compose.onAllNodesWithTextSafe(failureMessage) == 0,
         )
     }
@@ -137,7 +137,7 @@ class FailureOverlayIsAlwaysDismissibleTest {
         compose.waitForIdle()
 
         assertTrue(
-            "a SUCCESS overlay authored allow_dismiss:false dismissed on tap, so #1101's fix was " +
+            "a SUCCESS overlay authored allow_dismiss:false dismissed on tap, so the always-dismissible rule was " +
                 "applied too widely and the flag no longer means anything",
             compose.onAllNodesWithTextSafe(successMessage) > 0,
         )
@@ -170,7 +170,7 @@ class FailureOverlayIsAlwaysDismissibleTest {
 
         assertTrue(
             "the banner came back after it was tapped away — a second identical failure was left in " +
-                "the overlay slot and the next poll drew it again (#1105)",
+                "the overlay slot and the next poll drew it again",
             compose.onAllNodesWithTextSafe(failureMessage) == 0,
         )
     }
@@ -195,7 +195,7 @@ class FailureOverlayIsAlwaysDismissibleTest {
 
         assertTrue("the retry bought nothing", bought == "plan_monthly")
         assertTrue(
-            "the retry bought without the CTA's in-progress state — it is not the CTA's path (#1107)",
+            "the retry bought without the CTA's in-progress state — it is not the CTA's path",
             compose.onAllNodesWithTextSafe("Processing...") > 0,
         )
         assertTrue("the banner is still up after the retry", compose.onAllNodesWithTextSafe(failureMessage) == 0)
@@ -225,7 +225,7 @@ class FailureOverlayIsAlwaysDismissibleTest {
 
         assertTrue(
             "the CTA was tapped with the failure banner up and nothing was bought — something " +
-                "still covers the paywall behind the banner (#1105)",
+                "still covers the paywall behind the banner",
             bought == "plan_monthly",
         )
     }

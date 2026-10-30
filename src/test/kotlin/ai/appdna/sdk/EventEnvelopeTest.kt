@@ -13,7 +13,7 @@ import org.junit.Test
  * Verify event envelope no longer hard-codes the SDK
  * version and now carries `context.experiment_exposures` when provided.
  */
-class Spec070AEventEnvelopeTest {
+class EventEnvelopeTest {
 
     private val identity = DeviceIdentity(anonId = "anon_test", userId = "user_test")
 

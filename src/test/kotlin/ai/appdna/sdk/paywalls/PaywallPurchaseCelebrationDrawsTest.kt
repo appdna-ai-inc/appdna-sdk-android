@@ -183,10 +183,10 @@ class PaywallPurchaseCelebrationDrawsTest {
         PaywallActivity.signalPurchaseCelebrate() // what handlePostPurchaseSuccess calls, first thing
 
         val (onScreen, overTheCard) = greenWhileItFalls(card)
-        println("[#1110] authored-green pixels while the confetti falls: whole frame=$onScreen, plan card $card=$overTheCard")
-        assertTrue("no authored green after a successful purchase — the celebration did not draw (#1110)", onScreen > 0)
+        println("[celebration] authored-green pixels while the confetti falls: whole frame=$onScreen, plan card $card=$overTheCard")
+        assertTrue("no authored green after a successful purchase — the celebration did not draw", onScreen > 0)
         assertTrue(
-            "the confetti never appeared over the plan card — it is composed UNDER the paywall's own layers (#1110)",
+            "the confetti never appeared over the plan card — it is composed UNDER the paywall's own layers",
             overTheCard > 0,
         )
     }
@@ -201,7 +201,7 @@ class PaywallPurchaseCelebrationDrawsTest {
         render(withEffect = false)
         PaywallActivity.signalPurchaseCelebrate()
         val seen = greenWhileItFalls().first
-        println("[#1110] control (no particle_effect): authored-green pixels=$seen")
+        println("[celebration] control (no particle_effect): authored-green pixels=$seen")
         assertEquals("green appeared with no particle_effect authored — the marker is not clean", 0, seen)
     }
 }

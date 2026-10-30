@@ -508,7 +508,7 @@ class PurchaseCompletionConcurrencyTest {
             s.fake.deliver(s.fake.listenerPurchase!!, "inapp")
             s.idle(200)
             assertEquals(1, events("purchase_completed"))
-            assertEquals("a completed paywall purchase did not raise the celebrate signal (#1110)", before + 1, signal.get())
+            assertEquals("a completed paywall purchase did not raise the celebrate signal", before + 1, signal.get())
         } finally {
             pm.shutdown()
         }

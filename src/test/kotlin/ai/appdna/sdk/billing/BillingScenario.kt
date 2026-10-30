@@ -67,7 +67,7 @@ internal class BillingScenario(
 
     init {
         mgr.currentUserIdProvider = { currentUser }
-        AppAccountTokenResolver.setPrefsForTesting(ctx.getSharedPreferences("spec497_anchor_test", Context.MODE_PRIVATE))
+        AppAccountTokenResolver.setPrefsForTesting(ctx.getSharedPreferences("billing_anchor_test", Context.MODE_PRIVATE))
         AppAccountTokenResolver.clearFirstIdentifiedUserId()
         setup.optStr("first_identified_user_id")?.let { AppAccountTokenResolver.recordFirstIdentifiedUserIdIfNeeded(it) }
         seedLedger()

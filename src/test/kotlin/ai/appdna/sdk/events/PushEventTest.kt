@@ -18,7 +18,7 @@ import org.junit.Test
  * an Android Context to instantiate `EventQueue`. This test instead asserts
  * the public name constants + delegate contract — the wiring sites in
  * `AppDNA.kt` and `AppDNAMessagingService.kt` are exercised by
- * `Spec070AEventEnvelopeTest`.
+ * `EventEnvelopeTest`.
  */
 class PushEventTest {
 

@@ -9,7 +9,7 @@ import org.junit.Test
 /**
  * Public API surface tests for the entitlement-aware paywall
  * trigger + restore routing fixes (Android symmetric mirror of
- * SPEC401PaywallTests.swift).
+ * EntitlementAwarePaywallTests.swift).
  *
  * The internal pieces (OnboardingPaywallBridge, PaywallActivity.dismissAfterRestore,
  * skipSDKAutoDismiss internal flag) require an Activity / Compose lifecycle
@@ -28,7 +28,7 @@ import org.junit.Test
  * `packages/sdk-shared-fixtures/billing/` and the Mac build bridge sample
  * app (per AC.5B + AC.14).
  */
-class Spec401PaywallTest {
+class EntitlementAwarePaywallTest {
 
     @After
     fun resetFlag() {

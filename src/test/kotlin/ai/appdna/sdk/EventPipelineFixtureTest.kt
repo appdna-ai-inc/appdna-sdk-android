@@ -66,8 +66,8 @@ class EventPipelineFixtureTest {
         EventSchema.buildEnvelope(
             eventName = name,
             properties = null,
-            identity = DeviceIdentity("spec428-anon", null, null),
-            sessionId = "spec428-session",
+            identity = DeviceIdentity("fixture-anon", null, null),
+            sessionId = "fixture-session",
             appVersion = "1.0",
             analyticsConsent = true,
         ).toString()
@@ -76,7 +76,7 @@ class EventPipelineFixtureTest {
         resetCounters()
         val cap = f.cap ?: 10_000
         val maxBytes = f.maxBytes ?: EventDatabase.MAX_DISK_BYTES
-        val dbName = "spec428_${f.id}.db"
+        val dbName = "event_pipeline_${f.id}.db"
         var db = EventDatabase(ctx, cap, dbName, maxBytes)
         db.clearAll()
         resetCounters()
@@ -173,7 +173,7 @@ class EventPipelineFixtureTest {
     fun preInitClientSeqCarry() {
         ClientSeqCounter.init(ctx)
         resetCounters()
-        val id = DeviceIdentity("spec428-anon", null, null)
+        val id = DeviceIdentity("fixture-anon", null, null)
         val preInitSeq = ClientSeqCounter.next() // stamp before configure, in tracking order
         val post = EventSchema.buildEnvelope("post", null, id, "s", "1.0", true)
         val pre = EventSchema.buildEnvelope("pre", null, id, "s", "1.0", true, clientSeq = preInitSeq)

@@ -23,7 +23,7 @@ import org.robolectric.annotation.Config
  */
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [33])
-class Spec070BNativeAdditionsTest {
+class NativeAdditionsTest {
 
     private val context get() = ApplicationProvider.getApplicationContext<android.content.Context>()
 

@@ -44,7 +44,7 @@ class NoHandSetAcceptEncodingTest {
             if (hits.isEmpty()) null else "${f.name}: " + hits.joinToString { "line ${it.index + 1}" }
         }
         assertTrue(
-            "a request sets Accept-Encoding by hand, which stops OkHttp decompressing (#857):\n" +
+            "a request sets Accept-Encoding by hand, which stops OkHttp decompressing:\n" +
                 offenders.joinToString("\n"),
             offenders.isEmpty(),
         )
@@ -60,6 +60,6 @@ class NoHandSetAcceptEncodingTest {
             }
             if (hits.isEmpty()) null else "${f.name}: " + hits.joinToString { "line ${it.index + 1}" }
         }
-        assertTrue("`gzip, deflate` is advertised but undecodable (#857):\n" + offenders.joinToString("\n"), offenders.isEmpty())
+        assertTrue("`gzip, deflate` is advertised but undecodable:\n" + offenders.joinToString("\n"), offenders.isEmpty())
     }
 }

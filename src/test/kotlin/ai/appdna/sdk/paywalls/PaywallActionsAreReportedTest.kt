@@ -89,7 +89,7 @@ class PaywallActionsAreReportedTest {
          `PaywallScreen` carries animations that never end, and a Robolectric rule that never
          reaches idle does not fail here — it poisons the JVM for every test after it. The last
          time this file's sibling omitted this, an unrelated Espresso test
-         (`HostDataAuditRegressionTest`) died on `AppNotIdleException` and the whole Android suite
+         (`HostDataRegressionTest`) died on `AppNotIdleException` and the whole Android suite
          burned its 900-second budget, which reads as a regression somewhere else entirely.
          */
         compose.waitForIdle()
