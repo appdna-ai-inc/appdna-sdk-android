@@ -13304,6 +13304,22 @@ private fun FormInputLocationPlaceholder(
                         RoundedCornerShape((block.field_style?.corner_radius ?: 8.0).dp),
                     ),
             ) {
+                // Google's attribution heads the Google suggestions, inside the dropdown. At the TOP,
+                // directly under the field, which the system keeps above the keyboard, so the logo is on
+                // screen whenever the list is; under the last row it fell behind the keyboard and the
+                // pinned button. The colour the dropdown is filled with decides the plain variant — the
+                // authored one, else the theme's surface (never the system appearance: a Screen's theme
+                // is light on a dark device). A translucent dropdown lets the step show through, which is
+                // a busy surface.
+                if (holder.showsGoogleLogo) {
+                    GoogleMapsLogo(
+                        backdrop = GoogleMapsAttribution.backdrop(
+                            ofLocationDropdown = cfg,
+                            behind = LocalGoogleAttributionBackdrop.current,
+                            surface = MaterialTheme.colorScheme.surface,
+                        ),
+                    )
+                }
                 suggestions.forEachIndexed { index, listed ->
                     val suggestion = listed.suggestion
                     Row(
@@ -13365,19 +13381,6 @@ private fun FormInputLocationPlaceholder(
                         // Theme-adaptive divider (was Color.LightGray).
                         HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant, thickness = 0.5.dp)
                     }
-                }
-                // Google's attribution under Google suggestions, inside the dropdown. The colour the
-                // dropdown is filled with decides the plain variant — the authored one, else the theme's
-                // surface (never the system appearance: a Screen's theme is light on a dark device). A
-                // translucent dropdown lets the step show through, which is a busy surface.
-                if (holder.showsGoogleLogo) {
-                    GoogleMapsLogo(
-                        backdrop = GoogleMapsAttribution.backdrop(
-                            ofLocationDropdown = cfg,
-                            behind = LocalGoogleAttributionBackdrop.current,
-                            surface = MaterialTheme.colorScheme.surface,
-                        ),
-                    )
                 }
             }
         } else if (LocationAnswer.carriesPlaceId(inputValues[fieldId])) {

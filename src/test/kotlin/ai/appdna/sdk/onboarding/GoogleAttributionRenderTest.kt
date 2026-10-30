@@ -121,6 +121,19 @@ class GoogleAttributionRenderTest {
     private fun logoShown() = compose.onAllNodes(hasTestTag(GoogleMapsAttribution.LOGO_TAG)).fetchSemanticsNodes().isNotEmpty()
     private fun logoBounds(): Rect = compose.onAllNodes(hasTestTag(GoogleMapsAttribution.LOGO_TAG)).fetchSemanticsNodes().single().boundsInRoot
     private fun rowBounds(): Rect = compose.onAllNodes(hasText("IL, USA")).fetchSemanticsNodes().first().boundsInRoot
+    private fun fieldBounds(): Rect = compose.onAllNodes(hasSetTextAction()).fetchSemanticsNodes().first().boundsInRoot
+
+    /**
+     * The logo HEADS the list: under the field and above the first row, with nothing taller than a row
+     * between the field and the logo. Under the last row it fell behind the keyboard and the pinned
+     * button on an ordinary phone layout; the field is what the system keeps on screen while typing.
+     */
+    private fun assertTheLogoHeadsTheList(what: String) {
+        val logo = logoBounds(); val row = rowBounds(); val field = fieldBounds()
+        assertTrue("$what: the logo is above the first row (logo bottom ${logo.bottom}, row top ${row.top})", logo.bottom <= row.top)
+        assertTrue("$what: the logo is under the field (logo top ${logo.top}, field bottom ${field.bottom})", logo.top >= field.bottom)
+        assertTrue("$what: the logo sits right under the field (gap ${logo.top - field.bottom}, a row is ${row.height})", logo.top - field.bottom < row.height)
+    }
     private fun creditShown() = compose.onAllNodes(hasTestTag(GoogleMapsAttribution.TEXT_TAG)).fetchSemanticsNodes().isNotEmpty()
 
     private fun typeAndList() {
@@ -215,8 +228,9 @@ class GoogleAttributionRenderTest {
     // ---- The dropdown ----------------------------------------------------------------------------
 
     /**
-     * The form-step field: a Google list draws Google's logo under the rows; the same rows from Mapbox
-     * do not. RED CONTROL: the logo removed from the dropdown → the Google case fails.
+     * The form-step field: a Google list draws Google's logo at its head, under the field and above the
+     * rows; the same rows from Mapbox do not. RED CONTROLS: the logo removed from the dropdown → the
+     * Google case fails; the logo drawn after the rows → the position check fails.
      */
     @Test
     fun theFormStepDropdownDrawsTheLogoForGoogleOnly() {
@@ -227,7 +241,7 @@ class GoogleAttributionRenderTest {
             typeAndList()
             assertTrue("$provider: the row is listed", compose.onAllNodes(hasText("IL, USA")).fetchSemanticsNodes().isNotEmpty())
             assertEquals("$provider: the logo", expected, logoShown())
-            if (expected) assertTrue("the logo is under the row", logoBounds().top >= rowBounds().bottom)
+            if (expected) assertTheLogoHeadsTheList("form step")
         }
     }
 
@@ -242,7 +256,7 @@ class GoogleAttributionRenderTest {
             typeAndList()
             assertTrue("$provider: the row is listed", compose.onAllNodes(hasText("IL, USA")).fetchSemanticsNodes().isNotEmpty())
             assertEquals("$provider: the logo", expected, logoShown())
-            if (expected) assertTrue("the logo is under the row", logoBounds().top >= rowBounds().bottom)
+            if (expected) assertTheLogoHeadsTheList("block")
         }
     }
 

@@ -224,6 +224,14 @@ fun LocationFieldComposable(
                 elevation = CardDefaults.cardElevation(defaultElevation = 4.dp),
                 colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
             ) { Column(modifier = Modifier.fillMaxWidth()) {
+                // Google's attribution heads the Google suggestions, inside the dropdown: the list is
+                // Google content shown without a Google map. At the TOP, directly under the field,
+                // which the system keeps above the keyboard, so the logo is on screen whenever the
+                // list is; under the last row it fell behind the keyboard and the pinned button. The
+                // variant is decided by the colour the card is filled with, the theme's surface.
+                if (holder.showsGoogleLogo) {
+                    GoogleMapsLogo(backdrop = GoogleMapsAttribution.Backdrop.Plain(GoogleMapsAttribution.hexOf(MaterialTheme.colorScheme.surface)))
+                }
                 suggestions.forEachIndexed { index, listed ->
                     val suggestion = listed.suggestion
                     // Material3 ListItem primary/secondary
@@ -275,12 +283,6 @@ fun LocationFieldComposable(
                         // Matches iOS native Divider() inheriting separator.
                         HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant, thickness = 0.5.dp)
                     }
-                }
-                // Google's attribution under Google suggestions, inside the dropdown: the list is
-                // Google content shown without a Google map. The variant is decided by the colour the
-                // card is filled with, the theme's surface.
-                if (holder.showsGoogleLogo) {
-                    GoogleMapsLogo(backdrop = GoogleMapsAttribution.Backdrop.Plain(GoogleMapsAttribution.hexOf(MaterialTheme.colorScheme.surface)))
                 }
             } }
         } else if (LocationAnswer.carriesPlaceId(values[field.id])) {
