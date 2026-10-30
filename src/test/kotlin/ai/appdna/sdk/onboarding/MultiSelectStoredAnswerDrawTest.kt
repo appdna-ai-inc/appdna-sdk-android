@@ -32,7 +32,7 @@ class MultiSelectStoredAnswerDrawTest {
 
     @Before fun reset() = SelectedOptionStore.resetForTesting()
 
-    private fun render(stored: Any) {
+    private fun render(stored: Any, values: List<String> = listOf("a", "b")) {
         val blocks = OnboardingConfigParser.parseStepForTest(
             mapOf(
                 "id" to "s", "type" to "custom",
@@ -42,8 +42,8 @@ class MultiSelectStoredAnswerDrawTest {
                             "id" to "m", "type" to "input_select", "field_id" to "fav", "multi_select" to true,
                             "field_config" to mapOf("display_style" to "list"),
                             "field_options" to listOf(
-                                mapOf("id" to "a", "value" to "a", "label" to "Alpha"),
-                                mapOf("id" to "b", "value" to "b", "label" to "Bravo"),
+                                mapOf("id" to "a", "value" to values[0], "label" to "Alpha"),
+                                mapOf("id" to "b", "value" to values[1], "label" to "Bravo"),
                             ),
                         ),
                     ),
@@ -80,6 +80,28 @@ class MultiSelectStoredAnswerDrawTest {
         render("a")
         assertEquals(false, drawnSelected("Alpha"))
         assertEquals(false, drawnSelected("Bravo"))
+    }
+
+    /**
+     * A stored list that is not all Strings (`[1]`, or RN's `[1.0]`, or `["1", 2]`) is not a selection either,
+     * as on iOS (`as? [String]`): nothing is drawn checked, and a tap starts from the empty list.
+     */
+    @Test fun aStoredNumberListDrawsNothingSelectedAndATapStartsFresh() {
+        render(listOf(1), values = listOf("1", "2"))
+        assertEquals(false, drawnSelected("Alpha"))
+        assertEquals(false, drawnSelected("Bravo"))
+        tap("Bravo")
+        assertEquals(listOf("2"), inputValues["fav"])
+        assertEquals(listOf("Bravo"), storedLabels())
+    }
+
+    @Test fun aStoredMixedListDrawsNothingSelectedAndATapStartsFresh() {
+        render(listOf("1", 2), values = listOf("1", "2"))
+        assertEquals(false, drawnSelected("Alpha"))
+        assertEquals(false, drawnSelected("Bravo"))
+        tap("Bravo")
+        assertEquals(listOf("2"), inputValues["fav"])
+        assertEquals(listOf("Bravo"), storedLabels())
     }
 
     @Test fun tappingTheStoredSingleAnswerSelectsIt() {

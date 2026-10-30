@@ -663,14 +663,18 @@ internal fun pruneHostDataSelections(
 }
 
 /**
- * The selection a MULTI-select Select holds: the stored list, in pick order. A stored single answer (a
- * `String`, e.g. one a host patched in through `input_values`) is not part of it, so the view draws it as
- * unselected and a tap toggles against the empty list. The Select's view draws from this and
- * [recordOptionPick] writes from it, so what is drawn checked is always what the next tap toggles; iOS
- * keeps the same rule (`SelectOptionTap.apply` and the view's `[String]`-only restore).
+ * The selection a MULTI-select Select holds: the stored list, in pick order, when EVERY element is a
+ * String. Anything else is not a selection this Select can draw: a stored single answer (a `String`, e.g.
+ * one a host patched in through `input_values`), a list holding a number (`[1]`, or `[1.0]` from a
+ * React Native host) and a mixed list (`["1", 2]`) all draw nothing checked, and a tap toggles against
+ * the empty list. iOS reads the field the same way: its view restores the value only `as? [String]` and
+ * resyncs only when it `is [String]`, so on both platforms the drawn selection is exactly what the next
+ * tap toggles. The Select's view draws from this and [recordOptionPick] writes from it.
  */
-internal fun storedMultiSelection(value: Any?): List<String> =
-    (value as? List<*>)?.mapNotNull { it?.toString() }.orEmpty()
+internal fun storedMultiSelection(value: Any?): List<String> {
+    val list = value as? List<*> ?: return emptyList()
+    return if (list.all { it is String }) list.map { it as String } else emptyList()
+}
 
 /**
  * The option pick every Select writes — shared by the Select views and the fixture runner so the
