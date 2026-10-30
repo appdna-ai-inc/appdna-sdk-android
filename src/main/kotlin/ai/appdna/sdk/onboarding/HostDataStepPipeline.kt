@@ -663,6 +663,16 @@ internal fun pruneHostDataSelections(
 }
 
 /**
+ * The selection a MULTI-select Select holds: the stored list, in pick order. A stored single answer (a
+ * `String`, e.g. one a host patched in through `input_values`) is not part of it, so the view draws it as
+ * unselected and a tap toggles against the empty list. The Select's view draws from this and
+ * [recordOptionPick] writes from it, so what is drawn checked is always what the next tap toggles; iOS
+ * keeps the same rule (`SelectOptionTap.apply` and the view's `[String]`-only restore).
+ */
+internal fun storedMultiSelection(value: Any?): List<String> =
+    (value as? List<*>)?.mapNotNull { it?.toString() }.orEmpty()
+
+/**
  * The option pick every Select writes — shared by the Select views and the fixture runner so the
  * bookkeeping (`inputValues` + `SelectedOptionStore`) cannot drift between them.
  */
@@ -674,9 +684,7 @@ internal fun recordOptionPick(block: ContentBlock, options: List<InputOption>, v
     fun optionFor(v: String): InputOption? =
         options.firstOrNull { it.value == v } ?: options.firstOrNull { it.storedAnswer() == v }
     if (isMulti) {
-        // The current multi selection is the stored LIST; a stored single answer is not part of it (the
-        // Swift twin, `SelectOptionTap.apply`, toggles against the list the view holds).
-        val current = (inputValues[fieldId] as? List<*>)?.mapNotNull { it?.toString() }.orEmpty()
+        val current = storedMultiSelection(inputValues[fieldId])
         val next = if (value in current) current - value else {
             val maxSel = (block.field_config?.get("max_selections") as? Number)?.toInt()
             if (maxSel != null && current.size >= maxSel) return

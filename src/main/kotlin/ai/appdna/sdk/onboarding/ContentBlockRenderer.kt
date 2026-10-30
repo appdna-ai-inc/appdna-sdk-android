@@ -11057,14 +11057,9 @@ private fun FormInputSelectBlock(
     val cfg = style.cfg
     val selectedValueState = remember { mutableStateOf(inputValues[fieldId] as? String ?: "") }
     var selectedValue by selectedValueState
-    val initialSelected: Set<String> = remember {
-        when (val existing = inputValues[fieldId]) {
-            is List<*> -> existing.filterIsInstance<String>().toSet()
-            is String -> if (existing.isNotEmpty()) setOf(existing) else emptySet()
-            else -> emptySet()
-        }
-    }
-    var selectedValues by remember { mutableStateOf(initialSelected) }
+    // The multi selection is the stored LIST only (a stored single answer draws nothing checked): the
+    // same rule `recordOptionPick` toggles against, so a checked row is always one a tap would remove.
+    var selectedValues by remember { mutableStateOf(storedMultiSelection(inputValues[fieldId]).toSet()) }
     /*
      * #1013 — A CATEGORY ROW OPENS ON ITS FIRST CATEGORY.
      *
@@ -11095,11 +11090,7 @@ private fun FormInputSelectBlock(
     val externalValue = inputValues[fieldId]
     LaunchedEffect(externalValue) {
         selectedValue = externalValue as? String ?: ""
-        selectedValues = when (externalValue) {
-            is List<*> -> externalValue.filterIsInstance<String>().toSet()
-            is String -> if (externalValue.isNotEmpty()) setOf(externalValue) else emptySet()
-            else -> emptySet()
-        }
+        selectedValues = storedMultiSelection(externalValue).toSet()
     }
     fun toggleMulti(value: String) {
         // The one pick write the fixture drivers also run (`recordOptionPick`): the toggle against the
@@ -11107,7 +11098,7 @@ private fun FormInputSelectBlock(
         // selection order in `SelectedOptionStore` for a later `{{selected.<field_id>.0.label}}`. Then the
         // view follows what was stored.
         recordOptionPick(block, allOptions, value, inputValues)
-        selectedValues = chipSelectionOf(inputValues[fieldId])
+        selectedValues = storedMultiSelection(inputValues[fieldId]).toSet()
     }
     fun isOptionSelected(value: String): Boolean =
         if (isMulti) selectedValues.contains(value) else selectedValue == value
