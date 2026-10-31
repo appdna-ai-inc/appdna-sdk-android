@@ -22,12 +22,11 @@ class SampleMessagingService : FirebaseMessagingService() {
     }
 
     override fun onMessageReceived(message: RemoteMessage) {
-        // SDK ingest path: track delivery + render the notification UI.
-        // For payloads that aren't AppDNA-issued, host code can branch on
-        // message.data["push_id"] or a custom marker before forwarding.
-        val pushId = message.data["push_id"]
-        if (!pushId.isNullOrBlank()) {
-            AppDNA.trackPushDelivered(pushId)
-        }
+        super.onMessageReceived(message)
+        // Forward the whole message: for an AppDNA push the SDK tracks delivery and posts the
+        // notification; for any other message it returns false and does nothing. Do not also call
+        // trackPushDelivered here, or the delivery counts twice.
+        if (AppDNA.push.handleMessage(message)) return
+        // ... your own handling of non-AppDNA messages
     }
 }
