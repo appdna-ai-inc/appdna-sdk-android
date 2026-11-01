@@ -683,6 +683,14 @@ internal fun storedMultiSelection(value: Any?): List<String> {
 }
 
 /**
+ * The selection a SINGLE-select Select draws: the stored String, and nothing for anything else. A number
+ * (`2`, as a host's `inputValuePatches` can write), a list and no value all draw no row checked, including
+ * when the value arrives mid-step: the view re-reads every change through this. iOS draws the same
+ * (`SelectionResync.singleAfterExternalChange`).
+ */
+internal fun storedSingleSelection(value: Any?): String = value as? String ?: ""
+
+/**
  * The option pick every Select writes — shared by the Select views and the fixture runner so the
  * bookkeeping (`inputValues` + `SelectedOptionStore`) cannot drift between them.
  */

@@ -238,6 +238,9 @@ well as Mapbox; an onboarding flow survives a rotation and the OS ending the app
   holding one (`[1]`, `["a", 2]`) draws nothing checked, also when a host writes it mid-step, so the
   next tap starts from an empty list. A selection on a host-data-scoped Select is pruned only when it
   is such a list.
+- **A chips field follows the same rule when a host writes a value mid-step.** A list counts only when
+  every element is a String, and a lone String as one chip. A mixed `["a", 2]` drew `a` checked, and
+  the next tap stored it again; it now draws nothing, as on iOS.
 - **A step whose `layout.content_blocks` is empty falls back to the step's root blocks**, as
   on iOS. It used to render blank.
 - **A circular countdown's ring sweeps**. It sat at 75% for the whole countdown.

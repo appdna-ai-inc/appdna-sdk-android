@@ -31,6 +31,11 @@ import ai.appdna.sdk.onboarding.lookupOnlyLoc
 import ai.appdna.sdk.onboarding.mapRoutePolyline
 import ai.appdna.sdk.onboarding.pruneHostDataSelections
 import ai.appdna.sdk.onboarding.recordOptionPick
+import ai.appdna.sdk.onboarding.chipSelectionOf
+import ai.appdna.sdk.onboarding.chipsMaxSelections
+import ai.appdna.sdk.onboarding.storedMultiSelection
+import ai.appdna.sdk.onboarding.storedSingleSelection
+import ai.appdna.sdk.onboarding.toggleChipSelection
 import ai.appdna.sdk.onboarding.resolveBlockBindings
 import ai.appdna.sdk.onboarding.resolveForInteractionAdvance
 import ai.appdna.sdk.onboarding.resolveSheetBlocks
@@ -207,7 +212,17 @@ internal class HostDataScenarioDriver(
                         "toggle" -> cur.toggleValues[op["block_id"] as String] = op["value"] as Boolean
                         "select_option" -> {
                             val (st, block) = ownerOf(op["block_id"] as String)
-                            recordOptionPick(block, block.field_options.orEmpty(), op["value"].toString(), st.inputValues)
+                            if (block.type == "input_chips") {
+                                // The chips view's tap: toggle against what the field holds, by the view's own rule.
+                                val fid = block.field_id ?: block.id
+                                st.inputValues[fid] = toggleChipSelection(
+                                    current = chipSelectionOf(st.inputValues[fid]),
+                                    value = op["value"].toString(),
+                                    maxSelections = chipsMaxSelections(block),
+                                ).toList()
+                            } else {
+                                recordOptionPick(block, block.field_options.orEmpty(), op["value"].toString(), st.inputValues)
+                            }
                         }
                         "type_search" -> cur.searchQueries[op["block_id"] as String] = op["query"] as String
                         "open_sheet" -> openSheet(op)
@@ -654,7 +669,16 @@ internal class HostDataScenarioDriver(
         val hidden = st.pipeline != null && b.isHiddenByHostData(st.rawIds)
         val query = st.searchQueries[b.id]
         val refresh = isRefreshButton(b)
+        val stored = st.inputValues[b.field_id ?: b.id]
+        // What the view draws as selected: each view re-reads the stored value on every change.
+        val drawnSelection: Any? = when {
+            b.type == "input_chips" -> chipSelectionOf(stored).toList()
+            b.type != "input_select" -> null
+            b.multi_select == true || (b.field_config?.get("multi_select") as? Boolean) == true -> storedMultiSelection(stored)
+            else -> storedSingleSelection(stored)
+        }
         return linkedMapOf(
+            "drawn_selection" to drawnSelection,
             "rendered_option_values" to opts.map { it.storedAnswer() },
             "rendered_option_ids" to opts.map { it.id },
             "visible_option_values" to (query?.let { filterOptionsLocally(opts, it) } ?: opts).map { it.storedAnswer() },

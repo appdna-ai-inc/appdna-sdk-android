@@ -11088,7 +11088,7 @@ private fun FormInputSelectBlock(
     // longer rendered) must leave the view's selected state too, not only `inputValues`.
     val externalValue = inputValues[fieldId]
     LaunchedEffect(externalValue) {
-        selectedValue = externalValue as? String ?: ""
+        selectedValue = storedSingleSelection(externalValue)
         selectedValues = storedMultiSelection(externalValue).toSet()
     }
     fun toggleMulti(value: String) {
@@ -12922,13 +12922,22 @@ private fun FormInputRangeSliderBlock(
     }
 }
 
-/** A chips / multi value as the step stores it (`List`, legacy `Set`, or a lone `String`). */
+/**
+ * What a chips field draws from the value the step stores (`List`, legacy `Set`, or a lone `String`): a
+ * collection counts only when EVERY element is a String, and a lone non-empty String is one chip. A list
+ * holding a number (`[1]`, or a mixed `["a", 2]`, as a host's `inputValuePatches` can write) draws nothing,
+ * and the next tap toggles against nothing. iOS reads the field by the same rule
+ * (`SelectionResync.chipsAfterExternalChange`), so the drawn chips and the next stored answer match.
+ */
 internal fun chipSelectionOf(value: Any?): Set<String> = when (value) {
-    is List<*> -> value.filterIsInstance<String>().toSet()
-    is Set<*> -> value.filterIsInstance<String>().toSet()
+    is Collection<*> -> if (value.all { it is String }) value.map { it as String }.toSet() else emptySet()
     is String -> if (value.isNotEmpty()) setOf(value) else emptySet()
     else -> emptySet()
 }
+
+/** The chips cap: the console writes `max_chips` (Max Chips slider); `max_selections` is kept for older configs. */
+internal fun chipsMaxSelections(block: ContentBlock): Int? =
+    (block.field_config?.get("max_chips") as? Number)?.toInt() ?: (block.field_config?.get("max_selections") as? Number)?.toInt()
 
 /** One chip tap: remove when selected; add unless at the cap (removing always works). */
 internal fun toggleChipSelection(current: Set<String>, value: String, maxSelections: Int?): Set<String> =
@@ -12945,9 +12954,7 @@ private fun FormInputChipsBlock(
     val fieldId = block.field_id ?: block.id
     val options = block.field_options ?: emptyList()
     val fillCol = StyleEngine.parseColor(block.field_style?.fill_color ?: block.active_color ?: (ai.appdna.sdk.AppDNA.brandAccentHex ?: "#6366F1"))
-    // Console writes the cap as `max_chips` (Max Chips slider); `max_selections`
-    // kept as a fallback for older/imported configs.
-    val maxSelections = (block.field_config?.get("max_chips") as? Number)?.toInt() ?: (block.field_config?.get("max_selections") as? Number)?.toInt()
+    val maxSelections = chipsMaxSelections(block)
     // Restore saved chips selection on back nav.
     var selectedValues by remember { mutableStateOf(chipSelectionOf(inputValues[fieldId])) }
     // A value the step prunes from outside (host data settled and the option is no
