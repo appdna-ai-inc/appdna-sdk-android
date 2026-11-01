@@ -113,6 +113,13 @@ android {
     composeOptions {
         kotlinCompilerExtensionVersion = libs.versions.composeCompiler.get()
     }
+
+    // The JVM test runs the sample's own Application, which reads its key from the merged manifest.
+    testOptions {
+        unitTests {
+            isIncludeAndroidResources = true
+        }
+    }
 }
 
 dependencies {
@@ -136,4 +143,8 @@ dependencies {
     // Compose Material3 (above) is the runtime UI; this is just for the XML
     // theme the manifest references on Activity launch.
     implementation("com.google.android.material:material:1.11.0")
+
+    // JVM test of the sample's push forwarding (no device required).
+    testImplementation(libs.junit)
+    testImplementation(libs.robolectric)
 }
