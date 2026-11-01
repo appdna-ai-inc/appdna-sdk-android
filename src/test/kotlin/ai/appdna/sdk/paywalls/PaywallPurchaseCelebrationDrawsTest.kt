@@ -12,6 +12,8 @@ import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
 import org.robolectric.annotation.GraphicsMode
+import com.github.takahirom.roborazzi.RoborazziOptions
+import com.github.takahirom.roborazzi.RoborazziTaskType
 import com.github.takahirom.roborazzi.captureRoboImage
 import java.io.File
 
@@ -131,7 +133,9 @@ class PaywallPurchaseCelebrationDrawsTest {
          */
         val path = "build/tmp/paywall-celebration/$run-frame-${frame++}.png"
         File(path).parentFile?.mkdirs()
-        compose.onRoot().captureRoboImage(path)
+        // Always RECORD: these are throwaway frames to count pixels in, not goldens. Under verifyRoborazzi a capture is otherwise
+        // compared with whatever an earlier task left at this path, and falling confetti never matches itself.
+        compose.onRoot().captureRoboImage(path, roborazziOptions = RoborazziOptions(taskType = RoborazziTaskType.Record))
         val f = File(path)
         check(f.exists()) { "no frame was written to $path — every count below would be about a missing file" }
         val bmp = android.graphics.BitmapFactory.decodeFile(path)
