@@ -4,7 +4,19 @@ All notable changes to the AppDNA Android SDK are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and
 the project uses [Semantic Versioning](https://semver.org/).
 
-## [1.0.56] — unreleased
+## [1.0.57] — 2026-11-03
+
+Wraps iOS 1.0.84.
+
+### Fixed
+
+- **Push token on first launch.** `configure()` asked Firebase for the push token before the SDK had
+  created its own `appdna` Firebase app, so the request fell back to the app's default Firebase app. An
+  app without Firebase of its own got no token on that launch; an app with its own Firebase got a token
+  from its own project, which AppDNA cannot send to. The token is now requested right after the `appdna`
+  app is created.
+
+## [1.0.56] — 2026-11-03
 
 Wraps iOS 1.0.84. Builds on Play Billing Library 8, which Google Play now requires. Paywalls show
 Google Play's own price, billing period and free trial; location fields can search with Google as

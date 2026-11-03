@@ -37,7 +37,7 @@ import androidx.compose.runtime.Composable
 object AppDNA {
 
     /** SDK version string. */
-    const val sdkVersion = "1.0.56"
+    const val sdkVersion = "1.0.57"
 
     /**
      * Brand-threading — the app's brand accent hex (from `/settings/brand`,
@@ -875,14 +875,10 @@ object AppDNA {
             this.pushTokenManager = PushTokenManager(context, storage, tracker, client)
             push.manager = this.pushTokenManager
 
-            // Proactively fetch the FCM token on configure()
-            // instead of waiting for a token-rotation event (which can take
-            // hours/days). Mirrors iOS PushTokenManager.configure() behavior.
-            try {
-                this.pushTokenManager?.registerToken()
-            } catch (e: Throwable) {
-                Log.warning("PushTokenManager.registerToken() failed during configure: ${e.message}")
-            }
+            // The FCM token is fetched by the bootstrap, right after the SDK's own "appdna" FirebaseApp
+            // exists (see performBootstrap). Fetching it here ran before that app was created, so the
+            // request fell back to the host's default app: no token at all when the host has no
+            // Firebase of its own, or a token from the host's project, which AppDNA cannot deliver to.
 
             // Drain any FCM token buffered
             // by `onNewPushToken()` calls that fired before `configure()`.
@@ -2357,6 +2353,17 @@ object AppDNA {
         // FirebaseApp can do FCM (otherwise PushTokenManager.registerToken
         // returns nothing because the SDK FirebaseApp has no project number).
         initSecondaryFirebaseAppIfNeeded()
+
+        // Proactively fetch the FCM token now that the "appdna" FirebaseApp exists, instead of waiting
+        // for a token-rotation event (which can take hours or days). Mirrors iOS
+        // PushTokenManager.configure(). Not in configure(): there it raced the app's creation above.
+        if (isCurrentConfigure(epoch)) {
+            try {
+                pushTokenManager?.registerToken()
+            } catch (e: Throwable) {
+                Log.warning("PushTokenManager.registerToken() failed during bootstrap: ${e.message}")
+            }
+        }
 
         // Instantiate NativeBillingManager and bind to
         // BillingModule.manager so AppDNA.billing.purchase() / restore() /
