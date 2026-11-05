@@ -6129,7 +6129,7 @@ private fun AnimatedLoadingBlock(block: ContentBlock, onAction: (String) -> Unit
     // (ContentBlockTypes.swift:1019); Android historically only read
     // the generic `variant` so console-authored loading_variant was
     // silently dropped. Honour both.
-    val variant = block.loading_variant ?: block.variant ?: "checklist"
+    val variant = AnimatedLoadingVariant.resolve(block)
     val items = block.loading_items ?: emptyList()
     val progressColor = StyleEngine.parseColor(block.progress_color ?: (ai.appdna.sdk.AppDNA.brandAccentHex ?: "#6366F1"))
     val checkColor = StyleEngine.parseColor(block.check_color ?: "#22C55E")
@@ -14007,4 +14007,13 @@ internal object RatingAnswer {
         val diff = current - t
         return if (allowHalf && current >= t && diff >= 0 && diff < 0.5) t - 0.5 else t
     }
+}
+
+/**
+ * Which `animated_loading` variant a block draws: `loading_variant` (what the console writes), else the
+ * generic `variant` (flows imported or written through the API), else `checklist`. ONE rule; iOS
+ * `AnimatedLoadingVariant` is the same, and `dto_parsing/animated_loading_variant_keys` pins both.
+ */
+internal object AnimatedLoadingVariant {
+    fun resolve(block: ContentBlock): String = block.loading_variant ?: block.variant ?: "checklist"
 }

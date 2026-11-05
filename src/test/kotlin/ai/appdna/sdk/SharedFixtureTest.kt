@@ -276,6 +276,7 @@ class SharedFixtureTest(
             "resolve_onboarding_image_alt" -> runOnboardingImageAlt(action, spy)
             "resolve_container_children" -> runContainerChildren(action, spy)
             "resolve_rating_answer" -> runRatingAnswer(action, spy)
+            "resolve_loading_variant" -> runLoadingVariant(action, spy)
             "parse_colour" -> runParseColour(action, spy)
             "unfold_blockquotes" -> runUnfoldBlockquotes(action, spy)
             "normalise_markdown" -> runUnfoldBlockquotes(action, spy)
@@ -2933,6 +2934,20 @@ class SharedFixtureTest(
                 "light" to msg.content.resolved(isDark = false).image_url,
                 "dark" to msg.content.resolved(isDark = true).image_url,
             )
+        }
+    }
+
+    /** The animated_loading variant, through the REAL step parser and the REAL `AnimatedLoadingVariant`. */
+    private fun runLoadingVariant(action: JSONObject, spy: Spy) {
+        val cases = action.optJSONArray("cases") ?: unsupported("resolve_loading_variant without cases")
+        spy.state["results"] = (0 until cases.length()).map { i ->
+            val c = cases.getJSONObject(i)
+            @Suppress("UNCHECKED_CAST")
+            val raw = (c.optJSONObject("block") ?: unsupported("resolve_loading_variant case without block")).asMap().filterValues { it != null } as Map<String, Any>
+            val step = mapOf("id" to "fixture_step", "type" to "custom", "content_blocks" to listOf(raw))
+            val block = ai.appdna.sdk.onboarding.OnboardingConfigParser.parseStepForTest(step)?.config?.content_blocks?.firstOrNull()
+                ?: throw AssertionError("[resolve_loading_variant] the block did not parse")
+            ai.appdna.sdk.onboarding.AnimatedLoadingVariant.resolve(block)
         }
     }
 
