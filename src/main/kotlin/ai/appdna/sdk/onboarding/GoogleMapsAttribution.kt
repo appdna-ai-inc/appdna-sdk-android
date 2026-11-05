@@ -101,6 +101,20 @@ internal object GoogleMapsAttribution {
 
         /** An image, a gradient, an animation or a translucent surface: Google asks for the outlined logo. */
         object Busy : Backdrop()
+
+        /**
+         * A gradient whose every stop is light. Still busy for Google's logo (outlined on any
+         * gradient), but text nobody coloured is drawn DARK on it: light ink on a pale gradient is
+         * unreadable. A gradient with any dark stop stays [Busy], with light ink. Swift twin: `.busyLight`.
+         */
+        object BusyLight : Backdrop()
+    }
+
+    /** Whether every stop of a gradient is light, by the cut a plain colour is judged by. */
+    fun gradientIsLight(gradient: ai.appdna.sdk.core.GradientConfig?): Boolean {
+        val stops = gradient?.stops.orEmpty()
+        val lums = stops.mapNotNull { GoogleMarkChip.luminance(it.color) }
+        return lums.isNotEmpty() && lums.size == stops.size && lums.all { it >= GoogleMarkChip.LIGHT_ENOUGH }
     }
 
     /**
@@ -117,6 +131,7 @@ internal object GoogleMapsAttribution {
                 if (it == "transparent" || it == "clear") Backdrop.Plain(null) else Backdrop.Plain(it)
             }
             null, "transparent", "clear", "none" -> Backdrop.Plain(null)
+            "gradient" -> if (gradientIsLight(background.gradient)) Backdrop.BusyLight else Backdrop.Busy
             else -> Backdrop.Busy
         }
     }
@@ -232,7 +247,7 @@ internal object GoogleMapsAttribution {
                 else -> Variant.GRAY
             }
         }
-        Backdrop.Busy -> if (darkAppearance) Variant.DARK_OUTLINE else Variant.LIGHT_OUTLINE
+        Backdrop.Busy, Backdrop.BusyLight -> if (darkAppearance) Variant.DARK_OUTLINE else Variant.LIGHT_OUTLINE
     }
 
     /**
@@ -250,7 +265,7 @@ internal object GoogleMapsAttribution {
      * `GoogleMapsAttribution.needsLightInk(on:darkAppearance:)`.
      */
     fun needsLightInk(on: Backdrop, darkAppearance: Boolean): Boolean =
-        on == Backdrop.Busy || variant(on, darkAppearance) == Variant.WHITE
+        on != Backdrop.BusyLight && (on == Backdrop.Busy || variant(on, darkAppearance) == Variant.WHITE)
 }
 
 /**
@@ -322,7 +337,7 @@ internal fun GoogleMapsTextAttribution(backdrop: GoogleMapsAttribution.Backdrop,
             color = Color(android.graphics.Color.parseColor(hex)),
             // The shadow only where it is needed: white over an image or gradient. On a plain surface
             // the text carries no effect at all.
-            shadow = if (backdrop == GoogleMapsAttribution.Backdrop.Busy) {
+            shadow = if (backdrop == GoogleMapsAttribution.Backdrop.Busy || backdrop == GoogleMapsAttribution.Backdrop.BusyLight) {
                 Shadow(color = Color.Black.copy(alpha = 0.6f), offset = Offset.Zero, blurRadius = 4f)
             } else null,
         ),

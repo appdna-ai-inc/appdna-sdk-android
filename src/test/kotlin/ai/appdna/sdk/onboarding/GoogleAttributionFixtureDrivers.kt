@@ -88,6 +88,16 @@ internal object GoogleAttributionFixtureDrivers {
             val described = when (val b = light) {
                 is GoogleMapsAttribution.Backdrop.Plain -> b.hex?.let { "plain:$it" } ?: "plain"
                 GoogleMapsAttribution.Backdrop.Busy -> "busy"
+                GoogleMapsAttribution.Backdrop.BusyLight -> "busy_light"
+            }
+            if (c["ink"] == true) {
+                // The ink of text nobody coloured, in a light appearance, through the real rule.
+                return@map linkedMapOf(
+                    "name" to name,
+                    "backdrop" to described,
+                    "variant_light" to variantName(light, dark = false),
+                    "ink" to if (GoogleMapsAttribution.needsLightInk(light, darkAppearance = false)) "light" else "dark",
+                )
             }
             linkedMapOf(
                 "name" to name,

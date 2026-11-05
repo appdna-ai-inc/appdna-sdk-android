@@ -32,6 +32,11 @@ Feature parity: iOS 1.0.86.
   or as a deep link when it is a link. Before, a CTA saved as `{type, value}` (the shape the console writes)
   only dismissed the message. An action type the SDK does not know now reads as `unknown`, as on iOS.
 
+### Fixed (onboarding)
+
+- **Text on a pale gradient is readable.** Text nobody coloured is drawn dark on a gradient whose every
+  stop is light; it was white on every gradient, so on a pale one it disappeared.
+
 ## [1.0.57] — 2026-11-03
 
 Wraps iOS 1.0.84.
