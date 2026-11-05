@@ -270,6 +270,7 @@ class SharedFixtureTest(
             "decode_message_hero" -> runDecodeMessageHero(action, spy)
             "decode_pending_delivery" -> runDecodePendingDelivery(action, spy)
             "resolve_message_dismiss" -> runResolveMessageDismiss(action, spy)
+            "resolve_paywall_image_alt" -> runPaywallImageAlt(action, spy)
             "parse_colour" -> runParseColour(action, spy)
             "unfold_blockquotes" -> runUnfoldBlockquotes(action, spy)
             "normalise_markdown" -> runUnfoldBlockquotes(action, spy)
@@ -2927,6 +2928,28 @@ class SharedFixtureTest(
                 "light" to msg.content.resolved(isDark = false).image_url,
                 "dark" to msg.content.resolved(isDark = true).image_url,
             )
+        }
+    }
+
+    /**
+     * A paywall image section's alt text, through the REAL `PaywallConfigParser.parseSinglePaywall` and the
+     * REAL `PaywallImageAccessibility.label` — the `contentDescription` the image section hands TalkBack.
+     */
+    private fun runPaywallImageAlt(action: JSONObject, spy: Spy) {
+        val cases = action.optJSONArray("cases") ?: unsupported("resolve_paywall_image_alt without cases")
+        spy.state["results"] = (0 until cases.length()).map { i ->
+            val c = cases.getJSONObject(i)
+            val name = c.optString("name", "?")
+            @Suppress("UNCHECKED_CAST")
+            val config = (c.optJSONObject("config") ?: unsupported("resolve_paywall_image_alt case without config"))
+                .asMap().filterValues { it != null } as Map<String, Any>
+            val paywall = ai.appdna.sdk.paywalls.PaywallConfigParser.parseSinglePaywall(
+                "pw_alt_$name",
+                mapOf("id" to "pw_alt_$name", "layout" to mapOf("type" to "stack", "sections" to listOf(mapOf("id" to "s1", "type" to "image", "config" to config)))),
+            ) ?: throw AssertionError("[resolve_paywall_image_alt] case $name: the paywall did not parse")
+            val section = paywall.sections.firstOrNull { it.type == "image" }
+                ?: throw AssertionError("[resolve_paywall_image_alt] case $name: the image section was dropped")
+            ai.appdna.sdk.paywalls.PaywallImageAccessibility.label(section.data)
         }
     }
 

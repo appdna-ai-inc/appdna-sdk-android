@@ -192,6 +192,8 @@ data class PaywallSection(
 data class PaywallSectionData(
     // Header
     val title: String? = null,
+    /** An image section's alt text (the console's "Alt Text"); read through [PaywallImageAccessibility]. */
+    val alt: String? = null,
     val subtitle: String? = null,
     val image_url: String? = null,
     /** Header graphic alignment: "leading" | "center" (default) | "trailing". */
@@ -1348,6 +1350,7 @@ internal object PaywallConfigParser {
         val data = dataMap?.let { d ->
             PaywallSectionData(
                 title = d.str(SURFACE, path, "title"),
+                alt = d.str(SURFACE, path, "alt"),
                 subtitle = d.str(SURFACE, path, "subtitle"),
                 image_url = d.str(SURFACE, path, "image_url"),
                 image_alignment = d.str(SURFACE, path, "image_alignment"),
@@ -1908,4 +1911,13 @@ internal object PaywallConfigParser {
         is String -> raw.toFloatOrNull()
         else -> null
     }
+}
+
+/**
+ * What a screen reader says for a paywall image section: the authored alt text, trimmed, or null when there
+ * is none. ONE rule; iOS `PaywallImageAccessibility` is the same, and
+ * `packages/sdk-shared-fixtures/dto_parsing/paywall_image_alt.fixture.json` pins both.
+ */
+object PaywallImageAccessibility {
+    fun label(data: PaywallSectionData?): String? = data?.alt?.trim()?.takeIf { it.isNotEmpty() }
 }
