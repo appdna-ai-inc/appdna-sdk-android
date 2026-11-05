@@ -151,6 +151,18 @@ internal object GoogleMapsAttribution {
             val l = hex.lowercase()
             return if (l == "transparent" || l == "clear") null else hex
         }
+        // A section background paints its zones behind everything in it. One zone is a plain colour; several
+        // are judged like gradient stops — the worst zone wins: all light → BusyLight (dark ink), any dark →
+        // Busy (light ink). A zone with no colour is drawn black, so it counts as dark. iOS is the same.
+        if (ofBlock.type == "section_background") {
+            val zones = (cfg?.get("background_zones") as? List<*>).orEmpty().filterIsInstance<Map<*, *>>()
+            val colors = zones.map { (it["color"] as? String) ?: "#000000" }
+            if (colors.size == 1) return Backdrop.Plain(colors[0])
+            if (colors.isNotEmpty()) {
+                val lums = colors.mapNotNull { GoogleMarkChip.luminance(it) }
+                return if (lums.size == colors.size && lums.all { it >= GoogleMarkChip.LIGHT_ENOUGH }) Backdrop.BusyLight else Backdrop.Busy
+            }
+        }
         if (ofBlock.type == "row") {
             visible(cfg?.get("bg_color") as? String)?.let { bg ->
                 return if ((double("background_opacity") ?: 1.0) < 1.0) Backdrop.Busy else Backdrop.Plain(bg)
