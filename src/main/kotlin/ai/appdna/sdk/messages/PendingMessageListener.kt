@@ -2,17 +2,10 @@ package ai.appdna.sdk.messages
 
 import android.app.Activity
 import android.content.Context
-import android.graphics.Color as AndroidColor
-import android.graphics.drawable.ColorDrawable
 import android.net.Uri
 import android.content.Intent
 import android.os.Handler
 import android.os.Looper
-import android.view.WindowManager
-import androidx.activity.ComponentDialog
-import androidx.compose.ui.platform.ComposeView
-import androidx.lifecycle.setViewTreeLifecycleOwner
-import androidx.savedstate.setViewTreeSavedStateRegistryOwner
 import ai.appdna.sdk.AppDNA
 import ai.appdna.sdk.Log
 import ai.appdna.sdk.events.EventTracker
@@ -130,53 +123,34 @@ internal class PendingMessageListener(
                 return@post
             }
             try {
-                val dialog = ComponentDialog(activity)
-                isPresenting = true
-                val composeView = ComposeView(activity).apply {
-                    // activity-compose:1.8.2 ComponentDialog implements
-                    // LifecycleOwner + SavedStateRegistryOwner but NOT
-                    // ViewModelStoreOwner (added later). Our composable
-                    // is stateless — no viewModel{} — so skipping the
-                    // VM store owner is fine.
-                    setViewTreeLifecycleOwner(dialog)
-                    setViewTreeSavedStateRegistryOwner(dialog)
-                    setContent {
-                        InAppMessageView(
-                            config = config,
-                            onCTATap = {
-                                eventTracker?.track(
-                                    "in_app_message_clicked",
-                                    mapOf(
-                                        "delivery_id" to messageId,
-                                        "cta_action" to (config.content.cta_action?.type ?: "dismiss"),
-                                        "source" to "pending_messages",
-                                    ),
-                                )
-                                handleCTAAction(activity, config.content.cta_action)
-                                dialog.dismiss()
-                            },
-                            onDismiss = {
-                                eventTracker?.track(
-                                    "in_app_message_dismissed",
-                                    mapOf(
-                                        "delivery_id" to messageId,
-                                        "source" to "pending_messages",
-                                    ),
-                                )
-                                dialog.dismiss()
-                            },
+                val dialog = InAppMessageDialog.build(
+                    activity,
+                    config,
+                    onCTATap = { dialog ->
+                        eventTracker?.track(
+                            "in_app_message_clicked",
+                            mapOf(
+                                "delivery_id" to messageId,
+                                "cta_action" to (config.content.cta_action?.type ?: "dismiss"),
+                                "source" to "pending_messages",
+                            ),
                         )
-                    }
-                }
-                dialog.setContentView(composeView)
+                        handleCTAAction(activity, config.content.cta_action)
+                        dialog.dismiss()
+                    },
+                    onDismiss = { dialog ->
+                        eventTracker?.track(
+                            "in_app_message_dismissed",
+                            mapOf(
+                                "delivery_id" to messageId,
+                                "source" to "pending_messages",
+                            ),
+                        )
+                        dialog.dismiss()
+                    },
+                )
+                isPresenting = true
                 dialog.setOnDismissListener { isPresenting = false }
-                dialog.window?.apply {
-                    setBackgroundDrawable(ColorDrawable(AndroidColor.TRANSPARENT))
-                    setLayout(
-                        WindowManager.LayoutParams.MATCH_PARENT,
-                        WindowManager.LayoutParams.MATCH_PARENT,
-                    )
-                }
                 dialog.show()
                 completion(true)
             } catch (err: Throwable) {

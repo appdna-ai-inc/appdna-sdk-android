@@ -44,8 +44,11 @@ import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.heading
+import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.semantics
 import kotlinx.coroutines.delay
+import androidx.activity.compose.BackHandler
+import androidx.compose.ui.draw.alpha
 import kotlinx.coroutines.launch
 // Accessibility string resources for in-app message chrome.
 import ai.appdna.sdk.R
@@ -99,15 +102,41 @@ fun InAppMessageView(
         onPrimary = content.button_text_color?.let { StyleEngine.parseColor(it) } ?: baseScheme.onPrimary,
     )
 
+    // whether the user may dismiss right now: starts from the policy, flips once `dismiss_delay`
+    // has passed, never flips when `dismiss_allowed` is false. Gates the ✕, `dismiss_text`, the backdrop
+    // tap and the system back button for all four types.
+    val dismissPolicy = MessageDismissPolicy.of(content)
+    var dismissUnlocked by remember(dismissPolicy) { mutableStateOf(dismissPolicy.dismissableAtOpen) }
+    LaunchedEffect(dismissPolicy) {
+        dismissPolicy.unlockAfterSeconds?.let { seconds ->
+            delay((seconds * 1000).toLong())
+            dismissUnlocked = true
+        }
+    }
+    // Back is ALWAYS consumed here, so the hosting dialog's own cancel never runs: when the user may
+    // dismiss, back dismisses through `onDismiss` (the tracked path, as the ✕ does); when not, it does
+    // nothing. The hosts make their dialog non-cancelable for the same reason.
+    BackHandler(enabled = true) {
+        if (dismissUnlocked) onDismiss()
+    }
+
     MaterialTheme(colorScheme = seeded) {
         when (config.message_type) {
-            MessageType.BANNER -> BannerMessageView(content, onCTATap, onDismiss)
-            MessageType.MODAL -> ModalMessageView(content, onCTATap, onDismiss)
-            MessageType.FULLSCREEN -> FullscreenMessageView(content, onCTATap, onDismiss)
-            MessageType.TOOLTIP -> TooltipMessageView(content, onCTATap, onDismiss)
+            MessageType.BANNER -> BannerMessageView(content, onCTATap, onDismiss, dismissUnlocked)
+            MessageType.MODAL -> ModalMessageView(content, onCTATap, onDismiss, dismissUnlocked)
+            MessageType.FULLSCREEN -> FullscreenMessageView(content, onCTATap, onDismiss, dismissUnlocked)
+            MessageType.TOOLTIP -> TooltipMessageView(content, onCTATap, onDismiss, dismissUnlocked)
         }
     }
 }
+
+/**
+ * a close control (the ✕, `dismiss_text`) drawn and tappable only while the user may dismiss.
+ * Hidden by alpha rather than removed so one that appears after `dismiss_delay` does not shift the
+ * layout; its semantics are cleared so TalkBack does not announce an invisible button.
+ */
+private fun Modifier.messageDismissControl(visible: Boolean): Modifier =
+    if (visible) this else this.alpha(0f).clearAndSetSemantics {}
 
 // MARK: - Banner
 
@@ -116,6 +145,7 @@ private fun BannerMessageView(
     content: MessageContent,
     onCTATap: () -> Unit,
     onDismiss: () -> Unit,
+    dismissUnlocked: Boolean = true,
 ) {
     val isTop = content.banner_position != "bottom"
     var isVisible by remember { mutableStateOf(false) }
@@ -240,6 +270,7 @@ private fun BannerMessageView(
                         // Dismiss button
                         val dismissCd = stringResource(R.string.appdna_a11y_message_close)
                         IconButton(
+                            enabled = dismissUnlocked,
                             onClick = {
                                 // \u2014 flip visible + delay 300ms so the slide/fade exit plays
                                 // before the ComposeView is torn down, matching iOS BannerView + Android's
@@ -255,6 +286,7 @@ private fun BannerMessageView(
                             // `xmark`. a11y label attached for TalkBack.
                             modifier = Modifier
                                 .size(24.dp)
+                                .messageDismissControl(dismissUnlocked)
                                 .semantics { contentDescription = dismissCd },
                         ) {
                             Icon(
@@ -294,6 +326,7 @@ private fun ModalMessageView(
     content: MessageContent,
     onCTATap: () -> Unit,
     onDismiss: () -> Unit,
+    dismissUnlocked: Boolean = true,
 ) {
     val textColor = content.text_color?.let { StyleEngine.parseColor(it) } ?: Color.Unspecified
     val buttonColor = content.button_color?.let { StyleEngine.parseColor(it) } ?: Color(0xFF6366F1)
@@ -341,7 +374,8 @@ private fun ModalMessageView(
             .clickable(
                 interactionSource = backdropInteractionSource,
                 indication = null,
-                onClick = onDismiss,
+                // a backdrop tap dismisses only while the user may.
+                onClick = { if (dismissUnlocked) onDismiss() },
             ),
         contentAlignment = Alignment.Center,
     ) {
@@ -363,10 +397,12 @@ private fun ModalMessageView(
                     val modalDismissCd = stringResource(R.string.appdna_a11y_message_close)
                     IconButton(
                         onClick = onDismiss,
+                        enabled = dismissUnlocked,
                         // \u2014 modal close X uses Material
                         // Close icon (mirrors iOS SF Symbol `xmark`).
                         modifier = Modifier
                             .size(32.dp)
+                            .messageDismissControl(dismissUnlocked)
                             .semantics { contentDescription = modalDismissCd },
                     ) {
                         Icon(
@@ -513,7 +549,7 @@ private fun ModalMessageView(
                 // Dismiss text
                 content.dismiss_text?.let { dismissText ->
                     Spacer(modifier = Modifier.height(8.dp))
-                    TextButton(onClick = onDismiss) {
+                    TextButton(onClick = onDismiss, enabled = dismissUnlocked, modifier = Modifier.messageDismissControl(dismissUnlocked)) {
                         Text(dismissText, fontSize = 14.sp, color = Color.Gray)
                     }
                 }
@@ -537,6 +573,7 @@ private fun FullscreenMessageView(
     content: MessageContent,
     onCTATap: () -> Unit,
     onDismiss: () -> Unit,
+    dismissUnlocked: Boolean = true,
 ) {
     val textColor = content.text_color?.let { StyleEngine.parseColor(it) } ?: Color.Unspecified
     val buttonColor = content.button_color?.let { StyleEngine.parseColor(it) } ?: Color(0xFF6366F1)
@@ -699,7 +736,7 @@ private fun FullscreenMessageView(
             // Dismiss text
             content.dismiss_text?.let { dismissText ->
                 Spacer(modifier = Modifier.height(8.dp))
-                TextButton(onClick = onDismiss) {
+                TextButton(onClick = onDismiss, enabled = dismissUnlocked, modifier = Modifier.messageDismissControl(dismissUnlocked)) {
                     Text(dismissText, fontSize = 14.sp, color = Color.Gray)
                 }
             }
@@ -711,6 +748,7 @@ private fun FullscreenMessageView(
         val fullscreenCloseCd = stringResource(R.string.appdna_a11y_message_close)
         IconButton(
             onClick = onDismiss,
+            enabled = dismissUnlocked,
             // \u2014 fullscreen close X (Text glyph).
             // \u2014 no background fill,
             // matches iOS FullscreenView.swift:129-135 which renders just the
@@ -719,6 +757,7 @@ private fun FullscreenMessageView(
                 .align(Alignment.TopEnd)
                 .padding(16.dp)
                 .size(36.dp)
+                .messageDismissControl(dismissUnlocked)
                 .semantics { contentDescription = fullscreenCloseCd },
         ) {
             // Mirror iOS SF Symbol `xmark` (was Text glyph).
@@ -747,6 +786,7 @@ private fun TooltipMessageView(
     content: MessageContent,
     onCTATap: () -> Unit,
     onDismiss: () -> Unit,
+    dismissUnlocked: Boolean = true,
 ) {
     val textColor = content.text_color?.let { StyleEngine.parseColor(it) } ?: Color.Unspecified
     val buttonColor = content.button_color?.let { StyleEngine.parseColor(it) } ?: Color(0xFF6366F1)
@@ -855,7 +895,7 @@ private fun TooltipMessageView(
                                     delay(300L)
                                     onDismiss()
                                 }
-                            }, modifier = Modifier.size(24.dp)) {
+                            }, enabled = dismissUnlocked, modifier = Modifier.size(24.dp).messageDismissControl(dismissUnlocked)) {
                                 androidx.compose.material3.Icon(
                                     imageVector = Icons.Filled.Close,
                                     contentDescription = "Close",

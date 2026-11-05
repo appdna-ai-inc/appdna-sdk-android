@@ -99,9 +99,52 @@ data class MessageContent(
     val haptic: ai.appdna.sdk.core.HapticConfig? = null,
     val particle_effect: ai.appdna.sdk.core.ParticleEffect? = null,
     val blur_backdrop: ai.appdna.sdk.core.BlurConfig? = null,
+    // the console's "Allow Dismiss" switch and "Dismiss Delay (seconds)". Absent → dismissable at
+    // once (the behaviour before these were read). Read through [MessageDismissPolicy], never directly.
+    val dismiss_allowed: Boolean? = null,
+    val dismiss_delay: Double? = null,
     // Sparse dark-mode overrides
     val dark: MessageContentDark? = null,
 )
+
+/**
+ * WHEN the user may dismiss an in-app message: the close control (the ✕ and `dismiss_text`), a
+ * tap on the backdrop, and the system back button.
+ *
+ * - `dismiss_allowed == false` → never. The message leaves only through an authored button (the CTA or
+ *   the secondary CTA), or its `auto_dismiss_seconds` timer — what the console preview shows, where the
+ *   ✕ is hidden and both CTAs stay. A message with NEITHER button stays dismissable: the switch cannot
+ *   make a message the user has no way out of.
+ * - `dismiss_delay = N` → only once N seconds have passed since the message appeared; the ✕ is not
+ *   drawn before then.
+ * - absent / wrong type → dismissable at once.
+ *
+ * ONE rule for all four message types. iOS `MessageDismissPolicy` is the same rule;
+ * `packages/sdk-shared-fixtures/dto_parsing/message_dismiss_policy.fixture.json` pins both.
+ */
+data class MessageDismissPolicy(val allowed: Boolean, val delaySeconds: Double) {
+    /** May the user dismiss the message [elapsedSeconds] after it appeared? */
+    fun userMayDismiss(elapsedSeconds: Double): Boolean = allowed && elapsedSeconds >= delaySeconds
+
+    /** The state a view starts in. */
+    val dismissableAtOpen: Boolean get() = userMayDismiss(0.0)
+
+    /** Seconds until the close control appears, or null when it never will (or already has). */
+    val unlockAfterSeconds: Double? get() = if (allowed && delaySeconds > 0.0) delaySeconds else null
+
+    companion object {
+        fun of(content: MessageContent?): MessageDismissPolicy {
+            val d = content?.dismiss_delay ?: 0.0
+            // Never a trap: a message with no button at all (no CTA, no secondary CTA) stays dismissable
+            // whatever the switch says — otherwise a fullscreen message would hold the app until it is killed.
+            val hasAuthoredExit = !content?.cta_text.isNullOrBlank() || !content?.secondary_cta_text.isNullOrBlank()
+            return MessageDismissPolicy(
+                allowed = (content?.dismiss_allowed ?: true) || !hasAuthoredExit,
+                delaySeconds = if (d.isFinite()) maxOf(0.0, d) else 0.0,
+            )
+        }
+    }
+}
 
 /**
  * Render-time resolver. In dark mode, any field
@@ -280,6 +323,9 @@ internal object MessageConfigParser {
             background_color = contentMap["background_color"] as? String,
             banner_position = contentMap["banner_position"] as? String,
             auto_dismiss_seconds = (contentMap["auto_dismiss_seconds"] as? Number)?.toInt(),
+            // wrong type → null → the default, as iOS's `@LenientScalar` reads it.
+            dismiss_allowed = contentMap["dismiss_allowed"] as? Boolean,
+            dismiss_delay = (contentMap["dismiss_delay"] as? Number)?.toDouble(),
             text_color = contentMap["text_color"] as? String,
             button_color = contentMap["button_color"] as? String,
             //

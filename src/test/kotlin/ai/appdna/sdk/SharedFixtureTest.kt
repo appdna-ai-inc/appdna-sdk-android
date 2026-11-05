@@ -269,6 +269,7 @@ class SharedFixtureTest(
             "decode_message_cta" -> runDecodeMessageCta(action, spy)
             "decode_message_hero" -> runDecodeMessageHero(action, spy)
             "decode_pending_delivery" -> runDecodePendingDelivery(action, spy)
+            "resolve_message_dismiss" -> runResolveMessageDismiss(action, spy)
             "parse_colour" -> runParseColour(action, spy)
             "unfold_blockquotes" -> runUnfoldBlockquotes(action, spy)
             "normalise_markdown" -> runUnfoldBlockquotes(action, spy)
@@ -2924,6 +2925,31 @@ class SharedFixtureTest(
             mapOf(
                 "light" to msg.content.resolved(isDark = false).image_url,
                 "dark" to msg.content.resolved(isDark = true).image_url,
+            )
+        }
+    }
+
+    /**
+     * when an in-app message may be dismissed: the REAL parser
+     * (`MessageConfigParser.parseSingleMessage`), then the REAL `MessageDismissPolicy.of`, the rule every
+     * message view gates its close control, backdrop tap and back press on.
+     */
+    private fun runResolveMessageDismiss(action: JSONObject, spy: Spy) {
+        val cases = action.optJSONArray("cases") ?: unsupported("resolve_message_dismiss without cases")
+        spy.state["results"] = (0 until cases.length()).map { i ->
+            val c = cases.getJSONObject(i)
+            val name = c.optString("name", "?")
+            @Suppress("UNCHECKED_CAST")
+            val content = (c.optJSONObject("content") ?: unsupported("resolve_message_dismiss case without content"))
+                .asMap().filterValues { it != null } as Map<String, Any>
+            val at = c.optJSONArray("at_seconds") ?: unsupported("resolve_message_dismiss case without at_seconds")
+            val msg = ai.appdna.sdk.messages.MessageConfigParser.parseSingleMessage(
+                mapOf("name" to name, "message_type" to "modal", "content" to content, "trigger_rules" to mapOf("event" to "e")),
+            ) ?: throw AssertionError("[resolve_message_dismiss] case $name: the message did not parse")
+            val policy = ai.appdna.sdk.messages.MessageDismissPolicy.of(msg.content)
+            mapOf(
+                "dismissable" to (0 until at.length()).map { policy.userMayDismiss(at.getDouble(it)) },
+                "unlock_after" to policy.unlockAfterSeconds,
             )
         }
     }

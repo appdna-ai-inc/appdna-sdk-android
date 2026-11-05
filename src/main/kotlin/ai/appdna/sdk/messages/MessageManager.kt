@@ -17,16 +17,9 @@ import ai.appdna.sdk.core.TriggerOperator
 import android.app.Activity
 import android.content.Context
 import android.content.Intent
-import android.graphics.Color as AndroidColor
-import android.graphics.drawable.ColorDrawable
 import android.net.Uri
 import android.os.Handler
 import android.os.Looper
-import android.view.WindowManager
-import androidx.activity.ComponentDialog
-import androidx.compose.ui.platform.ComposeView
-import androidx.lifecycle.setViewTreeLifecycleOwner
-import androidx.savedstate.setViewTreeSavedStateRegistryOwner
 import ai.appdna.sdk.AppDNA
 import ai.appdna.sdk.AppDNAInAppMessageDelegate
 import ai.appdna.sdk.Log
@@ -318,47 +311,33 @@ class MessageManager internal constructor(
         mainHandler.post { delegate?.onMessageShown(messageId, triggerEvent) }
 
         try {
-            val dialog = ComponentDialog(activity)
-            val composeView = ComposeView(activity).apply {
-                setViewTreeLifecycleOwner(dialog)
-                setViewTreeSavedStateRegistryOwner(dialog)
-                setContent {
-                    InAppMessageView(
-                        config = config,
-                        onCTATap = {
-                            val ctaActionType = config.content.cta_action?.type ?: "dismiss"
-                            AppDNA.trackInternal(
-                                "in_app_message_clicked",
-                                mapOf("message_id" to messageId, "cta_action" to ctaActionType),
-                            )
-                            // onMessageAction with action type + cta data
-                            val ctaData: Map<String, Any>? = config.content.cta_action?.url?.let { mapOf("url" to it) }
-                            mainHandler.post { delegate?.onMessageAction(messageId, ctaActionType, ctaData) }
-
-                            handleCTAAction(activity, config.content.cta_action)
-                            dialog.dismiss()
-                        },
-                        onDismiss = {
-                            AppDNA.trackInternal(
-                                "in_app_message_dismissed",
-                                mapOf("message_id" to messageId),
-                            )
-                            dialog.dismiss()
-                        },
+            val dialog = InAppMessageDialog.build(
+                activity,
+                config,
+                onCTATap = { dialog ->
+                    val ctaActionType = config.content.cta_action?.type ?: "dismiss"
+                    AppDNA.trackInternal(
+                        "in_app_message_clicked",
+                        mapOf("message_id" to messageId, "cta_action" to ctaActionType),
                     )
-                }
-            }
-            dialog.setContentView(composeView)
+                    // onMessageAction with action type + cta data
+                    val ctaData: Map<String, Any>? = config.content.cta_action?.url?.let { mapOf("url" to it) }
+                    mainHandler.post { delegate?.onMessageAction(messageId, ctaActionType, ctaData) }
+
+                    handleCTAAction(activity, config.content.cta_action)
+                    dialog.dismiss()
+                },
+                onDismiss = { dialog ->
+                    AppDNA.trackInternal(
+                        "in_app_message_dismissed",
+                        mapOf("message_id" to messageId),
+                    )
+                    dialog.dismiss()
+                },
+            )
             dialog.setOnDismissListener {
                 isPresenting.set(false)
                 mainHandler.post { delegate?.onMessageDismissed(messageId) }
-            }
-            dialog.window?.apply {
-                setBackgroundDrawable(ColorDrawable(AndroidColor.TRANSPARENT))
-                setLayout(
-                    WindowManager.LayoutParams.MATCH_PARENT,
-                    WindowManager.LayoutParams.MATCH_PARENT,
-                )
             }
             dialog.show()
         } catch (e: Throwable) {
