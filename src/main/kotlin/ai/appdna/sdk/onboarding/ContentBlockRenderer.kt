@@ -5523,13 +5523,12 @@ private fun RatingBlock(
     val inactiveColor = StyleEngine.parseColor(
         block.empty_color ?: block.inactive_rating_color ?: block.inactive_color ?: "#D1D5DB"
     )
-    val fieldId = block.field_id ?: block.id
+    val fieldId = RatingAnswer.key(block)
     val allowHalf = block.allow_half == true
 
     // `default_rating` (iOS canon) / `default_value`
     // (legacy) honoured.
-    val initial = (block.default_rating ?: block.default_value
-        ?: (inputValues[fieldId] as? Number)?.toDouble()) ?: 0.0
+    val initial = RatingAnswer.initial(block, inputValues[fieldId])
     var selectedRating by remember { mutableStateOf(initial) }
 
     Column(
@@ -5601,11 +5600,7 @@ private fun RatingBlock(
                         .clickable {
                             // Toggle half ↔ full when allow_half on
                             // a re-tap of the currently-filled star.
-                            val tapped = i.toDouble()
-                            selectedRating = when {
-                                allowHalf && full && (selectedRating - tapped).let { it >= 0 && it < 0.5 } -> tapped - 0.5
-                                else -> tapped
-                            }
+                            selectedRating = RatingAnswer.afterTap(selectedRating, i, allowHalf)
                             inputValues[fieldId] = selectedRating
                         },
                 )
@@ -13991,5 +13986,25 @@ internal fun StepMapFrame(
                 MapBlock(bottom, MapPlacement.ANCHOR_BOTTOM)
             }
         }
+    }
+}
+
+/**
+ * What a `rating` block stores, and where. ONE rule; iOS `RatingAnswer` is the same, and
+ * `packages/sdk-shared-fixtures/dto_parsing/rating_block_stores_answer.fixture.json` pins both.
+ */
+internal object RatingAnswer {
+    /** The answer is stored at the block's `field_id`, else its id (as `input_rating` does). */
+    fun key(block: ContentBlock): String = block.field_id ?: block.id
+
+    /** The value shown before any tap: `default_rating`, else `default_value`, else what is already stored. */
+    fun initial(block: ContentBlock, stored: Any?): Double =
+        block.default_rating ?: block.default_value ?: (stored as? Number)?.toDouble() ?: 0.0
+
+    /** A tap on star [tapped]: that star, or — with `allow_half`, on a re-tap of the star already filled — its half. */
+    fun afterTap(current: Double, tapped: Int, allowHalf: Boolean): Double {
+        val t = tapped.toDouble()
+        val diff = current - t
+        return if (allowHalf && current >= t && diff >= 0 && diff < 0.5) t - 0.5 else t
     }
 }
