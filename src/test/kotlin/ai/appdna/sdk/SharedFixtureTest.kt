@@ -63,6 +63,7 @@ import ai.appdna.sdk.integrations.PushTokenManager
 import ai.appdna.sdk.messages.MessageConfigParser
 import ai.appdna.sdk.messages.MessageFrequencyTracker
 import ai.appdna.sdk.messages.MessageManager
+import ai.appdna.sdk.messages.resolved
 import ai.appdna.sdk.network.ApiClient
 import ai.appdna.sdk.onboarding.AppDNAOnboardingDelegate
 import ai.appdna.sdk.onboarding.ONBOARDING_HOOK_COMPLETED_EVENT
@@ -266,6 +267,7 @@ class SharedFixtureTest(
             "parse_window_date" -> runParseWindowDate(action, spy)
             // An in-app message CTA, through the REAL message parser and the link a tap opens.
             "decode_message_cta" -> runDecodeMessageCta(action, spy)
+            "decode_message_hero" -> runDecodeMessageHero(action, spy)
             "parse_colour" -> runParseColour(action, spy)
             "unfold_blockquotes" -> runUnfoldBlockquotes(action, spy)
             "normalise_markdown" -> runUnfoldBlockquotes(action, spy)
@@ -2900,6 +2902,28 @@ class SharedFixtureTest(
             msg.content.cta_action?.let { cta ->
                 mapOf("type" to cta.type, "url" to cta.url, "opens" to cta.linkToOpen)
             }
+        }
+    }
+
+    /**
+     * Which hero an in-app message draws: the REAL `MessageConfigParser.parseSingleMessage`, then
+     * `MessageContent.resolved(isDark)` (what InAppMessageRenderer draws from) → `image_url`.
+     */
+    private fun runDecodeMessageHero(action: JSONObject, spy: Spy) {
+        val cases = action.optJSONArray("cases") ?: unsupported("decode_message_hero without cases")
+        spy.state["results"] = (0 until cases.length()).map { i ->
+            val c = cases.getJSONObject(i)
+            val name = c.optString("name", "?")
+            @Suppress("UNCHECKED_CAST")
+            val content = (c.optJSONObject("content") ?: unsupported("decode_message_hero case without content"))
+                .asMap().filterValues { it != null } as Map<String, Any>
+            val msg = ai.appdna.sdk.messages.MessageConfigParser.parseSingleMessage(
+                mapOf("name" to name, "message_type" to "modal", "content" to content, "trigger_rules" to mapOf("event" to "e")),
+            ) ?: throw AssertionError("[decode_message_hero] case $name: the message did not parse")
+            mapOf(
+                "light" to msg.content.resolved(isDark = false).image_url,
+                "dark" to msg.content.resolved(isDark = true).image_url,
+            )
         }
     }
 
