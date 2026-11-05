@@ -2878,7 +2878,7 @@ private fun ImageBlock(block: ContentBlock) {
                     // Image_fit is honored INSIDE the mockup; it was hardcoded to Crop,
                     // which is why the reporter's "Fit" attempt did nothing.
                     contentScale = contentScale,
-                    contentDescription = block.alt ?: "Image",
+                    contentDescription = block.imageAccessibilityLabel,
                 )
                 Box(
                     modifier = Modifier
@@ -2931,7 +2931,7 @@ private fun ImageBlock(block: ContentBlock) {
                     .clip(RoundedCornerShape(imageRadius)),
                 contentScale = contentScale,
                 alignment = imageAlignment,
-                contentDescription = block.alt ?: "Image",
+                contentDescription = block.imageAccessibilityLabel,
             )
         }
         return
@@ -2951,7 +2951,7 @@ private fun ImageBlock(block: ContentBlock) {
         // at ContentBlockRendererView.swift:340. Was passing null — TalkBack
         // treats null contentDescription on an Image as "decorative" so the
         // image is silently skipped.
-        contentDescription = block.alt ?: "Image",
+        contentDescription = block.imageAccessibilityLabel,
     )
 }
 

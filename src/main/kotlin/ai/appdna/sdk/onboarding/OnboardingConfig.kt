@@ -2583,3 +2583,11 @@ internal object OnboardingConfigParser {
         }.orEmpty()
 
 }
+
+/**
+ * What TalkBack says for an image block: the console's "Alt text" (`alt`), trimmed, else "Image". One rule
+ * for every place an image block is drawn; iOS `ContentBlock.imageAccessibilityLabel` is the same, and
+ * `packages/sdk-shared-fixtures/dto_parsing/onboarding_image_alt.fixture.json` pins both.
+ */
+val ContentBlock.imageAccessibilityLabel: String
+    get() = alt?.trim()?.takeIf { it.isNotEmpty() } ?: "Image"

@@ -47,6 +47,7 @@ import ai.appdna.sdk.config.RemoteConfigManager
 import ai.appdna.sdk.onboarding.mapPlacement
 import ai.appdna.sdk.onboarding.RequiredFieldGate
 import ai.appdna.sdk.onboarding.summaryStatFieldId
+import ai.appdna.sdk.onboarding.imageAccessibilityLabel
 import ai.appdna.sdk.onboarding.resolveTemplateString
 import ai.appdna.sdk.core.AudienceRuleEvaluator
 import ai.appdna.sdk.core.AudienceRuleSet
@@ -271,6 +272,7 @@ class SharedFixtureTest(
             "decode_pending_delivery" -> runDecodePendingDelivery(action, spy)
             "resolve_message_dismiss" -> runResolveMessageDismiss(action, spy)
             "resolve_paywall_image_alt" -> runPaywallImageAlt(action, spy)
+            "resolve_onboarding_image_alt" -> runOnboardingImageAlt(action, spy)
             "parse_colour" -> runParseColour(action, spy)
             "unfold_blockquotes" -> runUnfoldBlockquotes(action, spy)
             "normalise_markdown" -> runUnfoldBlockquotes(action, spy)
@@ -2928,6 +2930,25 @@ class SharedFixtureTest(
                 "light" to msg.content.resolved(isDark = false).image_url,
                 "dark" to msg.content.resolved(isDark = true).image_url,
             )
+        }
+    }
+
+    /**
+     * An onboarding image block's alt text, through the REAL `OnboardingConfigParser.parseStepForTest` and
+     * the REAL `ContentBlock.imageAccessibilityLabel` — the `contentDescription` every image branch uses.
+     */
+    private fun runOnboardingImageAlt(action: JSONObject, spy: Spy) {
+        val cases = action.optJSONArray("cases") ?: unsupported("resolve_onboarding_image_alt without cases")
+        spy.state["results"] = (0 until cases.length()).map { i ->
+            val c = cases.getJSONObject(i)
+            val name = c.optString("name", "?")
+            val block = jsonToMap(c.optJSONObject("block") ?: unsupported("resolve_onboarding_image_alt case without block"))
+            val step = mapOf("id" to "fixture_step", "type" to "custom", "content_blocks" to listOf(block))
+            val parsed = ai.appdna.sdk.onboarding.OnboardingConfigParser.parseStepForTest(step)
+                ?: throw AssertionError("[resolve_onboarding_image_alt] case $name: the step did not parse")
+            val b = parsed.config.content_blocks?.firstOrNull()
+                ?: throw AssertionError("[resolve_onboarding_image_alt] case $name: the block was dropped")
+            b.imageAccessibilityLabel
         }
     }
 
