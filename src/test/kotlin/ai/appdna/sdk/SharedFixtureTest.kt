@@ -48,6 +48,7 @@ import ai.appdna.sdk.onboarding.mapPlacement
 import ai.appdna.sdk.onboarding.RequiredFieldGate
 import ai.appdna.sdk.onboarding.summaryStatFieldId
 import ai.appdna.sdk.onboarding.imageAccessibilityLabel
+import ai.appdna.sdk.onboarding.visibleUnderHostData
 import ai.appdna.sdk.onboarding.resolveTemplateString
 import ai.appdna.sdk.core.AudienceRuleEvaluator
 import ai.appdna.sdk.core.AudienceRuleSet
@@ -273,6 +274,7 @@ class SharedFixtureTest(
             "resolve_message_dismiss" -> runResolveMessageDismiss(action, spy)
             "resolve_paywall_image_alt" -> runPaywallImageAlt(action, spy)
             "resolve_onboarding_image_alt" -> runOnboardingImageAlt(action, spy)
+            "resolve_container_children" -> runContainerChildren(action, spy)
             "parse_colour" -> runParseColour(action, spy)
             "unfold_blockquotes" -> runUnfoldBlockquotes(action, spy)
             "normalise_markdown" -> runUnfoldBlockquotes(action, spy)
@@ -2930,6 +2932,34 @@ class SharedFixtureTest(
                 "light" to msg.content.resolved(isDark = false).image_url,
                 "dark" to msg.content.resolved(isDark = true).image_url,
             )
+        }
+    }
+
+    /**
+     * A container's children minus those the host-data raw pass hid, through the REAL step parser and the REAL
+     * `visibleUnderHostData(ids)` — the filter every container (multi-buttons included) applies.
+     */
+    private fun runContainerChildren(action: JSONObject, spy: Spy) {
+        val cases = action.optJSONArray("cases") ?: unsupported("resolve_container_children without cases")
+        spy.state["results"] = (0 until cases.length()).map { i ->
+            val c = cases.getJSONObject(i)
+            val name = c.optString("name", "?")
+            @Suppress("UNCHECKED_CAST")
+            val container = (c.optJSONObject("container") ?: unsupported("resolve_container_children case without container")).asMap().filterValues { it != null } as Map<String, Any>
+            val idsJson = c.optJSONArray("raw_resolved_ids")
+            val ids = (0 until (idsJson?.length() ?: 0)).map { idsJson!!.getString(it) }.toSet()
+            val step = mapOf("id" to "fixture_step", "type" to "custom", "content_blocks" to listOf(container))
+            val parsed = ai.appdna.sdk.onboarding.OnboardingConfigParser.parseStepForTest(step)
+                ?: throw AssertionError("[resolve_container_children] case $name: the step did not parse")
+            val block = parsed.config.content_blocks?.firstOrNull()
+                ?: throw AssertionError("[resolve_container_children] case $name: the container was dropped")
+            // The raw pass writes the marker after decoding (the parser drops it from authored JSON); do the same.
+            val markers = c.optJSONObject("empty_state_markers")
+            val children = (block.children ?: block.stack_children ?: emptyList()).map { child ->
+                val es = markers?.optJSONObject(child.id)?.asMap() ?: return@map child
+                child.copy(field_config = (child.field_config ?: emptyMap()) + ("empty_state" to es.filterValues { it != null }))
+            }
+            children.visibleUnderHostData(ids).map { it.id }
         }
     }
 

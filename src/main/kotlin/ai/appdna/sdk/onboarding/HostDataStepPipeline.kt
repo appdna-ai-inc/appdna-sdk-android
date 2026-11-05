@@ -610,9 +610,16 @@ internal fun ContentBlock.isHiddenByHostData(rawResolvedIds: Set<String>): Boole
 @Composable
 @ReadOnlyComposable
 internal fun List<ContentBlock>.visibleUnderHostData(): List<ContentBlock> {
-    val ids = hostDataRawResolvedIds()
-    return if (ids.isEmpty()) this else filterNot { it.isHiddenByHostData(ids) }
+    return visibleUnderHostData(hostDataRawResolvedIds())
 }
+
+/**
+ * The same rule, given the raw pass's ids — ONE rule for every container; iOS
+ * `OnboardingStepPipeline.visibleChildren(of:isRawResolved:)` is the same, and
+ * `packages/sdk-shared-fixtures/dto_parsing/container_children_hidden_by_host_data.fixture.json` pins both.
+ */
+internal fun List<ContentBlock>.visibleUnderHostData(rawResolvedIds: Set<String>): List<ContentBlock> =
+    if (rawResolvedIds.isEmpty()) this else filterNot { it.isHiddenByHostData(rawResolvedIds) }
 
 /**
  * The ids the raw pass produced in THIS composition — empty outside a raw-resolved onboarding
