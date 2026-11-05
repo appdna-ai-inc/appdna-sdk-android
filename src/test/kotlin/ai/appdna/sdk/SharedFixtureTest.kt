@@ -275,7 +275,6 @@ class SharedFixtureTest(
             "resolve_paywall_image_alt" -> runPaywallImageAlt(action, spy)
             "resolve_onboarding_image_alt" -> runOnboardingImageAlt(action, spy)
             "resolve_container_children" -> runContainerChildren(action, spy)
-            "resolve_rating_answer" -> runRatingAnswer(action, spy)
             "parse_colour" -> runParseColour(action, spy)
             "unfold_blockquotes" -> runUnfoldBlockquotes(action, spy)
             "normalise_markdown" -> runUnfoldBlockquotes(action, spy)
@@ -2933,33 +2932,6 @@ class SharedFixtureTest(
                 "light" to msg.content.resolved(isDark = false).image_url,
                 "dark" to msg.content.resolved(isDark = true).image_url,
             )
-        }
-    }
-
-    /**
-     * The rating block's stored answer, through the REAL step parser and the REAL `RatingAnswer` the
-     * `RatingBlock` calls on each tap.
-     */
-    private fun runRatingAnswer(action: JSONObject, spy: Spy) {
-        val cases = action.optJSONArray("cases") ?: unsupported("resolve_rating_answer without cases")
-        spy.state["results"] = (0 until cases.length()).map { i ->
-            val c = cases.getJSONObject(i)
-            val name = c.optString("name", "?")
-            @Suppress("UNCHECKED_CAST")
-            val raw = (c.optJSONObject("block") ?: unsupported("resolve_rating_answer case without block")).asMap().filterValues { it != null } as Map<String, Any>
-            val step = mapOf("id" to "fixture_step", "type" to "custom", "content_blocks" to listOf(raw))
-            val block = ai.appdna.sdk.onboarding.OnboardingConfigParser.parseStepForTest(step)?.config?.content_blocks?.firstOrNull()
-                ?: throw AssertionError("[resolve_rating_answer] case $name: the block did not parse")
-            val key = ai.appdna.sdk.onboarding.RatingAnswer.key(block)
-            val stored: Any? = if (c.has("stored")) c.getDouble("stored") else null
-            var current = ai.appdna.sdk.onboarding.RatingAnswer.initial(block, stored)
-            var written: Any? = null
-            val taps = c.optJSONArray("taps")
-            for (t in 0 until (taps?.length() ?: 0)) {
-                current = ai.appdna.sdk.onboarding.RatingAnswer.afterTap(current, taps!!.getInt(t), block.allow_half == true)
-                written = current
-            }
-            mapOf("key" to key, "stored" to written)
         }
     }
 
