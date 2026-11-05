@@ -268,6 +268,7 @@ class SharedFixtureTest(
             // An in-app message CTA, through the REAL message parser and the link a tap opens.
             "decode_message_cta" -> runDecodeMessageCta(action, spy)
             "decode_message_hero" -> runDecodeMessageHero(action, spy)
+            "decode_pending_delivery" -> runDecodePendingDelivery(action, spy)
             "parse_colour" -> runParseColour(action, spy)
             "unfold_blockquotes" -> runUnfoldBlockquotes(action, spy)
             "normalise_markdown" -> runUnfoldBlockquotes(action, spy)
@@ -2924,6 +2925,30 @@ class SharedFixtureTest(
                 "light" to msg.content.resolved(isDark = false).image_url,
                 "dark" to msg.content.resolved(isDark = true).image_url,
             )
+        }
+    }
+
+    /**
+     * A per-user delivery document, through the REAL `PendingMessageListener.decodeDelivery` — the decode the
+     * listener runs on every document it receives (expiry filter, message decode, degraded fallback).
+     */
+    private fun runDecodePendingDelivery(action: JSONObject, spy: Spy) {
+        val cases = action.optJSONArray("cases") ?: unsupported("decode_pending_delivery without cases")
+        spy.state["results"] = (0 until cases.length()).map { i ->
+            val c = cases.getJSONObject(i)
+            val doc = (c.optJSONObject("document") ?: unsupported("decode_pending_delivery case without document")).asMap()
+            val nowMs = c.optLong("now_ms", -1).takeIf { it >= 0 } ?: unsupported("decode_pending_delivery case without now_ms")
+            ai.appdna.sdk.messages.PendingMessageListener.decodeDelivery(doc, nowMs)?.let { config ->
+                val content = config.content
+                mapOf(
+                    "message_type" to config.message_type.value,
+                    "title" to content.title,
+                    "cta_type" to content.cta_action?.type,
+                    "cta_opens" to content.cta_action?.linkToOpen,
+                    "image_url" to content.image_url,
+                    "background_color" to content.background_color,
+                )
+            }
         }
     }
 

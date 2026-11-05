@@ -72,20 +72,10 @@ internal class PendingMessageListener(
     private fun handleIncoming(doc: QueryDocumentSnapshot, now: Long) {
         val data = doc.data
 
-        // Server-side expiry filter (TTL).
-        val expiresMs = (data["expires_at_ms"] as? Number)?.toLong()
-        if (expiresMs != null && expiresMs < now) {
-            Log.debug("PendingMessageListener: skipping expired ${doc.id}")
+        val config = decodeDelivery(data, now) ?: run {
+            Log.debug("PendingMessageListener: skipping ${doc.id} (expired or missing content)")
             return
         }
-
-        @Suppress("UNCHECKED_CAST")
-        val content = (data["content"] as? Map<String, Any>) ?: run {
-            Log.debug("PendingMessageListener: ${doc.id} missing content — skipping")
-            return
-        }
-
-        val config = decodeMessageConfig(content, data)
 
         eventTracker?.track(
             "in_app_message_received",
@@ -114,47 +104,6 @@ internal class PendingMessageListener(
         }
     }
 
-    /** Decode the delivered content into the full `MessageConfig`. */
-    @Suppress("UNCHECKED_CAST")
-    private fun decodeMessageConfig(
-        content: Map<String, Any>,
-        root: Map<String, Any>,
-    ): MessageConfig {
-        // Build a config-shaped Map and feed it through MessageConfigParser.
-        val configMap: MutableMap<String, Any> = mutableMapOf()
-        configMap["content"] = content
-        val mt = (root["message_type"] as? String) ?: (content["message_type"] as? String) ?: "modal"
-        configMap["message_type"] = mt
-        configMap["name"] = (root["trigger_id"] as? String) ?: ""
-        // Trigger rules are required by MessageConfig but irrelevant for
-        // pending-message delivery (the server already decided this user
-        // gets it). Provide a no-op rules block so the parser succeeds.
-        configMap["trigger_rules"] = mapOf(
-            "event" to "journey_delivery",
-            "frequency" to "every_time",
-        )
-
-        return try {
-            val wrapper = MessageConfigParser.parseMessages(mapOf("delivery" to configMap))
-            wrapper["delivery"] ?: fallbackConfig(content)
-        } catch (e: Throwable) {
-            Log.warning("PendingMessageListener: MessageConfig decode failed (${e.message}) — using fallback")
-            fallbackConfig(content)
-        }
-    }
-
-    private fun fallbackConfig(content: Map<String, Any>): MessageConfig {
-        return MessageConfig(
-            name = "",
-            message_type = MessageType.MODAL,
-            content = MessageContent(
-                title = content["title"] as? String,
-                body = (content["body"] as? String) ?: (content["message"] as? String),
-                cta_text = (content["cta_text"] as? String) ?: "OK",
-            ),
-            trigger_rules = TriggerRules(event = "journey_delivery", frequency = "every_time"),
-        )
-    }
 
     /**
      * Present the InAppMessageView composable in a `ComponentDialog`
@@ -276,6 +225,64 @@ internal class PendingMessageListener(
         } catch (e: Exception) {
             Log.warning("PendingMessageListener: failed to get current activity: ${e.message}")
             null
+        }
+    }
+
+    internal companion object {
+        /**
+         * The delivery document as the listener receives it → the [MessageConfig] it presents, or null when
+         * the delivery is expired or carries no `content`. The one decode `handleIncoming` runs; on the
+         * companion so a test can drive it with a document read back from Firestore.
+         */
+        @Suppress("UNCHECKED_CAST")
+        internal fun decodeDelivery(data: Map<String, Any?>, now: Long): MessageConfig? {
+            // Server-side expiry filter (TTL).
+            val expiresMs = (data["expires_at_ms"] as? Number)?.toLong()
+            if (expiresMs != null && expiresMs < now) return null
+            val content = (data["content"] as? Map<String, Any>) ?: return null
+            return decodeMessageConfig(content, data.filterValues { it != null } as Map<String, Any>)
+        }
+
+        /** Decode the delivered content into the full `MessageConfig`. */
+        @Suppress("UNCHECKED_CAST")
+        internal fun decodeMessageConfig(
+            content: Map<String, Any>,
+            root: Map<String, Any>,
+        ): MessageConfig {
+            // Build a config-shaped Map and feed it through MessageConfigParser.
+            val configMap: MutableMap<String, Any> = mutableMapOf()
+            configMap["content"] = content
+            val mt = (root["message_type"] as? String) ?: (content["message_type"] as? String) ?: "modal"
+            configMap["message_type"] = mt
+            configMap["name"] = (root["trigger_id"] as? String) ?: ""
+            // Trigger rules are required by MessageConfig but irrelevant for
+            // pending-message delivery (the server already decided this user
+            // gets it). Provide a no-op rules block so the parser succeeds.
+            configMap["trigger_rules"] = mapOf(
+                "event" to "journey_delivery",
+                "frequency" to "every_time",
+            )
+
+            return try {
+                val wrapper = MessageConfigParser.parseMessages(mapOf("delivery" to configMap))
+                wrapper["delivery"] ?: fallbackConfig(content)
+            } catch (e: Throwable) {
+                Log.warning("PendingMessageListener: MessageConfig decode failed (${e.message}) — using fallback")
+                fallbackConfig(content)
+            }
+        }
+
+        private fun fallbackConfig(content: Map<String, Any>): MessageConfig {
+            return MessageConfig(
+                name = "",
+                message_type = MessageType.MODAL,
+                content = MessageContent(
+                    title = content["title"] as? String,
+                    body = (content["body"] as? String) ?: (content["message"] as? String),
+                    cta_text = (content["cta_text"] as? String) ?: "OK",
+                ),
+                trigger_rules = TriggerRules(event = "journey_delivery", frequency = "every_time"),
+            )
         }
     }
 }
