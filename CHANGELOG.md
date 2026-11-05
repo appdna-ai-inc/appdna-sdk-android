@@ -36,6 +36,9 @@ Feature parity: iOS 1.0.86.
 
 - **Text on a pale gradient is readable.** Text nobody coloured is drawn dark on a gradient whose every
   stop is light; it was white on every gradient, so on a pale one it disappeared.
+- **The paywall guarantee badge draws its shield.** Its default symbol (now `checkmark.shield.fill`; the
+  old `shield.checkmark.fill` is not an SF Symbol and is read as it) and the shield names authors write
+  (`shield.fill`, `lock.shield.fill`) had no Material equivalent, so the badge drew a "?".
 
 ## [1.0.57] — 2026-11-03
 

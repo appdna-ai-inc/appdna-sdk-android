@@ -4744,8 +4744,7 @@ internal fun PaywallSectionView(
                     IconView(
                         ref = IconReference(
                             library = "sf-symbols",
-                            name = iconName?.takeIf { it.contains(".") || it.contains("_") }
-                                ?: "shield.checkmark.fill",
+                            name = GuaranteeIcon.symbol(iconName),
                             color = section.data?.accent_color ?: "#22C55E",
                             size = 28f,
                         ),

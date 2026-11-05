@@ -200,6 +200,9 @@ object MaterialIconMapping {
         "more_vert" to Icons.Filled.MoreVert,
         "done" to Icons.Filled.Done,
         "clear" to Icons.Filled.Clear,
+        // The paywall guarantee badge's shields (its default is `checkmark.shield.fill`).
+        "verified_user" to Icons.Filled.VerifiedUser,
+        "shield" to Icons.Filled.Shield,
     )
 
     val toEmoji: Map<String, String> = mapOf(
@@ -329,6 +332,12 @@ object SFSymbolMapping {
         "paperplane.fill" to "send",
         "bubble.left.fill" to "chat",
         "globe" to "language",
+        // The guarantee badge's default and the shield names authors write for it.
+        "shield.checkmark.fill" to "verified_user",
+        "checkmark.shield.fill" to "verified_user",
+        "lock.shield.fill" to "verified_user",
+        "shield.fill" to "shield",
+        "shield" to "shield",
     )
 
     val toEmoji: Map<String, String> = mapOf(

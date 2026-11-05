@@ -294,6 +294,7 @@ class SharedFixtureTest(
             "resolve_likert_bounds" -> runLikertBounds(action, spy)
             "resolve_compact_picker_height" -> runCompactPickerHeight(action, spy)
             "resolve_flow_background" -> runFlowBackground(action, spy)
+            "resolve_guarantee_icon" -> runGuaranteeIcon(action, spy)
             "resolve_in_step_visibility" -> runVisibilityInStepScope(action, spy)
             "resolve_field_input_style" -> runFieldInputStyle(action, spy)
             "resolve_plan_order" -> runPlanOrder(action, spy)
@@ -3015,6 +3016,16 @@ class SharedFixtureTest(
                 "name" to c.optString("name"),
                 "ids" to (parsed?.config?.content_blocks?.map { it.id } ?: emptyList<String>()),
             )
+        }
+    }
+
+    /** The paywall guarantee badge's symbol through the REAL `GuaranteeIcon`, and whether this platform draws it. */
+    private fun runGuaranteeIcon(action: JSONObject, spy: Spy) {
+        val cases = action.optJSONArray("cases") ?: unsupported("resolve_guarantee_icon without cases")
+        spy.state["results"] = (0 until cases.length()).map { i ->
+            val v = cases.getJSONObject(i).optJSONObject("value") ?: JSONObject()
+            val symbol = ai.appdna.sdk.paywalls.GuaranteeIcon.symbol(v.optStringOrNull("icon"))
+            "$symbol|${if (ai.appdna.sdk.paywalls.GuaranteeIcon.isDrawn(symbol)) "drawn" else "?"}"
         }
     }
 
