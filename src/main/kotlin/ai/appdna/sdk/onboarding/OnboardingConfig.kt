@@ -150,6 +150,12 @@ data class OnboardingSettings(
     val content_padding: Double? = null,
     /** Global vertical spacing between content blocks in points. Default 12. */
     val block_spacing: Double? = null,
+    /**
+     * The flow's background. A step whose own background is null draws this one instead of
+     * the theme background; [OnboardingConfigParser.parseFlowConfig] substitutes it at parse time, as
+     * iOS does at decode. Order: step background → this → `MaterialTheme.colorScheme.background`.
+     */
+    val background: ai.appdna.sdk.core.BackgroundStyleConfig? = null,
 )
 
 /**
@@ -1188,7 +1194,15 @@ internal object OnboardingConfigParser {
             dismiss_button_style = dismissButtonStyle,
             content_padding = (settingsMap.num(SURFACE, "settings", "content_padding"))?.toDouble(),
             block_spacing = (settingsMap.num(SURFACE, "settings", "block_spacing"))?.toDouble(),
+            background = settingsMap.objMap(SURFACE, docPath, "background")?.let { parseBackgroundStyle(it, "$docPath.settings.background") },
         )
+
+        // Every step that authors no background draws the flow's. Shared fixture:
+        // `dto_parsing/flow_background_inheritance`.
+        val flowBackground = settings.background
+        val themedSteps = if (flowBackground == null) steps else steps.map { step ->
+            if (step.config.background != null) step else step.copy(config = step.config.copy(background = flowBackground))
+        }.toImmutableList()
 
         // Top-level flow fields (status / graph_layout / graph_nodes / audience_rules)
         @Suppress("UNCHECKED_CAST")
@@ -1200,7 +1214,7 @@ internal object OnboardingConfigParser {
             id = map.str(SURFACE, docPath, "id") ?: id,
             name = map.str(SURFACE, docPath, "name") ?: "",
             version = (map.num(SURFACE, docPath, "version"))?.toInt() ?: 1,
-            steps = steps,
+            steps = themedSteps,
             settings = settings,
             status = map.str(SURFACE, docPath, "status"),
             graph_layout = graphLayout,
@@ -1208,6 +1222,46 @@ internal object OnboardingConfigParser {
             audience_rules = map["audience_rules"],
         )
     }
+
+    /**
+     * A `BackgroundStyleConfig` from its map — the step background, and the flow's
+     * `settings.background`, which must decode identically or a step and the flow it inherits from
+     * would draw the same authored value two different ways.
+     */
+    @Suppress("UNCHECKED_CAST")
+    internal fun parseBackgroundStyle(bg: Map<String, Any>, path: String): ai.appdna.sdk.core.BackgroundStyleConfig {
+        val gradMap = bg.objMap(SURFACE, path, "gradient")
+        val gradient = gradMap?.let { g ->
+            val stopsList = (g.list(SURFACE, path, "stops"))?.mapNotNull { s ->
+                if (s is Map<*, *>) {
+                    ai.appdna.sdk.core.GradientStopConfig(
+                        color = (s as Map<String, Any>)["color"] as? String ?: "#000000",
+                        position = ((s as Map<String, Any>)["position"] as? Number)?.toDouble() ?: 0.0,
+                    )
+                } else null
+            }
+            ai.appdna.sdk.core.GradientConfig(type = g.str(SURFACE, path, "type"), angle = (g.num(SURFACE, path, "angle"))?.toDouble(), stops = stopsList)
+        }
+        return ai.appdna.sdk.core.BackgroundStyleConfig(
+            type = bg.str(SURFACE, path, "type"), color = bg.str(SURFACE, path, "color"),
+            gradient = gradient, image_url = bg.str(SURFACE, path, "image_url"),
+            image_fit = bg.str(SURFACE, path, "image_fit"), overlay = bg.str(SURFACE, path, "overlay"),
+            // R15 + R35 fixes shadowed because parser
+            // never read these. overlay_opacity drives the dim layer over
+            // image/lottie/rive backgrounds; lottie_url + animation_loop
+            // wire the full-screen Lottie branch; rive_url wires the
+            // full-screen Rive branch. Without these parsed, the
+            // canonical iOS-style background payload silently rendered as
+            // theme default.
+            overlay_opacity = (bg.num(SURFACE, path, "overlay_opacity"))?.toDouble(),
+            lottie_url = bg.str(SURFACE, path, "lottie_url"),
+            animation_loop = bg.bool(SURFACE, path, "animation_loop"),
+            rive_url = bg.str(SURFACE, path, "rive_url"),
+        )
+    }
+
+    /** Exposed as internal for unit testing. */
+    internal fun parseFlowForTest(id: String, map: Map<String, Any>): OnboardingFlowConfig = parseFlowConfig(id, map)
 
     /** Exposed as internal for unit testing. */
     @Suppress("UNCHECKED_CAST")
@@ -1434,38 +1488,7 @@ internal object OnboardingConfigParser {
         }?.toImmutableList()
 
         // Parse background config
-        @Suppress("UNCHECKED_CAST")
-        val bgMap = configMap.objMap(SURFACE, path, "background")
-        val background = bgMap?.let { bg ->
-            val gradMap = bg.objMap(SURFACE, path, "gradient")
-            val gradient = gradMap?.let { g ->
-                val stopsList = (g.list(SURFACE, path, "stops"))?.mapNotNull { s ->
-                    if (s is Map<*, *>) {
-                        ai.appdna.sdk.core.GradientStopConfig(
-                            color = (s as Map<String, Any>)["color"] as? String ?: "#000000",
-                            position = ((s as Map<String, Any>)["position"] as? Number)?.toDouble() ?: 0.0,
-                        )
-                    } else null
-                }
-                ai.appdna.sdk.core.GradientConfig(type = g.str(SURFACE, path, "type"), angle = (g.num(SURFACE, path, "angle"))?.toDouble(), stops = stopsList)
-            }
-            ai.appdna.sdk.core.BackgroundStyleConfig(
-                type = bg.str(SURFACE, path, "type"), color = bg.str(SURFACE, path, "color"),
-                gradient = gradient, image_url = bg.str(SURFACE, path, "image_url"),
-                image_fit = bg.str(SURFACE, path, "image_fit"), overlay = bg.str(SURFACE, path, "overlay"),
-                // R15 + R35 fixes shadowed because parser
-                // never read these. overlay_opacity drives the dim layer over
-                // image/lottie/rive backgrounds; lottie_url + animation_loop
-                // wire the full-screen Lottie branch; rive_url wires the
-                // full-screen Rive branch. Without these parsed, the
-                // canonical iOS-style background payload silently rendered as
-                // theme default.
-                overlay_opacity = (bg.num(SURFACE, path, "overlay_opacity"))?.toDouble(),
-                lottie_url = bg.str(SURFACE, path, "lottie_url"),
-                animation_loop = bg.bool(SURFACE, path, "animation_loop"),
-                rive_url = bg.str(SURFACE, path, "rive_url"),
-            )
-        }
+        val background = configMap.objMap(SURFACE, path, "background")?.let { parseBackgroundStyle(it, path) }
 
         // Parse animation config
         @Suppress("UNCHECKED_CAST")

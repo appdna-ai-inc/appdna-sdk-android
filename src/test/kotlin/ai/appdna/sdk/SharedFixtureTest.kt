@@ -287,6 +287,7 @@ class SharedFixtureTest(
             "resolve_survey_sentiment" -> runSurveySentiment(action, spy)
             "resolve_likert_bounds" -> runLikertBounds(action, spy)
             "resolve_compact_picker_height" -> runCompactPickerHeight(action, spy)
+            "resolve_flow_background" -> runFlowBackground(action, spy)
             "resolve_in_step_visibility" -> runVisibilityInStepScope(action, spy)
             "resolve_field_input_style" -> runFieldInputStyle(action, spy)
             "resolve_plan_order" -> runPlanOrder(action, spy)
@@ -2874,43 +2875,27 @@ class SharedFixtureTest(
         }
     }
 
-    private fun runParseWindowDate(action: JSONObject, spy: Spy) {
-        val cases = action.optJSONArray("cases") ?: unsupported("parse_window_date without cases")
-        val saved = java.util.TimeZone.getDefault()
-        action.optString("device_timezone", "").takeIf { it.isNotEmpty() }?.let {
-            java.util.TimeZone.setDefault(java.util.TimeZone.getTimeZone(it))
-        }
-        try {
-            val mm = ai.appdna.sdk.messages.MessageManager(ctx, { emptyMap() })
-            spy.state["results"] = (0 until cases.length()).map { i ->
-                val value = cases.getJSONObject(i).optString("value", null) ?: unsupported("parse_window_date case without value")
-                mm.parseWindowDate(value)?.time
-            }
-        } finally {
-            java.util.TimeZone.setDefault(saved)
-        }
-    }
-
     /**
-     * Which copy of `content_blocks` the REAL step parser resolves, per step shape.
-     *
-     * 🔴 The `layout_empty_falls_through_to_root` case is the one that diverged. iOS has always
-     * fallen back on EMPTY (`if (decoded.content_blocks ?? []).isEmpty`); Android used an elvis that
-     * only fires on null, so an empty array was taken as the answer and the root was never read —
-     * a blank step on Android and a correct one on iOS, from ONE published document. It is a live
-     * risk the moment the console consolidates onto the root copy and leaves `[]` behind.
+     * Which background each step draws, through the REAL flow parser, which is where the flow
+     * background is inherited. Parsing a whole flow is the point: calling a helper directly would pass
+     * even if the parser forgot to apply it.
      */
-    private fun runResolveContentBlocks(action: JSONObject, spy: Spy) {
-        val cases = action.optJSONArray("cases") ?: unsupported("resolve_content_blocks without cases")
-        spy.state["resolved"] = (0 until cases.length()).map { i ->
+    private fun runFlowBackground(action: JSONObject, spy: Spy) {
+        val cases = action.optJSONArray("cases") ?: unsupported("resolve_flow_background without cases")
+        spy.state["results"] = (0 until cases.length()).map { i ->
             val c = cases.getJSONObject(i)
-            val step = (c.optJSONObject("step") ?: unsupported("resolve_content_blocks case without step")).asMap()
+            val flowJson = c.optJSONObject("flow") ?: unsupported("resolve_flow_background case without flow")
             @Suppress("UNCHECKED_CAST")
-            val parsed = OnboardingConfigParser.parseStepForTest(step.filterValues { it != null } as Map<String, Any>)
-            mapOf(
-                "name" to c.optString("name"),
-                "ids" to (parsed?.config?.content_blocks?.map { it.id } ?: emptyList<String>()),
+            val flow = ai.appdna.sdk.onboarding.OnboardingConfigParser.parseFlowForTest(
+                flowJson.optString("id", "f"), flowJson.asMap().filterValues { it != null } as Map<String, Any>,
             )
+            flow.steps.map { step ->
+                val bg = step.config.background
+                if (bg == null) "none" else {
+                    val colour = if (bg.type == "gradient") bg.gradient?.stops?.firstOrNull()?.color else bg.color
+                    "${bg.type ?: "?"}:${colour ?: "?"}"
+                }
+            }
         }
     }
 

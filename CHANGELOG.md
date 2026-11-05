@@ -4,6 +4,15 @@ All notable changes to the AppDNA Android SDK are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and
 the project uses [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Added
+
+- **A flow-wide background.** `settings.background` on an onboarding flow (the same shape as a step
+  background: colour, gradient, image, Lottie or Rive) is drawn by every step that sets no background of
+  its own. Before, a step without one drew the theme background, so a theme had to be repeated on every
+  step.
+
 ## [1.0.57] — 2026-11-03
 
 Wraps iOS 1.0.84.
