@@ -121,6 +121,28 @@ class MessageDismissGateTest {
     }
 
     @Test
+    fun `dismiss_text is a close control on modal and fullscreen - gated like the close button`() {
+        for (type in listOf("modal", "fullscreen")) {
+            // CONTROL: allowed → drawn, and it closes the message.
+            val allowed = show(message(type, mapOf("dismiss_allowed" to true, "dismiss_text" to "Not now")))
+            compose.mainClock.advanceTimeBy(500)
+            compose.onNodeWithText("Not now").assertExists("[$type] control: dismiss text of a dismissable message")
+            compose.onNodeWithText("Not now").performClick()
+            assertEquals("[$type] control: it dismisses", 1, allowed.dismiss)
+
+            show(message(type, mapOf("dismiss_allowed" to false, "dismiss_text" to "Not now")))
+            compose.mainClock.advanceTimeBy(5_000)
+            compose.onNodeWithText("Not now").assertDoesNotExist()
+
+            show(message(type, mapOf("dismiss_delay" to 2, "dismiss_text" to "Not now")))
+            compose.mainClock.advanceTimeBy(500)
+            compose.onNodeWithText("Not now").assertDoesNotExist()
+            compose.mainClock.advanceTimeBy(2_000)
+            compose.onNodeWithText("Not now").assertExists("[$type] it appears once the delay has passed")
+        }
+    }
+
+    @Test
     fun `a backdrop tap dismisses a modal only while dismissal is allowed`() {
         // CONTROL: allowed → the backdrop (top-left corner, outside the card) dismisses.
         val allowed = show(message("modal", mapOf("dismiss_allowed" to true)))
