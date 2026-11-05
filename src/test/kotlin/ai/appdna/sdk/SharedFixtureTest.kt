@@ -264,6 +264,8 @@ class SharedFixtureTest(
             "decode_polyline" -> runDecodePolyline(action, spy)
             // An in-app message's start_date / end_date, through the REAL MessageManager reader.
             "parse_window_date" -> runParseWindowDate(action, spy)
+            // An in-app message CTA, through the REAL message parser and the link a tap opens.
+            "decode_message_cta" -> runDecodeMessageCta(action, spy)
             "parse_colour" -> runParseColour(action, spy)
             "unfold_blockquotes" -> runUnfoldBlockquotes(action, spy)
             "normalise_markdown" -> runUnfoldBlockquotes(action, spy)
@@ -2871,6 +2873,72 @@ class SharedFixtureTest(
                 (c.green * 255f).roundToInt(),
                 (c.blue * 255f).roundToInt(),
                 (c.alpha * 255f).roundToInt(),
+            )
+        }
+    }
+
+    /**
+     * An in-app message CTA, through the REAL `MessageConfigParser.parseSingleMessage` (the parser the config and
+     * pending-message paths run) and `CTAAction.linkToOpen`, the link both tap handlers open. A whole message is
+     * parsed, not a bare action, so a CTA the parser cannot read shows up as the message failing.
+     */
+    private fun runDecodeMessageCta(action: JSONObject, spy: Spy) {
+        val cases = action.optJSONArray("cases") ?: unsupported("decode_message_cta without cases")
+        spy.state["results"] = (0 until cases.length()).map { i ->
+            val c = cases.getJSONObject(i)
+            val name = c.optString("name", "?")
+            val content = mutableMapOf<String, Any>("title" to "t", "cta_text" to "Open")
+            if (c.has("cta_action") && !c.isNull("cta_action")) {
+                content["cta_action"] = when (val raw = c.get("cta_action")) {
+                    is JSONObject -> raw.asMap().filterValues { it != null }
+                    else -> raw
+                }
+            }
+            val msg = ai.appdna.sdk.messages.MessageConfigParser.parseSingleMessage(
+                mapOf("name" to name, "message_type" to "modal", "content" to content, "trigger_rules" to mapOf("event" to "e")),
+            ) ?: throw AssertionError("[decode_message_cta] case $name: the message did not parse")
+            msg.content.cta_action?.let { cta ->
+                mapOf("type" to cta.type, "url" to cta.url, "opens" to cta.linkToOpen)
+            }
+        }
+    }
+
+    private fun runParseWindowDate(action: JSONObject, spy: Spy) {
+        val cases = action.optJSONArray("cases") ?: unsupported("parse_window_date without cases")
+        val saved = java.util.TimeZone.getDefault()
+        action.optString("device_timezone", "").takeIf { it.isNotEmpty() }?.let {
+            java.util.TimeZone.setDefault(java.util.TimeZone.getTimeZone(it))
+        }
+        try {
+            val mm = ai.appdna.sdk.messages.MessageManager(ctx, { emptyMap() })
+            spy.state["results"] = (0 until cases.length()).map { i ->
+                val value = cases.getJSONObject(i).optString("value", null) ?: unsupported("parse_window_date case without value")
+                mm.parseWindowDate(value)?.time
+            }
+        } finally {
+            java.util.TimeZone.setDefault(saved)
+        }
+    }
+
+    /**
+     * Which copy of `content_blocks` the REAL step parser resolves, per step shape.
+     *
+     * 🔴 The `layout_empty_falls_through_to_root` case is the one that diverged. iOS has always
+     * fallen back on EMPTY (`if (decoded.content_blocks ?? []).isEmpty`); Android used an elvis that
+     * only fires on null, so an empty array was taken as the answer and the root was never read —
+     * a blank step on Android and a correct one on iOS, from ONE published document. It is a live
+     * risk the moment the console consolidates onto the root copy and leaves `[]` behind.
+     */
+    private fun runResolveContentBlocks(action: JSONObject, spy: Spy) {
+        val cases = action.optJSONArray("cases") ?: unsupported("resolve_content_blocks without cases")
+        spy.state["resolved"] = (0 until cases.length()).map { i ->
+            val c = cases.getJSONObject(i)
+            val step = (c.optJSONObject("step") ?: unsupported("resolve_content_blocks case without step")).asMap()
+            @Suppress("UNCHECKED_CAST")
+            val parsed = OnboardingConfigParser.parseStepForTest(step.filterValues { it != null } as Map<String, Any>)
+            mapOf(
+                "name" to c.optString("name"),
+                "ids" to (parsed?.config?.content_blocks?.map { it.id } ?: emptyList<String>()),
             )
         }
     }

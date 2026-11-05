@@ -13,6 +13,13 @@ the project uses [Semantic Versioning](https://semver.org/).
   its own. Before, a step without one drew the theme background, so a theme had to be repeated on every
   step.
 
+### Fixed
+
+- **In-app message buttons open their link.** A CTA's link is read from `cta_action.url` and also from
+  `cta_action.value`; the action type `url` reads as `open_url`; a bare-string `cta_action` is read as a type,
+  or as a deep link when it is a link. Before, a CTA saved as `{type, value}` (the shape the console writes)
+  only dismissed the message. An action type the SDK does not know now reads as `unknown`, as on iOS.
+
 ## [1.0.57] — 2026-11-03
 
 Wraps iOS 1.0.84.

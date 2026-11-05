@@ -169,9 +169,13 @@ data class MessageContentDark(
 
 @Immutable
 data class CTAAction(
-    val type: String, // "dismiss", "deep_link", "open_url"
+    val type: String, // "dismiss", "deep_link", "open_url", "unknown" — see MessageConfigParser.parseCTAAction
     val url: String? = null,
-)
+) {
+    /** The link a tap opens: a `deep_link` / `open_url` with a link, else null (the tap only dismisses). */
+    val linkToOpen: String?
+        get() = if (type == "deep_link" || type == "open_url") url else null
+}
 
 // @Stable, not @Immutable: TriggerCondition.value is `Any?`
 // (passthrough scalar/object). The `conditions` list is short-lived (evaluated
@@ -235,6 +239,34 @@ internal object MessageConfigParser {
         }
     }
 
+    /**
+     * A message CTA's action. The published shape is `{type: deep_link|open_url|dismiss, url}`. Also read, for
+     * configs written before the server published that shape: `value` in place of `url` (`url` wins); type `url`,
+     * which is `open_url`; a bare string — a type, or a link to open as a deep link when it carries `://`.
+     * iOS `CTAAction.init(from:)` follows the same rule. A type this build does not know is `unknown`, as on iOS,
+     * and only dismisses.
+     */
+    internal fun parseCTAAction(raw: Any?): CTAAction? {
+        fun normType(t: String): String = when (val s = t.trim()) {
+            "url" -> "open_url"
+            "dismiss", "deep_link", "open_url" -> s
+            else -> "unknown"
+        }
+        fun link(v: Any?): String? = (v as? String)?.trim()?.takeIf { it.isNotEmpty() }
+        return when (raw) {
+            null -> null
+            is String -> {
+                val s = raw.trim()
+                if (s.contains("://")) CTAAction(type = "deep_link", url = s) else CTAAction(type = normType(s))
+            }
+            is Map<*, *> -> CTAAction(
+                type = (raw["type"] as? String)?.let(::normType) ?: "dismiss",
+                url = link(raw["url"]) ?: link(raw["value"]),
+            )
+            else -> null
+        }
+    }
+
     @Suppress("UNCHECKED_CAST")
     private fun parseMessage(map: Map<String, Any>): MessageConfig {
         val contentMap = map["content"] as? Map<String, Any> ?: emptyMap()
@@ -243,12 +275,7 @@ internal object MessageConfigParser {
             body = contentMap["body"] as? String,
             image_url = contentMap["image_url"] as? String,
             cta_text = contentMap["cta_text"] as? String,
-            cta_action = (contentMap["cta_action"] as? Map<String, Any>)?.let {
-                CTAAction(
-                    type = it["type"] as? String ?: "dismiss",
-                    url = it["url"] as? String,
-                )
-            },
+            cta_action = parseCTAAction(contentMap["cta_action"]),
             dismiss_text = contentMap["dismiss_text"] as? String,
             background_color = contentMap["background_color"] as? String,
             banner_position = contentMap["banner_position"] as? String,

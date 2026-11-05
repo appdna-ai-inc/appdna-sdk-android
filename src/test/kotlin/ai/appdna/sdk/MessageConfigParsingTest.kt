@@ -710,8 +710,10 @@ class MessageConfigParsingTest {
             "title" to "CTA",
             "cta_action" to mapOf("type" to "custom", "url" to "custom://action/share"),
         ))
-        assertEquals("custom", msg.content.cta_action!!.type)
+        // A type the SDK does not know reads as "unknown", as on iOS (`CTAActionType.unknown`): it only dismisses.
+        assertEquals("unknown", msg.content.cta_action!!.type)
         assertEquals("custom://action/share", msg.content.cta_action!!.url)
+        assertNull(msg.content.cta_action!!.linkToOpen)
     }
 
     @Test

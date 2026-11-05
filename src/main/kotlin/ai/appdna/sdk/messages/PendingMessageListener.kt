@@ -239,19 +239,14 @@ internal class PendingMessageListener(
     }
 
     private fun handleCTAAction(activity: Activity, action: CTAAction?) {
-        if (action == null) return
-        when (action.type) {
-            "deep_link", "open_url" -> {
-                val url = action.url ?: return
-                // Config-driven URL — scheme-checked before the OS sees it.
-                val uri = ai.appdna.sdk.core.URLSafety.sanitized(url, activity) ?: return
-                try {
-                    activity.startActivity(Intent(Intent.ACTION_VIEW, uri))
-                } catch (err: Throwable) {
-                    Log.warning("PendingMessageListener: open URL failed: ${err.message}")
-                }
-            }
-            else -> Unit // dismiss / unknown: nothing extra
+        // dismiss / unknown / a link type with no link: nothing extra (the dialog dismisses).
+        val url = action?.linkToOpen ?: return
+        // Config-driven URL — scheme-checked before the OS sees it.
+        val uri = ai.appdna.sdk.core.URLSafety.sanitized(url, activity) ?: return
+        try {
+            activity.startActivity(Intent(Intent.ACTION_VIEW, uri))
+        } catch (err: Throwable) {
+            Log.warning("PendingMessageListener: open URL failed: ${err.message}")
         }
     }
 
