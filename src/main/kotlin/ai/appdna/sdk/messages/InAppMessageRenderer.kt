@@ -219,6 +219,8 @@ private fun BannerMessageView(
                                     // iOS BannerView.swift:49 `.subheadline.bold`
                                     // (.subheadline = 15pt). Was 14.
                                     fontSize = (content.title_font_size ?: 15.0).sp,
+                                    // A line height that scales with the size: the theme's default is shorter than a large title, so wrapped lines overlapped.
+                                    lineHeight = ((content.title_font_size ?: 15.0) * 1.2).sp,
                                     fontFamily = FontResolver.resolve(content.font_family),
                                     fontWeight = FontWeight.Bold,
                                     color = textColor,
@@ -231,6 +233,8 @@ private fun BannerMessageView(
                                 Text(
                                     text = it,
                                     fontSize = (content.body_font_size ?: 12.0).sp,
+                                    // A line height that scales with the size: the theme's default is shorter than a large title, so wrapped lines overlapped.
+                                    lineHeight = ((content.body_font_size ?: 12.0) * 1.2).sp,
                                     fontFamily = FontResolver.resolve(content.font_family),
                                     color = if (textColor != Color.Unspecified)
                                         textColor.copy(alpha = 0.7f)
@@ -471,6 +475,8 @@ private fun ModalMessageView(
                         // 11 M-35 — apply
                         // title_font_size + font_family.
                         fontSize = (content.title_font_size ?: 20.0).sp,
+                        // A line height that scales with the size: the theme's default is shorter than a large title, so wrapped lines overlapped.
+                        lineHeight = ((content.title_font_size ?: 20.0) * 1.2).sp,
                         fontFamily = FontResolver.resolve(content.font_family),
                         fontWeight = FontWeight.Bold,
                         textAlign = TextAlign.Center,
@@ -490,6 +496,8 @@ private fun ModalMessageView(
                         // ModalView.swift:84 `.body` font (.body = 17pt).
                         // Was 16sp.
                         fontSize = (content.body_font_size ?: 17.0).sp,
+                        // A line height that scales with the size: the theme's default is shorter than a large title, so wrapped lines overlapped.
+                        lineHeight = ((content.body_font_size ?: 17.0) * 1.2).sp,
                         fontFamily = FontResolver.resolve(content.font_family),
                         textAlign = TextAlign.Center,
                         color = if (textColor != Color.Unspecified)
@@ -661,6 +669,8 @@ private fun FullscreenMessageView(
                     // .swift:64 `.largeTitle.bold` (.largeTitle = 34pt).
                     // Was 32.
                     fontSize = (content.title_font_size ?: 34.0).sp,
+                    // A line height that scales with the size: the theme's default is shorter than a large title, so wrapped lines overlapped.
+                    lineHeight = ((content.title_font_size ?: 34.0) * 1.2).sp,
                     fontFamily = FontResolver.resolve(content.font_family),
                     fontWeight = FontWeight.Bold,
                     textAlign = TextAlign.Center,
@@ -679,6 +689,8 @@ private fun FullscreenMessageView(
                     // Fullscreen body 17sp matches iOS FullscreenView
                     // .swift:73 `.body` font (.body = 17pt). Was 16.
                     fontSize = (content.body_font_size ?: 17.0).sp,
+                    // A line height that scales with the size: the theme's default is shorter than a large title, so wrapped lines overlapped.
+                    lineHeight = ((content.body_font_size ?: 17.0) * 1.2).sp,
                     fontFamily = FontResolver.resolve(content.font_family),
                     textAlign = TextAlign.Center,
                     color = if (textColor != Color.Unspecified)
@@ -874,6 +886,8 @@ private fun TooltipMessageView(
                                 // iOS TooltipView.swift:44 `.subheadline.bold`
                                 // (.subheadline = 15pt). Was 14.
                                 fontSize = (content.title_font_size ?: 15.0).sp,
+                                // A line height that scales with the size: the theme's default is shorter than a large title, so wrapped lines overlapped.
+                                lineHeight = ((content.title_font_size ?: 15.0) * 1.2).sp,
                                 fontFamily = FontResolver.resolve(content.font_family),
                                 fontWeight = FontWeight.SemiBold,
                                 textAlign = TextAlign.Start,
@@ -916,6 +930,8 @@ private fun TooltipMessageView(
                         Text(
                             text = it,
                             fontSize = (content.body_font_size ?: 12.0).sp,
+                            // A line height that scales with the size: the theme's default is shorter than a large title, so wrapped lines overlapped.
+                            lineHeight = ((content.body_font_size ?: 12.0) * 1.2).sp,
                             fontFamily = FontResolver.resolve(content.font_family),
                             color = if (textColor != Color.Unspecified)
                                 textColor.copy(alpha = 0.7f)

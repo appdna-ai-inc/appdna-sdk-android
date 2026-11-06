@@ -10,6 +10,9 @@ Feature parity: iOS 1.0.86.
 
 ### Fixed
 
+- **A wrapped in-app message title no longer overlaps itself.** Titles and bodies of every message type
+  use a line height of 1.2× their size; a fullscreen title (34sp) used the theme's shorter default, so its
+  lines ran into each other.
 - **Option labels and summary headlines are readable on any step.** An unstyled option label in a Select
   (options without their own fill) and a `summary_screen` headline with no `text_color` take their ink from
   what is behind them; before, labels were dark on a dark step and the headline white on a light one.
