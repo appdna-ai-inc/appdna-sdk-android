@@ -10,6 +10,8 @@ Feature parity: iOS 1.0.86.
 
 ### Fixed
 
+- **A dropdown Select is readable on a dark step.** Its placeholder, picked label and arrow were the theme's
+  dark ink; they now follow the field's own fill, else what is behind it.
 - **A row fill with its own alpha matches iOS.** `background_opacity` now multiplies a `#RRGGBBAA` row
   colour's alpha, as on iOS; it replaced it, so `#2563EB80` at 0.5 drew twice as opaque. An opacity outside
   0–1 is clamped.

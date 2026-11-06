@@ -12147,9 +12147,15 @@ private fun SelectOptionStyle.SelectDropdownOptions(
             ),
             // Theme-adaptive content color (was Color.DarkGray
     // — invisible on dark surface in dark mode). Container honors field_style.background_color (iOS parity).
+    // The field's ink follows what it sits on — its own authored fill, else what is behind the block — as
+    // on iOS. `onSurface` alone was the theme's dark ink on a dark step, so the field read as blank.
     colors = ButtonDefaults.outlinedButtonColors(
         containerColor = block.field_style?.background_color?.let { StyleEngine.parseColor(it) } ?: Color.Transparent,
-        contentColor = MaterialTheme.colorScheme.onSurface,
+        contentColor = if (DropdownFieldInk.light(block.field_style?.background_color, LocalGoogleAttributionBackdrop.current, googleAttributionThemeIsDark())) {
+            UnstyledInk.DARK_TEXT
+        } else {
+            MaterialTheme.colorScheme.onSurface
+        },
     ),
         ) {
             Row(
