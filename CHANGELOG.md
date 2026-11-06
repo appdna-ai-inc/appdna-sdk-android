@@ -10,6 +10,10 @@ Feature parity: iOS 1.0.86.
 
 ### Fixed
 
+- **A paywall plan's styled colours are drawn.** A plans section's Style-tab colour for the plan name or the
+  price, and a plan's own `price_color` in the default vertical-stack layout, lost to the tile's text colour.
+  The order is now iOS's: `price_color`, then `selected_text_color` on the selected plan, then the Style-tab
+  colour, then the tile's colour.
 - **A block's `block_style` shows over its container fill, as on iOS and in the console preview.** A block
   with both a `block_style` background and a `field_config.container_bg_color` drew the container fill on top,
   so a `block_style` background (and text chosen for it) could disappear.

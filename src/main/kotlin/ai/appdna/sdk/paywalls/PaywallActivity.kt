@@ -2360,6 +2360,11 @@ internal fun PaywallSectionView(
                 section.style?.elements?.get("plan_name")?.text_style
                     ?: section.style?.elements?.get("label")?.text_style
             )
+            // #1527 — the colours the Style tab authored for the plan name and the price, if any. The tile ink
+            // (`resolvedTextColor`) is the default; it must not beat an authored colour.
+            val planNameStyleColor = ((section.style?.elements?.get("plan_name")?.text_style
+                ?: section.style?.elements?.get("label")?.text_style)?.color)?.takeIf { it.isNotBlank() }?.let { parseHexColor(it) }
+            val priceStyleColor = section.style?.elements?.get("price")?.text_style?.color?.takeIf { it.isNotBlank() }?.let { parseHexColor(it) }
             val priceStyle = StyleEngine.applyTextStyle(
                 TextStyle(fontWeight = FontWeight.Bold, color = Color.White, fontSize = 18.sp),
                 section.style?.elements?.get("price")?.text_style
@@ -2713,7 +2718,9 @@ internal fun PaywallSectionView(
                             Text(
                                 text = loc("plan.$planIdx.name", plan.displayName),
                                 style = planNameStyle,
-                                color = resolvedTextColor,
+                                // #1527 — the selected colour (when selected and set), else the Style tab's
+                                // plan-name colour, else the tile ink. `resolvedTextColor` alone beat the style.
+                                color = PlanTextInk.resolve(isSelected, selectedTextColor, planNameStyleColor, resolvedTextColor),
                                 modifier = planNameElementModifier,
                             )
 
@@ -2778,8 +2785,10 @@ internal fun PaywallSectionView(
                             // every plan the same; the point of the field is to make one tier's
                             // price stand out, so anything that could override it would defeat it.
                             // iOS parity: PlanCard.swift `planPriceColor`.
+                            // #1527 — then the selected colour, then the Style tab's price colour, then the tile ink.
                             val planPriceColor = plan.price_color?.takeIf { it.isNotBlank() }
-                                ?.let { StyleEngine.parseColor(it) } ?: resolvedTextColor
+                                ?.let { StyleEngine.parseColor(it) }
+                                ?: PlanTextInk.resolve(isSelected, selectedTextColor, priceStyleColor, resolvedTextColor)
 
                             if ((section.data?.price_layout ?: "inline") == "headline_stacked") {
                                 Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
@@ -3816,6 +3825,11 @@ internal fun PaywallSectionView(
                             } else {
                                 unselectedTileHex?.let { PaywallTextDefaults.readable(it) } ?: Color.Unspecified
                             }
+                            // #1527 — the price colour in iOS PlanCard's order: the plan's own `price_color`, then
+                            // the selected colour, then the Style tab's price colour, then the tile ink. This arm
+                            // drew the tile ink alone, so neither `price_color` nor a styled colour ever showed.
+                            val vsPriceColor = plan.price_color?.takeIf { it.isNotBlank() }?.let { StyleEngine.parseColor(it) }
+                                ?: PlanTextInk.resolve(isSelected, selectedTextColor, priceStyleColor, planTextColor)
                             // iOS PlanCard.swift:245-247 — reserve overhang so the
                             // straddling badge isn't clipped and doesn't cover content.
                             val badgeTopReserve = if (!plan.badge.isNullOrBlank() && badgePosition != "inline")
@@ -3885,7 +3899,7 @@ internal fun PaywallSectionView(
                                             Text(
                                                 text = loc("plan.$planIdx.name", plan.displayName),
                                                 style = planNameStyle,
-                                                color = planTextColor,
+                                                color = PlanTextInk.resolve(isSelected, selectedTextColor, planNameStyleColor, planTextColor), // #1527
                                                 modifier = planNameElementModifier,
                                             )
                                             Spacer(Modifier.height(2.dp))
@@ -3934,7 +3948,7 @@ internal fun PaywallSectionView(
                                                         Text(
                                                             text = loc("plan.$planIdx.price", plan.displayPrice),
                                                             style = priceStyle,
-                                                            color = planTextColor,
+                                                            color = vsPriceColor, // #1527
                                                             modifier = priceElementModifier,
                                                         )
                                                         Spacer(Modifier.width(2.dp))
@@ -3998,7 +4012,7 @@ internal fun PaywallSectionView(
                                                     Text(
                                                         text = loc("plan.$planIdx.price", plan.displayPrice),
                                                         style = priceStyle,
-                                                        color = planTextColor,
+                                                        color = vsPriceColor, // #1527
                                                         modifier = priceElementModifier,
                                                     )
                                                     // The period, beside the price. This
@@ -6612,4 +6626,14 @@ private fun formatCompactCount(count: Int): String {
         }
         else -> "$abs"
     }
+}
+
+/**
+ * #1527 — a plan card text's colour, in the order iOS's PlanCard applies it: the selected text colour when the
+ * plan is selected and one is set, else the colour the plans section's Style tab authored for that text, else
+ * the tile's readable ink. (A plan's own `price_color` beats all of these; the caller checks it first.)
+ */
+internal object PlanTextInk {
+    fun resolve(isSelected: Boolean, selectedTextColor: androidx.compose.ui.graphics.Color?, styleColor: androidx.compose.ui.graphics.Color?, tileInk: androidx.compose.ui.graphics.Color): androidx.compose.ui.graphics.Color =
+        (if (isSelected) selectedTextColor else null) ?: styleColor ?: tileInk
 }
