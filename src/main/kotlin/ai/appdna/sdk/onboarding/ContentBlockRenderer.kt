@@ -7955,11 +7955,12 @@ private fun RowBlock(
     // values flow through field_config because the row block is reused
     // for many layouts; only when authored do we wrap.
     val cfg = block.field_config
-    val rowBgCol = (cfg?.get("bg_color") as? String)?.let { StyleEngine.parseColor(it) }
+    val rowFill = RowFill.resolve(cfg)
+    val rowBgCol = rowFill?.let { StyleEngine.parseColor(it.hex) }
     val rowBorderW = ((cfg?.get("border_width") as? Number)?.toFloat() ?: 0f).dp
     val rowBorderCol = (cfg?.get("border_color") as? String)?.let { StyleEngine.parseColor(it) }
     val rowCornerR = ((cfg?.get("corner_radius") as? Number)?.toFloat() ?: 0f).dp
-    val rowBgOpacity = ((cfg?.get("background_opacity") as? Number)?.toFloat() ?: 1f)
+    val rowBgOpacity = rowFill?.opacity ?: 1f
     val rowUseBlur = (cfg?.get("blur_background") as? Boolean) == true
 
     // Leading-icon slot. Mirrors iOS rowLeadingIconView
@@ -8160,7 +8161,9 @@ private fun RowBlock(
         val shape = RoundedCornerShape(rowCornerR)
         var containerMod: Modifier = Modifier
         if (rowBgCol != null) {
-            containerMod = containerMod.background(rowBgCol.copy(alpha = rowBgOpacity), shape)
+            // MULTIPLIED into the colour's own alpha, as iOS's `.opacity` does. `copy(alpha =)` replaced it,
+            // so a `#RRGGBBAA` fill at 0.5 drew twice as opaque as on iOS.
+            containerMod = containerMod.background(rowBgCol.copy(alpha = rowBgCol.alpha * rowBgOpacity), shape)
         }
         if (rowBorderW.value > 0f && rowBorderCol != null) {
             containerMod = containerMod.border(rowBorderW, rowBorderCol, shape)

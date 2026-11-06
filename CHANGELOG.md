@@ -10,6 +10,10 @@ Feature parity: iOS 1.0.86.
 
 ### Fixed
 
+- **A row fill with its own alpha matches iOS.** `background_opacity` now multiplies a `#RRGGBBAA` row
+  colour's alpha, as on iOS; it replaced it, so `#2563EB80` at 0.5 drew twice as opaque. An opacity outside
+  0–1 is clamped.
+
 - **A button's refresh spinner matches its label.** The spinner shown while a `refresh_step` button waits
   took `style.color` before `text_color`; it now takes the label's own colour (`text_color`, else
   `style.color`, else the variant's).

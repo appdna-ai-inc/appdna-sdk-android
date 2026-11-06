@@ -280,6 +280,7 @@ class SharedFixtureTest(
             "resolve_custom_view_fallback" -> runCustomViewFallback(action, spy)
             "resolve_warning_banner_ink" -> runWarningBannerInk(action, spy)
             "resolve_button_label_ink" -> runButtonLabelInk(action, spy)
+            "resolve_row_fill" -> runRowFill(action, spy)
             "parse_colour" -> runParseColour(action, spy)
             "unfold_blockquotes" -> runUnfoldBlockquotes(action, spy)
             "normalise_markdown" -> runUnfoldBlockquotes(action, spy)
@@ -2988,6 +2989,20 @@ class SharedFixtureTest(
             ai.appdna.sdk.onboarding.ButtonLabelColour.label(
                 block.text_color, block.style?.color, block.variant ?: "primary", block.bg_color ?: "#6366F1",
             )
+        }
+    }
+
+    /** A row's own fill, through the REAL step parser and `RowFill`: "<hex>@<opacity>" per case, null for none. */
+    private fun runRowFill(action: JSONObject, spy: Spy) {
+        val cases = action.optJSONArray("cases") ?: unsupported("resolve_row_fill without cases")
+        spy.state["results"] = (0 until cases.length()).map { i ->
+            val c = cases.getJSONObject(i)
+            @Suppress("UNCHECKED_CAST")
+            val raw = (c.optJSONObject("block") ?: unsupported("resolve_row_fill case without block")).asMap().filterValues { it != null } as Map<String, Any>
+            val step = mapOf("id" to "fixture_step", "type" to "custom", "content_blocks" to listOf(raw))
+            val block = ai.appdna.sdk.onboarding.OnboardingConfigParser.parseStepForTest(step)?.config?.content_blocks?.firstOrNull()
+                ?: throw AssertionError("[resolve_row_fill] the block did not parse")
+            ai.appdna.sdk.onboarding.RowFill.resolve(block.field_config)?.let { "${it.hex}@${String.format(java.util.Locale.US, "%.1f", it.opacity)}" }
         }
     }
 
