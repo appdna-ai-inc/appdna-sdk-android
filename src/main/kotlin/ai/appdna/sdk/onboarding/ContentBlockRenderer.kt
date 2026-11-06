@@ -4793,7 +4793,7 @@ private fun SocialLoginBlock(
             // ContentBlockRendererView.swift:724-771 which resolves
             // `provider.bg_color ?? socialLoginBgColor(provider.type)` for
             // each color independently.
-            // #1537 — the email / custom fallback, from the ONE table iOS reads too (`SocialBrandDefaults`): the
+            // The email / custom fallback, from the ONE table iOS reads too (`SocialBrandDefaults`): the
             // block's accent_color, else its bg_color, else the brand accent — an EMPTY colour skipped, as on iOS.
             // `accent_color ?: bg_color` took "" (a cleared picker) and parseColor("") is Transparent.
             val socialFallbackHex = ai.appdna.sdk.core.SocialBrandDefaults.backgroundHex(
@@ -4823,7 +4823,7 @@ private fun SocialLoginBlock(
                     StyleEngine.parseColor(socialFallbackHex),
                 )
             }
-            // #1536 — an EMPTY colour is unset, as on iOS: the console writes "" when a picker is cleared, and
+            // An EMPTY colour is unset, as on iOS: the console writes "" when a picker is cleared, and
             // parseColor("") is Transparent, which drew an invisible button (and white text on nothing).
             val providerBg = provider.bg_color?.takeIf { it.isNotEmpty() }
             val providerText = provider.text_color?.takeIf { it.isNotEmpty() }

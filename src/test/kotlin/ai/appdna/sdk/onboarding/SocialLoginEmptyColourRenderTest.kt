@@ -72,7 +72,7 @@ class SocialLoginEmptyColourRenderTest {
         assertTrue("an empty colour drew no brand fill ($empty vs $unset)", empty > unset / 2)
     }
 
-    /** #1537 — an email provider with the block's accent_color "" falls through to the block's bg_color, as on iOS. */
+    /** An email provider with the block's accent_color "" falls through to the block's bg_color, as on iOS. */
     @Test
     fun `an empty block accent colour falls through to the block bg colour`() {
         val green = { r: Int, g: Int, b: Int -> r < 20 && kotlin.math.abs(g - 0xA0) <= 6 && b < 20 }
