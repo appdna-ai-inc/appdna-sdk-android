@@ -872,7 +872,10 @@ object AppDNA {
             }
 
             // 5. Initialize push token manager (v0.4: backend registration)
-            this.pushTokenManager = PushTokenManager(context, storage, tracker, client)
+            this.pushTokenManager = PushTokenManager(context, storage, tracker, client) {
+                val id = identityManager?.currentIdentity
+                id?.anonId to id?.userId
+            }
             push.manager = this.pushTokenManager
 
             // The FCM token is fetched by the bootstrap, right after the SDK's own "appdna" FirebaseApp
@@ -1096,6 +1099,8 @@ object AppDNA {
         }
 
         identityManager?.identify(userId, traits)
+        // The push token's server row now names this user.
+        pushTokenManager?.reregister()
 
         // "Clearing": identify to a DIFFERENT non-null user runs
         // stop → clear → start (anonymous → first user is exempt). The switch and the re-point happen
@@ -1232,6 +1237,8 @@ object AppDNA {
     @JvmStatic
     fun reset() {
         identityManager?.reset()
+        // The push token's server row no longer names the signed-out user.
+        pushTokenManager?.reregister()
         experimentManager?.resetExposures()
         surveyManager?.resetSession()
         webEntitlementManager?.stopObserving()

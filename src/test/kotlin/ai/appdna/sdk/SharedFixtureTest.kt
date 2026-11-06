@@ -283,6 +283,7 @@ class SharedFixtureTest(
             "resolve_row_fill" -> runRowFill(action, spy)
             "resolve_dropdown_field_ink" -> runDropdownFieldInk(action, spy)
             "resolve_gallery_title_ink" -> runGalleryTitleInk(action, spy)
+            "build_push_token_body" -> runPushTokenBody(action, spy)
             "parse_colour" -> runParseColour(action, spy)
             "unfold_blockquotes" -> runUnfoldBlockquotes(action, spy)
             "normalise_markdown" -> runUnfoldBlockquotes(action, spy)
@@ -3041,6 +3042,20 @@ class SharedFixtureTest(
                 block.gallery_title_color,
                 ai.appdna.sdk.onboarding.GoogleMapsAttribution.Backdrop.Plain(backdrop), c.optBoolean("dark_appearance"),
             )
+        }
+    }
+
+    /** Who a push token belongs to, through the REAL `PushTokenRegistration.body`: [anon_id, user_id] per case. */
+    private fun runPushTokenBody(action: JSONObject, spy: Spy) {
+        val cases = action.optJSONArray("cases") ?: unsupported("build_push_token_body without cases")
+        spy.state["results"] = (0 until cases.length()).map { i ->
+            val c = cases.getJSONObject(i)
+            val body = ai.appdna.sdk.integrations.PushTokenRegistration.body(
+                "t", "android", "d", "1", "1", "1",
+                if (c.isNull("anon_id")) null else c.optString("anon_id"),
+                if (c.isNull("user_id")) null else c.optString("user_id"),
+            )
+            listOf(if (body.has("anon_id")) body.getString("anon_id") else null, if (body.has("user_id")) body.getString("user_id") else null)
         }
     }
 

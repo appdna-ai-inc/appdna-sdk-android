@@ -23,7 +23,13 @@ internal class PushTokenManager(
     private val context: Context,
     private val storage: LocalStorage,
     private val eventTracker: EventTracker,
-    private val apiClient: ApiClient? = null
+    private val apiClient: ApiClient? = null,
+    /**
+     * Who the token belongs to, read at send time: the device's anonymous id and, once `identify` ran, the
+     * host's user id. Without them the server stored every token as user `anonymous`, so a push to a user, a
+     * list or a segment found no token for an SDK device.
+     */
+    private val identity: () -> Pair<String?, String?> = { null to null },
 ) {
     companion object {
         private const val KEY_PUSH_TOKEN = "push_token"
@@ -226,6 +232,15 @@ internal class PushTokenManager(
         }
     }
 
+    /**
+     * Registers the stored token again, with the identity as it is NOW. `identify` and `reset` call this, so
+     * the server's row follows the user who is signed in. No stored token, nothing sent.
+     */
+    fun reregister() {
+        val token = currentToken?.takeIf { it.isNotEmpty() } ?: return
+        registerTokenWithBackend(token)
+    }
+
     private fun registerTokenWithBackend(token: String) {
         scope.launch {
             try {
@@ -234,20 +249,19 @@ internal class PushTokenManager(
                     context.packageManager.getPackageInfo(context.packageName, 0).versionName ?: ""
                 } catch (_: Exception) { "" }
 
-                val body = JSONObject().apply {
-                    put("token", token)
-                    put("platform", "android")
-                    put("device_id", deviceId ?: "")
-                    put("app_version", appVersion)
-                    put("sdk_version", AppDNA.sdkVersion)
-                    // Normalize to
-                    // 3-part dotted form so cross-platform OS-version cohort
-                    // dashboards bucket Android same as iOS. EventSchema
-                    // already does this for events.os and template
-                    // device.os_version; push-token registration was the
-                    // outlier emitting bare "14" instead of "14.0.1".
-                    put("os_version", ai.appdna.sdk.events.EventSchema.normalizeOsVersion(Build.VERSION.RELEASE))
-                }
+                val (anonId, userId) = identity()
+                val body = PushTokenRegistration.body(
+                    token = token,
+                    platform = "android",
+                    deviceId = deviceId ?: "",
+                    appVersion = appVersion,
+                    sdkVersion = AppDNA.sdkVersion,
+                    // Normalized to the 3-part dotted form so cross-platform OS-version cohort dashboards
+                    // bucket Android the same as iOS (bare "14" before).
+                    osVersion = ai.appdna.sdk.events.EventSchema.normalizeOsVersion(Build.VERSION.RELEASE),
+                    anonId = anonId,
+                    userId = userId,
+                )
                 apiClient?.post("/api/v1/push/token", body.toString())
                 Log.info("Push token registered with backend")
             } catch (e: Exception) {
@@ -270,5 +284,26 @@ internal class PushTokenManager(
     internal fun shutdown() {
         scope.cancel()
         pushListener = null
+    }
+}
+
+/**
+ * The body of `POST /api/v1/push/token`. Shared with iOS and driven by the `push_token_registration_body`
+ * fixture: `anon_id` and `user_id` ride along when known (an empty string is not an id), so the server
+ * stores who the token belongs to.
+ */
+internal object PushTokenRegistration {
+    fun body(
+        token: String, platform: String, deviceId: String, appVersion: String,
+        sdkVersion: String, osVersion: String, anonId: String?, userId: String?,
+    ): JSONObject = JSONObject().apply {
+        put("token", token)
+        put("platform", platform)
+        put("device_id", deviceId)
+        put("app_version", appVersion)
+        put("sdk_version", sdkVersion)
+        put("os_version", osVersion)
+        if (!anonId.isNullOrEmpty()) put("anon_id", anonId)
+        if (!userId.isNullOrEmpty()) put("user_id", userId)
     }
 }
