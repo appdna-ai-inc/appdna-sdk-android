@@ -2595,7 +2595,12 @@ private fun MediaGalleryBlock(block: ContentBlock) {
             Text(
                 text = galleryTitle,
                 style = MaterialTheme.typography.titleMedium,
-                color = block.gallery_title_color?.let { StyleEngine.parseColor(it) } ?: Color.Unspecified,
+                // Unset, the title takes the unstyled ink for what is behind it ([GalleryTitleInk]), as on iOS.
+                color = when (val ink = GalleryTitleInk.resolve(block.gallery_title_color, LocalGoogleAttributionBackdrop.current, googleAttributionThemeIsDark())) {
+                    "light" -> UnstyledInk.DARK_TEXT
+                    "dark" -> Color.Unspecified
+                    else -> StyleEngine.parseColor(ink)
+                },
             )
             MediaGalleryStrip(block, images)
         }

@@ -282,6 +282,7 @@ class SharedFixtureTest(
             "resolve_button_label_ink" -> runButtonLabelInk(action, spy)
             "resolve_row_fill" -> runRowFill(action, spy)
             "resolve_dropdown_field_ink" -> runDropdownFieldInk(action, spy)
+            "resolve_gallery_title_ink" -> runGalleryTitleInk(action, spy)
             "parse_colour" -> runParseColour(action, spy)
             "unfold_blockquotes" -> runUnfoldBlockquotes(action, spy)
             "normalise_markdown" -> runUnfoldBlockquotes(action, spy)
@@ -3020,6 +3021,24 @@ class SharedFixtureTest(
             val backdrop = if (c.isNull("backdrop")) null else c.optString("backdrop")
             ai.appdna.sdk.onboarding.DropdownFieldInk.light(
                 block.field_style?.background_color,
+                ai.appdna.sdk.onboarding.GoogleMapsAttribution.Backdrop.Plain(backdrop), c.optBoolean("dark_appearance"),
+            )
+        }
+    }
+
+    /** A media_gallery title's colour, through the REAL step parser and `GalleryTitleInk`. */
+    private fun runGalleryTitleInk(action: JSONObject, spy: Spy) {
+        val cases = action.optJSONArray("cases") ?: unsupported("resolve_gallery_title_ink without cases")
+        spy.state["results"] = (0 until cases.length()).map { i ->
+            val c = cases.getJSONObject(i)
+            @Suppress("UNCHECKED_CAST")
+            val raw = (c.optJSONObject("block") ?: unsupported("resolve_gallery_title_ink case without block")).asMap().filterValues { it != null } as Map<String, Any>
+            val step = mapOf("id" to "fixture_step", "type" to "custom", "content_blocks" to listOf(raw))
+            val block = ai.appdna.sdk.onboarding.OnboardingConfigParser.parseStepForTest(step)?.config?.content_blocks?.firstOrNull()
+                ?: throw AssertionError("[resolve_gallery_title_ink] the block did not parse")
+            val backdrop = if (c.isNull("backdrop")) null else c.optString("backdrop")
+            ai.appdna.sdk.onboarding.GalleryTitleInk.resolve(
+                block.gallery_title_color,
                 ai.appdna.sdk.onboarding.GoogleMapsAttribution.Backdrop.Plain(backdrop), c.optBoolean("dark_appearance"),
             )
         }
