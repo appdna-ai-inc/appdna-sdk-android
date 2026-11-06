@@ -4292,13 +4292,19 @@ private fun ListBlock(block: ContentBlock, loc: ((String, String) -> String)? = 
         block.items?.forEachIndexed { index, item ->
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                 when (block.list_style) {
+    // Unstyled items and markers take their ink from what is behind the list (light on a dark step or fill),
+    // as text does; on a light surface they keep the theme's colours, as before.
+    val onDark = UnstyledInk.onDark()
+    val markerInk = if (onDark) UnstyledInk.DARK_TEXT.copy(alpha = 0.6f) else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
+    val bulletInk = if (onDark) UnstyledInk.DARK_TEXT.copy(alpha = 0.5f) else MaterialTheme.colorScheme.onBackground.copy(alpha = 0.5f)
+    val itemInk = UnstyledInk.text()
                     // Theme-adaptive secondary color
                     // (was hardcoded Color.Gray). iOS uses .secondary
                     // (ContentBlockRendererView.swift:459).
                     // Explicit 15sp matching
                     // iOS .subheadline.weight(.semibold) at
                     // ContentBlockRendererView.swift:457-459.
-                    "numbered" -> Text("${index + 1}.", fontSize = 15.sp, fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f))
+                    "numbered" -> Text("${index + 1}.", fontSize = 15.sp, fontWeight = FontWeight.SemiBold, color = markerInk)
                     // \u2014 render `check` marker as Material
                     // CheckCircle icon (mirrors iOS `checkmark.circle.fill`).
                     // Was a plain Unicode glyph at 16sp which looked like
@@ -4324,7 +4330,7 @@ private fun ListBlock(block: ContentBlock, loc: ((String, String) -> String)? = 
                         modifier = Modifier
                             .size(6.dp)
                             .clip(CircleShape)
-                            .background(MaterialTheme.colorScheme.onBackground.copy(alpha = 0.5f)),
+                            .background(bulletInk),
                     )
                 }
                 Text(
@@ -4336,7 +4342,7 @@ private fun ListBlock(block: ContentBlock, loc: ((String, String) -> String)? = 
                     // List item base 17sp
                     // matches iOS .body which inherits ambient default at
                     // ContentBlockRendererView.swift:447 list item Text. Was 16sp.
-                    style = if (block.style != null) StyleEngine.applyTextStyle(TextStyle(fontSize = 17.sp), block.style) else TextStyle(fontSize = 17.sp),
+                    style = if (block.style != null) StyleEngine.applyTextStyle(TextStyle(fontSize = 17.sp, color = itemInk), block.style) else TextStyle(fontSize = 17.sp, color = itemInk),
                 )
             }
         }
@@ -5701,7 +5707,8 @@ private fun RichTextBlock(block: ContentBlock, loc: ((String, String) -> String)
     // 60% alpha so the same payload renders dim grey on both platforms,
     // and adapts to dark mode through the Material theme.
     val isLegal = block.rich_text_variant == "legal"
-    val secondaryColor = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.6f)
+    // On a dark step or fill (the backdrop, as for text), unstyled rich text is light.
+    val secondaryColor = if (UnstyledInk.onDark()) UnstyledInk.DARK_TEXT.copy(alpha = 0.6f) else MaterialTheme.colorScheme.onBackground.copy(alpha = 0.6f)
     val legalDefault = if (isLegal) {
         TextStyle(
             fontSize = 12.sp,
@@ -5712,7 +5719,7 @@ private fun RichTextBlock(block: ContentBlock, loc: ((String, String) -> String)
         // Non-legal default 17sp matches
         // iOS .body (ContentBlockRendererView.swift:965). Was 16sp — 1pt narrower
         // on every rich_text block authored without explicit base_style.font_size.
-        TextStyle(fontSize = 17.sp, color = Color.Unspecified)
+        TextStyle(fontSize = 17.sp, color = UnstyledInk.text())
     }
 
     // Apply base_style if present

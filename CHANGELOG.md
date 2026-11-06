@@ -10,6 +10,12 @@ Feature parity: iOS 1.0.86.
 
 ### Fixed
 
+- **Unstyled rich text and lists are readable on dark screens.** A `rich_text` or `list` block with no colour
+  takes its ink from what is behind it, as text does; before, it was dark on a dark step or fill.
+- **An unregistered custom view no longer shows its debug key to users.** A `custom_view` block whose
+  `view_key` the app has not registered drew the literal `[view_key]` whenever it had no `placeholder_text`.
+  A non-debuggable build now draws the authored placeholder image or text, and nothing when neither is set
+  (the missing key is logged); a debuggable build still shows `[view_key]`.
 - **Text inside a zoned section background is readable.** Unstyled text in a `section_background` takes its ink
   from the zones behind it (one zone: its colour; several: any dark zone means light text). Before, it took the
   step's background, so it could be dark on a dark zone.
