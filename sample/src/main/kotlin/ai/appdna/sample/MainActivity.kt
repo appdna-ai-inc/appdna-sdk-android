@@ -32,8 +32,8 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
-        // Deep-link handoff on cold start. The intent that
-        // launched the activity may carry a deep-link URI from the OS launcher.
+        // Deep-link and push-tap handoff on cold start. The intent that launched the activity may carry
+        // a deep-link URI from the OS launcher, or the data of a tapped background push.
         intent?.let { handleDeepLinkIntent(it) }
 
         setContent {
@@ -89,11 +89,17 @@ class MainActivity : ComponentActivity() {
 
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
-        // Warm-start deep links arrive here; forward to the SDK.
+        setIntent(intent)
+        // Warm-start deep links and push taps arrive here; forward to the SDK.
         handleDeepLinkIntent(intent)
     }
 
     private fun handleDeepLinkIntent(intent: Intent) {
+        // A tap on a notification FCM displayed while the app was in the background launches this
+        // activity with the push's data as extras. The SDK tracks the tap (`push_tapped`), calls
+        // `onPushTapped`, and opens the push's deep link — so it is handled here first, in onCreate AND
+        // onNewIntent, as the push integration guide says. Any other intent returns false.
+        if (AppDNA.handlePushTap(intent)) return
         intent.data?.toString()?.let { url ->
             AppDNA.deepLinks.handleURL(url)
         }
