@@ -71,4 +71,20 @@ class SocialLoginEmptyColourRenderTest {
         assertTrue("control: the brand default draws ($unset)", unset > 2000)
         assertTrue("an empty colour drew no brand fill ($empty vs $unset)", empty > unset / 2)
     }
+
+    /** #1537 — an email provider with the block's accent_color "" falls through to the block's bg_color, as on iOS. */
+    @Test
+    fun `an empty block accent colour falls through to the block bg colour`() {
+        val green = { r: Int, g: Int, b: Int -> r < 20 && kotlin.math.abs(g - 0xA0) <= 6 && b < 20 }
+        fun email(accent: String?) = block(buildMap<String, Any> {
+            put("id", "sl"); put("type", "social_login"); put("bg_color", "#00A000")
+            if (accent != null) put("accent_color", accent)
+            put("providers", listOf(mapOf("type" to "email", "enabled" to true, "label" to "Continue with email")))
+        })
+        val unset = count(email(null), "#FFFFFF", "email-unset") { r, g, b -> green(r, g, b) }
+        val empty = count(email(""), "#FFFFFF", "email-empty") { r, g, b -> green(r, g, b) }
+        println("[social-empty accent] unset=$unset empty=$empty")
+        assertTrue("control: the block bg colour draws ($unset)", unset > 2000)
+        assertTrue("an empty accent_color drew no fill ($empty vs $unset)", empty > unset / 2)
+    }
 }

@@ -4793,6 +4793,13 @@ private fun SocialLoginBlock(
             // ContentBlockRendererView.swift:724-771 which resolves
             // `provider.bg_color ?? socialLoginBgColor(provider.type)` for
             // each color independently.
+            // #1537 — the email / custom fallback, from the ONE table iOS reads too (`SocialBrandDefaults`): the
+            // block's accent_color, else its bg_color, else the brand accent — an EMPTY colour skipped, as on iOS.
+            // `accent_color ?: bg_color` took "" (a cleared picker) and parseColor("") is Transparent.
+            val socialFallbackHex = ai.appdna.sdk.core.SocialBrandDefaults.backgroundHex(
+                type = "email", style = "filled", blockAccent = block.accent_color, blockBg = block.bg_color,
+                brandAccent = ai.appdna.sdk.AppDNA.brandAccentHex,
+            ) ?: "#6366F1"
             val (defaultBg, defaultText, defaultBorder) = when (provider.type) {
                 "apple" -> Triple(Color(0xFF000000), Color.White, Color(0xFF000000))
                 // Google brand bg `#4285F4`
@@ -4804,16 +4811,16 @@ private fun SocialLoginBlock(
                 "facebook" -> Triple(Color(0xFF1877F2), Color.White, Color(0xFF1877F2))
                 "github" -> Triple(Color(0xFF24292F), Color.White, Color(0xFF24292F))
                 "email" -> Triple(
-                    StyleEngine.parseColor(block.accent_color ?: block.bg_color ?: (ai.appdna.sdk.AppDNA.brandAccentHex ?: "#6366F1")),
+                    StyleEngine.parseColor(socialFallbackHex),
                     Color.White,
-                    StyleEngine.parseColor(block.accent_color ?: block.bg_color ?: (ai.appdna.sdk.AppDNA.brandAccentHex ?: "#6366F1")),
+                    StyleEngine.parseColor(socialFallbackHex),
                 )
                 // Custom/unknown provider: honor block-level accent_color/bg_color like
                 // iOS socialLoginBgColor default + preview (was global brand only).
                 else -> Triple(
-                    StyleEngine.parseColor(block.accent_color ?: block.bg_color ?: (ai.appdna.sdk.AppDNA.brandAccentHex ?: "#6366F1")),
+                    StyleEngine.parseColor(socialFallbackHex),
                     Color.White,
-                    StyleEngine.parseColor(block.accent_color ?: block.bg_color ?: (ai.appdna.sdk.AppDNA.brandAccentHex ?: "#6366F1")),
+                    StyleEngine.parseColor(socialFallbackHex),
                 )
             }
             // #1536 — an EMPTY colour is unset, as on iOS: the console writes "" when a picker is cleared, and

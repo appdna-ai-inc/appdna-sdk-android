@@ -10,6 +10,9 @@ Feature parity: iOS 1.0.86.
 
 ### Fixed
 
+- **An email or custom social-login button with a cleared accent colour uses the block's background colour.**
+  A block `accent_color` of `""` drew the button transparent; it now falls through to `bg_color`, then the
+  brand accent, as on iOS.
 - **A social-login provider with a cleared colour keeps its brand colours.** A provider whose `bg_color` or
   `text_color` was `""` (a cleared picker) drew a transparent button; an empty colour is now unset, as on iOS.
 - **A summary stat label keeps a translucent text colour's alpha.** The default label is drawn at 0.7 of the
