@@ -8925,8 +8925,12 @@ private fun CustomViewBlock(block: ContentBlock) {
             contentScale = ContentScale.Fit,
         )
     } else {
+        // #1501 — `[view_key]` reached end users. The authored text; else the key in a debuggable app only; else the
+        // block draws nothing.
+        val text = CustomViewFallback.text(key, block.placeholder_text, CustomViewFallback.isDebugBuild(androidx.compose.ui.platform.LocalContext.current))
+            ?: return
         Text(
-            text = block.placeholder_text ?: "[$key]",
+            text = text,
             fontSize = 12.sp,
             // Theme-adaptive secondary (was Color.Gray).
             // CustomViewBlock placeholder fallback. iOS .secondary
