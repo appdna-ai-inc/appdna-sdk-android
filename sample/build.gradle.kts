@@ -118,6 +118,10 @@ android {
     testOptions {
         unitTests {
             isIncludeAndroidResources = true
+            // `AppDNA` is a process-wide singleton that keeps the context of the first SampleApp a test
+            // configured, while Robolectric builds a fresh Application per test class: each class gets its
+            // own JVM so one class's SDK does not post to another's NotificationManager.
+            all { it.forkEvery = 1 }
         }
     }
 }
