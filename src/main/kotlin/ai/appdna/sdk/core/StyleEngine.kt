@@ -378,37 +378,23 @@ object StyleEngine {
      */
     @androidx.compose.runtime.Composable
     fun Modifier.applyBlockContainerStyle(fieldConfig: Map<String, Any?>?): Modifier {
-        if (fieldConfig == null) return this
-        val useBlur = (fieldConfig["blur_background"] as? Boolean) == true
-        val containerBg = fieldConfig["container_bg_color"] as? String
-        val hasBg = containerBg != null && containerBg.isNotEmpty()
-            && !containerBg.equals("#ffffff", true)
-            && !containerBg.equals("transparent", true)
-        val containerBorderW = (fieldConfig["container_border_width"] as? Number)
-            ?.toDouble()?.takeIf { it > 0 }?.dp
-        val containerBorderC = fieldConfig["container_border_color"] as? String
-        val hasBorder = containerBorderW != null && !containerBorderC.isNullOrEmpty()
-        val bgOpacity = ((fieldConfig["container_opacity"] as? Number)?.toDouble()
-            ?: (fieldConfig["background_opacity"] as? Number)?.toDouble()
-            ?: 1.0).toFloat()
-        val cornerR = ((fieldConfig["container_corner_radius"] as? Number)?.toDouble() ?: 0.0).dp
-
-        if (!useBlur && !hasBg && !hasBorder) return this
-        val shape = RoundedCornerShape(cornerR)
+        // The decision is `BlockContainerStyle.resolve`, shared with iOS and the fixture; this only draws it.
+        val st = ai.appdna.sdk.onboarding.BlockContainerStyle.resolve(fieldConfig) ?: return this
+        val shape = RoundedCornerShape(st.cornerRadius.dp)
         var mod: Modifier = this
-        if (useBlur) {
+        if (st.blur) {
             // Approximation: translucent white veneer. Compose
             // Modifier.blur() blurs the wrapped content, not what's
             // behind it, so it can't replicate iOS .ultraThinMaterial.
             mod = mod.background(Color.White.copy(alpha = 0.3f), shape)
         }
-        if (hasBg && containerBg != null) {
-            val bgColor = parseColor(containerBg).copy(alpha = bgOpacity)
+        st.fillHex?.let { hex ->
+            val bgColor = parseColor(hex).copy(alpha = st.opacity.toFloat())
             mod = mod.background(bgColor, shape)
         }
         mod = mod.clip(shape)
-        if (hasBorder && containerBorderW != null && containerBorderC != null) {
-            mod = mod.border(containerBorderW, parseColor(containerBorderC), shape)
+        if (st.borderWidth != null && st.borderHex != null) {
+            mod = mod.border(st.borderWidth.dp, parseColor(st.borderHex), shape)
         }
         return mod
     }

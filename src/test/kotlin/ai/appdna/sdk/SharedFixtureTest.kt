@@ -284,6 +284,7 @@ class SharedFixtureTest(
             "resolve_dropdown_field_ink" -> runDropdownFieldInk(action, spy)
             "resolve_gallery_title_ink" -> runGalleryTitleInk(action, spy)
             "build_push_token_body" -> runPushTokenBody(action, spy)
+            "resolve_block_container_style" -> runBlockContainerStyle(action, spy)
             "parse_colour" -> runParseColour(action, spy)
             "unfold_blockquotes" -> runUnfoldBlockquotes(action, spy)
             "normalise_markdown" -> runUnfoldBlockquotes(action, spy)
@@ -3056,6 +3057,23 @@ class SharedFixtureTest(
                 if (c.isNull("user_id")) null else c.optString("user_id"),
             )
             listOf(if (body.has("anon_id")) body.getString("anon_id") else null, if (body.has("user_id")) body.getString("user_id") else null)
+        }
+    }
+
+    /** What a block's container style draws, through the REAL step parser and `BlockContainerStyle`. */
+    private fun runBlockContainerStyle(action: JSONObject, spy: Spy) {
+        val cases = action.optJSONArray("cases") ?: unsupported("resolve_block_container_style without cases")
+        spy.state["results"] = (0 until cases.length()).map { i ->
+            val c = cases.getJSONObject(i)
+            @Suppress("UNCHECKED_CAST")
+            val raw = (c.optJSONObject("block") ?: unsupported("resolve_block_container_style case without block")).asMap().filterValues { it != null } as Map<String, Any>
+            val step = mapOf("id" to "fixture_step", "type" to "custom", "content_blocks" to listOf(raw))
+            val block = ai.appdna.sdk.onboarding.OnboardingConfigParser.parseStepForTest(step)?.config?.content_blocks?.firstOrNull()
+                ?: throw AssertionError("[resolve_block_container_style] the block did not parse")
+            ai.appdna.sdk.onboarding.BlockContainerStyle.resolve(block.field_config)?.let { st ->
+                val border = st.borderWidth?.let { "${it.toInt()}@${st.borderHex}" } ?: "none"
+                "fill=${st.fillHex ?: "none"} opacity=${String.format(java.util.Locale.US, "%.1f", st.opacity)} blur=${st.blur} border=$border radius=${st.cornerRadius.toInt()}"
+            }
         }
     }
 
