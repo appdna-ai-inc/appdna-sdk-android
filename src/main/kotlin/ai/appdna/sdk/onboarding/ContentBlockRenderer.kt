@@ -2160,6 +2160,10 @@ internal fun RenderBlock(
     val contentModifier = with(StyleEngine) {
         Modifier
             .then(if (blockBleeds) Modifier.fullBleedHorizontal(blockBleedInset) else Modifier)
+            // The container style is the OUTER layer and `block_style` the inner one, as the console preview
+            // and iOS draw them: a block carrying both shows its `block_style` fill over the container fill.
+            // It was applied last (Compose: the innermost), so the container fill covered `block_style`.
+            .applyBlockContainerStyle(block.field_config)
             .applyBlockStyle(
                 block.block_style,
                 // Overflow blocks (pulse rings / star field) must not be clipped to the block box,
@@ -2173,7 +2177,6 @@ internal fun RenderBlock(
                 verticalOffset = block.vertical_offset,
                 horizontalOffset = block.horizontal_offset,
             )
-            .applyBlockContainerStyle(block.field_config)
     }
 
     // What the block draws behind its own content, for a Google logo inside it — read at the block's

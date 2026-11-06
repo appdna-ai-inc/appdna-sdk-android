@@ -10,6 +10,9 @@ Feature parity: iOS 1.0.86.
 
 ### Fixed
 
+- **A block's `block_style` shows over its container fill, as on iOS and in the console preview.** A block
+  with both a `block_style` background and a `field_config.container_bg_color` drew the container fill on top,
+  so a `block_style` background (and text chosen for it) could disappear.
 - **Push tokens name their user.** The token registration now sends the device's anonymous ID and, once
   `identify` ran, the user ID, and registers again after `identify` and `reset`. The server stored every SDK
   token without a user, so a push to a user, a list or a segment reached no SDK device.
