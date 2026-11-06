@@ -123,6 +123,9 @@ internal class EventUploadWorker(
                 val client = okhttp3.OkHttpClient.Builder()
                     .connectTimeout(10, TimeUnit.SECONDS)
                     .readTimeout(30, TimeUnit.SECONDS)
+                    // One request per batch: the run's outcome decides the retry. OkHttp's default would re-send
+                    // a batch on its own when a pooled connection fails after the request was written.
+                    .retryOnConnectionFailure(false)
                     .build()
                 repeat(MAX_BATCHES_PER_RUN) {
                     val batch = eventDatabase.loadBatch(batchSize)

@@ -16,7 +16,8 @@ import kotlinx.coroutines.launch
  * A tiny loopback HTTP/1.1 server for JVM tests (the Android test deps have no MockWebServer).
  *
  * - [respond] answers each request (path, body) with `(status, body)`; returning null STALLS the
- *   request: the connection is accepted and read, and then nothing is ever written back.
+ *   request: the connection is accepted and read, and then nothing is ever written back. A status of
+ *   [CLOSE] DROPS it: the request is read, then the connection closes with no answer.
  * - [requests] records every request as `(method path, body)`.
  * - [connectionClosedByClient] counts down when a stalled request's connection is closed by the client
  *   (a cancelled OkHttp call closes its socket) — the observable proof that the call was cancelled.
@@ -89,6 +90,10 @@ internal class TestHttpServer(
                 requests += "${parts[0]} $path" to body
                 requestSeen.countDown()
                 val answer = respond(path, body)
+                if (answer?.first == CLOSE) {
+                    // DROP: the request was read in full, then the connection closes with no answer.
+                    return
+                }
                 if (answer == null) {
                     // STALL: never answer; report when the client gives up and closes the socket.
                     while (!closed) {
@@ -137,6 +142,9 @@ internal class TestHttpServer(
     fun awaitRequest(seconds: Long = 10): Boolean = requestSeen.await(seconds, TimeUnit.SECONDS)
 
     companion object {
+        /** A status for [respond]: read the request, then close the connection without answering. */
+        const val CLOSE = -1
+
         /**
          * Wait until `Dispatchers.IO` is responsive again. The Robolectric test JVM is shared by up to
          * 250 tests (`forkEvery`), and earlier classes can leave work on the IO pool. (The worst case —

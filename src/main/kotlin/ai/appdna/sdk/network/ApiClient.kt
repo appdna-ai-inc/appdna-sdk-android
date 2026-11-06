@@ -76,6 +76,15 @@ internal class ApiClient(
         .addInterceptor(SdkIdentityInterceptor())
         .build()
 
+    /**
+     * The same client, for a call that must make exactly ONE network attempt ([postEventsBatch]). OkHttp's
+     * default `retryOnConnectionFailure(true)` re-sends a request on its own when a pooled connection fails
+     * after the request was written, so a "single attempt" POST could reach the server twice, behind the back
+     * of the caller that owns the retry policy. URLSession does not re-send a POST, so iOS never did this.
+     * `newBuilder()` shares the connection pool, dispatcher and interceptors.
+     */
+    private val singleAttemptClient = client.newBuilder().retryOnConnectionFailure(false).build()
+
     private val jsonMediaType = "application/json; charset=utf-8".toMediaType()
 
     private val retryDelays = longArrayOf(1000L, 2000L, 4000L)
@@ -404,7 +413,7 @@ internal class ApiClient(
      * Single-attempt event-batch upload with structured result.
      *
      * Unlike [postCompressed] (which performs its own internal retry loop), this method
-     * makes ONE network attempt and returns an [EventUploadResult] so the caller
+     * makes ONE network attempt (OkHttp's silent re-send is off, see [singleAttemptClient]) and returns an [EventUploadResult] so the caller
      * (EventQueue) can apply the retry policy:
      *   - 2xx → Success
      *   - 4xx (except 429) → ClientError (drop the batch — retrying won't help)
@@ -427,7 +436,7 @@ internal class ApiClient(
                     .post(compressed.toRequestBody("application/json".toMediaType()))
                     .build()
 
-                client.newCall(request).execute().use { response ->
+                singleAttemptClient.newCall(request).execute().use { response ->
                     val code = response.code
                     // The CLASSIFICATION is [dispositionFor], a pure function the
                     // shared `permanent_4xx_dropped` fixture asserts on both platforms. It used to
