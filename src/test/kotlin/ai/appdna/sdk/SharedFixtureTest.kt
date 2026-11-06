@@ -2939,7 +2939,7 @@ class SharedFixtureTest(
     }
 
     /** The animated_loading variant, through the REAL step parser and the REAL `AnimatedLoadingVariant`. */
-    /** #1501 — an unregistered custom_view's fallback, through the REAL step parser and the REAL `CustomViewFallback`. */
+    /** An unregistered custom_view's fallback, through the REAL step parser and the REAL `CustomViewFallback`. */
     private fun runCustomViewFallback(action: JSONObject, spy: Spy) {
         val cases = action.optJSONArray("cases") ?: unsupported("resolve_custom_view_fallback without cases")
         spy.state["results"] = (0 until cases.length()).map { i ->

@@ -12,7 +12,7 @@ import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
 
 /**
- * #1501 — an UNREGISTERED custom_view never draws its debug key to an end user. It drew the literal `[view_key]`
+ * An UNREGISTERED custom_view never draws its debug key to an end user. It drew the literal `[view_key]`
  * whenever the block carried no `placeholder_text`. The shipping renderer is rendered: in a release build
  * (`CustomViewFallback.debugOverride = false`) with nothing authored, no `[view_key]` node exists. CONTROLS on the same
  * harness: a debuggable build draws the key, and an authored `placeholder_text` draws in release — and a sibling text

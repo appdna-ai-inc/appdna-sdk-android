@@ -8925,8 +8925,8 @@ private fun CustomViewBlock(block: ContentBlock) {
             contentScale = ContentScale.Fit,
         )
     } else {
-        // #1501 — `[view_key]` reached end users. The authored text; else the key in a debuggable app only; else the
-        // block draws nothing.
+        // An unregistered custom_view never draws its debug key in a release build: the authored text; else the key in
+        // a debuggable app only; else the block draws nothing.
         val text = CustomViewFallback.text(key, block.placeholder_text, CustomViewFallback.isDebugBuild(androidx.compose.ui.platform.LocalContext.current))
             ?: return
         Text(
