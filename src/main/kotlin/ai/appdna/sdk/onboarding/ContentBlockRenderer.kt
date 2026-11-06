@@ -3439,7 +3439,11 @@ private fun WarningBannerBlock(block: ContentBlock, loc: ((String, String) -> St
     // Device QA (2026-08-04): bg_color/text_color were uneditable. When set they override the
     // accent-tinted background / white message text; unset keeps the variant defaults (parity w/ iOS).
     val bgOverride = block.bg_color?.let { StyleEngine.parseColor(it) }
-    val textColor = StyleEngine.parseColor(block.text_color ?: "#FFFFFF")
+    // Unset `text_color` no longer means white: [WarningBannerInk] picks it from the banner's own fill or
+    // from what is behind it, so a light step gets dark ink (white on the 14% tint was ~1.1:1).
+    val textColor = StyleEngine.parseColor(
+        WarningBannerInk.resolve(block.text_color, block.bg_color, LocalGoogleAttributionBackdrop.current, googleAttributionThemeIsDark()),
+    )
     // Subtitle + alignment, own border/radius, per-role font size, font family.
     // Parity with iOS warningBannerBlock; EVERY default reproduces the earlier render
     // (14/medium, radius 12, 1dp accent@0.45, leading) so published banners are unchanged.

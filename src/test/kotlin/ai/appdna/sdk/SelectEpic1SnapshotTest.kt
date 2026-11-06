@@ -1212,12 +1212,18 @@ class SelectEpic1SnapshotTest {
                         .background(Color(0xFF0F1117))
                         .padding(16.dp),
                 ) {
-                    ContentBlockRendererView(
-                        blocks = blocks,
-                        onAction = {},
-                        toggleValues = mutableMapOf(),
-                        inputValues = mutableMapOf(),
-                    )
+                    // The harness paints #0F1117: say so, as a step does, so an unauthored banner picks its ink for it.
+                    androidx.compose.runtime.CompositionLocalProvider(
+                        ai.appdna.sdk.onboarding.LocalGoogleAttributionBackdrop provides
+                            ai.appdna.sdk.onboarding.GoogleMapsAttribution.Backdrop.Plain("#0F1117"),
+                    ) {
+                        ContentBlockRendererView(
+                            blocks = blocks,
+                            onAction = {},
+                            toggleValues = mutableMapOf(),
+                            inputValues = mutableMapOf(),
+                        )
+                    }
                 }
             }
         }

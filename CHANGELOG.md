@@ -10,6 +10,10 @@ Feature parity: iOS 1.0.86.
 
 ### Fixed
 
+- **An unstyled warning banner is readable on a light step.** A `warning_banner` with no `text_color` drew
+  its message and subtitle white on its translucent tint, which on a light step measured about 1.1:1. They
+  now take their ink from what is behind the banner (dark `#111827` on a light step, white on a dark one), or
+  from the banner's own `bg_color` when it sets one.
 - **A wrapped in-app message title no longer overlaps itself.** Titles and bodies of every message type
   use a line height of 1.2× their size; a fullscreen title (34sp) used the theme's shorter default, so its
   lines ran into each other.
