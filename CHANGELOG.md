@@ -10,6 +10,9 @@ Feature parity: iOS 1.0.86.
 
 ### Fixed
 
+- **A button's refresh spinner matches its label.** The spinner shown while a `refresh_step` button waits
+  took `style.color` before `text_color`; it now takes the label's own colour (`text_color`, else
+  `style.color`, else the variant's).
 - **An unstyled warning banner is readable on a light step.** A `warning_banner` with no `text_color` drew
   its message and subtitle white on its translucent tint, which on a light step measured about 1.1:1. They
   now take their ink from what is behind the banner (dark `#111827` on a light step, white on a dark one), or

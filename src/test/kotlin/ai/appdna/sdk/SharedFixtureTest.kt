@@ -279,6 +279,7 @@ class SharedFixtureTest(
             "resolve_loading_variant" -> runLoadingVariant(action, spy)
             "resolve_custom_view_fallback" -> runCustomViewFallback(action, spy)
             "resolve_warning_banner_ink" -> runWarningBannerInk(action, spy)
+            "resolve_button_label_ink" -> runButtonLabelInk(action, spy)
             "parse_colour" -> runParseColour(action, spy)
             "unfold_blockquotes" -> runUnfoldBlockquotes(action, spy)
             "normalise_markdown" -> runUnfoldBlockquotes(action, spy)
@@ -2970,6 +2971,22 @@ class SharedFixtureTest(
             ai.appdna.sdk.onboarding.WarningBannerInk.resolve(
                 block.text_color, block.bg_color,
                 ai.appdna.sdk.onboarding.GoogleMapsAttribution.Backdrop.Plain(backdrop), c.optBoolean("dark_appearance"),
+            )
+        }
+    }
+
+    /** A button label's colour with the variant default counted, through the REAL step parser and `ButtonLabelColour.label`. */
+    private fun runButtonLabelInk(action: JSONObject, spy: Spy) {
+        val cases = action.optJSONArray("cases") ?: unsupported("resolve_button_label_ink without cases")
+        spy.state["results"] = (0 until cases.length()).map { i ->
+            val c = cases.getJSONObject(i)
+            @Suppress("UNCHECKED_CAST")
+            val raw = (c.optJSONObject("block") ?: unsupported("resolve_button_label_ink case without block")).asMap().filterValues { it != null } as Map<String, Any>
+            val step = mapOf("id" to "fixture_step", "type" to "custom", "content_blocks" to listOf(raw))
+            val block = ai.appdna.sdk.onboarding.OnboardingConfigParser.parseStepForTest(step)?.config?.content_blocks?.firstOrNull()
+                ?: throw AssertionError("[resolve_button_label_ink] the block did not parse")
+            ai.appdna.sdk.onboarding.ButtonLabelColour.label(
+                block.text_color, block.style?.color, block.variant ?: "primary", block.bg_color ?: "#6366F1",
             )
         }
     }

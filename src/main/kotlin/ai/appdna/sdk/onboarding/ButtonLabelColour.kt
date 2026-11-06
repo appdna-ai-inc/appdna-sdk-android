@@ -31,6 +31,15 @@ object ButtonLabelColour {
         if (!styleColor.isNullOrEmpty()) return styleColor
         return null
     }
+
+    /**
+     * The colour the label actually draws in: `text_color ?: style.color ?: the variant's default` — the
+     * fill colour for `outline` and `text` buttons, white for a filled one. A Typography `style` without
+     * a colour is not a colour; both renderers draw the label in THIS (iOS used to let its style bake
+     * `.primary` over the variant default).
+     */
+    internal fun label(textColor: String?, styleColor: String?, variant: String, fillHex: String): String =
+        resolve(textColor, styleColor) ?: if (variant == "outline" || variant == "text") fillHex else "#FFFFFF"
 }
 
 

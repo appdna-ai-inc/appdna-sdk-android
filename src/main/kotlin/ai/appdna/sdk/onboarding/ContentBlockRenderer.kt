@@ -3001,18 +3001,19 @@ private fun ButtonBlock(
     val ctaDisabledHex = block.field_config?.get("cta_disabled_bg_color") as? String
     // The markers count only on raw-resolved blocks, exactly as in the advance gate.
     val rawIds = hostDataRawResolvedIds()
-    val bgColor = run {
+    val fillHex = run {
         val fallback = block.bg_color ?: (ai.appdna.sdk.AppDNA.brandAccentHex ?: "#6366F1")
         if (ctaEnabledHex == null && ctaDisabledHex == null) {
-            StyleEngine.parseColor(fallback)
+            fallback
         } else {
             val satisfied = RequiredFieldGate.evaluate(stepBlocks, inputValues, rawIds).first
-            StyleEngine.parseColor(
-                if (satisfied) (ctaEnabledHex ?: fallback) else (ctaDisabledHex ?: ctaEnabledHex ?: fallback),
-            )
+            if (satisfied) (ctaEnabledHex ?: fallback) else (ctaDisabledHex ?: ctaEnabledHex ?: fallback)
         }
     }
-    val txtColor = StyleEngine.parseColor(block.text_color ?: "#FFFFFF")
+    val bgColor = StyleEngine.parseColor(fillHex)
+    // The colour the label draws in, and the spinner with it: `text_color ?: style.color ?: the variant's
+    // default`, shared with iOS through [ButtonLabelColour.label] (iOS let a colourless style beat it).
+    val labelInk = StyleEngine.parseColor(ButtonLabelColour.label(block.text_color, block.style?.color, btnVariant, fillHex))
     val cornerRadius = (block.button_corner_radius ?: 12.0).dp
     // The AUTHORED border. "Border color" and "Border width" sit on every button panel and
     // on every multi-buttons child, and nothing read either: the ring was hardcoded to 1.5dp of the
@@ -3156,10 +3157,10 @@ private fun ButtonBlock(
 
     // Gap 6: Button content with optional icon_emoji / image_url
     @Composable
-    fun ButtonContent(textColor: Color) {
+    fun ButtonContent() {
         // While this button's refresh runs: label/icon at opacity 0 under a spinner
-        // tinted with the label's own colour (style.color → text colour, as the Text below resolves it).
-        RefreshLoadingContent(refreshLoading, block.style?.color?.let { StyleEngine.parseColor(it) } ?: textColor) {
+        // tinted with the label's own colour.
+        RefreshLoadingContent(refreshLoading, labelInk) {
         Row(
             horizontalArrangement = Arrangement.Center,
             verticalAlignment = Alignment.CenterVertically,
@@ -3225,9 +3226,7 @@ private fun ButtonBlock(
              * on the two platforms, and 250 lines above this one `colouredStyle` was applying the
              * correct rule only for this `.copy(color = …)` to overwrite it.
              */
-            val resolvedTextColor = ButtonLabelColour.resolve(block.text_color, block.style?.color)
-                ?.let { StyleEngine.parseColor(it) }
-                ?: textColor
+            val resolvedTextColor = labelInk
             Text(
                 // Apply
                 // style.text_transform (uppercase/lowercase) matching iOS
@@ -3254,7 +3253,7 @@ private fun ButtonBlock(
                 colors = ButtonDefaults.outlinedButtonColors(contentColor = bgColor),
                 interactionSource = interactionSource,
             ) {
-                ButtonContent(textColor = bgColor)
+                ButtonContent()
             }
         }
         "text" -> {
@@ -3265,7 +3264,7 @@ private fun ButtonBlock(
                 border = authoredBorder,
                 interactionSource = interactionSource,
             ) {
-                ButtonContent(textColor = bgColor)
+                ButtonContent()
             }
         }
         else -> {
@@ -3282,7 +3281,7 @@ private fun ButtonBlock(
                         .clickable { onClick() },
                     contentAlignment = Alignment.Center,
                 ) {
-                    ButtonContent(textColor = txtColor)
+                    ButtonContent()
                 }
             } else {
                 Button(
@@ -3302,7 +3301,7 @@ private fun ButtonBlock(
                     ),
                     interactionSource = interactionSource,
                 ) {
-                    ButtonContent(textColor = txtColor)
+                    ButtonContent()
                 }
             }
         }
