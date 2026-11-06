@@ -10,6 +10,9 @@ Feature parity: iOS 1.0.86.
 
 ### Fixed
 
+- **A translucent container colour keeps its alpha.** A block's `container_bg_color` written as `#RRGGBBAA` was
+  drawn with the container opacity in place of its own alpha (`#00000080` drew opaque); the opacity now
+  multiplies it, as on iOS.
 - **A paywall plan's styled colours are drawn.** A plans section's Style-tab colour for the plan name or the
   price, and a plan's own `price_color` in the default vertical-stack layout, lost to the tile's text colour.
   The order is now iOS's: `price_color`, then `selected_text_color` on the selected plan, then the Style-tab

@@ -389,7 +389,10 @@ object StyleEngine {
             mod = mod.background(Color.White.copy(alpha = 0.3f), shape)
         }
         st.fillHex?.let { hex ->
-            val bgColor = parseColor(hex).copy(alpha = st.opacity.toFloat())
+            // The opacity MULTIPLIES the colour's own alpha, as iOS's `.opacity` does. `copy(alpha =)` replaced
+            // it, so an authored `#00000080` container was drawn fully opaque.
+            val parsed = parseColor(hex)
+            val bgColor = parsed.copy(alpha = parsed.alpha * st.opacity.toFloat())
             mod = mod.background(bgColor, shape)
         }
         mod = mod.clip(shape)
