@@ -4816,14 +4816,18 @@ private fun SocialLoginBlock(
                     StyleEngine.parseColor(block.accent_color ?: block.bg_color ?: (ai.appdna.sdk.AppDNA.brandAccentHex ?: "#6366F1")),
                 )
             }
-            val bgColor = provider.bg_color?.let { StyleEngine.parseColor(it) } ?: defaultBg
+            // #1536 — an EMPTY colour is unset, as on iOS: the console writes "" when a picker is cleared, and
+            // parseColor("") is Transparent, which drew an invisible button (and white text on nothing).
+            val providerBg = provider.bg_color?.takeIf { it.isNotEmpty() }
+            val providerText = provider.text_color?.takeIf { it.isNotEmpty() }
+            val bgColor = providerBg?.let { StyleEngine.parseColor(it) } ?: defaultBg
             /*
              * The same background as a HEX, because a `Color` carries no readable
              * components and the chip rule needs a luminance. The brand defaults repeat the
              * table above rather than re-deriving it, so an edit to one is visible beside the
              * other.
              */
-            val bgHex: String? = provider.bg_color ?: ai.appdna.sdk.core.SocialBrandDefaults.backgroundHex(
+            val bgHex: String? = providerBg ?: ai.appdna.sdk.core.SocialBrandDefaults.backgroundHex(
                 type = provider.type,
                 // The Triple above is the FILLED table; outlined/minimal resolve their own colours
                 // further down, so the hex asked for here is always the filled one.
@@ -4836,7 +4840,7 @@ private fun SocialLoginBlock(
             // brand-white default text was invisible (white-on-transparent). iOS forces
             // `.primary` (theme-adaptive) for these styles
             // (ContentBlockRendererView.swift:1389-1392); mirror with onSurface.
-            val textColor = provider.text_color?.let { StyleEngine.parseColor(it) }
+            val textColor = providerText?.let { StyleEngine.parseColor(it) }
                 ?: if (buttonStyle == "outlined" || buttonStyle == "minimal") MaterialTheme.colorScheme.onSurface else defaultText
             // Outlined buttons use a NEUTRAL outline, not the provider brand color.
             // iOS socialLoginBorderColor (ContentBlockRendererView.swift:1495-1501): google=#DADCE0,
