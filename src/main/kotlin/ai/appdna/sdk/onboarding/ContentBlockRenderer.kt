@@ -3781,7 +3781,9 @@ private fun SummaryScreenBlock(
                     // control. An authored label colour drops the 0.7 alpha with it: an author who
                     // picked a colour meant that colour. iOS parity.
                     val statLabelColor = summaryStatString(m, "label_color")?.takeIf { it.isNotBlank() }
-                        ?.let { StyleEngine.parseColor(it) } ?: textColor.copy(alpha = 0.7f)
+                        // 0.7 MULTIPLIES the text colour's own alpha, as iOS's `.opacity(0.7)` does;
+                        // `copy(alpha = 0.7f)` replaced it, so a translucent `text_color` drew more opaque here.
+                        ?.let { StyleEngine.parseColor(it) } ?: textColor.copy(alpha = textColor.alpha * 0.7f)
                     val statLabelSize = summaryStatSize(m, "label_font_size", 13f)
                     val statValueSize = summaryStatSize(m, "value_font_size", 24f)
                     val statAlign = when (summaryStatString(m, "align")) {

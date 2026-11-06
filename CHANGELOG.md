@@ -10,6 +10,8 @@ Feature parity: iOS 1.0.86.
 
 ### Fixed
 
+- **A summary stat label keeps a translucent text colour's alpha.** The default label is drawn at 0.7 of the
+  block's `text_color`; it replaced that colour's own alpha instead of multiplying it, as iOS does.
 - **A translucent container colour keeps its alpha.** A block's `container_bg_color` written as `#RRGGBBAA` was
   drawn with the container opacity in place of its own alpha (`#00000080` drew opaque); the opacity now
   multiplies it, as on iOS.
