@@ -137,6 +137,16 @@ internal class RemoteConfigManager(
             if (value != null && current.isNotEmpty()) value(current)
         }
 
+    // Raw data accumulators for disk cache rebuild during per-item fetches.
+    // When using index-based fetch, individual items bypass the mega-doc path
+    // that normally handles caching. These track raw Firestore data so we can
+    // rebuild the cache after each item is fetched. Seeded from the disk cache at a cold start (and from a
+    // mega-doc), so a prune after a restart rewrites the cache from everything still held, not only from the
+    // items fetched since. Declared before `init`, which reads the cache into them.
+    private val rawPaywallData = mutableMapOf<String, Map<String, Any>>()
+    private val rawOnboardingData = mutableMapOf<String, Map<String, Any>>()
+    private val rawMessageData = mutableMapOf<String, Map<String, Any>>()
+
     init {
         loadCachedConfigs()
     }
@@ -238,29 +248,7 @@ internal class RemoteConfigManager(
         fetchExpectedTotal.set(expected)
 
         // Flags: index → per-item docs (config/flag_index/flags/{key}), fallback → mega-doc.
-        fetchViaIndex(
-            db = db, basePath = basePath,
-            indexPath = "flag_index", indexKey = "flags",
-            itemCollection = "flag_index/flags", megaDocPath = "flags",
-            parseItem = { key, data -> parseSingleFlag(key, data) },
-            parseMegaDoc = { data ->
-                @Suppress("UNCHECKED_CAST")
-                val unwrapped = (data["flags"] as? Map<String, Any>) ?: data
-                // Normalize each entry to its RAW value (FeatureFlagManager/getConfig expect Bool/Number/
-                // String, not the served {value,type,...} wrapper); omit null-valued (unset) flags.
-                flags = unwrapped.entries.mapNotNull { e -> flagRawValue(e.value)?.let { e.key to it } }.toMap()
-                cacheMap("flags", flags)
-                notifyChangeListeners()
-            },
-            pruneToKeys = { keys ->
-                flags = flags.filterKeys { it in keys }
-                // Rewrite the disk cache to match (clears it when keys is empty — else a cold start
-                // resurrects removed flags). Per-item adds re-cache the full set afterward.
-                try { cacheMap("flags", flags) } catch (_: Exception) {}
-                notifyChangeListeners()  // fire on full-clear too (no per-item parse runs when empty)
-            },
-            onComplete = { ok -> markFetchComplete(ok) }
-        )
+        fetchViaIndex(db, basePath, indexedSection("flag_index")) { ok -> markFetchComplete(ok) }
 
         // Fetch experiments. After parsing, prefetch any per-item variant docs referenced
         // via `variant_doc` so synchronous presentation resolution can read the treatment config. The
@@ -278,38 +266,10 @@ internal class RemoteConfigManager(
             markFetchComplete(success = false)
         }
 
-        // Paywalls: prefer per-item docs via index → fallback to mega-doc
-        fetchViaIndex(
-            db = db, basePath = basePath,
-            indexPath = "paywall_index", indexKey = "paywalls",
-            itemCollection = "paywall_index/paywalls", megaDocPath = "paywalls",
-            parseItem = { id, data -> parseSinglePaywall(id, data) },
-            parseMegaDoc = { data -> parsePaywalls(data); cacheMap("paywalls", data) },
-            onComplete = { ok -> markFetchComplete(ok) }
-        )
-
-        // Onboarding: prefer per-item docs via index → fallback to mega-doc
-        fetchViaIndex(
-            db = db, basePath = basePath,
-            indexPath = "onboarding_index", indexKey = "flows",
-            itemCollection = "onboarding_index/flows", megaDocPath = "onboarding",
-            parseItem = { id, data -> parseSingleOnboardingFlow(id, data) },
-            parseMegaDoc = { data -> parseOnboarding(data); cacheMap("onboarding", data) },
-            extraIndexParse = { indexData ->
-                (indexData["active_flow_id"] as? String)?.let { activeOnboardingFlowId = it }
-            },
-            onComplete = { ok -> markFetchComplete(ok) }
-        )
-
-        // Surveys: prefer per-item docs via index → fallback to mega-doc
-        fetchViaIndex(
-            db = db, basePath = basePath,
-            indexPath = "survey_index", indexKey = "surveys",
-            itemCollection = "survey_index/surveys", megaDocPath = "surveys",
-            parseItem = { id, data -> parseSingleSurvey(id, data) },
-            parseMegaDoc = { data -> parseSurveys(data); cacheMap("surveys", data) },
-            onComplete = { ok -> markFetchComplete(ok) }
-        )
+        // Paywalls, onboarding flows, surveys: index → per-item docs, fallback → mega-doc (see [indexedSections]).
+        fetchViaIndex(db, basePath, indexedSection("paywall_index")) { ok -> markFetchComplete(ok) }
+        fetchViaIndex(db, basePath, indexedSection("onboarding_index")) { ok -> markFetchComplete(ok) }
+        fetchViaIndex(db, basePath, indexedSection("survey_index")) { ok -> markFetchComplete(ok) }
 
         // Fetch screen_index for server-driven UI
         db.document("$basePath/screen_index").get().addOnSuccessListener { snapshot ->
@@ -331,36 +291,10 @@ internal class RemoteConfigManager(
             Log.debug("No brand config: ${e.message}")
         }
 
-        // Fetch in-app messages
-        // mega-doc. Mirrors iOS RemoteConfigManager.swift:305 which fetches
-        // `$basePath/messages` and parses into a `[String: MessageConfig]`
-        // map exposed via `getActiveMessages()`. Without this fetch the
-        // Android `activeMessages` map stayed empty and Firestore-published
-        // in-app messages never displayed (only push-delivered ones did).
-        // In-app messages: index → per-item docs (config/message_index/messages/{id}),
-        // fallback → mega-doc.
-        fetchViaIndex(
-            db = db, basePath = basePath,
-            indexPath = "message_index", indexKey = "messages",
-            itemCollection = "message_index/messages", megaDocPath = "messages",
-            parseItem = { id, data -> parseSingleMessage(id, data) },
-            parseMegaDoc = { data ->
-                @Suppress("UNCHECKED_CAST")
-                messages = ai.appdna.sdk.messages.MessageConfigParser.parseMessages(data as Map<String, Any>)
-                cacheMap("messages", data)
-                notifyChangeListeners()
-            },
-            pruneToKeys = { keys ->
-                messages = messages.filterKeys { it in keys }
-                rawMessageData.keys.retainAll(keys)
-                // Rewrite the disk cache (clears to {messages:{}} when empty — else cold start resurrects).
-                try {
-                    cacheMap("messages", mapOf("messages" to rawMessageData.toMap()))
-                } catch (_: Exception) {}
-                notifyChangeListeners()  // fire on full-clear too (no per-item parse runs when empty)
-            },
-            onComplete = { ok -> markFetchComplete(ok) }
-        )
+        // In-app messages: index → per-item docs (config/message_index/messages/{id}), fallback → mega-doc.
+        // Mirrors iOS, which fetches the same documents into a `[String: MessageConfig]` map exposed via
+        // `getActiveMessages()`.
+        fetchViaIndex(db, basePath, indexedSection("message_index")) { ok -> markFetchComplete(ok) }
 
         Log.info("Fetching remote configs from Firestore")
     }
@@ -599,89 +533,241 @@ internal class RemoteConfigManager(
     // MARK: - Per-item fetch via index (enterprise-grade)
 
     /**
-     * Generic helper: try to load items via a lightweight index document.
-     * If the index exists, fan out to individual per-item documents.
-     * If no index, fall back to the legacy mega-document.
+     * One config type served through an index document: `config/<indexPath>` holds `{<indexKey>: {id: {...}}}`
+     * and each item lives at `config/<itemCollection>/<id>`. An older server writes only the mega-doc
+     * `config/<megaDocPath>`.
      */
-    @Suppress("UNCHECKED_CAST")
+    private class IndexedSection(
+        val indexPath: String,
+        val indexKey: String,
+        val itemCollection: String,
+        val megaDocPath: String,
+        val parseItem: (String, Map<String, Any>) -> Unit,
+        val parseMegaDoc: (Map<String, Any>) -> Unit,
+        /** Drops every held item whose id is not in the set, from memory and from the disk cache. */
+        val pruneToKeys: (Set<String>) -> Unit,
+        val extraIndexParse: ((Map<String, Any>) -> Unit)? = null,
+    )
+
+    /** Every index-served config type, by index document. Lazy: built on first use, after construction. */
+    private val indexedSections: Map<String, IndexedSection> by lazy {
+        listOf(
+            IndexedSection(
+                indexPath = "flag_index", indexKey = "flags",
+                itemCollection = "flag_index/flags", megaDocPath = "flags",
+                parseItem = { key, data -> parseSingleFlag(key, data) },
+                parseMegaDoc = { data ->
+                    @Suppress("UNCHECKED_CAST")
+                    val unwrapped = (data["flags"] as? Map<String, Any>) ?: data
+                    // Normalize each entry to its RAW value (FeatureFlagManager/getConfig expect Bool/Number/
+                    // String, not the served {value,type,...} wrapper); omit null-valued (unset) flags.
+                    flags = unwrapped.entries.mapNotNull { e -> flagRawValue(e.value)?.let { e.key to it } }.toMap()
+                    cacheMap("flags", flags)
+                    notifyChangeListeners()
+                },
+                pruneToKeys = { keys ->
+                    flags = flags.filterKeys { it in keys }
+                    // Rewrite the disk cache to match (clears it when keys is empty — else a cold start
+                    // resurrects removed flags). Per-item adds re-cache the full set afterward.
+                    try { cacheMap("flags", flags) } catch (_: Exception) {}
+                    notifyChangeListeners()  // fire on full-clear too (no per-item parse runs when empty)
+                },
+            ),
+            IndexedSection(
+                indexPath = "paywall_index", indexKey = "paywalls",
+                itemCollection = "paywall_index/paywalls", megaDocPath = "paywalls",
+                parseItem = { id, data -> parseSinglePaywall(id, data) },
+                parseMegaDoc = { data ->
+                    parsePaywalls(data)
+                    seedRaw(rawPaywallData, data["paywalls"] ?: data)
+                    cacheMap("paywalls", data)
+                },
+                pruneToKeys = { keys -> prunePaywalls(keys) },
+            ),
+            IndexedSection(
+                indexPath = "onboarding_index", indexKey = "flows",
+                itemCollection = "onboarding_index/flows", megaDocPath = "onboarding",
+                parseItem = { id, data -> parseSingleOnboardingFlow(id, data) },
+                parseMegaDoc = { data ->
+                    parseOnboarding(data)
+                    seedRaw(rawOnboardingData, data["flows"])
+                    cacheMap("onboarding", data)
+                },
+                pruneToKeys = { keys -> pruneOnboardingFlows(keys) },
+                extraIndexParse = { indexData ->
+                    (indexData["active_flow_id"] as? String)?.let { activeOnboardingFlowId = it }
+                },
+            ),
+            IndexedSection(
+                indexPath = "survey_index", indexKey = "surveys",
+                itemCollection = "survey_index/surveys", megaDocPath = "surveys",
+                parseItem = { id, data -> parseSingleSurvey(id, data) },
+                parseMegaDoc = { data -> parseSurveys(data); cacheMap("surveys", data) },
+                pruneToKeys = { keys -> pruneSurveys(keys) },
+            ),
+            IndexedSection(
+                indexPath = "message_index", indexKey = "messages",
+                itemCollection = "message_index/messages", megaDocPath = "messages",
+                parseItem = { id, data -> parseSingleMessage(id, data) },
+                parseMegaDoc = { data ->
+                    @Suppress("UNCHECKED_CAST")
+                    messages = ai.appdna.sdk.messages.MessageConfigParser.parseMessages(data as Map<String, Any>)
+                    cacheMap("messages", data)
+                    notifyChangeListeners()
+                },
+                pruneToKeys = { keys ->
+                    messages = messages.filterKeys { it in keys }
+                    rawMessageData.keys.retainAll(keys)
+                    // Rewrite the disk cache (clears to {messages:{}} when empty — else cold start resurrects).
+                    try {
+                        cacheMap("messages", mapOf("messages" to rawMessageData.toMap()))
+                    } catch (_: Exception) {}
+                    notifyChangeListeners()  // fire on full-clear too (no per-item parse runs when empty)
+                },
+            ),
+        ).associateBy { it.indexPath }
+    }
+
+    private fun indexedSection(indexPath: String): IndexedSection = indexedSections.getValue(indexPath)
+
+    internal companion object {
+        /**
+         * The ids an index document lists, or null when there is no index to read: [indexData] is null (the
+         * document does not exist) or has no [indexKey] map. A present but EMPTY map is an empty set, not null:
+         * the index was read and lists nothing, so nothing is live.
+         */
+        fun indexedIds(indexData: Map<String, Any>?, indexKey: String): Set<String>? {
+            val items = indexData?.get(indexKey) as? Map<*, *> ?: return null
+            return items.keys.mapNotNull { it as? String }.toSet()
+        }
+    }
+
+    /**
+     * What one read of an index document means, applied. Returns the ids to fetch as per-item documents, or
+     * null when the mega-doc is to be read instead.
+     *
+     * - **The index was read and carries its item map** — even an EMPTY one: the map is the whole list of what
+     *   is live. Every held item it does not list is pruned from memory and from the disk cache, and the
+     *   listed ids are returned. An empty map therefore means "none are live"; it is never a reason to read
+     *   the mega-doc, which a server that writes an index no longer keeps current.
+     * - **No index** — the document does not exist, or exists without the item map (an older server that
+     *   writes only the mega-doc): nothing is pruned, and null sends the caller to the mega-doc.
+     * - **The read FAILED** (offline, an error): nothing is pruned and the cache is kept; null sends the caller
+     *   to the mega-doc, as before.
+     */
+    private fun applyIndexRead(section: IndexedSection, indexData: Map<String, Any>?, failed: Boolean): Set<String>? {
+        if (failed) return null
+        val ids = indexedIds(indexData, section.indexKey) ?: return null
+        section.extraIndexParse?.invoke(indexData!!)
+        section.pruneToKeys(ids)
+        return ids
+    }
+
+    /**
+     * Try to load items via a lightweight index document ([applyIndexRead] decides what a read means). If the
+     * index lists items, fan out to the individual per-item documents; with no index, read the legacy mega-doc.
+     */
     private fun fetchViaIndex(
         db: com.google.firebase.firestore.FirebaseFirestore,
         basePath: String,
-        indexPath: String,
-        indexKey: String,
-        itemCollection: String,
-        megaDocPath: String,
-        parseItem: (String, Map<String, Any>) -> Unit,
-        parseMegaDoc: (Map<String, Any>) -> Unit,
-        extraIndexParse: ((Map<String, Any>) -> Unit)? = null,
-        // When provided, the index is AUTHORITATIVE: in-memory entries whose key is not in
-        // the current index are pruned (removed item stops serving), and an EMPTY index takes the index
-        // branch (prune-to-empty) instead of the mega-doc. Flags + messages pass this to keep the
-        // full-replace removal semantics they had via the mega-doc.
-        pruneToKeys: ((Set<String>) -> Unit)? = null,
-        // Invoked once when this index/mega-doc fetch path
-        // resolves — used by the parent fetchConfigs() to count down toward
-        // the single `config_fetched` event.
-        onComplete: ((Boolean) -> Unit)? = null
+        section: IndexedSection,
+        // Invoked once when this index/mega-doc fetch path resolves — used by the parent fetchConfigs() to
+        // count down toward the single `config_fetched` event.
+        onComplete: (Boolean) -> Unit,
     ) {
+        val indexPath = section.indexPath
+        fun readMegaDoc() {
+            db.document("$basePath/${section.megaDocPath}").get()
+                .addOnSuccessListener { megaSnapshot ->
+                    megaSnapshot.data?.let { data -> section.parseMegaDoc(data) }
+                    onComplete(true)
+                }
+                .addOnFailureListener { e ->
+                    Log.error("Failed to fetch ${section.megaDocPath} config: ${e.message}")
+                    onComplete(false)
+                }
+        }
         db.document("$basePath/$indexPath").get()
             .addOnSuccessListener { snapshot ->
-                val indexData = snapshot.data
-                val itemsMap = indexData?.get(indexKey) as? Map<String, Any>
-                if (indexData != null && (!itemsMap.isNullOrEmpty() || (itemsMap != null && pruneToKeys != null))) {
-                    // Index exists — prune stale in-memory entries, then fetch individual docs. onComplete
-                    // fires only AFTER every item resolves (Tasks.whenAllComplete) so `config_fetched`
-                    // doesn't fire prematurely; an empty index → 0 tasks → completes immediately.
-                    Log.debug("[$indexPath] Found index with ${itemsMap.size} items, fetching individually")
-                    extraIndexParse?.invoke(indexData)
-                    pruneToKeys?.invoke(itemsMap.keys.toSet())
-                    val itemTasks = itemsMap.keys.map { itemId ->
-                        db.document("$basePath/$itemCollection/$itemId").get()
-                            .addOnSuccessListener { itemSnapshot ->
-                                itemSnapshot.data?.let { itemData -> parseItem(itemId, itemData) }
-                            }
-                            .addOnFailureListener { e ->
-                                Log.warning("[$indexPath] Failed to fetch item $itemId: ${e.message}")
-                            }
-                    }
-                    com.google.android.gms.tasks.Tasks.whenAllComplete(itemTasks)
-                        .addOnCompleteListener { onComplete?.invoke(true) }
-                } else {
-                    // No index — fall back to legacy mega-doc
-                    Log.debug("[$indexPath] No index found, falling back to mega-doc $megaDocPath")
-                    db.document("$basePath/$megaDocPath").get()
-                        .addOnSuccessListener { megaSnapshot ->
-                            megaSnapshot.data?.let { data -> parseMegaDoc(data) }
-                            onComplete?.invoke(true)
+                val ids = applyIndexRead(section, snapshot.data, failed = false)
+                if (ids == null) {
+                    Log.debug("[$indexPath] No index found, falling back to mega-doc ${section.megaDocPath}")
+                    readMegaDoc()
+                    return@addOnSuccessListener
+                }
+                // onComplete fires only AFTER every item resolves (Tasks.whenAllComplete) so `config_fetched`
+                // doesn't fire prematurely; an empty index → 0 tasks → completes immediately.
+                Log.debug("[$indexPath] Found index with ${ids.size} items, fetching individually")
+                val itemTasks = ids.map { itemId ->
+                    db.document("$basePath/${section.itemCollection}/$itemId").get()
+                        .addOnSuccessListener { itemSnapshot ->
+                            itemSnapshot.data?.let { itemData -> section.parseItem(itemId, itemData) }
                         }
                         .addOnFailureListener { e ->
-                            Log.error("Failed to fetch $megaDocPath config: ${e.message}")
-                            onComplete?.invoke(false)
+                            Log.warning("[$indexPath] Failed to fetch item $itemId: ${e.message}")
                         }
                 }
+                com.google.android.gms.tasks.Tasks.whenAllComplete(itemTasks)
+                    .addOnCompleteListener { onComplete(true) }
             }
             .addOnFailureListener { e ->
-                // Index fetch failed — try mega-doc as fallback
+                // Index fetch failed — prune nothing, try the mega-doc as before.
+                applyIndexRead(section, null, failed = true)
                 Log.debug("[$indexPath] Index fetch failed (${e.message}), trying mega-doc")
-                db.document("$basePath/$megaDocPath").get()
-                    .addOnSuccessListener { megaSnapshot ->
-                        megaSnapshot.data?.let { data -> parseMegaDoc(data) }
-                        onComplete?.invoke(true)
-                    }
-                    .addOnFailureListener { e2 ->
-                        Log.error("Failed to fetch $megaDocPath config: ${e2.message}")
-                        onComplete?.invoke(false)
-                    }
+                readMegaDoc()
             }
     }
 
-    // Raw data accumulators for disk cache rebuild during per-item fetches.
-    // When using index-based fetch, individual items bypass the mega-doc path
-    // that normally handles caching. These track raw Firestore data so we can
-    // rebuild the cache after each item is fetched.
-    private val rawPaywallData = mutableMapOf<String, Map<String, Any>>()
-    private val rawOnboardingData = mutableMapOf<String, Map<String, Any>>()
-    private val rawMessageData = mutableMapOf<String, Map<String, Any>>()
+    // ── Pruning: an index read is the whole list of what is live (see [applyIndexRead]) ──
+
+    /** Drops every paywall not in [keys] from memory and rewrites the disk cache from what is left. */
+    private fun prunePaywalls(keys: Set<String>) {
+        paywalls = paywalls.filterKeys { it in keys }
+        rawPaywallData.keys.retainAll(keys)
+        try { cacheMap("paywalls", mapOf("paywalls" to rawPaywallData.toMap())) } catch (_: Exception) {}
+    }
+
+    /** Drops every onboarding flow not in [keys] from memory and rewrites the disk cache from what is left. */
+    private fun pruneOnboardingFlows(keys: Set<String>) {
+        onboardingFlows = onboardingFlows.filterKeys { it in keys }
+        rawOnboardingData.keys.retainAll(keys)
+        try { cacheMap("onboarding", onboardingCachePayload()) } catch (_: Exception) {}
+    }
+
+    /** Drops every survey not in [keys] from memory and the disk cache, and tells the survey manager. */
+    private fun pruneSurveys(keys: Set<String>) {
+        val before = surveys
+        surveys = surveys.filterKeys { it in keys }
+        try { cacheMap("surveys", mapOf("surveys" to surveys)) } catch (_: Exception) {}
+        if (surveys.size != before.size) surveyUpdateHandler?.invoke(surveys)
+    }
+
+    private fun onboardingCachePayload(): Map<String, Any> = buildMap {
+        put("flows", rawOnboardingData.toMap())
+        activeOnboardingFlowId?.let { put("active_flow_id", it) }
+    }
+
+    /** Replace [into] with the raw item documents of a cached or mega-doc map (`{id: {...}}`). */
+    @Suppress("UNCHECKED_CAST")
+    private fun seedRaw(into: MutableMap<String, Map<String, Any>>, items: Any?) {
+        into.clear()
+        (items as? Map<*, *>)?.forEach { (k, v) ->
+            if (k is String && v is Map<*, *>) into[k] = v as Map<String, Any>
+        }
+    }
+
+    /** Test seam: one read of [indexPath]'s index document, through [applyIndexRead]. */
+    internal fun applyIndexReadForTesting(indexPath: String, indexData: Map<String, Any>?, failed: Boolean): Set<String>? =
+        applyIndexRead(indexedSection(indexPath), indexData, failed)
+
+    /** Test seam: one per-item document of [indexPath], through the section's own parser. */
+    internal fun applyIndexedItemForTesting(indexPath: String, id: String, data: Map<String, Any>) =
+        indexedSection(indexPath).parseItem(id, data)
+
+    /** Test seam: [indexPath]'s mega-doc, through the section's own parser. */
+    internal fun applyMegaDocForTesting(indexPath: String, data: Map<String, Any>) =
+        indexedSection(indexPath).parseMegaDoc(data)
+
 
     // Per-item flag doc config/flag_index/flags/{key} = {key,value,type,description,updated_at}.
     // Stored under flags[key] with the SAME shape the mega-doc produced; disk cache rebuilt as the bare
@@ -748,12 +834,7 @@ internal class RemoteConfigManager(
         }
         // Rebuild disk cache in mega-doc format for offline restart
         rawOnboardingData[id] = data
-        try {
-            cacheMap("onboarding", buildMap<String, Any> {
-                put("flows", rawOnboardingData.toMap())
-                activeOnboardingFlowId?.let { put("active_flow_id", it) }
-            })
-        } catch (_: Exception) {}
+        try { cacheMap("onboarding", onboardingCachePayload()) } catch (_: Exception) {}
     }
 
     @Suppress("UNCHECKED_CAST")
@@ -791,8 +872,14 @@ internal class RemoteConfigManager(
         cached("flags")?.let { flags = it }
         cached("experiments")?.let { try { parseExperiments(it) } catch (_: Exception) {} }
         cached("surveys")?.let { try { parseSurveys(it) } catch (_: Exception) {} }
-        cached("paywalls")?.let { try { parsePaywalls(it) } catch (_: Exception) {} }
-        cached("onboarding")?.let { try { parseOnboarding(it) } catch (_: Exception) {} }
+        cached("paywalls")?.let {
+            try { parsePaywalls(it) } catch (_: Exception) {}
+            seedRaw(rawPaywallData, it["paywalls"] ?: it)
+        }
+        cached("onboarding")?.let {
+            try { parseOnboarding(it) } catch (_: Exception) {}
+            seedRaw(rawOnboardingData, it["flows"])
+        }
         // Finalization — restore in-app messages from disk on cold start.
         cached("messages")?.let { data ->
             try { messages = ai.appdna.sdk.messages.MessageConfigParser.parseMessages(data) } catch (_: Exception) {}

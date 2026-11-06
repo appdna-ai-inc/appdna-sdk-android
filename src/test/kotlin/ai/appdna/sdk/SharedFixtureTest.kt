@@ -281,6 +281,8 @@ class SharedFixtureTest(
             "resolve_warning_banner_ink" -> runWarningBannerInk(action, spy)
             "resolve_button_label_ink" -> runButtonLabelInk(action, spy)
             "resolve_row_fill" -> runRowFill(action, spy)
+            // An index read and its item / mega-doc reads, through the REAL RemoteConfigManager sections.
+            "apply_config_index" -> runApplyConfigIndex(action, spy)
             "resolve_dropdown_field_ink" -> runDropdownFieldInk(action, spy)
             "resolve_gallery_title_ink" -> runGalleryTitleInk(action, spy)
             "build_push_token_body" -> runPushTokenBody(action, spy)
@@ -3007,6 +3009,71 @@ class SharedFixtureTest(
             val block = ai.appdna.sdk.onboarding.OnboardingConfigParser.parseStepForTest(step)?.config?.content_blocks?.firstOrNull()
                 ?: throw AssertionError("[resolve_row_fill] the block did not parse")
             ai.appdna.sdk.onboarding.RowFill.resolve(block.field_config)?.let { "${it.hex}@${String.format(java.util.Locale.US, "%.1f", it.opacity)}" }
+        }
+    }
+
+    /**
+     * `apply_config_index`: each case is a run of config fetches against one disk cache. Every index read goes
+     * through the REAL `RemoteConfigManager.applyIndexRead` (what a fetch does with the index document); the ids
+     * it returns are then served as per-item documents through the section's real parser, and a null sends the
+     * read to the mega-doc, as `fetchViaIndex` does. `after_restart` is what a NEW manager loads from the disk
+     * cache, so a removal that only reached memory fails it.
+     */
+    @Suppress("UNCHECKED_CAST")
+    private fun runApplyConfigIndex(action: JSONObject, spy: Spy) {
+        val cases = action.optJSONArray("cases") ?: unsupported("apply_config_index without cases")
+        val fields = config?.optJSONObject("item_fields")?.asMap() ?: unsupported("apply_config_index needs setup.config.item_fields")
+        // index document → (item kind, the index's item-map key, the mega-doc's wrapper key)
+        val sections = linkedMapOf(
+            "paywall_index" to Triple("paywall", "paywalls", "paywalls"),
+            "onboarding_index" to Triple("flow", "flows", "flows"),
+            "survey_index" to Triple("survey", "surveys", "surveys"),
+        )
+        fun item(kind: String, id: String): Map<String, Any> =
+            (fields[kind] as? Map<String, Any?> ?: unsupported("no item_fields.$kind")).filterValues { it != null }
+                .mapValues { it.value!! } + ("id" to id)
+        fun held(rcm: ai.appdna.sdk.config.RemoteConfigManager): Map<String, Any> = mapOf(
+            "paywalls" to rcm.getAllPaywalls().keys.sorted(),
+            "flows" to rcm.getAllOnboardingFlows().keys.sorted(),
+            "surveys" to rcm.getSurveyConfigs().keys.sorted(),
+        )
+        val storage = LocalStorage(ctx)
+        spy.state["results"] = (0 until cases.length()).map { i ->
+            val c = cases.getJSONObject(i)
+            for (section in listOf("flags", "experiments", "surveys", "paywalls", "onboarding", "messages")) {
+                storage.remove("cache_$section")
+            }
+            fun manager() = ai.appdna.sdk.config.RemoteConfigManager("orgs/o/apps/a", storage, 3600L)
+            var rcm = manager()
+            val fetches = c.getJSONArray("fetches")
+            for (f in 0 until fetches.length()) {
+                val fetch = fetches.getJSONObject(f)
+                if (fetch.optBoolean("restart")) { rcm = manager(); continue }
+                for ((indexPath, shape) in sections) {
+                    val (kind, indexKey, megaKey) = shape
+                    val read = fetch.optJSONObject(indexPath) ?: unsupported("$indexPath missing in a fetch")
+                    val ids = read.optJSONArray("ids")?.asList()?.map { it as String }
+                    val indexData: Map<String, Any>? = when (val r = read.getString("read")) {
+                        "index" -> mapOf(indexKey to (ids ?: unsupported("index read without ids"))
+                            .associateWith { mapOf("name" to it) })
+                        "index_without_list" -> mapOf("version" to 1)
+                        "no_index", "failed" -> null
+                        else -> unsupported("unknown index read '$r'")
+                    }
+                    val failed = read.getString("read") == "failed"
+                    val listed = rcm.applyIndexReadForTesting(indexPath, indexData, failed)
+                    if (listed != null) {
+                        val unreadable = read.optJSONArray("unreadable_ids")?.asList()?.map { it as String }.orEmpty()
+                        for (id in listed) if (id !in unreadable) rcm.applyIndexedItemForTesting(indexPath, id, item(kind, id))
+                    } else if (!failed) {
+                        val megaIds = read.optJSONArray("mega_doc_ids")?.asList()?.map { it as String }
+                        if (megaIds != null) {
+                            rcm.applyMegaDocForTesting(indexPath, mapOf(megaKey to megaIds.associateWith { item(kind, it) }))
+                        }
+                    }
+                }
+            }
+            mapOf("memory" to held(rcm), "after_restart" to held(manager()))
         }
     }
 

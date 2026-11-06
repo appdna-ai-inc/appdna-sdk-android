@@ -10,6 +10,10 @@ Feature parity: iOS 1.0.86.
 
 ### Fixed
 
+- **An archived, unpublished or deleted flow, paywall or survey stops showing.** After a config fetch, every
+  onboarding flow, paywall and survey the server no longer lists is dropped from memory and from the cached
+  config, so it does not come back after a restart. An empty list means none are live. A failed fetch
+  (offline, an error) removes nothing. Before, a device kept serving every one it had ever fetched.
 - **An email or custom social-login button with a cleared accent colour uses the block's background colour.**
   A block `accent_color` of `""` drew the button transparent; it now falls through to `bg_color`, then the
   brand accent, as on iOS.
