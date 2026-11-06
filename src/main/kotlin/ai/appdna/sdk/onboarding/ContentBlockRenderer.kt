@@ -3733,7 +3733,11 @@ private fun SummaryScreenBlock(
     // usually dark — so on a light-themed device it renders the headline BLACK ON DARK: the same
     // invisibility bug, inverted. iOS parity.
     val textColor = StyleEngine.parseColor(block.text_color ?: "#FFFFFF")
-    val headlineColor = textColor
+    // The headline sits on the step, not on a card: unauthored, it takes its ink from what is behind it, as
+    // text does (white on cream was invisible). On a light surface that is the theme's dark text. The card
+    // labels keep #FFFFFF on their own dark card fill. iOS is the same.
+    val headlineColor = block.text_color?.let { StyleEngine.parseColor(it) }
+        ?: UnstyledInk.text().takeIf { it != Color.Unspecified } ?: MaterialTheme.colorScheme.onBackground
     val headlineAlign = when ((block.field_config?.get("summary_align") as? String)) {
         "left" -> TextAlign.Start; "right" -> TextAlign.End; else -> TextAlign.Center
     }
@@ -11329,7 +11333,11 @@ private fun SelectOptionStyle.SelectStackedOptionRow(
     val optUnselBorder = option.border_color?.let { StyleEngine.parseColor(it) } ?: unselectedBorder
     val optSelBorder = option.selected_border_color?.let { StyleEngine.parseColor(it) } ?: selectedBorder
     val optSelText = option.selected_text_color?.let { StyleEngine.parseColor(it) } ?: selectedTextCol
-    val optTitleColor = if (isSelected) optSelText else (option.title_color?.let { StyleEngine.parseColor(it) } ?: textCol)
+    // An option label nobody coloured, on an option with no fill of its own, takes its ink from what is behind
+    // the field (light on a dark step), as text does. An authored option fill keeps the old default. iOS is the same.
+    val unstyledOptionInk = if (optUnselBg == Color.Transparent) UnstyledInk.text() else Color.Unspecified
+    val optTitleColor = if (isSelected) optSelText.takeIf { it != Color.Unspecified } ?: unstyledOptionInk
+        else (option.title_color?.let { StyleEngine.parseColor(it) } ?: textCol.takeIf { it != Color.Unspecified } ?: unstyledOptionInk)
     // SELECTED-state legibility for the secondary labels (subtitle +
     // trailing_text). When selected they adopt the option's selected text color so
     // they stay readable on a colored selected bg; otherwise the faded base. Mirrors
@@ -11616,7 +11624,11 @@ private fun SelectOptionStyle.SelectGridOptionCell(
     val optUnselBorder = option.border_color?.let { StyleEngine.parseColor(it) } ?: unselectedBorder
     val optSelBorder = option.selected_border_color?.let { StyleEngine.parseColor(it) } ?: selectedBorder
     val optSelText = option.selected_text_color?.let { StyleEngine.parseColor(it) } ?: selectedTextCol
-    val optTitleColor = if (isSelected) optSelText else (option.title_color?.let { StyleEngine.parseColor(it) } ?: textCol)
+    // An option label nobody coloured, on an option with no fill of its own, takes its ink from what is behind
+    // the field (light on a dark step), as text does. An authored option fill keeps the old default. iOS is the same.
+    val unstyledOptionInk = if (optUnselBg == Color.Transparent) UnstyledInk.text() else Color.Unspecified
+    val optTitleColor = if (isSelected) optSelText.takeIf { it != Color.Unspecified } ?: unstyledOptionInk
+        else (option.title_color?.let { StyleEngine.parseColor(it) } ?: textCol.takeIf { it != Color.Unspecified } ?: unstyledOptionInk)
     // Resolve cell alignment: per-option override → block grid_cell_alignment → center.
     // Mirrors iOS gridSelectView cellAlignmentKey. Was hardcoded CenterHorizontally / TextAlign.Center.
     val cellAlignKey = option.cell_alignment ?: (cfg?.get("grid_cell_alignment") as? String) ?: "center"
@@ -12701,7 +12713,10 @@ private fun FormInputSegmentedBlock(
                         // Theme-aware unselected
                         // text. Was Color.DarkGray which is invisible against
                         // MaterialTheme.colorScheme.surface in dark mode.
-                        color = if (isSelected) Color.White else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f),
+                        // Unselected segments are transparent: on a dark step the label is light, as text is.
+                        color = if (isSelected) Color.White
+                            else if (UnstyledInk.onDark()) UnstyledInk.DARK_TEXT.copy(alpha = 0.7f)
+                            else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f),
                         fontSize = 14.sp,
                         fontWeight = if (isSelected) FontWeight.SemiBold else FontWeight.Normal,
                     )
