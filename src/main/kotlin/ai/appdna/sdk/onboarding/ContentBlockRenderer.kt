@@ -4288,16 +4288,16 @@ private fun CalendarMonthBlock(
 
 @Composable
 private fun ListBlock(block: ContentBlock, loc: ((String, String) -> String)? = null) {
-    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        block.items?.forEachIndexed { index, item ->
-            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                when (block.list_style) {
     // Unstyled items and markers take their ink from what is behind the list (light on a dark step or fill),
     // as text does; on a light surface they keep the theme's colours, as before.
     val onDark = UnstyledInk.onDark()
     val markerInk = if (onDark) UnstyledInk.DARK_TEXT.copy(alpha = 0.6f) else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
     val bulletInk = if (onDark) UnstyledInk.DARK_TEXT.copy(alpha = 0.5f) else MaterialTheme.colorScheme.onBackground.copy(alpha = 0.5f)
     val itemInk = UnstyledInk.text()
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        block.items?.forEachIndexed { index, item ->
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                when (block.list_style) {
                     // Theme-adaptive secondary color
                     // (was hardcoded Color.Gray). iOS uses .secondary
                     // (ContentBlockRendererView.swift:459).
