@@ -123,7 +123,54 @@ class IndexPruneFirestoreEmulatorTest {
         assertHeld("restarted", listOf("old_a", "old_b"), RemoteConfigManager(appPath, LocalStorage(ctx), 3600L))
     }
 
+    /**
+     * #1554 — the SERVER's own output, not a hand-written index. `APPDNA_SERVER_INDEX_DUMP` names the JSON the server
+     * int test `issue1554-index-map.int.test.ts` writes (`ISSUE1554_DUMP`): a legacy app (mega-doc only, no index)
+     * after one of its two flows was archived, as the server's config-sync services left the index, the kept flow's item
+     * document and the mega-doc. A device that cached both flows from the mega-doc fetches once more and must drop the
+     * archived one. Against the dump of the previous server (an index with no `flows` map) it keeps both.
+     */
+    @Test
+    fun aServerWrittenIndexPrunesTheRemovedFlow() {
+        val dumpPath = System.getenv("APPDNA_SERVER_INDEX_DUMP")
+        assumeTrue("APPDNA_SERVER_INDEX_DUMP is not set", !dumpPath.isNullOrBlank())
+        val dump = JSONObject(java.io.File(dumpPath!!).readText())
+        val kept = dump.getString("kept")
+        val removed = dump.getString("removed")
+        @Suppress("UNCHECKED_CAST")
+        val mega = plain(dump.getJSONObject("mega")) as Map<String, Any>
+        @Suppress("UNCHECKED_CAST")
+        val template = (mega["flows"] as Map<String, Any>)[kept] as Map<String, Any>
+
+        // Before: what an older server served — the mega-doc lists both flows, there is no index document.
+        write("$appPath/config/onboarding", mapOf("flows" to mapOf(kept to template, removed to template + ("id" to removed))))
+        val rcm = fetch(RemoteConfigManager(appPath, LocalStorage(ctx), 3600L))
+        assertEquals("the device holds both flows", listOf(kept, removed).sorted(), rcm.getAllOnboardingFlows().keys.sorted())
+
+        // After: exactly the documents the server wrote when the second flow was archived.
+        @Suppress("UNCHECKED_CAST")
+        write("$appPath/config/onboarding_index", plain(dump.getJSONObject("index")) as Map<String, Any>)
+        val items = dump.optJSONObject("items") ?: JSONObject()
+        for (id in items.keys()) {
+            @Suppress("UNCHECKED_CAST")
+            write("$appPath/config/onboarding_index/flows/$id", plain(items.getJSONObject(id)) as Map<String, Any>)
+        }
+        write("$appPath/config/onboarding", mega)
+        fetch(rcm)
+        assertEquals("after the fetch of the server-written index", listOf(kept), rcm.getAllOnboardingFlows().keys.sorted())
+        assertEquals("restarted over the same disk cache", listOf(kept),
+            RemoteConfigManager(appPath, LocalStorage(ctx), 3600L).getAllOnboardingFlows().keys.sorted())
+    }
+
     // ── helpers ──
+
+    /** org.json → plain Kotlin maps and lists (what [write] takes). */
+    private fun plain(v: Any?): Any? = when (v) {
+        null, JSONObject.NULL -> null
+        is JSONObject -> v.keys().asSequence().associateWith { plain(v.get(it)) }
+        is JSONArray -> (0 until v.length()).map { plain(v.get(it)) }
+        else -> v
+    }
 
     /** `AppDNA.firestoreDB` has a private setter; the test sets the backing field the SDK reads. */
     private fun installFirestore(db: FirebaseFirestore?) {
