@@ -124,11 +124,11 @@ class IndexPruneFirestoreEmulatorTest {
     }
 
     /**
-     * #1554 — the SERVER's own output, not a hand-written index. `APPDNA_SERVER_INDEX_DUMP` names the JSON the server
-     * int test `issue1554-index-map.int.test.ts` writes (`ISSUE1554_DUMP`): a legacy app (mega-doc only, no index)
-     * after one of its two flows was archived, as the server's config-sync services left the index, the kept flow's item
-     * document and the mega-doc. A device that cached both flows from the mega-doc fetches once more and must drop the
-     * archived one. Against the dump of the previous server (an index with no `flows` map) it keeps both.
+     * The server's own output, not a hand-written index. `APPDNA_SERVER_INDEX_DUMP` names a JSON file the server's
+     * integration test writes: an app that had only a mega-doc (no index), after one of its two flows was archived,
+     * holding the index document, the kept flow's item document and the mega-doc exactly as the server left them. A
+     * device that cached both flows from the mega-doc fetches once more and must drop the archived one. A server that
+     * writes an index with no `flows` map makes it keep both, which this test reports as a failure.
      */
     @Test
     fun aServerWrittenIndexPrunesTheRemovedFlow() {
