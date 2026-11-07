@@ -128,7 +128,8 @@ class IndexPruneFirestoreEmulatorTest {
      * integration test writes: an app that had only a mega-doc (no index), after one of its two flows was archived,
      * holding the index document, the kept flow's item document and the mega-doc exactly as the server left them. A
      * device that cached both flows from the mega-doc fetches once more and must drop the archived one. A server that
-     * writes an index with no `flows` map makes it keep both, which this test reports as a failure.
+     * writes an index with no `flows` map makes it keep both, which this test reports as a failure. #1558: a dump may
+     * name several live flows (`kept_all`); a server whose map omits one of them makes the device drop it, a failure.
      */
     @Test
     fun aServerWrittenIndexPrunesTheRemovedFlow() {
@@ -136,6 +137,8 @@ class IndexPruneFirestoreEmulatorTest {
         assumeTrue("APPDNA_SERVER_INDEX_DUMP is not set", !dumpPath.isNullOrBlank())
         val dump = JSONObject(java.io.File(dumpPath!!).readText())
         val kept = dump.getString("kept")
+        // `kept_all` (when present): every flow that stays live — a map that omits one of them makes the device drop it.
+        val keptAll = dump.optJSONArray("kept_all")?.let { a -> (0 until a.length()).map { a.getString(it) } } ?: listOf(kept)
         val removed = dump.getString("removed")
         @Suppress("UNCHECKED_CAST")
         val mega = plain(dump.getJSONObject("mega")) as Map<String, Any>
@@ -143,9 +146,9 @@ class IndexPruneFirestoreEmulatorTest {
         val template = (mega["flows"] as Map<String, Any>)[kept] as Map<String, Any>
 
         // Before: what an older server served — the mega-doc lists both flows, there is no index document.
-        write("$appPath/config/onboarding", mapOf("flows" to mapOf(kept to template, removed to template + ("id" to removed))))
+        write("$appPath/config/onboarding", mapOf("flows" to (keptAll + removed).associateWith { template + ("id" to it) }))
         val rcm = fetch(RemoteConfigManager(appPath, LocalStorage(ctx), 3600L))
-        assertEquals("the device holds both flows", listOf(kept, removed).sorted(), rcm.getAllOnboardingFlows().keys.sorted())
+        assertEquals("the device holds every flow", (keptAll + removed).sorted(), rcm.getAllOnboardingFlows().keys.sorted())
 
         // After: exactly the documents the server wrote when the second flow was archived.
         @Suppress("UNCHECKED_CAST")
@@ -157,8 +160,8 @@ class IndexPruneFirestoreEmulatorTest {
         }
         write("$appPath/config/onboarding", mega)
         fetch(rcm)
-        assertEquals("after the fetch of the server-written index", listOf(kept), rcm.getAllOnboardingFlows().keys.sorted())
-        assertEquals("restarted over the same disk cache", listOf(kept),
+        assertEquals("after the fetch of the server-written index", keptAll.sorted(), rcm.getAllOnboardingFlows().keys.sorted())
+        assertEquals("restarted over the same disk cache", keptAll.sorted(),
             RemoteConfigManager(appPath, LocalStorage(ctx), 3600L).getAllOnboardingFlows().keys.sorted())
     }
 
