@@ -128,7 +128,7 @@ class IndexPruneFirestoreEmulatorTest {
      * integration test writes: an app that had only a mega-doc (no index), after one of its two flows was archived,
      * holding the index document, the kept flow's item document and the mega-doc exactly as the server left them. A
      * device that cached both flows from the mega-doc fetches once more and must drop the archived one. A server that
-     * writes an index with no `flows` map makes it keep both, which this test reports as a failure. #1558: a dump may
+     * writes an index with no `flows` map makes it keep both, which this test reports as a failure. A dump may
      * name several live flows (`kept_all`); a server whose map omits one of them makes the device drop it, a failure.
      */
     @Test
