@@ -20,4 +20,6 @@ internal object SampleConfig {
     fun apiKey(context: Context): String? = meta(context, "ai.appdna.sample.API_KEY")
 
     fun paywallId(context: Context): String? = meta(context, "ai.appdna.sample.PAYWALL_ID")
+
+    fun walkMenu(context: Context): String? = meta(context, "ai.appdna.sample.WALK_MENU")
 }

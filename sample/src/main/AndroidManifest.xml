@@ -44,6 +44,10 @@
         <meta-data
             android:name="ai.appdna.sample.PAYWALL_ID"
             android:value="${appdnaSamplePaywallId}" />
+        <!-- A device-walk build's menu, supplied as `-PappdnaWalkMenu=<base64>`. Empty by default. -->
+        <meta-data
+            android:name="ai.appdna.sample.WALK_MENU"
+            android:value="${appdnaWalkMenu}" />
 
         <activity
             android:name=".MainActivity"

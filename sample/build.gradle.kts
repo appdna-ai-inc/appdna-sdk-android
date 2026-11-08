@@ -86,6 +86,16 @@ android {
             (project.findProperty("appdnaSampleApiKey") as String?) ?: ""
         manifestPlaceholders["appdnaSamplePaywallId"] =
             (project.findProperty("appdnaSamplePaywallId") as String?) ?: ""
+
+        /*
+         * A DEVICE-WALK build's menu: base64 of {"title", "items": [{"title", "kind", "value"}]}, the
+         * same shape the iOS host reads from `APPDNA_WALK_MENU`. When set, the sample opens on that menu
+         * (one button per surface the walk needs) instead of the demo screen. Empty by default.
+         *
+         *     ./gradlew :sample:assembleDebug -PappdnaWalkMenu=<base64>
+         */
+        manifestPlaceholders["appdnaWalkMenu"] =
+            (project.findProperty("appdnaWalkMenu") as String?) ?: ""
     }
 
     buildTypes {
