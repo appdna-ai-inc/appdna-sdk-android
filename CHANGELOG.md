@@ -45,6 +45,10 @@ Feature parity: iOS 1.0.86.
 - **A row fill with its own alpha matches iOS.** `background_opacity` now multiplies a `#RRGGBBAA` row
   colour's alpha, as on iOS; it replaced it, so `#2563EB80` at 0.5 drew twice as opaque. An opacity outside
   0–1 is clamped.
+- **A transparent row or container fill draws nothing.** A row `bg_color` or a block `container_bg_color`
+  that reads as transparent (`transparent`, `clear`, `""`, `#FFF`, `white`, `rgba(…)`, `#RRGGBB00`) was
+  drawn as an opaque black box in 1.0.57, because the opacity replaced the colour's alpha instead of
+  multiplying it. If your app ships 1.0.57, avoid these values on a row or container until you update.
 
 - **A button's refresh spinner matches its label.** The spinner shown while a `refresh_step` button waits
   took `style.color` before `text_color`; it now takes the label's own colour (`text_color`, else
