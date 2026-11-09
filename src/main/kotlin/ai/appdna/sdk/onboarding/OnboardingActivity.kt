@@ -669,7 +669,7 @@ internal fun DismissGlyph(
     val colour = style?.icon_color?.takeIf { it.isNotEmpty() }
         ?.let { ai.appdna.sdk.core.StyleEngine.parseColor(it) }
         ?: fallbackColor
-        ?: if (onDark) UnstyledInk.DARK_CHROME else MaterialTheme.colorScheme.onBackground.copy(alpha = 0.6f)
+        ?: if (onDark) UnstyledInk.DARK_CHROME else UnstyledInk.LIGHT_CHROME
     val background = style?.bg_color?.takeIf { it.isNotEmpty() }
         ?.let { ai.appdna.sdk.core.StyleEngine.parseColor(it) }
 
@@ -2961,7 +2961,7 @@ private fun OnboardingStepBody(
                         modifier = Modifier.align(Alignment.CenterHorizontally).padding(bottom = 16.dp),
                     ) {
                         // Skip 15sp matching iOS .subheadline.
-                        Text("Skip", fontSize = 15.sp, color = if (UnstyledInk.onDark()) UnstyledInk.DARK_CHROME else MaterialTheme.colorScheme.onBackground.copy(alpha = 0.5f))
+                        Text("Skip", fontSize = 15.sp, color = if (UnstyledInk.onDark()) UnstyledInk.DARK_CHROME else UnstyledInk.LIGHT_CHROME.copy(alpha = 0.5f))
                     }
                 }
             }
@@ -3021,7 +3021,7 @@ private fun OnboardingStepBody(
                     modifier = Modifier.align(Alignment.CenterHorizontally).padding(bottom = 16.dp),
                 ) {
                     // Skip 15sp matching iOS .subheadline.
-                    Text("Skip", fontSize = 15.sp, color = if (UnstyledInk.onDark()) UnstyledInk.DARK_CHROME else MaterialTheme.colorScheme.onBackground.copy(alpha = 0.5f))
+                    Text("Skip", fontSize = 15.sp, color = if (UnstyledInk.onDark()) UnstyledInk.DARK_CHROME else UnstyledInk.LIGHT_CHROME.copy(alpha = 0.5f))
                 }
             }
         }

@@ -96,7 +96,7 @@ internal object GoogleAttributionFixtureDrivers {
                     "name" to name,
                     "backdrop" to described,
                     "variant_light" to variantName(light, dark = false),
-                    "ink" to if (GoogleMapsAttribution.needsLightInk(light, darkAppearance = false)) "light" else "dark",
+                    "ink" to if (GoogleMapsAttribution.needsLightInk(light, darkAppearance = c["dark_appearance"] == true)) "light" else "dark",
                 )
             }
             linkedMapOf(

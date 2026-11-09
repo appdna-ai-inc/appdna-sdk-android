@@ -10075,6 +10075,9 @@ internal object UnstyledInk {
     val DARK_PLACEHOLDER = Color.White.copy(alpha = 0.5f)
     val DARK_CHROME = Color.White.copy(alpha = 0.7f)
 
+    /** The step chrome on a light step, in any system theme: the light theme's onBackground, so it never follows the device. */
+    val LIGHT_CHROME = Color(0xFF1C1B1F).copy(alpha = 0.6f)
+
     /** Whether what is behind this composition ([behind], by default the block's backdrop) needs light ink. */
     @Composable
     fun onDark(behind: GoogleMapsAttribution.Backdrop = LocalGoogleAttributionBackdrop.current): Boolean =

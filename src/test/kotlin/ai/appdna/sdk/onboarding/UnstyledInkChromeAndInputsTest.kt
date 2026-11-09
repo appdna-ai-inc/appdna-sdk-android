@@ -206,6 +206,15 @@ class UnstyledInkChromeAndInputsTest {
     }
 
     @Test
+    @Config(qualifiers = "+night")
+    fun `on a white step in a dark system theme the close glyph and Skip stay dark`() {
+        val close = show(white, name = "white-night").getValue("close")
+        assertTrue("close on white in dark theme (${close.darkInk()} dark pixels)", close.darkInk() > ink)
+        val skip = skipFrame(white, "skip-white-night")
+        assertTrue("Skip on white in dark theme (${skip.darkInk()} dark pixels)", skip.darkInk() > ink)
+    }
+
+    @Test
     fun `a legacy step's Skip is light on a dark step and dark on a white one`() {
         val navySkip = skipFrame(navy, "skip-navy")
         assertTrue("Skip on navy (${navySkip.lightInk()} light pixels)", navySkip.lightInk() > ink)
