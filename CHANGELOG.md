@@ -6,6 +6,8 @@ the project uses [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [1.0.58] — 2026-11-09
+
 Feature parity: iOS 1.0.86.
 
 ### Added
