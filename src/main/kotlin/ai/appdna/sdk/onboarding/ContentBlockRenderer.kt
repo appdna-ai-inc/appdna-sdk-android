@@ -1219,11 +1219,11 @@ fun evaluateVisibilityCondition(
         "always" -> true
         "when_equals" -> {
             val resolved = resolveDotPath(condition.variable, responses, hookData, userTraits, sessionData, stepInputs)
-            resolved?.toString() == condition.value?.toString()
+            ai.appdna.sdk.core.ConditionEvaluator.valuesEqual(resolved, condition.value)
         }
         "when_not_equals" -> {
             val resolved = resolveDotPath(condition.variable, responses, hookData, userTraits, sessionData, stepInputs)
-            resolved?.toString() != condition.value?.toString()
+            !ai.appdna.sdk.core.ConditionEvaluator.valuesEqual(resolved, condition.value)
         }
         "when_not_empty" -> {
             val resolved = resolveDotPath(condition.variable, responses, hookData, userTraits, sessionData, stepInputs)

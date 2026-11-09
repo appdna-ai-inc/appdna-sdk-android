@@ -292,7 +292,7 @@ fun SurveyScreen(
                 // else the survey silently renders with no visible questions.
                 if (showIf.questionId.isNullOrBlank()) return@filter true
                 val prev = answers[showIf.questionId] ?: return@filter false
-                showIf.answerIn.any { "${prev.answer}" == "$it" }
+                showIf.answerIn.any { ai.appdna.sdk.core.ConditionEvaluator.valuesEqual(prev.answer, it) }
             }
         }
     }

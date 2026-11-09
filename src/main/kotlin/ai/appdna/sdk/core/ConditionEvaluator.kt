@@ -64,10 +64,28 @@ internal object ConditionEvaluator {
             is Double -> value
             is Int -> value.toDouble()
             is Long -> value.toDouble()
-            is Float -> value.toDouble()
-            is String -> value.toDoubleOrNull()
+            // Through its text, so a slider's 0.1f stays 0.1 and equals an authored 0.1.
+            is Float -> value.toString().toDouble()
+            is String -> if (DECIMAL.matches(value)) value.toDouble() else null
             is Number -> value.toDouble()
             else -> null
         }
+    }
+
+    /**
+     * A plain decimal number, the one grammar both platforms share. `toDoubleOrNull` alone also reads "4d" and " 4 ", and
+     * Swift's parser reads hex and "nan", so a typed answer could equal a number on one platform only.
+     */
+    private val DECIMAL = Regex("^[+-]?([0-9]+(\\.[0-9]*)?|\\.[0-9]+)([eE][+-]?[0-9]+)?$")
+
+    /**
+     * An answer or a rule value as text, for a substring comparison: a string as it is, a number in its shortest form
+     * (4.0 reads "4"), and null for anything else (a Boolean, a list). iOS `ConditionEvaluator.text`.
+     */
+    fun text(value: Any?): String? {
+        if (value is String) return value
+        if (value !is Number) return null
+        val d = toDouble(value) ?: return null
+        return if (d == Math.rint(d) && Math.abs(d) < 1e15) d.toLong().toString() else d.toString()
     }
 }

@@ -83,4 +83,14 @@ class TriggerOperatorTest {
             TriggerOperator.matches(op, "3", listOf("3"))
         }
     }
+
+    @Test fun `eq and in compare numbers by value`() {
+        assertTrue(TriggerOperator.matches("eq", 4.0, 4L))
+        assertTrue(TriggerOperator.matches("eq", 4.0, "4"))
+        assertFalse(TriggerOperator.matches("neq", 4.0, "4"))
+        assertTrue(TriggerOperator.matches("in", 4.0, listOf("3", "4")))
+        assertFalse(TriggerOperator.matches("not_in", 4.0, listOf("3", "4")))
+        assertFalse(TriggerOperator.matches("eq", "abc", 4L))
+        assertFalse(TriggerOperator.matches("eq", true, 1L))
+    }
 }

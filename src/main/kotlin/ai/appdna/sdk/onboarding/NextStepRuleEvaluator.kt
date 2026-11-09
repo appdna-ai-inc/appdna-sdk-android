@@ -1,5 +1,7 @@
 package ai.appdna.sdk.onboarding
 
+import ai.appdna.sdk.core.ConditionEvaluator
+
 /**
  * Onboarding next-step rule evaluator.
  *
@@ -172,6 +174,7 @@ internal object NextStepRuleEvaluator {
                         if (actual.filterIsInstance<String>().contains(expected)) return true
                         actual.filterIsInstance<String>().any { aliasedEquals(expected, it) }
                     }
+                    actual is List<*> && expected !is List<*> -> actual.any { isEqual(it, expected) }
                     isEqual(actual, expected) -> true
                     expected is String && actual is String -> aliasedEquals(expected, actual)
                     else -> false
@@ -179,8 +182,9 @@ internal object NextStepRuleEvaluator {
             }
 
             "answer_contains" -> {
-                val expected = cond["value"] as? String ?: ""
-                val actual = responses[field] as? String ?: ""
+                // A rating or a slider stores a number and a rule may carry one; read as text they compare as a typed answer does.
+                val expected = ConditionEvaluator.text(cond["value"]) ?: ""
+                val actual = ConditionEvaluator.text(responses[field]) ?: ""
                 if (actual.contains(expected)) return true
                 idToVal[expected]?.let { mapped ->
                     if (mapped.isNotEmpty() && actual.contains(mapped)) return true
@@ -194,6 +198,7 @@ internal object NextStepRuleEvaluator {
                 when {
                     actual is List<*> && expected is String ->
                         !actual.filterIsInstance<String>().contains(expected)
+                    actual is List<*> && expected !is List<*> -> actual.none { isEqual(it, expected) }
                     else -> !isEqual(actual, expected)
                 }
             }
@@ -262,13 +267,11 @@ internal object NextStepRuleEvaluator {
     // Helpers
     // -----------------------------------------------------------------------
 
-    private fun isEqual(a: Any?, b: Any?): Boolean {
-        if (a == null && b == null) return true
-        if (a == null || b == null) return false
-        // Number equality should compare numeric value, not boxed type.
-        if (a is Number && b is Number) return a.toDouble() == b.toDouble()
-        return a == b
-    }
+    /**
+     * By value across number types and numeric strings: a rating is stored as a Double, a published rule carries a Long,
+     * and the console writes the text "4". Two strings still compare exactly, so option values stay distinct.
+     */
+    private fun isEqual(a: Any?, b: Any?): Boolean = ConditionEvaluator.valuesEqual(a, b)
 
     /**
      * Look up id↔value aliases on the current step's input_select options.

@@ -33,8 +33,8 @@ internal object TriggerOperator {
             return compare(p, c)
         }
         return when (op) {
-            "eq" -> "$propValue" == "$condValue"
-            "neq" -> "$propValue" != "$condValue"
+            "eq" -> ConditionEvaluator.valuesEqual(propValue, condValue)
+            "neq" -> !ConditionEvaluator.valuesEqual(propValue, condValue)
             "gte" -> numeric { p, c -> p >= c }
             "lte" -> numeric { p, c -> p <= c }
             "gt" -> numeric { p, c -> p > c }
@@ -46,17 +46,17 @@ internal object TriggerOperator {
              * a one-element list is what the author meant, and the alternative is a condition that
              * silently never matches.
              */
-            "in" -> members(condValue).contains("$propValue")
-            "not_in" -> !members(condValue).contains("$propValue")
+            "in" -> members(condValue).any { ConditionEvaluator.valuesEqual(propValue, it) }
+            "not_in" -> members(condValue).none { ConditionEvaluator.valuesEqual(propValue, it) }
             else -> false
         }
     }
 
-    /** The condition value as string members, for `in` / `not_in`. */
-    private fun members(condValue: Any): List<String> = when (condValue) {
-        is List<*> -> condValue.map { "$it" }
-        is Array<*> -> condValue.map { "$it" }
-        else -> listOf("$condValue")
+    /** The condition value as members, for `in` / `not_in`. */
+    private fun members(condValue: Any): List<Any?> = when (condValue) {
+        is List<*> -> condValue
+        is Array<*> -> condValue.toList()
+        else -> listOf(condValue)
     }
 
     private fun toDouble(value: Any): Double? = when (value) {

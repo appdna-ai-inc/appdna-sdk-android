@@ -386,4 +386,58 @@ class NextStepRuleEvaluatorTest {
         )
         assertFalse(ok)
     }
+
+    // -- Numeric answers: compared by value, across number types and numeric strings --------
+
+    private fun matches(type: String, answer: Any?, value: Any?): Boolean =
+        NextStepRuleEvaluator.evaluateRule(
+            NextStepRule(
+                condition = mapOf<String, Any?>("type" to type, "answer_key" to "score", "value" to value),
+                target_step_id = "next",
+            ),
+            "step1",
+            responsesFor("step1", mapOf("score" to answer)),
+        )
+
+    @Test
+    fun `a numeric answer equals its value as a number or as text`() {
+        assertTrue(matches("answer_equals", 4.0, 4L))
+        assertTrue(matches("answer_equals", 4.0, "4"))
+        assertTrue(matches("answer_equals", 4L, "4"))
+        assertTrue(matches("answer_equals", 4, "4.0"))
+        assertTrue(matches("answer_equals", 4.5, "4.5"))
+        assertTrue(matches("answer_equals", "4", 4L))
+        assertTrue(matches("answer_equals", 0.1f, "0.1"))
+        assertFalse(matches("answer_not_equals", 4.0, 4L))
+        assertFalse(matches("answer_not_equals", 4L, "4"))
+        assertTrue(matches("answer_not_equals", 3L, "4"))
+    }
+
+    @Test
+    fun `only a real number equals a number`() {
+        assertFalse(matches("answer_equals", "abc", 4L))
+        assertFalse(matches("answer_equals", "", 0L))
+        assertFalse(matches("answer_equals", " ", 0L))
+        assertFalse(matches("answer_equals", "4d", 4L))
+        assertFalse(matches("answer_equals", " 4", 4L))
+        assertFalse(matches("answer_equals", true, 1L))
+        assertFalse(matches("answer_equals", true, "1"))
+        assertFalse(matches("answer_equals", false, 0L))
+        assertFalse("two strings still compare exactly", matches("answer_equals", "4.0", "4"))
+    }
+
+    @Test
+    fun `answer_contains reads a number as text`() {
+        assertTrue(matches("answer_contains", 45L, "4"))
+        assertTrue(matches("answer_contains", 4.0, "4"))
+        assertTrue(matches("answer_contains", "24", 4L))
+        assertFalse(matches("answer_contains", 5L, "4"))
+    }
+
+    @Test
+    fun `a list answer compares each item by value`() {
+        assertTrue(matches("answer_equals", listOf("1", "2"), 2L))
+        assertFalse(matches("answer_equals", listOf("1", "3"), 2L))
+        assertFalse(matches("answer_not_equals", listOf("1", "2"), 2L))
+    }
 }

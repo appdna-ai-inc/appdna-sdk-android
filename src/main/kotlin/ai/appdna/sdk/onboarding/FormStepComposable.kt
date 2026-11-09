@@ -86,11 +86,11 @@ fun FormStep(
         when (dep.operator) {
             "not_empty", "is_set" -> depValue != null && depValue.toString().isNotEmpty()
             "empty" -> depValue == null || depValue.toString().isEmpty()
-            "equals" -> depValue.toString() == dep.value.toString()
-            "not_equals" -> depValue.toString() != dep.value.toString()
+            "equals" -> ai.appdna.sdk.core.ConditionEvaluator.valuesEqual(depValue, dep.value)
+            "not_equals" -> !ai.appdna.sdk.core.ConditionEvaluator.valuesEqual(depValue, dep.value)
             "contains" -> depValue.toString().contains(dep.value.toString())
-            "gt" -> (depValue as? Number)?.toDouble()?.let { it > (dep.value as? Number)?.toDouble() ?: 0.0 } ?: false
-            "lt" -> (depValue as? Number)?.toDouble()?.let { it < (dep.value as? Number)?.toDouble() ?: 0.0 } ?: false
+            "gt" -> compareDep(depValue, dep.value) { a, b -> a > b }
+            "lt" -> compareDep(depValue, dep.value) { a, b -> a < b }
             else -> true
         }
     }
@@ -1155,4 +1155,11 @@ private fun SelectField(
             }
         }
     }
+}
+
+/** A form dependency's `gt` / `lt`: false unless both sides are numbers, or strings that spell one. */
+private fun compareDep(value: Any?, expected: Any?, compare: (Double, Double) -> Boolean): Boolean {
+    val a = ai.appdna.sdk.core.ConditionEvaluator.toDoubleOrNull(value) ?: return false
+    val b = ai.appdna.sdk.core.ConditionEvaluator.toDoubleOrNull(expected) ?: return false
+    return compare(a, b)
 }
