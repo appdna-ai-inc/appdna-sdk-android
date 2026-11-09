@@ -11140,7 +11140,7 @@ private fun FormInputSelectBlock(
      */
     LaunchedEffect(displayStyle, options.size) {
         if (displayStyle != "bubble_scroll" || isMulti || selectedValue.isNotEmpty()) return@LaunchedEffect
-        segmentedDefault(inputValues[fieldId], options)?.let {
+        segmentedDefault(inputValues[fieldId], options, required = block.field_required == true)?.let {
             selectedValue = it
             inputValues[fieldId] = it
         }
@@ -12709,7 +12709,9 @@ internal fun segmentedSync(shown: String, previous: Any?, next: Any?): String? =
  * first option is selected AND written. A host-set value of another type is an answer — left alone
  * (null). Mirrors iOS `SegmentedDefault.pick`.
  */
-internal fun segmentedDefault(current: Any?, options: List<InputOption>): String? {
+internal fun segmentedDefault(current: Any?, options: List<InputOption>, required: Boolean = false): String? {
+    // A required question starts empty, so the user has to answer it.
+    if (required) return null
     if (current != null && !(current is String && current.isEmpty())) return null
     return options.firstOrNull()?.value?.takeIf { it.isNotEmpty() }
 }
@@ -12740,7 +12742,7 @@ private fun FormInputSegmentedBlock(
     var selectedValue by remember {
         mutableStateOf(
             (inputValues[fieldId] as? String)?.takeIf { it.isNotEmpty() }
-                ?: segmentedDefault(inputValues[fieldId], options) ?: ""
+                ?: segmentedDefault(inputValues[fieldId], options, required = block.field_required == true) ?: ""
         )
     }
     // Options that arrive only after pending ends (empty → non-empty) get the same
@@ -12748,7 +12750,7 @@ private fun FormInputSegmentedBlock(
     val hasOptions = options.isNotEmpty()
     LaunchedEffect(hasOptions) {
         if (!hasOptions || selectedValue.isNotEmpty()) return@LaunchedEffect
-        segmentedDefault(inputValues[fieldId], options)?.let {
+        segmentedDefault(inputValues[fieldId], options, required = block.field_required == true)?.let {
             selectedValue = it
             inputValues[fieldId] = it
         }

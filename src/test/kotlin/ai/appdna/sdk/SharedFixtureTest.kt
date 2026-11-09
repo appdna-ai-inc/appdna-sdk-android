@@ -323,6 +323,7 @@ class SharedFixtureTest(
             "resolve_countdown_variant" -> runCountdownVariant(action, spy)
             "resolve_named_icon_library" -> runNamedIconLibrary(action, spy)
             "resolve_segmented_presentation" -> runSegmentedPresentation(action, spy)
+            "resolve_segmented_default" -> runSegmentedDefault(action, spy)
             "resolve_rive_input_kind" -> runRiveInputKind(action, spy)
             "track_events_with_observer" -> runEventObserver(action, spy)
             // WHICH copy of content_blocks the real parser resolves, per step shape.
@@ -2652,6 +2653,16 @@ class SharedFixtureTest(
         spy.state["results"] = (0 until cases.length()).map { i ->
             val v = cases.getJSONObject(i).optJSONObject("value") ?: JSONObject()
             ai.appdna.sdk.core.NamedIcon.reference(v.optStringOrNull("icon"))?.library
+        }
+    }
+
+    private fun runSegmentedDefault(action: JSONObject, spy: Spy) {
+        val cases = action.optJSONArray("cases") ?: unsupported("segmented_default without cases")
+        val options = listOf("first", "second").map { ai.appdna.sdk.onboarding.InputOption(id = it, value = it, label = it) }
+        spy.state["results"] = (0 until cases.length()).map { i ->
+            val c = cases.getJSONObject(i)
+            val current: Any? = if (c.isNull("current")) null else c.get("current")
+            ai.appdna.sdk.onboarding.segmentedDefault(current, options, c.optBoolean("required")) ?: ""
         }
     }
 
