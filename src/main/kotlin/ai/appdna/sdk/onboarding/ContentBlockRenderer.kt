@@ -13101,6 +13101,8 @@ private fun FormInputChipsBlock(
                                 maxSelections = maxSelections,
                             )
                             inputValues[fieldId] = selectedValues.toList()
+                            // The picked options, so `{{responses.<step>.<field>}}` draws their labels.
+                            SelectedOptionStore.record(fieldId, selectedValues.mapNotNull { v -> options.firstOrNull { it.value == v } })
                         }
                         .padding(horizontal = 14.dp, vertical = 8.dp),
                 ) {

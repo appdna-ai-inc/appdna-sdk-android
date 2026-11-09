@@ -390,6 +390,26 @@ internal object HostDataResolver {
      * (never exponent form) with at most 15 significant digits and trailing zeros trimmed. `null`,
      * objects and arrays have no string form → null (= unresolved).
      */
+    /**
+     * A multi-select answer as text: its picked options' labels (or the stored value when no label is known), comma-joined.
+     * Null for anything else, and for an empty pick, so the token takes its fallback. Only an answer's own roots: an array
+     * from host data is structure, not an answer. iOS `multiSelectText`.
+     */
+    private fun multiSelectText(path: String, value: Any?, scope: Scope): String? {
+        if (!path.startsWith("responses.") && !path.startsWith("step.")) return null
+        val items = (value as? List<*>)?.takeIf { it.isNotEmpty() } ?: return null
+        val field = path.substringAfterLast('.')
+        val records = ((scope.roots["selected"] as? Map<*, *>)?.get(field) as? List<*>).orEmpty()
+        val texts = items.map { item ->
+            val text = stringifyTemplateValue(item) ?: return null
+            records.firstNotNullOfOrNull { r ->
+                val o = r as? Map<*, *> ?: return@firstNotNullOfOrNull null
+                if (stringifyTemplateValue(o["value"]) == text) stringifyTemplateValue(o["label"]) else null
+            } ?: text
+        }
+        return texts.joinToString(", ")
+    }
+
     fun stringifyTemplateValue(v: Any?): String? = when (v) {
         is String -> v
         is Boolean -> if (v) "true" else "false"
@@ -678,7 +698,8 @@ internal object HostDataResolver {
             }
             val v = resolveScopePath(t.path, scope, typedText = typed)
             // A whole location answer, where asked, draws its line rather than nothing.
-            val s = stringifyTemplateValue(v) ?: if (wholeLocationAnswer && v is Map<*, *>) LocationAnswer.fieldText(v) else null
+            val s = stringifyTemplateValue(v) ?: multiSelectText(t.path, v, scope)
+                ?: if (wholeLocationAnswer && v is Map<*, *>) LocationAnswer.fieldText(v) else null
             if (s != null && !typed && readsGoogleAnswer(t.path, scope)) res.readGoogle = true
             if (s != null) {
                 out.append(if (url && !whole) percentEncodeUrlComponent(s, encodeQuery) else s)
