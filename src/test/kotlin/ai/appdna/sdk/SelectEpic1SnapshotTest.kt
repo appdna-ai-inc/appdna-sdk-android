@@ -14,6 +14,9 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.ui.Alignment
+import androidx.compose.runtime.CompositionLocalProvider
+import ai.appdna.sdk.onboarding.GoogleMapsAttribution
+import ai.appdna.sdk.onboarding.LocalGoogleAttributionBackdrop
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
@@ -1357,19 +1360,22 @@ class SelectEpic1SnapshotTest {
         val blocks = OnboardingConfigParser.parseStepForTest(step)?.config?.content_blocks ?: emptyList()
 
         captureRoboImage("src/test/snapshots/summary_screen.png") {
-            MaterialTheme {
-                Column(
-                    Modifier
-                        .fillMaxWidth()
-                        .background(Color(0xFF0F1117))
-                        .padding(16.dp),
-                ) {
-                    ContentBlockRendererView(
-                        blocks = blocks,
-                        onAction = {},
-                        toggleValues = mutableMapOf(),
-                        inputValues = mutableMapOf(),
-                    )
+            // The renderer takes unstyled ink from the step backdrop it is told about, so the harness names its dark step.
+            CompositionLocalProvider(LocalGoogleAttributionBackdrop provides GoogleMapsAttribution.Backdrop.Plain("#0F1117")) {
+                MaterialTheme {
+                    Column(
+                        Modifier
+                            .fillMaxWidth()
+                            .background(Color(0xFF0F1117))
+                            .padding(16.dp),
+                    ) {
+                        ContentBlockRendererView(
+                            blocks = blocks,
+                            onAction = {},
+                            toggleValues = mutableMapOf(),
+                            inputValues = mutableMapOf(),
+                        )
+                    }
                 }
             }
         }

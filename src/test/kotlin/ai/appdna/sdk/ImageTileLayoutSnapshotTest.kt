@@ -8,6 +8,9 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.runtime.CompositionLocalProvider
+import ai.appdna.sdk.onboarding.GoogleMapsAttribution
+import ai.appdna.sdk.onboarding.LocalGoogleAttributionBackdrop
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
@@ -72,21 +75,25 @@ class ImageTileLayoutSnapshotTest {
         return OnboardingConfigParser.parseStepForTest(step)?.config?.content_blocks ?: emptyList()
     }
 
-    private fun capture(name: String, blocks: List<ContentBlock>) {
+    private fun capture(name: String, blocks: List<ContentBlock>, namesItsDarkStep: Boolean = false) {
         captureRoboImage("src/test/snapshots/$name.png") {
-            MaterialTheme {
-                Column(
-                    Modifier
-                        .fillMaxWidth()
-                        .background(Color(0xFF0F1117))
-                        .padding(16.dp),
-                ) {
-                    ContentBlockRendererView(
-                        blocks = blocks,
-                        onAction = {},
-                        toggleValues = mutableMapOf(),
-                        inputValues = mutableMapOf(),
-                    )
+            // The renderer takes unstyled ink from the step backdrop it is told about, so a capture of a summary headline names its dark step.
+            val backdrop = if (namesItsDarkStep) GoogleMapsAttribution.Backdrop.Plain("#0F1117") else LocalGoogleAttributionBackdrop.current
+            CompositionLocalProvider(LocalGoogleAttributionBackdrop provides backdrop) {
+                MaterialTheme {
+                    Column(
+                        Modifier
+                            .fillMaxWidth()
+                            .background(Color(0xFF0F1117))
+                            .padding(16.dp),
+                    ) {
+                        ContentBlockRendererView(
+                            blocks = blocks,
+                            onAction = {},
+                            toggleValues = mutableMapOf(),
+                            inputValues = mutableMapOf(),
+                        )
+                    }
                 }
             }
         }
@@ -321,7 +328,7 @@ class ImageTileLayoutSnapshotTest {
                 ),
             ),
         )
-        capture("summary_stat_slider", OnboardingConfigParser.parseStepForTest(step)?.config?.content_blocks ?: emptyList())
+        capture("summary_stat_slider", OnboardingConfigParser.parseStepForTest(step)?.config?.content_blocks ?: emptyList(), namesItsDarkStep = true)
     }
 
     @Test
