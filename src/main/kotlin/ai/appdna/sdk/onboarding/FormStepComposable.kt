@@ -19,6 +19,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.text.input.KeyboardType
@@ -173,18 +174,18 @@ fun FormStep(
                         // 14→15sp
                         // matching iOS .subheadline.weight(.medium) at
                         // FormStepView.swift:208.
+                        // One Text, so the asterisk trails the last word when the label wraps.
+                        val requiredInk = MaterialTheme.colorScheme.error
                         Text(
-                            text = field.label.interpolated(),
+                            text = androidx.compose.ui.text.buildAnnotatedString {
+                                append(field.label.interpolated())
+                                if (field.required) {
+                                    withStyle(androidx.compose.ui.text.SpanStyle(color = requiredInk)) { append(" *") }
+                                }
+                            },
                             fontSize = 15.sp,
                             fontWeight = FontWeight.Medium
                         )
-                        if (field.required) {
-                            Text(
-                                text = " *",
-                                fontSize = 15.sp,
-                                color = MaterialTheme.colorScheme.error
-                            )
-                        }
                     }
                     // iOS label→control gap 6pt
                     // (FormStepView.swift:47 VStack(spacing: 6)). Was 4dp.

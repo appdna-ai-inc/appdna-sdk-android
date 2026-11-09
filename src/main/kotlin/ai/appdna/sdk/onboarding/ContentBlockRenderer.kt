@@ -9824,8 +9824,14 @@ private fun FormFieldLabel(block: ContentBlock) {
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = labelArrangement,
         ) {
+            // One Text, so the asterisk trails the last word when the label wraps. In a Row it was measured after a
+            // label that had taken the whole width, and had no room at all.
             Text(
-                text = label,
+                text = buildAnnotatedString {
+                    append(label)
+                    // iOS systemRed, what SwiftUI `Color.red` resolves to.
+                    if (required) withStyle(SpanStyle(color = Color(0xFFFF3B30), fontSize = 15.sp)) { append(" *") }
+                },
                 fontFamily = block.field_style?.label_font_family
                     ?.takeIf { it.isNotBlank() }
                     ?.let { ai.appdna.sdk.core.FontResolver.resolve(it) },
@@ -9839,13 +9845,6 @@ private fun FormFieldLabel(block: ContentBlock) {
                 fontWeight = FontWeight.Medium,
                 color = block.field_style?.label_color?.let { StyleEngine.parseColor(it) } ?: UnstyledInk.label(),
             )
-            if (required) {
-                // Match iOS systemRed
-                // (#FF3B30 light) which is what SwiftUI `Color.red`
-                // resolves to at FormInputBlockViews.swift:19. Was
-                // Compose `Color.Red` (#FF0000) — harsher than iOS.
-                Text(text = "*", color = Color(0xFFFF3B30), fontSize = 15.sp)
-            }
         }
     }
 }
