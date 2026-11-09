@@ -1330,6 +1330,7 @@ internal fun OnboardingFlowHost(
                 currentIndex = currentIndex,
                 responses = responses.toMap(),
                 navigationHistory = navigationHistory.toList(),
+                pressedButtonId = OnboardingPressedButton.take(),
             )
         )
     }
@@ -1427,6 +1428,7 @@ internal fun OnboardingFlowHost(
                 result = result,
                 navigationHistory = navigationHistory.toList(),
                 step = step,
+                pressedButtonId = OnboardingPressedButton.take(),
             )
         )
     }
@@ -3991,6 +3993,8 @@ private fun BlockBasedStepView(
         if (requiresValidation) {
             val gate = canAdvance()
             if (!gate.canAdvance) {
+                // The press did not advance, so a later advance must not route on it.
+                OnboardingPressedButton.clear()
                 // Match iOS toast copy at
                 // OnboardingRenderer.swift:1393 `"Please fill in <field>"`.
                 // Was Android-bespoke `"<field> is required"` — analytics

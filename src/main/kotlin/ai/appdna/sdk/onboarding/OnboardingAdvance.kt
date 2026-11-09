@@ -93,15 +93,16 @@ internal object OnboardingAdvance {
         result: StepAdvanceResult,
         navigationHistory: List<String> = emptyList(),
         step: OnboardingStep? = flow.steps.getOrNull(currentIndex),
+        pressedButtonId: String? = null,
     ): AdvanceOutcome {
         val stepId = step?.id ?: ""
         return when (result) {
             is StepAdvanceResult.Proceed ->
-                advance(flow, currentIndex, responses, navigationHistory)
+                advance(flow, currentIndex, responses, navigationHistory, pressedButtonId)
 
             is StepAdvanceResult.ProceedWithData -> {
                 val merged = mergeData(responses, result.data, stepId)
-                advance(flow, currentIndex, merged, navigationHistory)
+                advance(flow, currentIndex, merged, navigationHistory, pressedButtonId)
                     .copy(computedData = result.data)
             }
 
@@ -188,6 +189,7 @@ internal object OnboardingAdvance {
         currentIndex: Int,
         responses: Map<String, Any>,
         navigationHistory: List<String> = emptyList(),
+        pressedButtonId: String? = null,
     ): AdvanceOutcome {
         val events = mutableListOf<TrackedEvent>()
         // 7 — push the step we're leaving BEFORE the rules
@@ -226,11 +228,13 @@ internal object OnboardingAdvance {
         val isLastStep = currentIndex >= flow.steps.size - 1
         if (step != null && !rules.isNullOrEmpty()) {
             // First matching rule wins; unmatched rules fall through.
+            // The button pressed is visible to the rules only, never to the responses handed on.
+            val ruleResponses = OnboardingPressedButton.forRules(responses, step.id, pressedButtonId)
             for (rule in rules) {
                 val matches = NextStepRuleEvaluator.evaluateRule(
                     rule = rule,
                     stepId = step.id,
-                    responses = responses,
+                    responses = ruleResponses,
                     step = step,
                     // The just-pushed current step sits at the top
                     // of `history`, so the entry-prior step is `size - 2`.

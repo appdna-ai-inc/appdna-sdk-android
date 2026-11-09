@@ -3050,6 +3050,7 @@ private fun ButtonBlock(
 
     val onClick: () -> Unit = onClickOverride ?: {
         val action = block.action ?: "next"
+        OnboardingPressedButton.record(block.id, action)
         when (action) {
             // Refresh the step in place. iOS parity: ContentBlockRendererView `buttonBlock`.
             // A tap while not tappable is refused (with a debug log) by the step's coordinator.

@@ -437,6 +437,7 @@ class SharedFixtureTest(
         tracker: EventTracker,
         /** False for a plain tap — no hook ran, so the SDK emits no hook event. */
         hookRan: Boolean = true,
+        pressedButtonId: String? = null,
     ) {
         val step = flow.steps.getOrNull(currentIndex)
         // PLUMBING: `trackHookEvent(...)` is a closure inside @Composable OnboardingFlowHost. The
@@ -454,7 +455,7 @@ class SharedFixtureTest(
             )
         }
 
-        val outcome = OnboardingAdvance.apply(flow, currentIndex, responses, result)
+        val outcome = OnboardingAdvance.apply(flow, currentIndex, responses, result, pressedButtonId = pressedButtonId)
 
         for (e in outcome.events) tracker.track(e.name, e.props)
 
@@ -535,7 +536,7 @@ class SharedFixtureTest(
         if (data.isNotEmpty() && stepId.isNotEmpty()) {
             responses[stepId] = data.filterValues { it != null }.mapValues { it.value!! }
         }
-        applyAdvance(flow, currentIndex, responses, hookResult(hook), spy, p.tracker)
+        applyAdvance(flow, currentIndex, responses, hookResult(hook), spy, p.tracker, pressedButtonId = action.optStringOrNull("pressed_button_id"))
         spy.events += p.envelopes().map { it.toEventPair() }
     }
 

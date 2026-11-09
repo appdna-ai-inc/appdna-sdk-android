@@ -62,6 +62,7 @@ internal class OnboardingFlowManager(
         // Drop any after-onboarding destination left by a flow the user ABANDONED, so it cannot
         // fire when THIS one completes.
         PendingCompletionRoute.clear()
+        OnboardingPressedButton.clear()
 
         eventTracker.track("onboarding_flow_started", mapOf(
             "flow_id" to flow.id,
