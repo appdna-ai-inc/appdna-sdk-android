@@ -3452,7 +3452,7 @@ private fun WarningBannerBlock(block: ContentBlock, loc: ((String, String) -> St
     // Unset `text_color` no longer means white: [WarningBannerInk] picks it from the banner's own fill or
     // from what is behind it, so a light step gets dark ink (white on the 14% tint was ~1.1:1).
     val textColor = StyleEngine.parseColor(
-        WarningBannerInk.resolve(block.text_color, block.bg_color ?: if (chrome.cardFill == WarningBannerChrome.CardFill.NONE) block.block_style?.background_color else null, LocalGoogleAttributionBackdrop.current, googleAttributionThemeIsDark()),
+        WarningBannerInk.resolve(block.text_color, block.bg_color ?: chrome.wrapper?.background_color, LocalGoogleAttributionBackdrop.current, googleAttributionThemeIsDark()),
     )
     // Subtitle + alignment, own border/radius, per-role font size, font family.
     // Parity with iOS warningBannerBlock; EVERY default reproduces the earlier render
