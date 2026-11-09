@@ -13104,6 +13104,9 @@ private fun FormInputChipsBlock(
                 ) {
                     Text(
                         text = option.label,
+                        // One line; a label wider than the whole row truncates. iOS is the same.
+                        maxLines = 1,
+                        overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
                         // 15sp matches iOS
                         // .font(.subheadline) at FormInputBlockViews.swift:1217.
                         fontSize = 15.sp,
