@@ -12799,7 +12799,7 @@ private fun FormInputSegmentedBlock(
                         // text. Was Color.DarkGray which is invisible against
                         // MaterialTheme.colorScheme.surface in dark mode.
                         // Unselected segments are transparent: on a dark step the label is light, as text is.
-                        color = if (isSelected) Color.White
+                        color = if (isSelected) (UnstyledInk.onFill(fillCol) ?: Color.White)
                             else if (UnstyledInk.onDark()) UnstyledInk.DARK_TEXT.copy(alpha = 0.7f)
                             else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f),
                         fontSize = 14.sp,
