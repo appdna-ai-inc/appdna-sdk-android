@@ -2795,6 +2795,8 @@ fun OnboardingStepView(
         // The step's container credits Google, so its blocks draw a Google answer's content.
         LocalTemplateSurface provides ai.appdna.sdk.core.TemplateSurface.ONBOARDING,
     ) {
+        // Legacy step views use the theme's `onBackground` and system controls: they resolve against the step's surface.
+        SurfaceTheme(attributionBackdrop) {
         Column(modifier = Modifier.fillMaxSize()) {
             Box(modifier = Modifier.weight(1f).fillMaxWidth()) {
                 OnboardingStepBody(
@@ -2829,6 +2831,7 @@ fun OnboardingStepView(
                         .padding(top = 4.dp, bottom = 8.dp),
                 )
             }
+        }
         }
     }
 }
@@ -4746,6 +4749,7 @@ private fun QuestionStep(
         // showing default Material on Android.
         val optionTextColor = config.element_style?.text_style?.color
             ?.let { ai.appdna.sdk.core.StyleEngine.parseColor(it) }
+            ?: UnstyledInk.onFill(config.element_style?.background?.overlay)
             ?: Color.Unspecified
         // Option corner_radius from
         // element_style.corner_radius. iOS QuestionStepView.swift:111
