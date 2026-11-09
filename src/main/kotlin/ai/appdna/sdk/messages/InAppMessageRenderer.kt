@@ -92,7 +92,9 @@ fun InAppMessageView(
     // sub-views still resolve per-token colors directly off `content` so
     // un-styled spots use the platform fallback rather than a brand color
     // when authors leave a field blank.
-    val baseScheme = if (isDark) darkColorScheme() else lightColorScheme()
+    // From the message's own background when it has one, so unset text stays readable in either phone appearance.
+    val surface = ai.appdna.sdk.onboarding.GoogleMapsAttribution.Backdrop.Plain(content.background_color)
+    val baseScheme = if (ai.appdna.sdk.onboarding.GoogleMapsAttribution.needsLightInk(surface, isDark)) darkColorScheme() else lightColorScheme()
     val seeded = baseScheme.copy(
         primary = content.button_color?.let { StyleEngine.parseColor(it) } ?: baseScheme.primary,
         surface = content.background_color?.let { StyleEngine.parseColor(it) } ?: baseScheme.surface,
@@ -121,11 +123,13 @@ fun InAppMessageView(
     }
 
     MaterialTheme(colorScheme = seeded) {
-        when (config.message_type) {
-            MessageType.BANNER -> BannerMessageView(content, onCTATap, onDismiss, dismissUnlocked)
-            MessageType.MODAL -> ModalMessageView(content, onCTATap, onDismiss, dismissUnlocked)
-            MessageType.FULLSCREEN -> FullscreenMessageView(content, onCTATap, onDismiss, dismissUnlocked)
-            MessageType.TOOLTIP -> TooltipMessageView(content, onCTATap, onDismiss, dismissUnlocked)
+        ai.appdna.sdk.onboarding.SurfaceTheme(surface) {
+            when (config.message_type) {
+                MessageType.BANNER -> BannerMessageView(content, onCTATap, onDismiss, dismissUnlocked)
+                MessageType.MODAL -> ModalMessageView(content, onCTATap, onDismiss, dismissUnlocked)
+                MessageType.FULLSCREEN -> FullscreenMessageView(content, onCTATap, onDismiss, dismissUnlocked)
+                MessageType.TOOLTIP -> TooltipMessageView(content, onCTATap, onDismiss, dismissUnlocked)
+            }
         }
     }
 }

@@ -147,7 +147,9 @@ class SurveyActivity : ComponentActivity() {
             // still resolves per-token colors via [SurveyAppearance.resolveTheme]
             // for full fidelity.
             val resolved = config.appearance.resolveTheme(isDark)
-            val baseScheme = if (isDark) darkColorScheme() else lightColorScheme()
+            // From the survey's own background when it has one, so unset text stays readable in either phone appearance.
+            val surface = ai.appdna.sdk.onboarding.GoogleMapsAttribution.Backdrop.Plain(resolved?.backgroundColor)
+            val baseScheme = if (ai.appdna.sdk.onboarding.GoogleMapsAttribution.needsLightInk(surface, isDark)) darkColorScheme() else lightColorScheme()
             val seeded = baseScheme.copy(
                 primary = resolved?.accentColor?.let { parseColor(it) } ?: baseScheme.primary,
                 surface = resolved?.backgroundColor?.let { parseColor(it) } ?: baseScheme.surface,
