@@ -891,7 +891,19 @@ data class PostPurchaseFailureConfig(
     val message: String? = null,
     val retry_text: String? = null,
     val allow_dismiss: Boolean? = null,
-)
+) {
+    companion object {
+        /**
+         * What a failed purchase does: the authored action, else the error banner, so a failure is never silent.
+         * A cancel and a pending purchase are not failures, and stay as authored. iOS `PostPurchaseFailureConfig.effective`.
+         */
+        fun effective(authored: PostPurchaseFailureConfig?, errorType: String): PostPurchaseFailureConfig? {
+            if (authored != null) return authored
+            if (errorType == "userCancelled" || errorType == "pending") return null
+            return PostPurchaseFailureConfig(action = "show_error")
+        }
+    }
+}
 
 // MARK: - Public types
 

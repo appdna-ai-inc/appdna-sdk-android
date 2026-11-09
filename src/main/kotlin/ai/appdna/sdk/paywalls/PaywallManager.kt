@@ -405,7 +405,7 @@ internal class PaywallManager(
                 productId = plan.product_id,
             )
             handlePostPurchaseFailure(
-                config = config.post_purchase?.on_failure,
+                config = PostPurchaseFailureConfig.effective(config.post_purchase?.on_failure, "providerNotAvailable"),
                 paywallId = paywallId,
                 listener = listener,
             )
@@ -432,7 +432,7 @@ internal class PaywallManager(
                 productId = plan.product_id,
             )
             handlePostPurchaseFailure(
-                config = config.post_purchase?.on_failure,
+                config = PostPurchaseFailureConfig.effective(config.post_purchase?.on_failure, "providerNotAvailable"),
                 paywallId = paywallId,
                 listener = listener,
             )
@@ -519,7 +519,7 @@ internal class PaywallManager(
                     productId = plan.product_id,
                 )
                 handlePostPurchaseFailure(
-                    config = config.post_purchase?.on_failure,
+                    config = PostPurchaseFailureConfig.effective(config.post_purchase?.on_failure, ai.appdna.sdk.billing.billingErrorType(e)),
                     paywallId = paywallId,
                     listener = listener,
                 )
