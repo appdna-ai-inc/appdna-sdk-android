@@ -5,7 +5,6 @@ import androidx.compose.ui.test.onRoot
 import com.github.takahirom.roborazzi.RoborazziOptions
 import com.github.takahirom.roborazzi.RoborazziTaskType
 import com.github.takahirom.roborazzi.captureRoboImage
-import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Rule
@@ -87,11 +86,11 @@ class PlanSelectionCircleDrawnTest {
     }
 
     @Test
-    fun `the vertical stack card draws the trailing selection circle and the grid card does not`() {
-        val verticalStack = interiorMagentaPixels("vertical_stack")
-        val grid = interiorMagentaPixels("grid")
-        println("[plan-circle] vertical_stack=$verticalStack grid=$grid")
-        assertTrue("vertical_stack drew no selection circle ($verticalStack)", verticalStack > 100)
-        assertEquals("grid has a coloured border and no circle", 0, grid)
+    fun `every plan layout draws the selection circle`() {
+        for (style in listOf("vertical_stack", "grid", "horizontal_scroll", "carousel", "mini_cards", "carousel_cards", "single_hero")) {
+            val n = interiorMagentaPixels(style)
+            println("[plan-circle] $style=$n")
+            assertTrue("$style drew no selection circle ($n)", n > 50)
+        }
     }
 }

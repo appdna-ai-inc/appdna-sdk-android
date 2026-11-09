@@ -2676,6 +2676,14 @@ internal fun PaywallSectionView(
                     ),
                 ) {
                     Box {
+                        // The selection circle, as on iOS and the vertical stack: at the card's top end, because
+                        // these cards stack their content down the middle and have no row to end.
+                        Icon(
+                            imageVector = if (isSelected) Icons.Filled.CheckCircle else Icons.Filled.RadioButtonUnchecked,
+                            contentDescription = null,
+                            tint = if (isSelected) (selectedTextColor ?: selectedBorderColor) else (unselectedBorder ?: Color.Gray.copy(alpha = 0.5f)),
+                            modifier = Modifier.align(Alignment.TopEnd).padding(8.dp).size(20.dp),
+                        )
                         // QA-R11 — reserve top space for the straddling
                         // badge so plan name / price don't sit underneath it.
                         // Mirrors iOS `PlanCard.swift:237-239` `.padding(.top,
