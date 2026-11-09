@@ -298,6 +298,7 @@ class SharedFixtureTest(
             "resolve_plan_period" -> runPlanPeriod(action, spy)
             "resolve_location_search" -> runLocationSearch(action, spy)
             "resolve_step_auto_advance" -> runStepAutoAdvance(action, spy)
+            "resolve_select_advance_on_pick" -> runSelectAdvanceOnPick(action, spy)
             "resolve_store_price" -> runStorePrice(action, spy)
             "parse_blocks_leniently" -> runLenientBlocks(action, spy)
             "resolve_survey_choice_options" -> runSurveyChoiceOptions(action, spy)
@@ -2802,6 +2803,23 @@ class SharedFixtureTest(
             val step = ai.appdna.sdk.onboarding.OnboardingConfigParser.parseStepForTest(raw)
                 ?: error("a step did not parse")
             ai.appdna.sdk.onboarding.StepAutoAdvance.delaySeconds(step)
+        }
+    }
+
+    /** Whether a pick advances the step, through the REAL block parse and the real policy. */
+    private fun runSelectAdvanceOnPick(action: JSONObject, spy: Spy) {
+        val cases = action.optJSONArray("cases") ?: unsupported("resolve_select_advance_on_pick without cases")
+        spy.state["results"] = (0 until cases.length()).map { i ->
+            val v = cases.getJSONObject(i).getJSONObject("value")
+            val strings = { key: String -> v.getJSONArray(key).let { a -> (0 until a.length()).map { a.getString(it) } } }
+            val step = ai.appdna.sdk.onboarding.OnboardingConfigParser.parseStepForTest(
+                mapOf(
+                    "id" to "fixture_step", "type" to "custom",
+                    "config" to mapOf("content_blocks" to listOf(jsonToMap(v.getJSONObject("block")))),
+                ),
+            ) ?: error("a step did not parse")
+            val block = step.config.content_blocks!!.single()
+            ai.appdna.sdk.onboarding.SelectAdvanceOnPick.shouldAdvance(block, strings("before"), strings("after"), v.getBoolean("opens_sheet"))
         }
     }
 

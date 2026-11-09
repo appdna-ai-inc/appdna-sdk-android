@@ -2282,7 +2282,7 @@ private fun RenderBlockContent(
         "input_date" -> FormInputDateBlock(block, inputValues, mode = "date")
         "input_time" -> FormInputDateBlock(block, inputValues, mode = "time")
         "input_datetime" -> FormInputDateBlock(block, inputValues, mode = "datetime")
-        "input_select" -> FormInputSelectBlock(block, inputValues)
+        "input_select" -> FormInputSelectBlock(block, inputValues, onAdvance = { onAction("next") })
         "input_slider" -> FormInputSliderBlock(block, inputValues)
         "input_toggle" -> FormInputToggleBlock(block, inputValues)
         // Device QA (2026-08-04, s1) — standalone consent/agreement (checkbox + rich links → Bool).
@@ -11065,6 +11065,8 @@ private fun rememberSelectOptionsState(block: ContentBlock): SelectOptionsState 
 private fun FormInputSelectBlock(
     block: ContentBlock,
     inputValues: MutableMap<String, Any>,
+    // Advances the step. Set by the step's block renderer; a form field's Select has none.
+    onAdvance: (() -> Unit)? = null,
 ) {
     val fieldId = block.field_id ?: block.id
     // Option-Set ladder, search and paging: see rememberSelectOptionsState.
@@ -11147,7 +11149,19 @@ private fun FormInputSelectBlock(
     // The option whose bottom sheet is showing, if any.
     var sheetOption by remember(block.id) { mutableStateOf<InputOption?>(null) }
 
+    // The pending advance after a pick. Leaving the step cancels the scope; a later pick replaces it.
+    val advanceScope = rememberCoroutineScope()
+    var advanceJob by remember(block.id) { mutableStateOf<kotlinx.coroutines.Job?>(null) }
+    fun advanceAfterPick(before: List<String>, after: List<String>, opensSheet: Boolean) {
+        if (onAdvance == null || !SelectAdvanceOnPick.shouldAdvance(block, before, after, opensSheet)) return
+        advanceJob?.cancel()
+        advanceJob = advanceScope.launch {
+            kotlinx.coroutines.delay(SelectAdvanceOnPick.DELAY_MS)
+            onAdvance()
+        }
+    }
     fun pickOption(value: String) {
+        val before = if (isMulti) storedMultiSelection(inputValues[fieldId]) else emptyList()
         if (isMulti) {
             toggleMulti(value)
         } else {
@@ -11157,7 +11171,9 @@ private fun FormInputSelectBlock(
         }
         // Picking an option that owns a sheet opens it. The choice is already recorded above;
         // the sheet only presents, so nothing else is reported to the host app.
-        optionSheetFor(allOptions, value)?.let { sheetOption = it }
+        val sheet = optionSheetFor(allOptions, value)
+        sheet?.let { sheetOption = it }
+        advanceAfterPick(before, if (isMulti) storedMultiSelection(inputValues[fieldId]) else listOf(value), sheet != null)
     }
     val isSelectedFn: (String) -> Boolean = { v -> isOptionSelected(v) }
     val pickFn: (String) -> Unit = { v -> pickOption(v) }
@@ -11208,7 +11224,12 @@ private fun FormInputSelectBlock(
             // The category row: the same pills in ONE horizontally scrolling line.
             "bubble_scroll" -> style.SelectBubbleOptions(options, isSelectedFn, pickFn, scrolls = true)
             "list" -> style.SelectListOptions(options, isSelectedFn, pickFn)
-            else -> style.SelectDropdownOptions(options, fieldId, inputValues, selectedValueState, isMulti, isSelectedFn) { sheetOption = it }
+            else -> style.SelectDropdownOptions(
+                options, fieldId, inputValues, selectedValueState, isMulti, isSelectedFn,
+                onPicked = { before, opensSheet ->
+                    advanceAfterPick(before, if (isMulti) storedMultiSelection(inputValues[fieldId]) else listOf(selectedValue), opensSheet)
+                },
+            ) { sheetOption = it }
         }
 
         SelectGridTooltip(block, displayStyle)
@@ -12137,6 +12158,8 @@ private fun SelectOptionStyle.SelectDropdownOptions(
     selectedValueState: MutableState<String>,
     isMulti: Boolean,
     isOptionSelected: (String) -> Boolean,
+    // After a pick: the selection before it, and whether the pick opened the option's sheet.
+    onPicked: (List<String>, Boolean) -> Unit = { _, _ -> },
     onSheet: (InputOption) -> Unit,
 ) {
     var selectedValue by selectedValueState
@@ -12228,8 +12251,10 @@ private fun SelectOptionStyle.SelectDropdownOptions(
                         // opens it once the menu has closed. Picking it again opens it again, as a
                         // re-tap does in the other styles. With `multi_select` the pick toggles that
                         // option in the stored list, and the menu closes as it does on iOS.
+                        val before = if (isMulti) storedMultiSelection(inputValues[fieldId]) else emptyList()
                         pendingSheet = dropdownOptionPick(block, options, option.value, inputValues)
                         expanded = false
+                        onPicked(before, pendingSheet != null)
                     },
                 )
             }

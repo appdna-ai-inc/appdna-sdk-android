@@ -8,6 +8,12 @@ the project uses [Semantic Versioning](https://semver.org/).
 
 Feature parity: iOS 1.0.86.
 
+### Added
+
+- **A Select can move the user on when picked.** `auto_advance: true` on an `input_select` advances the step on the pick
+  (a multi-select: on the pick that reaches `field_config.max_selections`), through the step's own `next`, so a screen with
+  only a Select has a way forward.
+
 ### Fixed
 
 - **An archived, unpublished or deleted flow, paywall or survey stops showing.** After a config fetch, every
