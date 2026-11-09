@@ -99,7 +99,16 @@ Feature parity: iOS 1.0.86.
   or as a deep link when it is a link. Before, a CTA saved as `{type, value}` (the shape the console writes)
   only dismissed the message. An action type the SDK does not know now reads as `unknown`, as on iOS.
 
-### Fixed (onboarding)
+### Added (onboarding)
+
+- **A toggle's settings.** A standalone `toggle` reads `field_config.toggle_on_color`, `toggle_label_color` and
+  `toggle_description_color`, and `toggle_action` names the element interaction your app receives, with `"true"` or
+  `"false"`, when the user switches it.
+
+### Fixed (onboarding and paywalls)
+
+- **A warning banner draws one background.** `block_style` (the console's Design panel) now styles the banner's card:
+  its background, border and corner radius replace the banner's defaults instead of drawing a second layer behind it.
 
 - **Text on a pale gradient is readable.** Text nobody coloured is drawn dark on a gradient whose every
   stop is light; it was white on every gradient, so on a pale one it disappeared.

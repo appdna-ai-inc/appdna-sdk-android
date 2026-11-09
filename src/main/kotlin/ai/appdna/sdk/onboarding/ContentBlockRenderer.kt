@@ -2165,7 +2165,8 @@ internal fun RenderBlock(
             // It was applied last (Compose: the innermost), so the container fill covered `block_style`.
             .applyBlockContainerStyle(block.field_config)
             .applyBlockStyle(
-                block.block_style,
+                // One background on a warning banner: its block_style styles the card, not a second layer.
+                if (block.type == "warning_banner") WarningBannerChrome.resolve(block).wrapper else block.block_style,
                 // Overflow blocks (pulse rings / star field) must not be clipped to the block box,
                 // and neither is one that deliberately paints past it.
                 clipContent = !blockBleeds &&
@@ -2240,7 +2241,7 @@ private fun RenderBlockContent(
         "divider" -> DividerBlock(block)
         "badge" -> BadgeBlock(block, loc)
         "icon" -> IconBlock(block)
-        "toggle" -> ToggleBlock(block, toggleValues, loc)
+        "toggle" -> ToggleBlock(block, toggleValues, loc, onInteract)
         "video" -> VideoBlock(block)
         // Rich media block types
         "lottie" -> LottieContentBlock(block)
@@ -3446,10 +3447,12 @@ private fun WarningBannerBlock(block: ContentBlock, loc: ((String, String) -> St
     // Device QA (2026-08-04): bg_color/text_color were uneditable. When set they override the
     // accent-tinted background / white message text; unset keeps the variant defaults (parity w/ iOS).
     val bgOverride = block.bg_color?.let { StyleEngine.parseColor(it) }
+    // One background: `block_style` styles this card rather than drawing a second one around it.
+    val chrome = remember(block.block_style, block.bg_color, block.field_config) { WarningBannerChrome.resolve(block) }
     // Unset `text_color` no longer means white: [WarningBannerInk] picks it from the banner's own fill or
     // from what is behind it, so a light step gets dark ink (white on the 14% tint was ~1.1:1).
     val textColor = StyleEngine.parseColor(
-        WarningBannerInk.resolve(block.text_color, block.bg_color, LocalGoogleAttributionBackdrop.current, googleAttributionThemeIsDark()),
+        WarningBannerInk.resolve(block.text_color, block.bg_color ?: if (chrome.cardFill == WarningBannerChrome.CardFill.NONE) block.block_style?.background_color else null, LocalGoogleAttributionBackdrop.current, googleAttributionThemeIsDark()),
     )
     // Subtitle + alignment, own border/radius, per-role font size, font family.
     // Parity with iOS warningBannerBlock; EVERY default reproduces the earlier render
@@ -3471,8 +3474,8 @@ private fun WarningBannerBlock(block: ContentBlock, loc: ((String, String) -> St
         "trailing" -> TextAlign.End
         else -> TextAlign.Start
     }
-    val radius = ((fc?.get("banner_corner_radius") as? Number)?.toFloat() ?: 12f).dp
-    val borderWidth = ((fc?.get("banner_border_width") as? Number)?.toFloat() ?: 1f).dp
+    val radius = chrome.radius.toFloat().dp
+    val borderWidth = if (chrome.cardBorder) ((fc?.get("banner_border_width") as? Number)?.toFloat() ?: 1f).dp else 0.dp
     val borderColor = (fc?.get("banner_border_color") as? String)?.let { StyleEngine.parseColor(it) }
         ?: accent.copy(alpha = 0.45f)
     val family = ai.appdna.sdk.core.FontResolver.resolve(fc?.get("banner_font_family") as? String)
@@ -3516,7 +3519,7 @@ private fun WarningBannerBlock(block: ContentBlock, loc: ((String, String) -> St
         modifier = Modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(radius))
-            .background(bgOverride ?: accent.copy(alpha = 0.14f))
+            .background(if (chrome.cardFill == WarningBannerChrome.CardFill.NONE) Color.Transparent else (bgOverride ?: accent.copy(alpha = 0.14f)))
             .border(borderWidth, borderColor, RoundedCornerShape(radius))
             .padding(horizontal = 14.dp, vertical = 12.dp),
         verticalAlignment = iconAlign,
@@ -4434,8 +4437,9 @@ private fun IconBlock(block: ContentBlock) {
 }
 
 @Composable
-private fun ToggleBlock(block: ContentBlock, toggleValues: MutableMap<String, Boolean>, loc: ((String, String) -> String)? = null) {
+private fun ToggleBlock(block: ContentBlock, toggleValues: MutableMap<String, Boolean>, loc: ((String, String) -> String)? = null, onInteract: (String, String, String?) -> Unit = { _, _, _ -> }) {
     var checked by remember { mutableStateOf(toggleValues[block.id] ?: (block.toggle_default ?: false)) }
+    val settings = remember(block.field_config) { ToggleSettings.from(block.field_config) }
 
     // 4dp inter-row spacing matches iOS
     // VStack(alignment: .leading, spacing: 4) at ContentBlockRendererView.swift
@@ -4457,6 +4461,7 @@ private fun ToggleBlock(block: ContentBlock, toggleValues: MutableMap<String, Bo
                     onValueChange = {
                         checked = it
                         toggleValues[block.id] = it
+                        settings.action?.let { action -> onInteract(block.id, action, it.toString()) }
                     },
                 ),
         ) {
@@ -4464,6 +4469,7 @@ private fun ToggleBlock(block: ContentBlock, toggleValues: MutableMap<String, Bo
             Text(
                 text = loc?.invoke("block.${block.id}.label", label) ?: label,
                 modifier = Modifier.weight(1f),
+                color = settings.labelColor?.let { StyleEngine.parseColor(it) } ?: Color.Unspecified,
             )
             // Match iOS standalone-toggle tint
             // ContentBlockRendererView.swift:525 `.tint(Color(hex: "#6366F1"))`.
@@ -4479,14 +4485,14 @@ private fun ToggleBlock(block: ContentBlock, toggleValues: MutableMap<String, Bo
                 onCheckedChange = null,
                 colors = SwitchDefaults.colors(
                     checkedThumbColor = Color.White,
-                    checkedTrackColor = ai.appdna.sdk.AppDNA.brandAccentColor(),
+                    checkedTrackColor = settings.onColor?.let { StyleEngine.parseColor(it) } ?: ai.appdna.sdk.AppDNA.brandAccentColor(),
                 ),
             )
         }
         block.toggle_description?.let {
             // Theme-adaptive secondary (was Color.Gray).
             // iOS uses .secondary (ContentBlockRendererView.swift:529).
-            Text(text = loc?.invoke("block.${block.id}.description", it) ?: it, fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f))
+            Text(text = loc?.invoke("block.${block.id}.description", it) ?: it, fontSize = 12.sp, color = settings.descriptionColor?.let { hex -> StyleEngine.parseColor(hex) } ?: MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f))
         }
     }
 }

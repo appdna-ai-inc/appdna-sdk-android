@@ -312,6 +312,8 @@ class SharedFixtureTest(
             "resolve_compact_picker_height" -> runCompactPickerHeight(action, spy)
             "resolve_flow_background" -> runFlowBackground(action, spy)
             "resolve_guarantee_icon" -> runGuaranteeIcon(action, spy)
+            "resolve_warning_banner_chrome" -> runWarningBannerChrome(action, spy)
+            "resolve_toggle_settings" -> runToggleSettings(action, spy)
             "resolve_in_step_visibility" -> runVisibilityInStepScope(action, spy)
             "resolve_field_input_style" -> runFieldInputStyle(action, spy)
             "resolve_plan_order" -> runPlanOrder(action, spy)
@@ -3339,6 +3341,33 @@ class SharedFixtureTest(
                 "name" to c.optString("name"),
                 "ids" to (parsed?.config?.content_blocks?.map { it.id } ?: emptyList<String>()),
             )
+        }
+    }
+
+    /** A warning banner's single background, through the REAL `WarningBannerChrome` over parsed `block_style`. */
+    private fun runWarningBannerChrome(action: JSONObject, spy: Spy) {
+        val cases = action.optJSONArray("cases") ?: unsupported("resolve_warning_banner_chrome without cases")
+        spy.state["results"] = (0 until cases.length()).map { i ->
+            val v = cases.getJSONObject(i).optJSONObject("value") ?: JSONObject()
+            val fc = v.optJSONObject("field_config")
+            val style = v.optJSONObject("block_style")?.let { ai.appdna.sdk.onboarding.OnboardingConfigParser.parseBlockStyle(jsonToMap(it)) }
+            val r = ai.appdna.sdk.onboarding.WarningBannerChrome.resolve(
+                blockStyle = style,
+                bgColor = v.optStringOrNull("bg_color"),
+                cornerRadius = fc?.takeIf { it.has("banner_corner_radius") }?.getDouble("banner_corner_radius"),
+                borderWidth = fc?.takeIf { it.has("banner_border_width") }?.getDouble("banner_border_width"),
+            )
+            "${r.radius.toInt()}|${r.cardFill.name.lowercase()}|${if (r.cardBorder) 1 else 0}|${if (r.wrapperFill) 1 else 0}|${if (r.wrapperBorder) 1 else 0}"
+        }
+    }
+
+    /** A toggle's authored settings, through the REAL `ToggleSettings`. */
+    private fun runToggleSettings(action: JSONObject, spy: Spy) {
+        val cases = action.optJSONArray("cases") ?: unsupported("resolve_toggle_settings without cases")
+        spy.state["results"] = (0 until cases.length()).map { i ->
+            val fc = cases.getJSONObject(i).optJSONObject("value")?.optJSONObject("field_config")
+            val s = ai.appdna.sdk.onboarding.ToggleSettings.from(fc?.let { jsonToMap(it) })
+            listOf(s.onColor, s.labelColor, s.descriptionColor, s.action).joinToString("|") { it ?: "" }
         }
     }
 
