@@ -2059,6 +2059,9 @@ internal fun PaywallSectionView(
              * features list never received. iOS has used it since: `FeatureList.swift` draws with
              * `PaywallTextDefaults.readable(on: pageBackgroundHex)`.
              */
+            // `icon_color` is what iOS FeatureList and the preview draw the check in; this section read only the brand accent.
+            val featureCheckColor = section.data?.icon_color?.takeIf { it.isNotBlank() }?.let { parseHexColor(it) }
+                ?: ai.appdna.sdk.AppDNA.brandAccentColor()
             val featureItemStyle = StyleEngine.applyTextStyle(
                 TextStyle(color = PaywallTextDefaults.readable(LocalPaywallPageHex.current), fontSize = 16.sp),
                 section.style?.elements?.get("item")?.text_style
@@ -2124,7 +2127,7 @@ internal fun PaywallSectionView(
                         ) {
                             Text(
                                 text = "\u2713",
-                                color = ai.appdna.sdk.AppDNA.brandAccentColor(),
+                                color = featureCheckColor,
                                 fontSize = 18.sp,
                                 modifier = featureIconModifier,
                             )
@@ -2214,7 +2217,7 @@ internal fun PaywallSectionView(
                                     modifier = featureIconModifier,
                                     text = if (included) "\u2713" else "\u2717",
                                     color = if (included) {
-                                        ai.appdna.sdk.AppDNA.brandAccentColor()
+                                        featureCheckColor
                                     } else {
                                         section.data?.item_excluded_color?.takeIf { it.isNotBlank() }
                                             ?.let { StyleEngine.parseColor(it) } ?: parseHexColor("#EF4444")
