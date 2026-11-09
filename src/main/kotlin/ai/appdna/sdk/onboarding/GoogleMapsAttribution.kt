@@ -305,6 +305,45 @@ internal fun googleAttributionThemeIsDark(): Boolean {
     return l != null && l < ai.appdna.sdk.core.GoogleMarkChip.LIGHT_ENOUGH
 }
 
+private val SURFACE_LIGHT_SCHEME = androidx.compose.material3.lightColorScheme()
+private val SURFACE_DARK_SCHEME = androidx.compose.material3.darkColorScheme()
+
+/**
+ * Hands [content] what is drawn behind it, and resolves its default colours against that surface: the theme's
+ * `onSurface` / `onBackground` and system controls read a scheme matching [behind], and text with no colour reads
+ * matching content ink. So they stay readable when the phone's appearance differs from the authored background.
+ * Authored colours are explicit and do not read this. The same light-or-dark call as `needsLightInk`.
+ */
+@Composable
+internal fun SurfaceTheme(behind: GoogleMapsAttribution.Backdrop, content: @Composable () -> Unit) {
+    val ambientDark = googleAttributionThemeIsDark()
+    val dark = GoogleMapsAttribution.needsLightInk(behind, ambientDark)
+    val body: @Composable () -> Unit = {
+        androidx.compose.runtime.CompositionLocalProvider(
+            LocalGoogleAttributionBackdrop provides behind,
+            androidx.compose.material3.LocalContentColor provides if (dark) Color.White else Color.Black,
+            content = content,
+        )
+    }
+    // Only when the surface differs, so a host's own theme is left in place wherever it already fits.
+    if (dark == ambientDark) body()
+    else MaterialTheme(colorScheme = if (dark) SURFACE_DARK_SCHEME else SURFACE_LIGHT_SCHEME, content = body)
+}
+
+/** The phone's own appearance, for a surface of its own (a sheet) opened from a step that resolved against its background. */
+@Composable
+internal fun DeviceAppearanceTheme(content: @Composable () -> Unit) {
+    val dark = androidx.compose.foundation.isSystemInDarkTheme()
+    val body: @Composable () -> Unit = {
+        androidx.compose.runtime.CompositionLocalProvider(
+            androidx.compose.material3.LocalContentColor provides if (dark) Color.White else Color.Black,
+            content = content,
+        )
+    }
+    if (dark == googleAttributionThemeIsDark()) body()
+    else MaterialTheme(colorScheme = if (dark) SURFACE_DARK_SCHEME else SURFACE_LIGHT_SCHEME, content = body)
+}
+
 /** The "Google Maps" logo with Google's clear space. */
 @Composable
 internal fun GoogleMapsLogo(backdrop: GoogleMapsAttribution.Backdrop, modifier: Modifier = Modifier) {

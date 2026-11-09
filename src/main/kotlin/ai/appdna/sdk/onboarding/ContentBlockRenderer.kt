@@ -2183,7 +2183,7 @@ internal fun RenderBlock(
     // What the block draws behind its own content, for a Google logo inside it — read at the block's
     // own place, so a container's children see the container's fill.
     val attributionBackdrop = GoogleMapsAttribution.backdrop(ofBlock = block, behind = LocalGoogleAttributionBackdrop.current)
-    androidx.compose.runtime.CompositionLocalProvider(LocalGoogleAttributionBackdrop provides attributionBackdrop) {
+    SurfaceTheme(attributionBackdrop) {
         if (blockAlignment != null) {
             Box(
                 modifier = Modifier.fillMaxWidth(),
@@ -10078,6 +10078,19 @@ internal object UnstyledInk {
     /** The step chrome on a light step, in any system theme: the light theme's onBackground, so it never follows the device. */
     val LIGHT_CHROME = Color(0xFF1C1B1F).copy(alpha = 0.6f)
 
+    /**
+     * The ink for an element's own authored fill: light on a dark fill, dark on a light one. Null when the element has
+     * no opaque fill of its own, so the caller takes the surface behind it.
+     */
+    fun onFill(hex: String?): Color? {
+        val bg = hex?.trim().orEmpty()
+        if (bg.isEmpty() || bg.lowercase() in setOf("transparent", "clear")) return null
+        return if (GoogleMapsAttribution.needsLightInk(GoogleMapsAttribution.Backdrop.Plain(bg), darkAppearance = false)) Color.White else Color.Black
+    }
+
+    fun onFill(fill: Color?): Color? =
+        if (fill == null || fill == Color.Unspecified || fill.alpha < 1f) null else onFill(GoogleMapsAttribution.hexOf(fill))
+
     /** Whether what is behind this composition ([behind], by default the block's backdrop) needs light ink. */
     @Composable
     fun onDark(behind: GoogleMapsAttribution.Backdrop = LocalGoogleAttributionBackdrop.current): Boolean =
@@ -10416,7 +10429,6 @@ private fun FormInputDateBlock(
     // Honor field_style.text_color (compact button text),
     // calendar_bg_color/wheel_bg_color (picker + button background), and highlight_color
     // (picker accent). iOS + preview already apply these.
-    val buttonTextColor = block.field_style?.text_color?.let { StyleEngine.parseColor(it) } ?: MaterialTheme.colorScheme.onSurface
     val highlightColor = block.highlight_color?.let { StyleEngine.parseColor(it) }
     val calendarBg = ((block.field_config?.get("calendar_bg_color") as? String)?.let { StyleEngine.parseColor(it) }
         ?: block.calendar_bg_color?.let { StyleEngine.parseColor(it) })
@@ -10424,6 +10436,7 @@ private fun FormInputDateBlock(
     val wheelBg = ((block.field_config?.get("wheel_bg_color") as? String)?.let { StyleEngine.parseColor(it) }
         ?: block.wheel_bg_color?.let { StyleEngine.parseColor(it) })
         ?.let { c -> (block.field_config?.get("wheel_opacity") as? Number)?.toFloat()?.let { c.copy(alpha = it.coerceIn(0f, 1f)) } ?: c }  // fold wheel_opacity into fill alpha (iOS applies .opacity), mirroring calendarBg
+    val buttonTextColor = block.field_style?.text_color?.let { StyleEngine.parseColor(it) } ?: UnstyledInk.onFill(calendarBg ?: wheelBg) ?: MaterialTheme.colorScheme.onSurface
     // Honor wheel_text_color on the inline graphical picker
     // (day/weekday/year content), mirroring iOS colorMultiply + preview wheelText.
     val wheelTextColor = (block.field_config?.get("wheel_text_color") as? String)?.let { StyleEngine.parseColor(it) }
@@ -11397,7 +11410,7 @@ private fun SelectOptionStyle.SelectStackedOptionRow(
     val optSelText = option.selected_text_color?.let { StyleEngine.parseColor(it) } ?: selectedTextCol
     // An option label nobody coloured, on an option with no fill of its own, takes its ink from what is behind
     // the field (light on a dark step), as text does. An authored option fill keeps the old default. iOS is the same.
-    val unstyledOptionInk = if (optUnselBg == Color.Transparent) UnstyledInk.text() else Color.Unspecified
+    val unstyledOptionInk = UnstyledInk.onFill(optUnselBg) ?: UnstyledInk.text()
     val optTitleColor = if (isSelected) optSelText.takeIf { it != Color.Unspecified } ?: unstyledOptionInk
         else (option.title_color?.let { StyleEngine.parseColor(it) } ?: textCol.takeIf { it != Color.Unspecified } ?: unstyledOptionInk)
     // SELECTED-state legibility for the secondary labels (subtitle +
@@ -11407,7 +11420,7 @@ private fun SelectOptionStyle.SelectStackedOptionRow(
     // subtitle ("Slow and steady") AND trailing label ("Popular") went invisible on
     // the green selected card.
     val optSubtitleColor = run {
-        val base = if (textCol == Color.Unspecified) Color.White else textCol
+        val base = if (textCol == Color.Unspecified) (unstyledOptionInk.takeIf { it != Color.Unspecified } ?: Color.Black) else textCol
         if (isSelected) {
             option.selected_text_color?.let { StyleEngine.parseColor(it) }
                 ?: option.subtitle_color?.let { StyleEngine.parseColor(it) }
@@ -11688,7 +11701,7 @@ private fun SelectOptionStyle.SelectGridOptionCell(
     val optSelText = option.selected_text_color?.let { StyleEngine.parseColor(it) } ?: selectedTextCol
     // An option label nobody coloured, on an option with no fill of its own, takes its ink from what is behind
     // the field (light on a dark step), as text does. An authored option fill keeps the old default. iOS is the same.
-    val unstyledOptionInk = if (optUnselBg == Color.Transparent) UnstyledInk.text() else Color.Unspecified
+    val unstyledOptionInk = UnstyledInk.onFill(optUnselBg) ?: UnstyledInk.text()
     val optTitleColor = if (isSelected) optSelText.takeIf { it != Color.Unspecified } ?: unstyledOptionInk
         else (option.title_color?.let { StyleEngine.parseColor(it) } ?: textCol.takeIf { it != Color.Unspecified } ?: unstyledOptionInk)
     // Resolve cell alignment: per-option override → block grid_cell_alignment → center.
@@ -11787,7 +11800,7 @@ private fun SelectOptionStyle.SelectGridOptionCell(
                         // bg. Mirrors iOS grid (textCol.opacity(0.65)) + preview (a6).
                         color = option.subtitle_color?.let { StyleEngine.parseColor(it) }
                             ?: cfgSubtitleColor
-                            ?: (if (textCol == Color.Unspecified) Color.White else textCol).copy(alpha = 0.65f),
+                            ?: (if (textCol == Color.Unspecified) (unstyledOptionInk.takeIf { it != Color.Unspecified } ?: Color.Black) else textCol).copy(alpha = 0.65f),
                         textAlign = cellTextAlign,
                     )
                 }
@@ -12208,7 +12221,7 @@ private fun SelectOptionStyle.SelectDropdownOptions(
         contentColor = if (DropdownFieldInk.light(block.field_style?.background_color, LocalGoogleAttributionBackdrop.current, googleAttributionThemeIsDark())) {
             UnstyledInk.DARK_TEXT
         } else {
-            MaterialTheme.colorScheme.onSurface
+            Color.Black
         },
     ),
         ) {
@@ -13463,13 +13476,13 @@ private fun FormInputLocationPlaceholder(
                             Text(
                                 text = addrPrimary,
                                 fontSize = ddFontSize,
-                                color = ddTextColor ?: MaterialTheme.colorScheme.onSurface,
+                                color = ddTextColor ?: UnstyledInk.onFill(ddBgColor) ?: MaterialTheme.colorScheme.onSurface,
                             )
                             if (addrSecondary.isNotEmpty()) {
                                 Text(
                                     text = addrSecondary,
                                     fontSize = ddSubFontSize,
-                                    color = ddSubtextColor ?: MaterialTheme.colorScheme.onSurfaceVariant,
+                                    color = ddSubtextColor ?: UnstyledInk.onFill(ddBgColor)?.copy(alpha = 0.6f) ?: MaterialTheme.colorScheme.onSurfaceVariant,
                                 )
                             }
                         }
@@ -13832,6 +13845,13 @@ private fun StubBlockPlaceholder(typeName: String) {
 @OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
 @Composable
 private fun OptionBottomSheet(option: InputOption, parentBlockId: String, onDismiss: () -> Unit) {
+    // The sheet has its own surface, in the phone's appearance, whatever step opened it.
+    DeviceAppearanceTheme { OptionBottomSheetBody(option, parentBlockId, onDismiss) }
+}
+
+@OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
+@Composable
+private fun OptionBottomSheetBody(option: InputOption, parentBlockId: String, onDismiss: () -> Unit) {
     val sheetToggles = remember { mutableStateMapOf<String, Boolean>() }
     val sheetInputs = remember { mutableStateMapOf<String, Any>() }
     // "Sheet ids" — a sheet the raw host-data pass resolved is re-read from its resolved
