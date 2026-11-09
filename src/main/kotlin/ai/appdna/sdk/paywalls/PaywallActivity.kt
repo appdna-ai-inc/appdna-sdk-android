@@ -686,6 +686,11 @@ fun resolveWeight(w: String?, fallback: FontWeight): FontWeight = when (w?.lower
 
 fun resolveCtaWeight(w: String?): FontWeight = resolveWeight(w, FontWeight.SemiBold)
 
+/** The paywall's own accent: its CTA's colour when authored, else the brand accent. */
+@Composable
+private fun paywallAccent(config: PaywallConfig): Color =
+    config.cta?.bg_color?.takeIf { it.isNotEmpty() }?.let { parseHexColor(it) } ?: ai.appdna.sdk.AppDNA.brandAccentColor()
+
 @Composable
 fun PaywallScreen(
     config: PaywallConfig,
@@ -2383,7 +2388,7 @@ internal fun PaywallSectionView(
             // (applyTextStyle overrides base color only when the element style sets one),
             // matching iOS PlanCard + the console preview (getElementStyle spread after accent).
             val trialStyle = StyleEngine.applyTextStyle(
-                TextStyle(fontSize = 12.sp, fontWeight = FontWeight.Medium, color = ai.appdna.sdk.AppDNA.brandAccentColor()),
+                TextStyle(fontSize = 12.sp, fontWeight = FontWeight.Medium, color = paywallAccent(config)),
                 section.style?.elements?.get("trial_label")?.text_style
             )
 
@@ -3906,7 +3911,7 @@ internal fun PaywallSectionView(
                                             // subtitle/description text color falls back to a
                                             // muted grey (iOS PlanCard.swift secondary); accent for trial.
                                             val subtitleColor = planTextColor.takeIf { it != Color.Unspecified } ?: Color.Gray
-                                            val trialColor = planTextColor.takeIf { it != Color.Unspecified } ?: ai.appdna.sdk.AppDNA.brandAccentColor()
+                                            val trialColor = planTextColor.takeIf { it != Color.Unspecified } ?: paywallAccent(config)
                                             Text(
                                                 text = loc("plan.$planIdx.name", plan.displayName),
                                                 style = planNameStyle,
@@ -4101,7 +4106,7 @@ internal fun PaywallSectionView(
                                             }
                                             if (showPlanFeatures && !plan.features.isNullOrEmpty()) {
                                                 Spacer(Modifier.height(8.dp))
-                                                val featureCheckColor = if (isSelected && planTextColor != Color.Unspecified) planTextColor else ai.appdna.sdk.AppDNA.brandAccentColor()
+                                                val featureCheckColor = if (isSelected && planTextColor != Color.Unspecified) planTextColor else paywallAccent(config)
                                                 plan.features.forEachIndexed { fIdx, feature ->
                                                     Row(verticalAlignment = Alignment.CenterVertically) {
                                                         Text(text = "✓ ", color = featureCheckColor, fontSize = 13.sp)
@@ -4584,7 +4589,7 @@ internal fun PaywallSectionView(
                     }
                     "trial_badge" -> {
                         val trialBadgeStyle = StyleEngine.applyTextStyle(
-                            TextStyle(fontSize = 12.sp, fontWeight = FontWeight.SemiBold, color = ai.appdna.sdk.AppDNA.brandAccentColor()),
+                            TextStyle(fontSize = 12.sp, fontWeight = FontWeight.SemiBold, color = paywallAccent(config)),
                             section.style?.elements?.get("value")?.text_style
                         )
                         Text(
@@ -4592,7 +4597,7 @@ internal fun PaywallSectionView(
                             style = trialBadgeStyle,
                             modifier = Modifier
                                 .background(
-                                    ai.appdna.sdk.AppDNA.brandAccentColor().copy(alpha = 0.15f),
+                                    paywallAccent(config).copy(alpha = 0.15f),
                                     RoundedCornerShape(999.dp),
                                 )
                                 .padding(horizontal = 16.dp, vertical = 8.dp),
