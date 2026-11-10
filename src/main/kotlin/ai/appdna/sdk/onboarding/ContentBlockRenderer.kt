@@ -10709,57 +10709,43 @@ private fun FormInputDateBlock(
 /** Dropdown/stacked/grid select input with display_style support. */
 // Selection indicator honoring field_config.radio_fill.
 // Parity with iOS radioIndicator (FormInputBlockViews.swift:935):
-//   "circle"    → default Material RadioButton (single) / Checkbox (multi)
+//   "circle"    → Material RadioButton (single); filled check-circle when selected, empty circle when not (multi)
 //   "checkmark" → filled check-circle when selected, empty circle when not
 //   <emoji>     → the glyph when selected, "○" when not (SF Symbol names are
 //                 iOS-only and fall back to the default circle on Android)
 @Composable
-private fun SelectRadioIndicator(
+internal fun SelectRadioIndicator(
     isSelected: Boolean,
     isMulti: Boolean,
     fillCol: Color,
     radioFill: String,
 ) {
     when {
-        radioFill == "checkmark" -> {
+        // #1653 — both are round for multi-select as well, as on iOS (checkmark.circle.fill). Multi-select used to draw a square Checkbox.
+        radioFill == "checkmark" || (radioFill == "circle" && isMulti) -> {
             if (isSelected) {
                 Icon(
                     imageVector = Icons.Filled.CheckCircle,
                     contentDescription = null,
                     tint = fillCol,
-                    modifier = Modifier.size(24.dp),
+                    modifier = Modifier.size(24.dp).testTag("select_indicator_check"),
                 )
-            } else if (isMulti) {
-                Checkbox(checked = false, onCheckedChange = null,
-                    colors = CheckboxDefaults.colors(checkedColor = fillCol))
             } else {
-                RadioButton(selected = false, onClick = null,
+                RadioButton(selected = false, onClick = null, modifier = Modifier.testTag("select_indicator_ring"),
                     colors = RadioButtonDefaults.colors(selectedColor = fillCol))
             }
         }
         radioFill == "circle" -> {
-            if (isMulti) {
-                Checkbox(checked = isSelected, onCheckedChange = null,
-                    colors = CheckboxDefaults.colors(checkedColor = fillCol))
-            } else {
-                RadioButton(selected = isSelected, onClick = null,
-                    colors = RadioButtonDefaults.colors(selectedColor = fillCol))
-            }
+            RadioButton(selected = isSelected, onClick = null, modifier = Modifier.testTag("select_indicator_ring"),
+                colors = RadioButtonDefaults.colors(selectedColor = fillCol))
         }
         // Emoji glyph (short, all non-ASCII) renders directly; anything else
         // (incl. SF Symbol names) falls back to the default circle indicator.
         radioFill.length <= 2 && radioFill.isNotEmpty() && radioFill.all { it.code > 127 } -> {
             Text(text = if (isSelected) radioFill else "○", fontSize = 20.sp)
         }
-        else -> {
-            if (isMulti) {
-                Checkbox(checked = isSelected, onCheckedChange = null,
-                    colors = CheckboxDefaults.colors(checkedColor = fillCol))
-            } else {
-                RadioButton(selected = isSelected, onClick = null,
-                    colors = RadioButtonDefaults.colors(selectedColor = fillCol))
-            }
-        }
+        // Anything else (incl. SF Symbol names) is the default circle indicator.
+        else -> SelectRadioIndicator(isSelected, isMulti, fillCol, "circle")
     }
 }
 

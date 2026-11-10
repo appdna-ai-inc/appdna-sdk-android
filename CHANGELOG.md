@@ -6,6 +6,10 @@ the project uses [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Fixed
+
+- **A multi-select option's indicator is round.** With Radio Fill set to Circle or Checkmark, a multi-select draws a filled check-circle when picked and an empty circle when not, as iOS does. It used to draw a square checkbox.
+
 ## [1.0.58] — 2026-11-09
 
 Feature parity: iOS 1.0.86.
