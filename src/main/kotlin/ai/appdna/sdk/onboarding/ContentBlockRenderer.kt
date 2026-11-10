@@ -7214,27 +7214,7 @@ private fun CircularGaugeBlock(block: ContentBlock) {
  * (ContentBlockStandaloneViews.swift).
  */
 private fun parseDateWheelSeed(saved: String?, default: String?): java.util.Calendar? {
-    fun fromIso(s: String?): java.util.Calendar? {
-        val t = s?.trim()?.takeIf { it.isNotEmpty() } ?: return null
-        val datePart = t.substringBefore(' ')
-        val m = Regex("""^(\d{4})-(\d{2})-(\d{2})$""").find(datePart) ?: return null
-        val (y, mo, d) = m.destructured
-        // Reject out-of-range month/day BEFORE Calendar.set — Calendar is lenient
-        // and would roll "2000-13-45" over to a real-but-wrong date, whereas iOS's
-        // non-lenient DateFormatter returns nil. Match iOS: garbage → no seed.
-        if (mo.toInt() !in 1..12 || d.toInt() !in 1..31) return null
-        val cal = java.util.Calendar.getInstance()
-        cal.isLenient = false
-        cal.set(y.toInt(), mo.toInt() - 1, d.toInt())
-        try { cal.time } catch (e: Exception) { return null }  // e.g. Feb 30 → reject like iOS
-        cal.isLenient = true  // date validated; allow normal handling for the optional time below
-        Regex("""(\d{2}):(\d{2})""").find(t.substringAfter(' ', ""))?.let { tm ->
-            val (h, mi) = tm.destructured
-            cal.set(java.util.Calendar.HOUR_OF_DAY, h.toInt())
-            cal.set(java.util.Calendar.MINUTE, mi.toInt())
-        }
-        return cal
-    }
+    fun fromIso(s: String?): java.util.Calendar? = DateWheelModel.readSaved(s)
     fun fromDefault(s: String?): java.util.Calendar? {
         val t = s?.trim()?.lowercase()?.takeIf { it.isNotEmpty() } ?: return null
         if (t == "today" || t == "now") return java.util.Calendar.getInstance()
@@ -7253,7 +7233,7 @@ private fun parseDateWheelSeed(saved: String?, default: String?): java.util.Cale
         }
         return fromIso(s)
     }
-    return fromIso(saved) ?: fromDefault(default)
+    return DateWheelModel.readAnswer(saved) ?: fromDefault(default)
 }
 
 /**
@@ -7412,11 +7392,7 @@ internal fun DateWheelPickerBlock(
     fun emit() {
         val c = DateWheelModel.clamp(DateWheelModel.Ymd(selectedYear, selectedMonth, selectedDay), minBound, maxBound)
         selectedYear = c.year; selectedMonth = c.month; selectedDay = c.day
-        val parts = mutableListOf<String>()
-        if (mode == "year") parts.add(String.format(java.util.Locale.US, "%04d", selectedYear))
-        else if (showDate) parts.add(String.format(java.util.Locale.US, "%04d-%02d-%02d", selectedYear, selectedMonth, selectedDay))
-        if (showTime) parts.add(String.format(java.util.Locale.US, "%02d:%02d", selectedHour, selectedMinute))
-        inputValues[fieldId] = parts.joinToString(" ")
+        inputValues[fieldId] = DateWheelModel.answer(mode, c, selectedHour, selectedMinute)
     }
 
     // SPEC — persist the seed once so a restored answer or an authored default

@@ -3850,6 +3850,11 @@ class SharedFixtureTest(
                     val r = m.clamp(ai.appdna.sdk.onboarding.DateWheelModel.Ymd(c.getInt("year"), c.getInt("month"), c.getInt("day")), c.optString("min").takeIf { it.isNotEmpty() }?.let(::ymd), c.optString("max").takeIf { it.isNotEmpty() }?.let(::ymd))
                     String.format(java.util.Locale.US, "%04d-%02d-%02d", r.year, r.month, r.day)
                 }
+                // The wheel keeps the picked parts, so a store reads no clock; the zone matters only to a read of an older instant.
+                "store" -> m.answer(c.getString("mode"), ai.appdna.sdk.onboarding.DateWheelModel.Ymd(c.getInt("year"), c.getInt("month"), c.getInt("day")), c.optInt("hour"), 0)
+                "read" -> m.readAnswer(c.getString("saved"), java.util.TimeZone.getTimeZone(c.getString("zone")))?.let {
+                    String.format(java.util.Locale.US, "%04d-%02d-%02d", it.get(java.util.Calendar.YEAR), it.get(java.util.Calendar.MONTH) + 1, it.get(java.util.Calendar.DAY_OF_MONTH))
+                }
                 else -> unsupported("resolve_date_wheel op")
             }
         }
