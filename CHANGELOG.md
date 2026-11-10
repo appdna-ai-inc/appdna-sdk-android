@@ -8,6 +8,10 @@ the project uses [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- **A stacked option's title can carry links and coloured words.** `label_markdown` on an option draws inline markdown: `[Terms](https://example.com)` is a link in the block's `option_link_color`, `[word](color:EE6885)` colours a word, and `label` stays the stored answer.
+
+### Added
+
 - **A date wheel can ask for a year only.** With `picker_mode` set to `year` the wheel shows only the year column and answers with four digits, for example `1994`.
 
 ### Fixed

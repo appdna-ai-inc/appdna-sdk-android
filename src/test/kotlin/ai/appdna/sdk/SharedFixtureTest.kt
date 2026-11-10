@@ -274,6 +274,7 @@ class SharedFixtureTest(
             "resolve_message_dismiss" -> runResolveMessageDismiss(action, spy)
             "resolve_paywall_image_alt" -> runPaywallImageAlt(action, spy)
             "resolve_onboarding_image_alt" -> runOnboardingImageAlt(action, spy)
+            "resolve_option_label_markdown" -> runOptionLabelMarkdown(action, spy)
             "resolve_container_children" -> runContainerChildren(action, spy)
             "resolve_rating_answer" -> runRatingAnswer(action, spy)
             "resolve_loading_variant" -> runLoadingVariant(action, spy)
@@ -3789,6 +3790,24 @@ class SharedFixtureTest(
             ?: unsupported("google_attribution_backdrop without action.cases")
         spy.state["results"] = ai.appdna.sdk.onboarding.GoogleAttributionFixtureDrivers
             .googleAttributionBackdrop(cases.asList().map { it as Map<String, Any?> })
+    }
+
+    /** A select option's markdown title through the REAL step parser and the run-colour rule. */
+    private fun runOptionLabelMarkdown(action: JSONObject, spy: Spy) {
+        val cases = action.optJSONArray("cases") ?: unsupported("resolve_option_label_markdown without cases")
+        spy.state["results"] = (0 until cases.length()).map { i ->
+            val c = cases.getJSONObject(i)
+            val blockJson = c.optJSONObject("block") ?: unsupported("resolve_option_label_markdown case without block")
+            // jsonToMap keeps nested arrays as JSONArray; the step parser reads a List.
+            val block = jsonToMap(blockJson).toMutableMap<String, Any>().also { it["field_options"] = blockJson.getJSONArray("field_options").asList() }
+            val step = mapOf("id" to "fixture_step", "type" to "custom", "content_blocks" to listOf(block))
+            val option = ai.appdna.sdk.onboarding.OnboardingConfigParser.parseStepForTest(step)
+                ?.config?.content_blocks?.firstOrNull()?.field_options?.firstOrNull()
+                ?: throw AssertionError("[resolve_option_label_markdown] the option was dropped")
+            val markdown = option.label_markdown.orEmpty()
+            val target = markdown.substringAfter("](").substringBefore(")")
+            mapOf("label" to option.label, "label_markdown" to markdown, "color_hex" to (ai.appdna.sdk.onboarding.MarkdownColorRun.hex(target) ?: ""))
+        }
     }
 
     /** `markdown_links` — the links the REAL rich-text parser draws. */

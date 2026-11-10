@@ -933,3 +933,12 @@ internal object MarkdownLinks {
     /** What a token stands for in a word: any text without whitespace (a private-use placeholder). */
     private const val TOKEN = '\uE000'
 }
+
+/** `[word](color:EE6885)`: a coloured run rather than a link. Null when the target is an ordinary link. */
+internal object MarkdownColorRun {
+    private val HEX = Regex("^(?:[0-9a-fA-F]{6}|[0-9a-fA-F]{8})$")
+    fun hex(target: String): String? {
+        if (!target.startsWith("color:", ignoreCase = true)) return null
+        return target.substring(6).takeIf { HEX.matches(it) }
+    }
+}

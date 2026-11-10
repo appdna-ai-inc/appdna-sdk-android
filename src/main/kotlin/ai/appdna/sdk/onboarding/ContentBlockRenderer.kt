@@ -1116,6 +1116,8 @@ data class InputOption(
     /** Leading + trailing labels and per-option text alignment.
      *  leading_text renders AFTER image+icon (field name, not edge position); trailing_text
      *  renders after the title/subtitle column, before the trailing radio. */
+    /** Inline-markdown title for a stacked option; `label` stays the plain answer text. */
+    val label_markdown: String? = null,
     val leading_text: String? = null,
     val trailing_text: String? = null,
     val text_alignment: String? = null,
@@ -5817,14 +5819,15 @@ internal fun parseMarkdownToAnnotatedString(
 ): androidx.compose.ui.text.AnnotatedString {
     val runs = MarkdownInline.draw(markdown, underlineMarkers)
     fun spanStyle(run: MarkdownInline.Run): SpanStyle? {
-        val link = run.url != null
+        val runColor = run.url?.let { MarkdownColorRun.hex(it) }?.let { StyleEngine.parseColor("#$it") }
+        val link = run.url != null && runColor == null
         val decorations = listOfNotNull(
             androidx.compose.ui.text.style.TextDecoration.Underline.takeIf { link || run.underline },
             androidx.compose.ui.text.style.TextDecoration.LineThrough.takeIf { run.strike },
         )
-        if (!link && !run.bold && !run.italic && !run.code && decorations.isEmpty()) return null
+        if (runColor == null && !link && !run.bold && !run.italic && !run.code && decorations.isEmpty()) return null
         return SpanStyle(
-            color = if (link) linkColor else Color.Unspecified,
+            color = runColor ?: if (link) linkColor else Color.Unspecified,
             fontWeight = if (run.bold) FontWeight.Bold else null,
             fontStyle = if (run.italic) FontStyle.Italic else null,
             fontFamily = if (run.code) androidx.compose.ui.text.font.FontFamily.Monospace else null,
@@ -5834,7 +5837,7 @@ internal fun parseMarkdownToAnnotatedString(
     return buildAnnotatedString {
         var i = 0
         while (i < runs.size) {
-            val url = runs[i].url
+            val url = runs[i].url?.takeIf { MarkdownColorRun.hex(it) == null }
             var j = i + 1
             // One annotation per link, however many styles its text is drawn in.
             if (url != null) while (j < runs.size && runs[j].url == url) j++
@@ -7509,11 +7512,11 @@ internal fun DateWheelPickerBlock(
     ) {
         // Month column
         if (showDate) {
+        // "year" answers a single year: the month and day columns are not offered.
+        if (mode != "year") {
         Box(modifier = Modifier.weight(1f)) {
             LazyColumn(
                 state = monthListState,
-        // "year" answers a single year: the month and day columns are not offered.
-        if (mode != "year") {
                 modifier = Modifier.fillMaxSize(),
                 contentPadding = androidx.compose.foundation.layout.PaddingValues(vertical = colPad),
                 horizontalAlignment = Alignment.CenterHorizontally,
@@ -7586,11 +7589,11 @@ internal fun DateWheelPickerBlock(
             }
         }
 
+        } // Close if (mode != "year")
+
         // Year column
         Box(modifier = Modifier.weight(1f)) {
             LazyColumn(
-        } // Close if (mode != "year")
-
                 state = yearListState,
                 modifier = Modifier.fillMaxSize(),
                 contentPadding = androidx.compose.foundation.layout.PaddingValues(vertical = colPad),
@@ -10712,6 +10715,26 @@ private fun FormInputDateBlock(
 }
 
 /** Dropdown/stacked/grid select input with display_style support. */
+/**
+ * An option's markdown title. A tap on a link follows it; a tap anywhere else selects the option, because ClickableText
+ * consumes the touch and the row's own click would otherwise never see it.
+ */
+@Composable
+internal fun OptionMarkdownTitle(markdown: String, modifier: Modifier, style: TextStyle, linkColor: Color, onPlainTap: () -> Unit) {
+    val context = LocalContext.current
+    val annotated = remember(markdown, linkColor) { parseMarkdownToAnnotatedString(markdown, style, linkColor, underlineMarkers = false) }
+    ClickableText(text = annotated, style = style, modifier = modifier, onClick = { offset ->
+        val url = annotated.getStringAnnotations(tag = "URL", start = offset, end = offset).firstOrNull()?.item
+        if (url == null) {
+            onPlainTap()
+        } else {
+            ai.appdna.sdk.core.URLSafety.sanitized(url, context)?.let { uri ->
+                try { context.startActivity(Intent(Intent.ACTION_VIEW, uri)) } catch (_: Exception) { /* no handler */ }
+            }
+        }
+    })
+}
+
 // Selection indicator honoring field_config.radio_fill.
 // Parity with iOS radioIndicator (FormInputBlockViews.swift:935):
 //   "circle"    → Material RadioButton (single); filled check-circle when selected, empty circle when not (multi)
@@ -11529,7 +11552,19 @@ private fun SelectOptionStyle.SelectStackedOptionRow(
                 // Mirrors iOS FormInputBlockViews.swift:601 (VStack .center/.leading).
                 horizontalAlignment = if ((option.text_alignment ?: gTextAlignment) == "center") Alignment.CenterHorizontally else Alignment.Start,
             ) {
-                Text(
+                if (!option.label_markdown.isNullOrEmpty()) {
+                    OptionMarkdownTitle(
+                        markdown = option.label_markdown,
+                        modifier = Modifier.testTag("option.$oi.title"),
+                        style = TextStyle(
+                            fontSize = (option.title_font_size?.toFloat() ?: defaultTitleSize).sp,
+                            color = optTitleColor,
+                            fontFamily = optionFontFamily,
+                        ),
+                        linkColor = (cfg?.get("option_link_color") as? String)?.let { StyleEngine.parseColor(it) } ?: Color(0xFF6366F1),
+                        onPlainTap = { pickOption(option.value) },
+                    )
+                } else Text(
                     text = option.label,
                     modifier = Modifier.testTag("option.$oi.title"),
                     // Fall back to block-level default (not hardcoded 14).

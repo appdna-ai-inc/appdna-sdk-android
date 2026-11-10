@@ -2567,6 +2567,7 @@ internal object OnboardingConfigParser {
                             selected_text_color = fm.str(SURFACE, path, "selected_text_color"),
                             cell_alignment = fm.str(SURFACE, path, "cell_alignment"),
                             // leading/trailing labels + per-option badge (were unparsed).
+                            label_markdown = fm.str(SURFACE, path, "label_markdown"),
                             leading_text = fm.str(SURFACE, path, "leading_text"),
                             trailing_text = fm.str(SURFACE, path, "trailing_text"),
                             text_alignment = fm.str(SURFACE, path, "text_alignment"),

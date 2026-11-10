@@ -384,6 +384,7 @@ object BlockKeyTypes {
             "image_shape" to "string",
             "image_url" to "string",
             "label" to "string",
+            "label_markdown" to "string",
             "leading_text" to "string",
             "selected_bg_color" to "string",
             "selected_border_color" to "string",
