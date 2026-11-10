@@ -7337,7 +7337,8 @@ internal fun DateWheelPickerBlock(
     val years = (minYear..maxYear).toList()
 
     // Simple day/month/year selectors
-    val months = listOf("Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec")
+    val locale = java.util.Locale.getDefault()
+    val months = remember(locale) { java.text.DateFormatSymbols.getInstance(locale).shortMonths.take(12) }
     // SPEC — seed initial selection from a prior saved answer or the authored
     // default_date_value ("today"/"-18y"/ISO) instead of always opening on
     // Jan / 01 / 2000. seedCal is null only when there is neither a saved
@@ -7371,8 +7372,19 @@ internal fun DateWheelPickerBlock(
     var selectedHour by remember { mutableIntStateOf(seedHour) }
     var selectedMinute by remember { mutableIntStateOf(seedMinute) }
 
+    // The authored bounds, whole dates: a year alone let a day past the limit through.
+    val minBound = remember(block.min_date, block.allow_past) {
+        DateWheelModel.bound(parseDateWheelSeed(null, block.min_date), block.allow_past == false)
+    }
+    val maxBound = remember(block.max_date, block.allow_future) {
+        DateWheelModel.bound(parseDateWheelSeed(null, block.max_date), block.allow_future == false)
+    }
+    val dayCount = DateWheelModel.daysInMonth(selectedYear, selectedMonth)
+
     // Emit the combined value honoring the active mode.
     fun emit() {
+        val c = DateWheelModel.clamp(DateWheelModel.Ymd(selectedYear, selectedMonth, selectedDay), minBound, maxBound)
+        selectedYear = c.year; selectedMonth = c.month; selectedDay = c.day
         val parts = mutableListOf<String>()
         if (mode == "year") parts.add(String.format(java.util.Locale.US, "%04d", selectedYear))
         else if (showDate) parts.add(String.format(java.util.Locale.US, "%04d-%02d-%02d", selectedYear, selectedMonth, selectedDay))
@@ -7446,6 +7458,13 @@ internal fun DateWheelPickerBlock(
             selectedYear = years[yearCentered]; emit()
         }
     }
+    // A clamp (a shorter month, a bound) moves the selection, so the drums follow it.
+    LaunchedEffect(selectedYear, selectedMonth, selectedDay, dayCount) {
+        if (!hasUserInteracted || dayListState.isScrollInProgress || monthListState.isScrollInProgress || yearListState.isScrollInProgress) return@LaunchedEffect
+        if (dayCentered != selectedDay - 1) dayListState.animateScrollToItem(selectedDay - 1)
+        if (monthCentered != selectedMonth - 1) monthListState.animateScrollToItem(selectedMonth - 1)
+        years.indexOf(selectedYear).takeIf { it >= 0 && it != yearCentered }?.let { yearListState.animateScrollToItem(it) }
+    }
     LaunchedEffect(hourCentered, hourListState.isScrollInProgress) {
         if (hourListState.isScrollInProgress) hasUserInteracted = true
         else if (hasUserInteracted && showTime && hourCentered in 0..23 && hourCentered != selectedHour) {
@@ -7510,10 +7529,9 @@ internal fun DateWheelPickerBlock(
             .height(wheelHeightDp),
         horizontalArrangement = Arrangement.spacedBy(colSpacing),
     ) {
-        // Month column
+        // The columns in the order this locale writes a date; a year-only wheel has just the one.
         if (showDate) {
-        // "year" answers a single year: the month and day columns are not offered.
-        if (mode != "year") {
+        val monthColumn: @Composable RowScope.() -> Unit = {
         Box(modifier = Modifier.weight(1f)) {
             LazyColumn(
                 state = monthListState,
@@ -7548,8 +7566,8 @@ internal fun DateWheelPickerBlock(
                 }
             }
         }
-
-        // Day column
+        }
+        val dayColumn: @Composable RowScope.() -> Unit = {
         Box(modifier = Modifier.weight(1f)) {
             LazyColumn(
                 state = dayListState,
@@ -7558,7 +7576,7 @@ internal fun DateWheelPickerBlock(
                 horizontalAlignment = Alignment.CenterHorizontally,
                 flingBehavior = rememberSnapFlingBehavior(lazyListState = dayListState),
             ) {
-                items(31) { index ->
+                items(dayCount) { index ->
                     val day = index + 1
                     val isCenter = dayCentered == index
                     Text(
@@ -7588,10 +7606,8 @@ internal fun DateWheelPickerBlock(
                 }
             }
         }
-
-        } // Close if (mode != "year")
-
-        // Year column
+        }
+        val yearColumn: @Composable RowScope.() -> Unit = {
         Box(modifier = Modifier.weight(1f)) {
             LazyColumn(
                 state = yearListState,
@@ -7625,6 +7641,14 @@ internal fun DateWheelPickerBlock(
                         textAlign = TextAlign.Center,
                     )
                 }
+            }
+        }
+        }
+        for (column in if (mode == "year") listOf("year") else DateWheelModel.dateColumns(locale)) {
+            when (column) {
+                "month" -> monthColumn()
+                "day" -> dayColumn()
+                else -> yearColumn()
             }
         }
         } // Close if (showDate)

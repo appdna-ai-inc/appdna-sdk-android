@@ -275,6 +275,7 @@ class SharedFixtureTest(
             "resolve_paywall_image_alt" -> runPaywallImageAlt(action, spy)
             "resolve_onboarding_image_alt" -> runOnboardingImageAlt(action, spy)
             "resolve_option_label_markdown" -> runOptionLabelMarkdown(action, spy)
+            "resolve_date_wheel" -> runDateWheel(action, spy)
             "resolve_container_children" -> runContainerChildren(action, spy)
             "resolve_rating_answer" -> runRatingAnswer(action, spy)
             "resolve_loading_variant" -> runLoadingVariant(action, spy)
@@ -3790,6 +3791,25 @@ class SharedFixtureTest(
             ?: unsupported("google_attribution_backdrop without action.cases")
         spy.state["results"] = ai.appdna.sdk.onboarding.GoogleAttributionFixtureDrivers
             .googleAttributionBackdrop(cases.asList().map { it as Map<String, Any?> })
+    }
+
+    /** The themed wheel's date rules, through the REAL model. */
+    private fun runDateWheel(action: JSONObject, spy: Spy) {
+        val m = ai.appdna.sdk.onboarding.DateWheelModel
+        fun ymd(s: String) = s.split("-").let { ai.appdna.sdk.onboarding.DateWheelModel.Ymd(it[0].toInt(), it[1].toInt(), it[2].toInt()) }
+        val cases = action.optJSONArray("cases") ?: unsupported("resolve_date_wheel without cases")
+        spy.state["results"] = (0 until cases.length()).map { i ->
+            val c = cases.getJSONObject(i)
+            when (c.getString("op")) {
+                "columns" -> m.dateColumns(java.util.Locale.forLanguageTag(c.getString("locale")))
+                "days" -> m.daysInMonth(c.getInt("year"), c.getInt("month"))
+                "clamp" -> {
+                    val r = m.clamp(ai.appdna.sdk.onboarding.DateWheelModel.Ymd(c.getInt("year"), c.getInt("month"), c.getInt("day")), c.optString("min").takeIf { it.isNotEmpty() }?.let(::ymd), c.optString("max").takeIf { it.isNotEmpty() }?.let(::ymd))
+                    String.format(java.util.Locale.US, "%04d-%02d-%02d", r.year, r.month, r.day)
+                }
+                else -> unsupported("resolve_date_wheel op")
+            }
+        }
     }
 
     /** A select option's markdown title through the REAL step parser and the run-colour rule. */

@@ -43,6 +43,23 @@ class DateWheelYearOnlyTest {
         assertEquals("2001", inputs["born"])
     }
 
+    private fun showDate(date: String) {
+        val block = ContentBlock(id = "wheel", type = "date_wheel_picker", field_id = "born", picker_mode = "date", default_date_value = date)
+        compose.setContent { DateWheelPickerBlock(block, inputs) }
+        compose.mainClock.advanceTimeBy(500)
+    }
+
+    @Test fun februaryOffersNoThirtyFirst() {
+        showDate("2023-02-27")
+        compose.onAllNodesWithText("29").assertCountEquals(0)
+        compose.onAllNodesWithText("30").assertCountEquals(0)
+    }
+
+    @Test fun theControlJanuaryHasAThirtyFirst() {
+        showDate("2023-01-29")
+        compose.onAllNodesWithText("31").assertCountEquals(1)
+    }
+
     @Test fun theControlDateModeShowsMonths() {
         show("date")
         compose.onAllNodesWithText("Jun").assertCountEquals(1)
