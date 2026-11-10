@@ -31,12 +31,17 @@ internal fun selectPaywallForPlacement(
     placement: String,
     traits: Map<String, Any>,
 ): PaywallConfig? {
-    // Filter by placement, then sort by audience_rules.priority desc.
+    // Several paywalls may answer one placement. They are tried in a fixed order, the same on every
+    // launch and on both platforms: higher priority, then a paywall with audience conditions before
+    // a catch-all, then lowest `id`.
+    fun ruleSet(pw: PaywallConfig) = ai.appdna.sdk.core.AudienceRuleSet.fromAny(pw.audience_rules)
     val candidates = all
         .filter { it.placement == placement }
-        .sortedByDescending { pw ->
-            ai.appdna.sdk.core.AudienceRuleSet.fromAny(pw.audience_rules)?.priority ?: 0
-        }
+        .sortedWith(
+            compareByDescending<PaywallConfig> { ruleSet(it)?.priority ?: 0 }
+                .thenByDescending { ruleSet(it)?.conditions?.isNotEmpty() == true }
+                .thenBy { it.id },
+        )
 
     // First candidate whose rules evaluate true wins. No rules == match (fallback paywall).
     return candidates.firstOrNull { pw ->
