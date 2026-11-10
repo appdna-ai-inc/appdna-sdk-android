@@ -12,6 +12,8 @@ the project uses [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- **The date wheel follows the locale and the calendar.** Its columns use the device's date order, months show their real length, and the answer is held inside `min_date` and `max_date` as a whole date.
+
 - **A date wheel can ask for a year only.** With `picker_mode` set to `year` the wheel shows only the year column and answers with four digits, for example `1994`.
 
 ### Fixed
