@@ -7367,9 +7367,19 @@ internal fun DateWheelPickerBlock(
             }
         }
     }
-    val seedYear = (seedCal?.get(java.util.Calendar.YEAR) ?: 2000).coerceIn(minYear, maxYear)
-    val seedMonth = seedCal?.let { it.get(java.util.Calendar.MONTH) + 1 } ?: 1
-    val seedDay = seedCal?.get(java.util.Calendar.DAY_OF_MONTH) ?: 1
+    // With nothing to restore and no default the wheel opens on today brought inside the bounds, as iOS does, and stores
+    // nothing until it is moved. It opened on 1 January 2000, which could sit below the minimum.
+    val openOn = remember(seedCal, block.min_date, block.max_date, block.allow_past, block.allow_future) {
+        seedCal?.let { DateWheelModel.Ymd(it.get(java.util.Calendar.YEAR), it.get(java.util.Calendar.MONTH) + 1, it.get(java.util.Calendar.DAY_OF_MONTH)) }
+            ?: DateWheelModel.clamp(
+                DateWheelModel.bound(null, untilToday = true)!!,
+                DateWheelModel.bound(parseDateWheelSeed(null, block.min_date), block.allow_past == false),
+                DateWheelModel.bound(parseDateWheelSeed(null, block.max_date), block.allow_future == false),
+            )
+    }
+    val seedYear = openOn.year.coerceIn(minYear, maxYear)
+    val seedMonth = openOn.month
+    val seedDay = openOn.day
     val seedHour = seedCal?.get(java.util.Calendar.HOUR_OF_DAY) ?: 0
     val seedMinute = seedCal?.get(java.util.Calendar.MINUTE) ?: 0
 
@@ -7378,6 +7388,8 @@ internal fun DateWheelPickerBlock(
     var selectedYear by remember(minYear, maxYear) { mutableIntStateOf(seedYear) }
     var selectedHour by remember { mutableIntStateOf(seedHour) }
     var selectedMinute by remember { mutableIntStateOf(seedMinute) }
+    // Bumped by a clamp, so the drums re-aim at the clamped date even when it is the one they held before the drag.
+    var clamps by remember { mutableIntStateOf(0) }
 
     // The authored bounds, whole dates: a year alone let a day past the limit through.
     val minBound = remember(block.min_date, block.allow_past) {
@@ -7390,7 +7402,9 @@ internal fun DateWheelPickerBlock(
 
     // Emit the combined value honoring the active mode.
     fun emit() {
-        val c = DateWheelModel.clamp(DateWheelModel.Ymd(selectedYear, selectedMonth, selectedDay), minBound, maxBound)
+        val wanted = DateWheelModel.Ymd(selectedYear, selectedMonth, selectedDay)
+        val c = DateWheelModel.clamp(wanted, minBound, maxBound)
+        if (c != wanted) clamps++
         selectedYear = c.year; selectedMonth = c.month; selectedDay = c.day
         inputValues[fieldId] = DateWheelModel.answer(mode, c, selectedHour, selectedMinute)
     }
@@ -7462,7 +7476,7 @@ internal fun DateWheelPickerBlock(
         }
     }
     // A clamp (a shorter month, a bound) moves the selection, so the drums follow it.
-    LaunchedEffect(selectedYear, selectedMonth, selectedDay, dayCount) {
+    LaunchedEffect(selectedYear, selectedMonth, selectedDay, dayCount, clamps) {
         if (!hasUserInteracted || dayListState.isScrollInProgress || monthListState.isScrollInProgress || yearListState.isScrollInProgress) return@LaunchedEffect
         if (dayCentered != selectedDay - 1) dayListState.animateScrollToItem(selectedDay - 1)
         if (monthCentered != selectedMonth - 1) monthListState.animateScrollToItem(selectedMonth - 1)
@@ -7535,7 +7549,7 @@ internal fun DateWheelPickerBlock(
         // The columns in the order this locale writes a date; a year-only wheel has just the one.
         if (showDate) {
         val monthColumn: @Composable RowScope.() -> Unit = {
-        Box(modifier = Modifier.weight(1f)) {
+        Box(modifier = Modifier.weight(1f).testTag("date_wheel.month").semantics { stateDescription = months.getOrElse(monthCentered) { "" } }) {
             LazyColumn(
                 state = monthListState,
                 modifier = Modifier.fillMaxSize(),
@@ -7571,7 +7585,7 @@ internal fun DateWheelPickerBlock(
         }
         }
         val dayColumn: @Composable RowScope.() -> Unit = {
-        Box(modifier = Modifier.weight(1f)) {
+        Box(modifier = Modifier.weight(1f).testTag("date_wheel.day").semantics { stateDescription = (dayCentered + 1).toString() }) {
             LazyColumn(
                 state = dayListState,
                 modifier = Modifier.fillMaxSize(),
@@ -7611,7 +7625,7 @@ internal fun DateWheelPickerBlock(
         }
         }
         val yearColumn: @Composable RowScope.() -> Unit = {
-        Box(modifier = Modifier.weight(1f)) {
+        Box(modifier = Modifier.weight(1f).testTag("date_wheel.year").semantics { stateDescription = years.getOrNull(yearCentered)?.toString().orEmpty() }) {
             LazyColumn(
                 state = yearListState,
                 modifier = Modifier.fillMaxSize(),
