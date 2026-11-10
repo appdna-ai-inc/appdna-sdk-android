@@ -1717,7 +1717,7 @@ object AppDNA {
             Log.warning("No onboarding flow found for placement: $placement")
             return false
         }
-        return presentOnboarding(activity, flowId, listener)
+        return presentOnboarding(activity, flowId, resolveOnboardingListener(listener))
     }
 
     @JvmStatic
