@@ -67,6 +67,7 @@ import androidx.compose.material.icons.filled.RadioButtonUnchecked
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.material.icons.automirrored.filled.StarHalf
 import androidx.compose.ui.platform.LocalView
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
@@ -86,6 +87,9 @@ import kotlinx.coroutines.launch
 // Accessibility string resources (Close / Restore /
 // Purchase). Hosts can override these via their own `strings.xml`.
 import ai.appdna.sdk.R
+
+/** The plan card's selection circle, for tests that check where it sits. */
+internal const val PLAN_SELECTION_CIRCLE_TAG = "paywall.plan.selection_circle"
 
 /**
  * Activity to render paywall UI using Jetpack Compose.
@@ -2661,8 +2665,14 @@ internal fun PaywallSectionView(
                 } else {
                     PaywallTextDefaults.readable(unselectedTileHex)
                 }
+                // Room for the straddling badge, above the card rather than inside it (iOS `PlanCard`'s top padding).
+                val badgeReservedTop = if (plan.badge != null && badgePosition != "inline") {
+                    maxOf(12f, ((section.data?.badge_font_size ?: 11f) + 8f) / 2f + 2f).dp
+                } else 0.dp
+                Box(modifier = modifier.padding(top = badgeReservedTop)) {
                 Card(
-                    modifier = modifier
+                    modifier = Modifier
+                        .fillMaxWidth()
                         .planSelectionAnimation(config.animation?.plan_selection_animation, isSelected)
                         .then(
                             when {
@@ -2687,29 +2697,13 @@ internal fun PaywallSectionView(
                         containerColor = if (isSelected) selectedBg else unselectedBg,
                     ),
                 ) {
-                    Box {
-                        // The selection circle, as on iOS and the vertical stack: at the card's top end, because
-                        // these cards stack their content down the middle and have no row to end.
-                        Icon(
-                            imageVector = if (isSelected) Icons.Filled.CheckCircle else Icons.Filled.RadioButtonUnchecked,
-                            contentDescription = null,
-                            tint = if (isSelected) (selectedTextColor ?: selectedBorderColor) else (unselectedBorder ?: Color.Gray.copy(alpha = 0.5f)),
-                            modifier = Modifier.align(Alignment.TopEnd).padding(8.dp).size(20.dp),
-                        )
-                        // QA-R11 — reserve top space for the straddling
-                        // badge so plan name / price don't sit underneath it.
-                        // Mirrors iOS `PlanCard.swift:237-239` `.padding(.top,
-                        // plan.badge != nil && badgePosition != "inline"
-                        //     ? max(12, ((badgeFontSize ?? 11) + 8) / 2 + 2)
-                        //     : 0)`.
-                        val badgeReservedTop = if (plan.badge != null && badgePosition != "inline") {
-                            maxOf(12f, ((section.data?.badge_font_size ?: 11f) + 8f) / 2f + 2f).dp
-                        } else 0.dp
-                        Column(
-                            modifier = Modifier
-                                .padding(cardPad)
-                                .padding(top = badgeReservedTop),
-                        ) {
+                    // The content and, in its own trailing column, the selection circle: the name wraps
+                    // before it reaches the circle, as on iOS and the vertical stack.
+                    Row(
+                        modifier = Modifier.fillMaxWidth().padding(cardPad),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
                             // PW-9: optional plan icon (top of card; iOS SF
                             // Symbol rendered via IconView). Resolved from
                             // plan.icon when show_plan_icons flag is true.
@@ -3065,14 +3059,17 @@ internal fun PaywallSectionView(
                                 }
                             }
                         }
-                        // QA-R11 — badge straddles the card's top edge
-                        // (half above, half on) instead of sitting inside the
-                        // card content area. Mirrors iOS `PlanCard.swift:217-228`
-                        // `.overlay(alignment: badgeAlignment) { ... .offset(y:
-                        // -(((badgeFontSize ?? 11) + 8) / 2)) }`. The card's
-                        // top padding is also bumped (see `cardPad` adjustment
-                        // below) so the title doesn't sit underneath the
-                        // straddling badge.
+                        Icon(
+                            imageVector = if (isSelected) Icons.Filled.CheckCircle else Icons.Filled.RadioButtonUnchecked,
+                            contentDescription = null,
+                            tint = if (isSelected) (selectedTextColor ?: selectedBorderColor) else (unselectedBorder ?: Color.Gray.copy(alpha = 0.5f)),
+                            modifier = Modifier.padding(start = 12.dp).size(24.dp).testTag(PLAN_SELECTION_CIRCLE_TAG),
+                        )
+                    }
+                }
+                        // The badge straddles the card's top edge, half above and half on it. A sibling of
+                        // the Card, because the Card clips its content to its shape. iOS `PlanCard` overlays
+                        // it and offsets it by half its height, as here.
                         plan.badge?.let { badge ->
                             if (badgePosition != "inline") {
                                 val alignment = when (badgePosition) {
@@ -3094,7 +3091,6 @@ internal fun PaywallSectionView(
                                 }
                             }
                         }
-                    }
                 }
             }
 
@@ -4154,7 +4150,7 @@ internal fun PaywallSectionView(
                                             imageVector = if (isSelected) Icons.Filled.CheckCircle else Icons.Filled.RadioButtonUnchecked,
                                             contentDescription = null,
                                             tint = radioColor,
-                                            modifier = Modifier.padding(start = 12.dp).size(24.dp),
+                                            modifier = Modifier.padding(start = 12.dp).size(24.dp).testTag(PLAN_SELECTION_CIRCLE_TAG),
                                         )
                                     }
                                     }
