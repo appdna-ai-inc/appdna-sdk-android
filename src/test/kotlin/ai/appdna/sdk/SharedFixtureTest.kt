@@ -3857,6 +3857,15 @@ class SharedFixtureTest(
                 "store" -> m.answer(c.getString("mode"), ai.appdna.sdk.onboarding.DateWheelModel.Ymd(c.getInt("year"), c.getInt("month"), c.getInt("day")), c.optInt("hour"), c.optInt("minute"), java.util.TimeZone.getTimeZone(c.getString("zone")))
                 "display" -> ai.appdna.sdk.onboarding.AnswerTime.display(c.getString("text"), java.util.TimeZone.getTimeZone(c.getString("zone")),
                     ai.appdna.sdk.core.IsoInstant.parseEpochMs(c.getString("now")) ?: System.currentTimeMillis())
+                "form_read" -> m.readFormAnswer(c.getString("saved"), c.getString("mode"), java.util.TimeZone.getTimeZone(c.getString("zone")))?.let {
+                    val (y, mo, d) = Triple(it.get(java.util.Calendar.YEAR), it.get(java.util.Calendar.MONTH) + 1, it.get(java.util.Calendar.DAY_OF_MONTH))
+                    val (h, mi) = it.get(java.util.Calendar.HOUR_OF_DAY) to it.get(java.util.Calendar.MINUTE)
+                    when (c.getString("mode")) {
+                        "date" -> String.format(java.util.Locale.US, "%04d-%02d-%02d", y, mo, d)
+                        "time" -> String.format(java.util.Locale.US, "%02d:%02d", h, mi)
+                        else -> String.format(java.util.Locale.US, "%04d-%02d-%02d %02d:%02d", y, mo, d, h, mi)
+                    }
+                }
                 "read_time" -> m.readAnswer(c.getString("saved"), java.util.TimeZone.getTimeZone(c.getString("zone")))?.let {
                     String.format(java.util.Locale.US, "%04d-%02d-%02d %02d:%02d", it.get(java.util.Calendar.YEAR), it.get(java.util.Calendar.MONTH) + 1,
                         it.get(java.util.Calendar.DAY_OF_MONTH), it.get(java.util.Calendar.HOUR_OF_DAY), it.get(java.util.Calendar.MINUTE))

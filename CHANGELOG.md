@@ -20,6 +20,10 @@ the project uses [Semantic Versioning](https://semver.org/).
 
 ### Fixed
 
+- **`input_date`, `input_time` and `input_datetime` store the date wheel's shapes.** A date is `yyyy-MM-dd`; a time or
+  date-and-time is the wall time picked in the app's time zone with its offset, and a saved answer is shown in that zone.
+  They stored a UTC instant, which west of UTC showed a saved date as the day before; those answers still read.
+
 - **Time and date-and-time answers work in the app's time zone.** Set in the console under Settings → Apps (UTC
   unless changed), it is the zone a `time` or `datetime` wheel shows and takes, and answers are stored with its offset,
   as on iOS: `2026-11-10T15:03:00+01:00`, `15:03:00+01:00` (they were phone-local `yyyy-MM-dd HH:mm` / `HH:mm`, still

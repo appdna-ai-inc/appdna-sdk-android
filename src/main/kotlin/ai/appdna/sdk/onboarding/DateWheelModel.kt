@@ -54,6 +54,29 @@ internal object DateWheelModel {
      * the middle of that year (as iOS reads it); or an ISO instant, which iOS stored for a date before it stored the
      * calendar date, read as the local date it was picked on. Null for anything else.
      */
+    /** The calendar date a Material date picker's selection names: the picker returns that day's UTC midnight. */
+    fun pickedYmd(utcMillis: Long): Ymd {
+        val c = java.util.GregorianCalendar(java.util.TimeZone.getTimeZone("UTC"), Locale.US).apply { timeInMillis = utcMillis }
+        return Ymd(c.get(Calendar.YEAR), c.get(Calendar.MONTH) + 1, c.get(Calendar.DAY_OF_MONTH))
+    }
+
+    /** [ymd]'s UTC midnight: what a Material date picker takes as its selection. */
+    fun utcMidnight(ymd: Ymd): Long =
+        java.util.GregorianCalendar(java.util.TimeZone.getTimeZone("UTC"), Locale.US).apply { clear(); set(ymd.year, ymd.month - 1, ymd.day) }.timeInMillis
+
+    private val formDateLegacy = Regex("""^(\d{4}-\d{2}-\d{2})T00:00:00Z$""")
+
+    /**
+     * A stored `input_date` / `input_time` / `input_datetime` answer read back in [zone], as [readAnswer] reads the wheel's.
+     * One older Android shape differs: a date was stored as its UTC midnight (`2000-03-15T00:00:00Z`), which names that
+     * calendar day, not a moment, so in `date` mode it is read as the day.
+     */
+    fun readFormAnswer(saved: String?, mode: String, zone: java.util.TimeZone): Calendar? {
+        val t = saved?.trim()?.takeIf { it.isNotEmpty() } ?: return null
+        if (mode == "date") formDateLegacy.matchEntire(t)?.let { return readSaved(it.groupValues[1], zone) }
+        return readAnswer(t, zone)
+    }
+
     private val offsetSuffix = Regex("""(Z|[+-]\d{2}:?\d{2})$""")
     private val localTime = Regex("""^(\d{2}):(\d{2})$""")
 

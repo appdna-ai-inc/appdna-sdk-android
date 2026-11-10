@@ -10350,7 +10350,7 @@ private fun buildFormDatePickerColors(
 /** Date / Time / DateTime picker input. */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun FormInputDateBlock(
+internal fun FormInputDateBlock(
     block: ContentBlock,
     inputValues: MutableMap<String, Any>,
     mode: String,
@@ -10362,14 +10362,6 @@ private fun FormInputDateBlock(
     // displayText showing "Select date..." as if no answer existed.
     val savedRaw = (inputValues[fieldId] as? String).orEmpty()
 
-    // \u2014 match iOS FormInputBlockViews.swift display formatting.
-    // iOS shows a localised `DateFormatter` short string when the user
-    // reopens the field; Android was leaking the raw ISO8601 wire format.
-    val isoFormatter = remember {
-        java.text.SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss'Z'", java.util.Locale.US).apply {
-            timeZone = java.util.TimeZone.getTimeZone("UTC")
-        }
-    }
     // Derive `<field_id>_age` from picked
     // birth-date in date-only mode. Mirrors iOS FormInputBlockViews.swift
     // :1190-1199 which exposes `inputValues["\(fieldId)_age"]` (whole years
@@ -10388,7 +10380,11 @@ private fun FormInputDateBlock(
     // build an explicit SimpleDateFormat (HH:mm 24h / h:mm a 12h) instead of the
     // locale-default SHORT time; unset keeps the device-locale behaviour.
     val timeFmt = (block.field_config?.get("time_format") as? String)?.lowercase()
-    val displayFormatter = remember(mode, timeFmt) {
+    // A time or date-and-time is picked, stored and shown in the app's zone (UTC unless set in the console); a date is
+    // a calendar date. The same shapes the date wheel stores ([DateWheelModel.answer]), as iOS stores them.
+    val answerMode = block.picker_mode ?: mode
+    val answerZone = if (DateWheelModel.hasTime(answerMode)) AnswerTime.zone else java.util.TimeZone.getDefault()
+    val displayFormatter = remember(mode, timeFmt, answerZone) {
         val timePattern = if (timeFmt == "24h") "HH:mm" else "h:mm a"
         when (mode) {
             "time" ->
@@ -10398,15 +10394,15 @@ private fun FormInputDateBlock(
                 if (timeFmt != null) java.text.SimpleDateFormat("MMM d, yyyy $timePattern", java.util.Locale.US)
                 else java.text.DateFormat.getDateTimeInstance(java.text.DateFormat.MEDIUM, java.text.DateFormat.SHORT, java.util.Locale.getDefault())
             else -> java.text.DateFormat.getDateInstance(java.text.DateFormat.MEDIUM, java.util.Locale.getDefault())
-        }
+        }.apply { timeZone = answerZone }
     }
-    fun formatForDisplay(iso: String): String {
-        if (iso.isEmpty()) return block.field_placeholder ?: "Select $mode..."
-        return try {
-            val parsed = isoFormatter.parse(iso)
-            if (parsed != null) displayFormatter.format(parsed) else iso
-        } catch (_: Exception) { iso }
+    fun formatForDisplay(stored: String): String {
+        if (stored.isEmpty()) return block.field_placeholder ?: "Select $mode..."
+        return DateWheelModel.readFormAnswer(stored, answerMode, answerZone)?.let { displayFormatter.format(it.time) } ?: stored
     }
+    /** The stored answer for a picked day, and for a picked day at [hour]:[minute] in the answer zone. */
+    fun dateAnswer(ymd: DateWheelModel.Ymd) = DateWheelModel.answer("date", ymd, 0, 0)
+    fun timedAnswer(m: String, ymd: DateWheelModel.Ymd, hour: Int, minute: Int) = DateWheelModel.answer(m, ymd, hour, minute, answerZone)
 
     var displayText by remember { mutableStateOf(formatForDisplay(savedRaw)) }
     var showDatePicker by remember { mutableStateOf(false) }
@@ -10473,8 +10469,7 @@ private fun FormInputDateBlock(
     // Drain2 parity — picker_variant="wheel" (presentation unset) renders an inline
     // spinning wheel like iOS (FormInputBlockViews.swift:374) + preview, reusing the
     // standalone date_wheel column wheels, instead of falling back to the compact
-    // tap-to-open button. Note: the wheel emits "yyyy-MM-dd"[+" HH:mm"] (its native
-    // format) rather than the ISO8601 the compact/graphical branches write.
+    // tap-to-open button. Every variant stores the same shapes.
     val inlineWheel = pickerVariant == "wheel" && (effectiveMode == "date" || effectiveMode == "datetime")
 
     // Honor field_style.text_color (compact button text),
@@ -10537,7 +10532,9 @@ private fun FormInputDateBlock(
             DateWheelPickerBlock(block, inputValues, modeOverride = effectiveMode)
         } else if (inlineGraphical) {
             val initialMillis = remember(savedRaw) {
-                if (savedRaw.isEmpty()) null else try { isoFormatter.parse(savedRaw)?.time } catch (_: Exception) { null }
+                DateWheelModel.readFormAnswer(savedRaw, answerMode, answerZone)?.let {
+                    DateWheelModel.utcMidnight(DateWheelModel.Ymd(it.get(java.util.Calendar.YEAR), it.get(java.util.Calendar.MONTH) + 1, it.get(java.util.Calendar.DAY_OF_MONTH)))
+                }
             }
             val datePickerState = rememberDatePickerState(initialSelectedDateMillis = initialMillis)
             ForcedPickerScheme(forcePickerDark) {
@@ -10546,13 +10543,13 @@ private fun FormInputDateBlock(
             LaunchedEffect(datePickerState.selectedDateMillis) {
                 val millis = datePickerState.selectedDateMillis
                 if (millis != null && validateDate(millis)) {
-                    val isoStr = isoFormatter.format(java.util.Date(millis))
+                    val day = dateAnswer(DateWheelModel.pickedYmd(millis))
                     if (effectiveMode == "datetime") {
-                        pendingDate = isoStr
+                        pendingDate = day
                         showTimePicker = true
                     } else {
-                        displayText = formatForDisplay(isoStr)
-                        inputValues[fieldId] = isoStr
+                        displayText = formatForDisplay(day)
+                        inputValues[fieldId] = day
                         persistAgeIfDate(millis)
                     }
                 }
@@ -10641,14 +10638,8 @@ private fun FormInputDateBlock(
         }
     }
 
-    // Match iOS ISO 8601 serialization at
-    // FormInputBlockViews.swift:386-389 (`ISO8601DateFormatter().string(from:)`).
-    // Previous Android impl wrote `"yyyy-MM-dd"` strings, so server-side
-    // consumers + journey triggers + host analytics saw incompatible
-    // payloads from the two SDKs for the same flow. iOS's
-    // ISO8601DateFormatter defaults emit `yyyy-MM-dd'T'HH:mm:ssZ` in UTC.
-    // (formatter hoisted earlier in the function next to displayFormatter
-    // so both inline-graphical and dialog branches reuse the same instance.)
+    // What is stored: `yyyy-MM-dd` for a date, and the wall time in the app's zone with its offset for a time or a
+    // date-and-time, the shapes the date wheel and iOS store. Older answers still read (`readFormAnswer`).
 
     // Material3 DatePickerDialog
     if (showDatePicker) {
@@ -10663,14 +10654,14 @@ private fun FormInputDateBlock(
                     val millis = datePickerState.selectedDateMillis
                     // Gate on validateDate.
                     if (millis != null && validateDate(millis)) {
-                        // ISO8601 normalised to midnight UTC of the picked day.
-                        val isoStr = isoFormatter.format(java.util.Date(millis))
+                        // The picker's selection is the picked day's UTC midnight: the day itself is what is kept.
+                        val day = dateAnswer(DateWheelModel.pickedYmd(millis))
                         if (effectiveMode == "datetime") {
-                            pendingDate = isoStr
+                            pendingDate = day
                             showTimePicker = true
                         } else {
-                            displayText = formatForDisplay(isoStr)
-                            inputValues[fieldId] = isoStr
+                            displayText = formatForDisplay(day)
+                            inputValues[fieldId] = day
                             persistAgeIfDate(millis)
                         }
                     }
@@ -10700,37 +10691,14 @@ private fun FormInputDateBlock(
             confirmButton = {
                 TextButton(onClick = {
                     showTimePicker = false
-                    if (effectiveMode == "datetime" && pendingDate.isNotEmpty()) {
-                        // Combine: parse pendingDate (ISO date), apply hour/minute,
-                        // re-serialise to ISO8601 with the user's chosen time.
-                        try {
-                            val baseDate = isoFormatter.parse(pendingDate)
-                            if (baseDate != null) {
-                                val cal = java.util.Calendar.getInstance(java.util.TimeZone.getTimeZone("UTC"))
-                                cal.time = baseDate
-                                cal.set(java.util.Calendar.HOUR_OF_DAY, timePickerState.hour)
-                                cal.set(java.util.Calendar.MINUTE, timePickerState.minute)
-                                cal.set(java.util.Calendar.SECOND, 0)
-                                val combined = isoFormatter.format(cal.time)
-                                displayText = formatForDisplay(combined)
-                                inputValues[fieldId] = combined
-                            }
-                        } catch (_: Exception) {
-                            // Fallback: keep pendingDate alone if parse fails.
-                            displayText = formatForDisplay(pendingDate)
-                            inputValues[fieldId] = pendingDate
-                        }
-                        pendingDate = ""
-                    } else {
-                        // Time-only mode: ISO8601 with today's date in UTC.
-                        val cal = java.util.Calendar.getInstance(java.util.TimeZone.getTimeZone("UTC"))
-                        cal.set(java.util.Calendar.HOUR_OF_DAY, timePickerState.hour)
-                        cal.set(java.util.Calendar.MINUTE, timePickerState.minute)
-                        cal.set(java.util.Calendar.SECOND, 0)
-                        val timeStr = isoFormatter.format(cal.time)
-                        displayText = formatForDisplay(timeStr)
-                        inputValues[fieldId] = timeStr
-                    }
+                    // The picked wall time in the answer zone: on the picked day for a date-and-time, today there for a time.
+                    val day = (if (effectiveMode == "datetime") Regex("""^\d{4}-\d{2}-\d{2}""").find(pendingDate)?.value?.let { DateWheelModel.readSaved(it, answerZone) } else null)
+                        ?: java.util.Calendar.getInstance(answerZone)
+                    val ymd = DateWheelModel.Ymd(day.get(java.util.Calendar.YEAR), day.get(java.util.Calendar.MONTH) + 1, day.get(java.util.Calendar.DAY_OF_MONTH))
+                    val stored = timedAnswer(if (effectiveMode == "datetime") "datetime" else "time", ymd, timePickerState.hour, timePickerState.minute)
+                    displayText = formatForDisplay(stored)
+                    inputValues[fieldId] = stored
+                    pendingDate = ""
                 }) { Text("OK") }
             },
             dismissButton = {
