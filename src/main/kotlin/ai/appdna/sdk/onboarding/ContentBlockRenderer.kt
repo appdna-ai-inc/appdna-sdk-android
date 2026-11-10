@@ -7231,7 +7231,7 @@ private fun parseDateWheelSeed(saved: String?, default: String?): java.util.Cale
  * For simplicity, renders three side-by-side LazyColumns for day/month/year.
  */
 @Composable
-private fun DateWheelPickerBlock(
+internal fun DateWheelPickerBlock(
     block: ContentBlock,
     inputValues: MutableMap<String, Any>,
     // Drain2 — lets FormInputDateBlock (input_date/input_datetime, picker_variant="wheel")
@@ -7371,7 +7371,8 @@ private fun DateWheelPickerBlock(
     // Emit the combined value honoring the active mode.
     fun emit() {
         val parts = mutableListOf<String>()
-        if (showDate) parts.add(String.format(java.util.Locale.US, "%04d-%02d-%02d", selectedYear, selectedMonth, selectedDay))
+        if (mode == "year") parts.add(String.format(java.util.Locale.US, "%04d", selectedYear))
+        else if (showDate) parts.add(String.format(java.util.Locale.US, "%04d-%02d-%02d", selectedYear, selectedMonth, selectedDay))
         if (showTime) parts.add(String.format(java.util.Locale.US, "%02d:%02d", selectedHour, selectedMinute))
         inputValues[fieldId] = parts.joinToString(" ")
     }
@@ -7511,6 +7512,8 @@ private fun DateWheelPickerBlock(
         Box(modifier = Modifier.weight(1f)) {
             LazyColumn(
                 state = monthListState,
+        // "year" answers a single year: the month and day columns are not offered.
+        if (mode != "year") {
                 modifier = Modifier.fillMaxSize(),
                 contentPadding = androidx.compose.foundation.layout.PaddingValues(vertical = colPad),
                 horizontalAlignment = Alignment.CenterHorizontally,
@@ -7586,6 +7589,8 @@ private fun DateWheelPickerBlock(
         // Year column
         Box(modifier = Modifier.weight(1f)) {
             LazyColumn(
+        } // Close if (mode != "year")
+
                 state = yearListState,
                 modifier = Modifier.fillMaxSize(),
                 contentPadding = androidx.compose.foundation.layout.PaddingValues(vertical = colPad),

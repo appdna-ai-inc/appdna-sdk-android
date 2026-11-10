@@ -6,6 +6,10 @@ the project uses [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Added
+
+- **A date wheel can ask for a year only.** With `picker_mode` set to `year` the wheel shows only the year column and answers with four digits, for example `1994`.
+
 ### Fixed
 
 - **A multi-select option's indicator is round.** With Radio Fill set to Circle or Checkmark, a multi-select draws a filled check-circle when picked and an empty circle when not, as iOS does. It used to draw a square checkbox.
