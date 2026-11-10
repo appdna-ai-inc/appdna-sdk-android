@@ -286,6 +286,7 @@ class SharedFixtureTest(
             // An index read and its item / mega-doc reads, through the REAL RemoteConfigManager sections.
             "apply_config_index" -> runApplyConfigIndex(action, spy)
             "resolve_dropdown_field_ink" -> runDropdownFieldInk(action, spy)
+            "resolve_summary_tile_fit" -> runSummaryTileFit(action, spy)
             "resolve_gallery_title_ink" -> runGalleryTitleInk(action, spy)
             "build_push_token_body" -> runPushTokenBody(action, spy)
             "resolve_block_container_style" -> runBlockContainerStyle(action, spy)
@@ -3112,6 +3113,16 @@ class SharedFixtureTest(
                 }
             }
             mapOf("memory" to held(rcm), "after_restart" to held(manager()))
+        }
+    }
+
+    /** How much a summary tile's value shrinks, through the REAL `SummaryTileFit`. */
+    private fun runSummaryTileFit(action: JSONObject, spy: Spy) {
+        val cases = action.optJSONArray("cases") ?: unsupported("resolve_summary_tile_fit without cases")
+        spy.state["results"] = (0 until cases.length()).map { i ->
+            val c = cases.getJSONObject(i)
+            val scale = ai.appdna.sdk.onboarding.SummaryTileFit.scale(c.getDouble("longest_word_width").toFloat(), c.getDouble("available_width").toFloat())
+            kotlin.math.round(scale.toDouble() * 10_000) / 10_000
         }
     }
 

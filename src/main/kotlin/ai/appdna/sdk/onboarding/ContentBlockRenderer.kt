@@ -3764,6 +3764,10 @@ private fun SummaryScreenBlock(
         "left" -> TextAlign.Start; "right" -> TextAlign.End; else -> TextAlign.Center
     }
     val perRow = if ((block.field_config?.get("stats_layout") as? String) == "vertical") 1 else 2
+    // #1680: the tile's inner width, so a value can shrink until its longest word fits (`SummaryTileFit`).
+    androidx.compose.foundation.layout.BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
+    val tileInnerWidth = (maxWidth - (if (perRow == 2) 12.dp else 0.dp)) / perRow - 32.dp
+    val valueMeasurer = androidx.compose.ui.text.rememberTextMeasurer()
     Column(modifier = Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(12.dp)) {
         if (headline.isNotEmpty()) {
             Text(
@@ -3780,7 +3784,12 @@ private fun SummaryScreenBlock(
         // index inside a ROW is not the index inside the block, so a stat in the second column would
         // derive a key that collides with the first column of the next row.
         stats.withIndex().chunked(perRow).forEach { rowStats ->
-            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            // Tiles in a row share a height (#1680). A tile hosting a control keeps its own: a control may
+            // draw through a SubcomposeLayout, which cannot answer the intrinsic measure this needs.
+            val sameHeight = rowStats.none { (it.value["input"] as? String ?: "none") != "none" }
+            val rowHeight = if (sameHeight) Modifier.height(IntrinsicSize.Min) else Modifier
+            val tileHeight = if (sameHeight) Modifier.fillMaxHeight() else Modifier
+            Row(modifier = Modifier.fillMaxWidth().then(rowHeight), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                 rowStats.forEach { (statIndex, m) ->
                     // Coerce — a numeric stat value (Int/Double) cast `as? String` would blank the card.
                     val value = m["value"]?.toString() ?: ""
@@ -3805,6 +3814,7 @@ private fun SummaryScreenBlock(
                     Column(
                         modifier = Modifier
                             .weight(1f)
+                            .then(tileHeight)
                             .clip(RoundedCornerShape(14.dp))
                             .background(cardBg)
                             .padding(16.dp),
@@ -3829,7 +3839,18 @@ private fun SummaryScreenBlock(
                                 inputValues = inputValues,
                             )
                         } else {
-                            Text(value, fontSize = statValueSize.sp, fontWeight = FontWeight.Bold, color = color)
+                            // A word wider than the tile shrinks the value rather than breaking (#1680).
+                            val availablePx = with(LocalDensity.current) { tileInnerWidth.toPx() }
+                            // Measured in the style the value is drawn in: the theme's letter spacing widens a word.
+                            val drawnStyle = androidx.compose.material3.LocalTextStyle.current
+                                .merge(TextStyle(fontSize = statValueSize.sp, fontWeight = FontWeight.Bold))
+                            val fit = remember(value, drawnStyle, availablePx) {
+                                val style = drawnStyle
+                                val widest = value.split(Regex("\\s+")).filter { it.isNotEmpty() }
+                                    .maxOfOrNull { valueMeasurer.measure(it, style).size.width.toFloat() } ?: 0f
+                                SummaryTileFit.scale(widest, availablePx)
+                            }
+                            Text(value, fontSize = (statValueSize * fit).sp, fontWeight = FontWeight.Bold, color = color)
                             Text(label, fontSize = statLabelSize.sp, color = statLabelColor)
                         }
                     }
@@ -3837,6 +3858,7 @@ private fun SummaryScreenBlock(
                 if (perRow == 2 && rowStats.size == 1) Spacer(modifier = Modifier.weight(1f))
             }
         }
+    }
     }
 }
 
