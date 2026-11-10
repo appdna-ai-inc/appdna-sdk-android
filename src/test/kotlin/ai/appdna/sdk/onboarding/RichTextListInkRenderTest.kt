@@ -9,6 +9,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.toPixelMap
 import androidx.compose.ui.test.captureToImage
+import com.github.takahirom.roborazzi.RoborazziTaskType
+import com.github.takahirom.roborazzi.RoborazziOptions
 import com.github.takahirom.roborazzi.captureRoboImage
 import androidx.compose.ui.test.onRoot
 import androidx.compose.ui.unit.dp
@@ -42,7 +44,7 @@ class RichTextListInkRenderTest {
     private fun nearWhite(b: ContentBlock): Int {
         val path = "build/tmp/rich-text-list-ink/${b.id}-${b.hashCode()}.png"
         java.io.File(path).parentFile?.mkdirs()
-        captureRoboImage(path) {
+        captureRoboImage(path, roborazziOptions = RoborazziOptions(taskType = RoborazziTaskType.Record)) {
             CompositionLocalProvider(LocalGoogleAttributionBackdrop provides GoogleMapsAttribution.Backdrop.Plain("#0F172A")) {
                 Box(Modifier.fillMaxWidth().background(Color(0xFF0F172A)).padding(16.dp)) {
                     ContentBlockRendererView(blocks = listOf(b), onAction = {}, toggleValues = mutableMapOf())

@@ -47,6 +47,15 @@ import org.robolectric.annotation.GraphicsMode
 @Config(sdk = [34], qualifiers = "w411dp-h891dp-xxhdpi")
 class SelectEpic1SnapshotTest {
 
+    /** These captures paint a dark page, and the renderer takes unstyled ink from the step backdrop it is told about. */
+    @androidx.compose.runtime.Composable
+    private fun OnDarkStep(content: @androidx.compose.runtime.Composable () -> Unit) {
+        CompositionLocalProvider(LocalGoogleAttributionBackdrop provides GoogleMapsAttribution.Backdrop.Plain("#0F1117")) {
+            MaterialTheme(content = content)
+        }
+    }
+
+
     @Test
     fun stackedSelect_leadingTrailingBadge() {
         val step = mapOf<String, Any>(
@@ -82,7 +91,7 @@ class SelectEpic1SnapshotTest {
         val blocks = OnboardingConfigParser.parseStepForTest(step)?.config?.content_blocks ?: emptyList()
 
         captureRoboImage("src/test/snapshots/select_epic1.png") {
-            MaterialTheme {
+            OnDarkStep {
                 Column(
                     Modifier
                         .fillMaxWidth()
@@ -122,7 +131,7 @@ class SelectEpic1SnapshotTest {
         val blocks = OnboardingConfigParser.parseStepForTest(step)?.config?.content_blocks ?: emptyList()
 
         captureRoboImage("src/test/snapshots/select_center.png") {
-            MaterialTheme {
+            OnDarkStep {
                 Column(
                     Modifier
                         .fillMaxWidth()
@@ -203,7 +212,7 @@ class SelectEpic1SnapshotTest {
         val blocks = OnboardingConfigParser.parseStepForTest(step)?.config?.content_blocks ?: emptyList()
 
         captureRoboImage("src/test/snapshots/select_selected.png") {
-            MaterialTheme {
+            OnDarkStep {
                 Column(
                     Modifier
                         .fillMaxWidth()
@@ -411,7 +420,7 @@ class SelectEpic1SnapshotTest {
         val blocks = OnboardingConfigParser.parseStepForTest(step)?.config?.content_blocks ?: emptyList()
 
         captureRoboImage("src/test/snapshots/select_glow.png") {
-            MaterialTheme {
+            OnDarkStep {
                 Column(
                     Modifier
                         .fillMaxWidth()
@@ -859,7 +868,7 @@ class SelectEpic1SnapshotTest {
         val blocks = OnboardingConfigParser.parseStepForTest(step)?.config?.content_blocks ?: emptyList()
 
         captureRoboImage("src/test/snapshots/select_grid.png") {
-            MaterialTheme {
+            OnDarkStep {
                 Column(
                     Modifier
                         .fillMaxWidth()
@@ -1208,7 +1217,7 @@ class SelectEpic1SnapshotTest {
         val blocks = OnboardingConfigParser.parseStepForTest(step)?.config?.content_blocks ?: emptyList()
 
         captureRoboImage("src/test/snapshots/warning_banner.png") {
-            MaterialTheme {
+            OnDarkStep {
                 Column(
                     Modifier
                         .fillMaxWidth()

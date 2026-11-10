@@ -12,6 +12,8 @@ import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onAllNodesWithTag
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.unit.dp
+import com.github.takahirom.roborazzi.RoborazziTaskType
+import com.github.takahirom.roborazzi.RoborazziOptions
 import com.github.takahirom.roborazzi.captureRoboImage
 import org.junit.Assert.assertTrue
 import org.junit.Before
@@ -120,7 +122,7 @@ class PlanCardBadgeDrawnWholeTest {
         val config = planConfig(style)
         val path = "build/tmp/plan-card-placement/$style.png"
         File(path).parentFile?.mkdirs()
-        captureRoboImage(path) {
+        captureRoboImage(path, roborazziOptions = RoborazziOptions(taskType = RoborazziTaskType.Record)) {
             Column(Modifier.fillMaxWidth().background(Color.White).padding(16.dp)) {
                 PaywallSectionView(
                     section = config.sections.first { it.type == "plans" },

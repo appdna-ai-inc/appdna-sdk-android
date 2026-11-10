@@ -2,6 +2,8 @@ package ai.appdna.sdk.messages
 
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onRoot
+import com.github.takahirom.roborazzi.RoborazziTaskType
+import com.github.takahirom.roborazzi.RoborazziOptions
 import com.github.takahirom.roborazzi.captureRoboImage
 import org.junit.Assert.assertTrue
 import org.junit.Before
@@ -34,7 +36,7 @@ class SurfaceInkMessageRenderTest {
         compose.waitForIdle()
         val path = "build/tmp/surface-ink/message-$tag.png"
         File(path).parentFile?.mkdirs()
-        compose.onRoot().captureRoboImage(path)
+        compose.onRoot().captureRoboImage(path, roborazziOptions = RoborazziOptions(taskType = RoborazziTaskType.Record))
         val bmp = android.graphics.BitmapFactory.decodeFile(path) ?: error("no frame at $path")
         var n = 0
         for (y in 0 until bmp.height) for (x in 0 until bmp.width) if (match(bmp.getPixel(x, y))) n++

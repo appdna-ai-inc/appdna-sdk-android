@@ -12,6 +12,8 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
+import com.github.takahirom.roborazzi.RoborazziTaskType
+import com.github.takahirom.roborazzi.RoborazziOptions
 import com.github.takahirom.roborazzi.captureRoboImage
 import org.junit.Before
 import org.junit.Assert.assertArrayEquals
@@ -76,7 +78,7 @@ class SocialProofRenderTest {
         val section = config.sections.first { it.type == "social_proof" }
         val path = "build/tmp/social-proof-render/${(data.toString() + page).hashCode()}.png"
         File(path).parentFile?.mkdirs()
-        captureRoboImage(path) {
+        captureRoboImage(path, roborazziOptions = RoborazziOptions(taskType = RoborazziTaskType.Record)) {
             /*
              * 🔴 THE PAGE COLOUR HAS TO BE PROVIDED, or this harness measures itself.
              *

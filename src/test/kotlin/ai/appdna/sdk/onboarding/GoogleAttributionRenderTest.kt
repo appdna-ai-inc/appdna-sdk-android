@@ -27,6 +27,8 @@ import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performTextInput
 import androidx.compose.ui.unit.dp
 import androidx.test.core.app.ApplicationProvider
+import com.github.takahirom.roborazzi.RoborazziTaskType
+import com.github.takahirom.roborazzi.RoborazziOptions
 import com.github.takahirom.roborazzi.captureRoboImage
 import org.json.JSONArray
 import org.json.JSONObject
@@ -772,7 +774,7 @@ class GoogleAttributionRenderTest {
     private fun capture(name: String): android.graphics.Bitmap {
         val path = "build/tmp/google-attribution/${frameSeq++}-$name.png"
         File(path).parentFile?.mkdirs()
-        compose.onRoot().captureRoboImage(path)
+        compose.onRoot().captureRoboImage(path, roborazziOptions = RoborazziOptions(taskType = RoborazziTaskType.Record))
         val f = File(path)
         check(f.exists()) { "no frame was written to $path — every comparison would be about a missing file" }
         return android.graphics.BitmapFactory.decodeFile(path)

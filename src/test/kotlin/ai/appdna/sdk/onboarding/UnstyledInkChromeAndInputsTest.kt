@@ -17,6 +17,8 @@ import androidx.compose.ui.test.performTextInput
 import androidx.compose.ui.test.junit4.createEmptyComposeRule
 import androidx.compose.ui.test.onRoot
 import androidx.test.core.app.ApplicationProvider
+import com.github.takahirom.roborazzi.RoborazziTaskType
+import com.github.takahirom.roborazzi.RoborazziOptions
 import com.github.takahirom.roborazzi.captureRoboImage
 import org.json.JSONObject
 import org.junit.After
@@ -118,7 +120,7 @@ class UnstyledInkChromeAndInputsTest {
         )
         val path = "build/tmp/unstyled-ink-chrome/$name.png"
         File(path).parentFile?.mkdirs()
-        compose.onRoot().captureRoboImage(path)
+        compose.onRoot().captureRoboImage(path, roborazziOptions = RoborazziOptions(taskType = RoborazziTaskType.Record))
         val bitmap = BitmapFactory.decodeFile(path) ?: error("no frame was written to $path")
         c.pause().stop().destroy()
         idle()
@@ -196,7 +198,7 @@ class UnstyledInkChromeAndInputsTest {
         val bounds = compose.onNode(hasText("Skip"), useUnmergedTree = true).fetchSemanticsNode().boundsInRoot
         val path = "build/tmp/unstyled-ink-chrome/$name.png"
         File(path).parentFile?.mkdirs()
-        compose.onRoot().captureRoboImage(path)
+        compose.onRoot().captureRoboImage(path, roborazziOptions = RoborazziOptions(taskType = RoborazziTaskType.Record))
         val bitmap = BitmapFactory.decodeFile(path) ?: error("no frame was written to $path")
         c.pause().stop().destroy()
         idle()

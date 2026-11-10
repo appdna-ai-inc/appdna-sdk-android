@@ -11,6 +11,8 @@ import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
+import com.github.takahirom.roborazzi.RoborazziTaskType
+import com.github.takahirom.roborazzi.RoborazziOptions
 import com.github.takahirom.roborazzi.captureRoboImage
 import org.junit.Assert.assertTrue
 import org.junit.Before
@@ -36,7 +38,7 @@ class SurfaceInkTimelineRenderTest {
     private fun count(b: ContentBlock, bgHex: String, darkTheme: Boolean, tag: String, match: (Int, Int, Int) -> Boolean): Int {
         val path = "build/tmp/surface-ink/$tag.png"
         java.io.File(path).parentFile?.mkdirs()
-        captureRoboImage(path) {
+        captureRoboImage(path, roborazziOptions = RoborazziOptions(taskType = RoborazziTaskType.Record)) {
             MaterialTheme(colorScheme = if (darkTheme) darkColorScheme() else lightColorScheme()) {
                 CompositionLocalProvider(LocalGoogleAttributionBackdrop provides GoogleMapsAttribution.Backdrop.Plain(bgHex)) {
                     Box(Modifier.fillMaxWidth().background(Color(android.graphics.Color.parseColor(bgHex))).padding(16.dp)) {

@@ -10,6 +10,8 @@ import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
+import com.github.takahirom.roborazzi.RoborazziTaskType
+import com.github.takahirom.roborazzi.RoborazziOptions
 import com.github.takahirom.roborazzi.captureRoboImage
 import org.junit.Assert.assertTrue
 import org.junit.Before
@@ -35,7 +37,7 @@ class SegmentedSelectedLabelRenderTest {
     private fun render(b: ContentBlock, tag: String): android.graphics.Bitmap {
         val path = "build/tmp/segment-label-chip/$tag.png"
         java.io.File(path).parentFile?.mkdirs()
-        captureRoboImage(path) {
+        captureRoboImage(path, roborazziOptions = RoborazziOptions(taskType = RoborazziTaskType.Record)) {
             MaterialTheme(colorScheme = lightColorScheme()) {
                 CompositionLocalProvider(LocalGoogleAttributionBackdrop provides GoogleMapsAttribution.Backdrop.Plain("#FFFFFF")) {
                     Box(Modifier.fillMaxWidth().background(Color.White).padding(16.dp)) {

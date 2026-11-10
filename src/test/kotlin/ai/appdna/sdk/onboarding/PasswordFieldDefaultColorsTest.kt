@@ -15,6 +15,8 @@ import androidx.compose.ui.test.junit4.createEmptyComposeRule
 import androidx.compose.ui.test.onRoot
 import androidx.compose.ui.test.performTextInput
 import androidx.test.core.app.ApplicationProvider
+import com.github.takahirom.roborazzi.RoborazziTaskType
+import com.github.takahirom.roborazzi.RoborazziOptions
 import com.github.takahirom.roborazzi.captureRoboImage
 import org.json.JSONObject
 import org.junit.After
@@ -111,7 +113,7 @@ class PasswordFieldDefaultColorsTest {
         val bounds = field.fetchSemanticsNode().boundsInRoot
         val path = "build/tmp/password-default-colors/$name.png"
         File(path).parentFile?.mkdirs()
-        compose.onRoot().captureRoboImage(path)
+        compose.onRoot().captureRoboImage(path, roborazziOptions = RoborazziOptions(taskType = RoborazziTaskType.Record))
         val bitmap = BitmapFactory.decodeFile(path) ?: error("no frame was written to $path")
         // Close this flow so the next case presents a fresh one.
         c.pause().stop().destroy()
