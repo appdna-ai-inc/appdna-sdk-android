@@ -8,6 +8,8 @@ the project uses [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- **Onboarding flows and surveys can be asked for by name.** `presentOnboardingByPlacement(activity, placement)` and `surveys.presentByPlacement(placement)` show the item whose placement matches, set in the console. Several flows can share a name: higher audience priority first, then a targeted flow before a catch-all, then lowest id. `false` when nothing answers the name.
+
 - **A stacked option's title can carry links and coloured words.** `label_markdown` on an option draws inline markdown: `[Terms](https://example.com)` is a link in the block's `option_link_color`, `[word](color:EE6885)` colours a word, and `label` stays the stored answer.
 
 ### Added

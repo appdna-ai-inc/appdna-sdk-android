@@ -102,6 +102,17 @@ internal class SurveyManager(
     /**
      * Present a specific survey by ID, bypassing trigger evaluation.
      */
+    /** Present the survey answering a placement name. False when no survey has that name. */
+    fun presentByPlacement(placement: String): Boolean {
+        val surveyId = ai.appdna.sdk.core.ItemPlacementResolver.pickSurveyId(surveyConfigs, placement)
+        if (surveyId == null) {
+            Log.warning("No survey found for placement: $placement")
+            return false
+        }
+        present(surveyId)
+        return true
+    }
+
     fun present(surveyId: String) {
         val config = surveyConfigs[surveyId]
         if (config == null) {

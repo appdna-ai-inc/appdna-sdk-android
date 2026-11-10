@@ -33,7 +33,9 @@ data class SurveyConfig(
     val questions: ImmutableList<SurveyQuestion>,
     val triggerRules: SurveyTriggerRules,
     val appearance: SurveyAppearance,
-    val followUpActions: SurveyFollowUpActions?
+    val followUpActions: SurveyFollowUpActions?,
+    /** A name an app can ask for this survey by, instead of its id. Several surveys may share one. */
+    val placement: String? = null,
 ) {
     companion object {
         fun fromMap(data: Map<String, Any>): SurveyConfig? {
@@ -57,7 +59,8 @@ data class SurveyConfig(
                     questions = questions,
                     triggerRules = SurveyTriggerRules.fromMap(triggerData),
                     appearance = SurveyAppearance.fromMap(appearanceData),
-                    followUpActions = followUpData?.let { SurveyFollowUpActions.fromMap(it) }
+                    followUpActions = followUpData?.let { SurveyFollowUpActions.fromMap(it) },
+                    placement = data["placement"] as? String,
                 )
             } catch (e: Exception) {
                 null

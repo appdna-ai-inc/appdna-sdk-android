@@ -1694,6 +1694,32 @@ object AppDNA {
     internal fun resolvePaywallListener(explicit: AppDNAPaywallDelegate?): AppDNAPaywallDelegate? =
         explicit ?: paywall.listener
 
+    /**
+     * Present the onboarding flow answering a placement name, for this user. Several flows may share a
+     * name: higher audience priority first, then a targeted flow before a catch-all, then lowest id.
+     *
+     * @return `false` when no flow answers the name, or the SDK is not ready.
+     */
+    @JvmStatic
+    @JvmOverloads
+    fun presentOnboardingByPlacement(
+        activity: Activity,
+        placement: String,
+        listener: AppDNAOnboardingDelegate? = null,
+    ): Boolean {
+        val manager = onboardingFlowManager
+        if (manager == null) {
+            Log.warning("Onboarding placement $placement was NOT looked up: the SDK is still configuring. Wait for onReady and present again.")
+            return false
+        }
+        val flowId = manager.flowIdForPlacement(placement)
+        if (flowId == null) {
+            Log.warning("No onboarding flow found for placement: $placement")
+            return false
+        }
+        return presentOnboarding(activity, flowId, listener)
+    }
+
     @JvmStatic
     @JvmOverloads
     fun presentOnboarding(

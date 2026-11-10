@@ -247,6 +247,7 @@ class SharedFixtureTest(
             "multi_buttons_layout" -> runMultiButtonsLayout(action, spy)
             "compose_map_url" -> runComposeMapUrl(action, spy)
             "compose_cta_plan_name" -> runComposeCtaPlanName(action, spy)
+            "select_item_placement" -> runSelectItemPlacement(action, spy)
             "receive_push" -> runReceivePush(action, spy)
             "tap_push" -> runTapPush(action, spy)
             "dismiss_push" -> runDismissPush(action, spy)
@@ -1680,6 +1681,28 @@ class SharedFixtureTest(
                 plan = if (c.isNull("plan")) null else c.optString("plan"),
                 format = if (c.isNull("format")) null else c.optString("format"),
             )
+        }
+    }
+
+    /** The REAL `ItemPlacementResolver`, over configs from the REAL parsers. */
+    private fun runSelectItemPlacement(action: JSONObject, spy: Spy) {
+        val cases = action.optJSONArray("cases") ?: unsupported("select_item_placement needs action.cases")
+        spy.state["selected"] = (0 until cases.length()).map { i ->
+            val c = cases.getJSONObject(i)
+            val placement = c.getString("placement")
+            val traits = c.optJSONObject("traits")?.let { jsonToMap(it) } ?: emptyMap()
+            val items = c.getJSONArray("items")
+            @Suppress("UNCHECKED_CAST")
+            val maps = (0 until items.length()).map { items.getJSONObject(it).asMap() as Map<String, Any> }
+            if (c.optString("surface") == "survey") {
+                val surveys = maps.associate { m ->
+                    m["id"] as String to ai.appdna.sdk.feedback.SurveyConfig.fromMap(m + mapOf("trigger_rules" to emptyMap<String, Any>(), "appearance" to emptyMap<String, Any>()))!!
+                }
+                ai.appdna.sdk.core.ItemPlacementResolver.pickSurveyId(surveys, placement) ?: "none"
+            } else {
+                val flows = maps.map { m -> ai.appdna.sdk.onboarding.OnboardingConfigParser.parseSingleFlow(m["id"] as String, m)!! }
+                ai.appdna.sdk.core.ItemPlacementResolver.pickFlow(flows, placement, traits)?.id ?: "none"
+            }
         }
     }
 

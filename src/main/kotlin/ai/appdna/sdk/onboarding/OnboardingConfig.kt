@@ -68,6 +68,8 @@ data class OnboardingFlowConfig(
      * by [OnboardingFlowManager] via `AudienceRuleEvaluator`.
      */
     val audience_rules: Any? = null,
+    /** A name an app can ask for this flow by, instead of its id. Several flows may share one. */
+    val placement: String? = null,
 )
 
 /**
@@ -1220,6 +1222,7 @@ internal object OnboardingConfigParser {
             graph_layout = graphLayout,
             graph_nodes = graphNodes,
             audience_rules = map["audience_rules"],
+            placement = map.str(SURFACE, docPath, "placement"),
         )
     }
 

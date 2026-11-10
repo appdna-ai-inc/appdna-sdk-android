@@ -806,6 +806,10 @@ class OnboardingModule internal constructor() {
         return AppDNA.presentOnboarding(activity, flowId, listener)
     }
 
+    /** Present the onboarding flow answering a placement name. False when none does. */
+    fun presentByPlacement(activity: Activity, placement: String): Boolean =
+        AppDNA.presentOnboardingByPlacement(activity, placement, listener)
+
     /** Set a delegate for onboarding events. */
     fun setDelegate(delegate: ai.appdna.sdk.onboarding.AppDNAOnboardingDelegate?) {
         this.listener = delegate
@@ -1047,6 +1051,9 @@ class SurveysModule internal constructor() {
 
     /** Present a specific survey. */
     fun present(surveyId: String) { manager?.present(surveyId) }
+
+    /** Present the survey answering a placement name. False when none does. */
+    fun presentByPlacement(placement: String): Boolean = manager?.presentByPlacement(placement) ?: false
 
     /** Set a delegate for survey lifecycle events. */
     fun setDelegate(delegate: AppDNASurveyDelegate?) {

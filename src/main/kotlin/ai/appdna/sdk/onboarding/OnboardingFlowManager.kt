@@ -251,6 +251,14 @@ internal class OnboardingFlowManager(
      *
      * Mirrors iOS `Onboarding/OnboardingFlowManager.swift:115-145`.
      */
+    /** The flow answering a placement name for this user, or null when none does. */
+    fun flowIdForPlacement(placement: String): String? =
+        ai.appdna.sdk.core.ItemPlacementResolver.pickFlow(
+            remoteConfigManager.getAllOnboardingFlows().values,
+            placement,
+            AppDNA.getUserTraits(),
+        )?.id
+
     private fun resolveFlow(flowId: String?): OnboardingFlowConfig? {
         if (flowId != null) {
             return remoteConfigManager.getOnboardingFlow(flowId)
