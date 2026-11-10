@@ -212,7 +212,11 @@ object TemplateEngine {
      */
     private fun answerText(value: Any, context: TemplateContext, field: String): String? {
         ai.appdna.sdk.onboarding.SelectedOptionStore.drawnAnswer(field, value, context.selected)?.let { return it }
-        if (context.surface != TemplateSurface.OTHER) return stringify(value)
+        // A drawn time or date-and-time answer, in the app's zone; sent or stored, it stays as stored.
+        if (context.surface != TemplateSurface.OTHER) {
+            (value as? String)?.let { s -> ai.appdna.sdk.onboarding.AnswerTime.display(s, ai.appdna.sdk.onboarding.AnswerTime.zone) }?.let { return it }
+            return stringify(value)
+        }
         if (LocationAnswer.carriesPlaceId(value)) return typedText(value)
         return stringify(typedTextForGoogleAnswers(value))
     }

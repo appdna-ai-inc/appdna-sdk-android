@@ -403,6 +403,15 @@ internal object HostDataResolver {
         return SelectedOptionStore.drawnAnswer(path.substringAfterLast('.'), value, drawingRoot(scope))
     }
 
+    /**
+     * A drawn time or date-and-time answer in the app's zone ([AnswerTime.display]); null for anything else. A stored
+     * value or a URL keeps the answer as stored. iOS `answerTimeText`.
+     */
+    private fun answerTimeText(path: String, value: Any?): String? {
+        if (!path.startsWith("responses.") && !path.startsWith("step.")) return null
+        return (value as? String)?.let { AnswerTime.display(it, AnswerTime.zone) }
+    }
+
     /** A drawn single-select answer as its option's label; null for anything else. iOS `pickedLabel`. */
     private fun pickedLabel(path: String, value: Any?, scope: Scope): String? =
         if (value is List<*>) null else SelectedOptionStore.drawnAnswerAt(path, value, drawingRoot(scope))
@@ -704,7 +713,7 @@ internal object HostDataResolver {
             val v = resolveScopePath(t.path, scope, typedText = typed)
             // A whole location answer, where asked, draws its line rather than nothing.
             // What the user picked, where the token is drawn. A stored value or a URL keeps the option's id.
-            val s = (if (typed || url) null else pickedLabel(t.path, v, scope))
+            val s = (if (typed || url) null else pickedLabel(t.path, v, scope) ?: answerTimeText(t.path, v))
                 ?: stringifyTemplateValue(v) ?: multiSelectText(t.path, v, scope)
                 ?: if (wholeLocationAnswer && v is Map<*, *>) LocationAnswer.fieldText(v) else null
             if (s != null && !typed && readsGoogleAnswer(t.path, scope)) res.readGoogle = true

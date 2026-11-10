@@ -51,6 +51,13 @@ object AppDNA {
         internal set
 
     /**
+     * The app's time zone (an IANA id), set in the console's app settings: time and date-and-time answers are picked,
+     * stored and drawn in it. Null until the brand config loads and for an app that has none: UTC is used then.
+     */
+    @Volatile
+    internal var appTimeZoneId: String? = null
+
+    /**
      * Brand-threading — resolved Compose Color for the brand accent,
      * falling back to the #6366F1 brand indigo when no brand is configured/loaded.
      * Replaces hardcoded `Color(0xFF6366F1)` at SDK render-default sites.
@@ -3073,6 +3080,7 @@ object AppDNA {
             // with a stale brand color, attributes its first events to the old screen, and can present
             // a message from a config that is no longer live.
             brandAccentHex = null
+            appTimeZoneId = null
             lastScreenName = null
             activeMessages = emptyMap()
             lastInitError = null

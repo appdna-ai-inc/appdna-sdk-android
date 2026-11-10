@@ -1380,7 +1380,10 @@ class SharedFixtureTest(
             locale = sessionData.optStringOrNull("locale"),
             legacyToken = { path -> TemplateEngine.resolveToken(path, tctx) },
         )
-        val result = ai.appdna.sdk.onboarding.HostDataResolver.resolveRawBlock(raw, ctx)
+        // The app's time zone (the console's app setting, published in the brand doc), restored after.
+        val savedZone = ai.appdna.sdk.AppDNA.appTimeZoneId
+        ai.appdna.sdk.AppDNA.appTimeZoneId = sessionData.optStringOrNull("app_time_zone")
+        val result = try { ai.appdna.sdk.onboarding.HostDataResolver.resolveRawBlock(raw, ctx) } finally { ai.appdna.sdk.AppDNA.appTimeZoneId = savedZone }
         val expectedState = fixtureJson.getJSONObject("expect").optJSONObject("state_after") ?: JSONObject()
         expectedState.optJSONObject("resolved_block")?.let { exp ->
             assertStrictJson("[$fixtureName] resolved_block (log: ${result.log})", exp, result.block, "$")
@@ -3851,7 +3854,13 @@ class SharedFixtureTest(
                     String.format(java.util.Locale.US, "%04d-%02d-%02d", r.year, r.month, r.day)
                 }
                 // The wheel keeps the picked parts, so a store reads no clock; the zone matters only to a read of an older instant.
-                "store" -> m.answer(c.getString("mode"), ai.appdna.sdk.onboarding.DateWheelModel.Ymd(c.getInt("year"), c.getInt("month"), c.getInt("day")), c.optInt("hour"), 0)
+                "store" -> m.answer(c.getString("mode"), ai.appdna.sdk.onboarding.DateWheelModel.Ymd(c.getInt("year"), c.getInt("month"), c.getInt("day")), c.optInt("hour"), c.optInt("minute"), java.util.TimeZone.getTimeZone(c.getString("zone")))
+                "display" -> ai.appdna.sdk.onboarding.AnswerTime.display(c.getString("text"), java.util.TimeZone.getTimeZone(c.getString("zone")),
+                    ai.appdna.sdk.core.IsoInstant.parseEpochMs(c.getString("now")) ?: System.currentTimeMillis())
+                "read_time" -> m.readAnswer(c.getString("saved"), java.util.TimeZone.getTimeZone(c.getString("zone")))?.let {
+                    String.format(java.util.Locale.US, "%04d-%02d-%02d %02d:%02d", it.get(java.util.Calendar.YEAR), it.get(java.util.Calendar.MONTH) + 1,
+                        it.get(java.util.Calendar.DAY_OF_MONTH), it.get(java.util.Calendar.HOUR_OF_DAY), it.get(java.util.Calendar.MINUTE))
+                }
                 "read" -> m.readAnswer(c.getString("saved"), java.util.TimeZone.getTimeZone(c.getString("zone")))?.let {
                     String.format(java.util.Locale.US, "%04d-%02d-%02d", it.get(java.util.Calendar.YEAR), it.get(java.util.Calendar.MONTH) + 1, it.get(java.util.Calendar.DAY_OF_MONTH))
                 }

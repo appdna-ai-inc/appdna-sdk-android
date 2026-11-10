@@ -7213,16 +7213,16 @@ private fun CircularGaugeBlock(block: ContentBlock) {
  * to spin the wheel. Mirrors iOS restoreDate() + parseDate()
  * (ContentBlockStandaloneViews.swift).
  */
-private fun parseDateWheelSeed(saved: String?, default: String?): java.util.Calendar? {
+private fun parseDateWheelSeed(saved: String?, default: String?, zone: java.util.TimeZone = java.util.TimeZone.getDefault()): java.util.Calendar? {
     fun fromIso(s: String?): java.util.Calendar? = DateWheelModel.readSaved(s)
     fun fromDefault(s: String?): java.util.Calendar? {
         val t = s?.trim()?.lowercase()?.takeIf { it.isNotEmpty() } ?: return null
-        if (t == "today" || t == "now") return java.util.Calendar.getInstance()
+        if (t == "today" || t == "now") return java.util.Calendar.getInstance(zone)
         val last = t.last()
         if (last in "dmy") {
             val amt = t.dropLast(1).toIntOrNull()
             if (amt != null) {
-                val c = java.util.Calendar.getInstance()
+                val c = java.util.Calendar.getInstance(zone)
                 when (last) {
                     'd' -> c.add(java.util.Calendar.DAY_OF_YEAR, amt)
                     'm' -> c.add(java.util.Calendar.MONTH, amt)
@@ -7233,7 +7233,7 @@ private fun parseDateWheelSeed(saved: String?, default: String?): java.util.Cale
         }
         return fromIso(s)
     }
-    return DateWheelModel.readAnswer(saved) ?: fromDefault(default)
+    return DateWheelModel.readAnswer(saved, zone) ?: fromDefault(default)
 }
 
 /**
@@ -7282,6 +7282,9 @@ internal fun DateWheelPickerBlock(
     val mode = (modeOverride ?: block.picker_mode ?: "date").lowercase()
     val showTime = mode == "datetime" || mode == "date_time" || mode == "time"
     val showDate = mode != "time"
+    // A time or date-and-time wheel shows and takes the wall time in the app's zone (UTC when the app has none), so the
+    // time a later step shows is the time picked; a date or a year is the phone's calendar date. iOS `wheelZone`.
+    val wheelZone = if (DateWheelModel.hasTime(mode)) AnswerTime.zone else java.util.TimeZone.getDefault()
     // Honor wheel_height (was hardcoded 150dp), wheel_bg_color, date_validation_message,
     // and the block-level `text` label (none were rendered before).
     val wheelHeightDp = (block.wheel_height ?: 200.0).dp
@@ -7352,7 +7355,7 @@ internal fun DateWheelPickerBlock(
     // answer nor an authored default, so required-field validation still
     // forces a spin. Mirrors iOS restoreDate() + default_date_value handling.
     val seedCal = remember(minYear, maxYear) {
-        val raw = parseDateWheelSeed(inputValues[fieldId] as? String, block.default_date_value)
+        val raw = parseDateWheelSeed(inputValues[fieldId] as? String, block.default_date_value, wheelZone)
         // Clamp the whole seeded date into [min_date, max_date] (parity with iOS
         // `min(max(seeded, lower), upper)`), so an authored default before min_date
         // (or after max_date) doesn't open + emit an out-of-range value. min/max
@@ -7406,7 +7409,7 @@ internal fun DateWheelPickerBlock(
         val c = DateWheelModel.clamp(wanted, minBound, maxBound)
         if (c != wanted) clamps++
         selectedYear = c.year; selectedMonth = c.month; selectedDay = c.day
-        inputValues[fieldId] = DateWheelModel.answer(mode, c, selectedHour, selectedMinute)
+        inputValues[fieldId] = DateWheelModel.answer(mode, c, selectedHour, selectedMinute, wheelZone)
     }
 
     // SPEC — persist the seed once so a restored answer or an authored default

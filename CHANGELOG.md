@@ -20,6 +20,11 @@ the project uses [Semantic Versioning](https://semver.org/).
 
 ### Fixed
 
+- **Time and date-and-time answers work in the app's time zone.** Set in the console under Settings → Apps (UTC
+  unless changed), it is the zone a `time` or `datetime` wheel shows and takes, and answers are stored with its offset,
+  as on iOS: `2026-11-10T15:03:00+01:00`, `15:03:00+01:00` (they were phone-local `yyyy-MM-dd HH:mm` / `HH:mm`, still
+  read). A drawn `{{responses…}}` shows them as `2026-11-10 15:03` / `15:03`. A bare date default seeds 00:00, as on iOS.
+
 - **The date wheel's band shows the date it stores.** A month dragged past `min_date` or `max_date` snaps back to the
   clamped date; a wheel with no default and no answer opens on today inside the bounds (it opened on 1 January 2000);
   and a year-only answer is shown again on Back.

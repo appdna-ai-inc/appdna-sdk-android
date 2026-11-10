@@ -512,6 +512,8 @@ internal class RemoteConfigManager(
      * `{ palette: { accent, primary, ... } }`.
      */
     private fun parseBrand(data: Map<String, Any>?) {
+        // The app's time zone rides in the same doc. Read before the palette: an app with no brand saved has no palette.
+        if (data != null) AppDNA.appTimeZoneId = (data["timezone"] as? String)?.takeIf { it.isNotBlank() }
         val palette = data?.get("palette") as? Map<*, *> ?: return
         (palette["accent"] as? String)?.takeIf { it.isNotBlank() }?.let {
             AppDNA.brandAccentHex = it
