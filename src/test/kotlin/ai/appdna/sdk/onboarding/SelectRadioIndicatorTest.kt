@@ -11,7 +11,7 @@ import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
 
 /**
- * #1653 — Radio Fill "Circle" and "Checkmark" draw the round indicator for a multi-select too, which is what iOS draws.
+ * Radio Fill "Circle" and "Checkmark" draw the round indicator for a multi-select too, which is what iOS draws.
  * The composable under test is the one the select block calls. THE CONTROL: the emoji fill draws neither tag, so a pass
  * is not a harness that finds every tag.
  */

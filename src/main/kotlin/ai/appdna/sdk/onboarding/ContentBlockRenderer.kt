@@ -10721,7 +10721,7 @@ internal fun SelectRadioIndicator(
     radioFill: String,
 ) {
     when {
-        // #1653 — both are round for multi-select as well, as on iOS (checkmark.circle.fill). Multi-select used to draw a square Checkbox.
+        // Both are round for multi-select as well, as on iOS (checkmark.circle.fill). Multi-select used to draw a square Checkbox.
         radioFill == "checkmark" || (radioFill == "circle" && isMulti) -> {
             if (isSelected) {
                 Icon(
