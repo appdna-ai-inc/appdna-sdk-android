@@ -103,6 +103,41 @@ internal object SelectedOptionStore {
     /** Where a recorded option keeps its Google keys ([InputOption.googleKeys]): key → typed text. */
     const val GOOGLE_KEYS_KEY = "google_keys"
 
+    /**
+     * The text a picked option draws, or null: no label, a blank one, or a label that is a Google
+     * answer's content, which a token drawing an answer does not credit. iOS `drawnLabel`.
+     */
+    internal fun drawnLabel(record: Any?): String? {
+        if ("label" in googleKeys(record)) return null
+        return HostDataResolver.stringifyTemplateValue((record as? Map<*, *>)?.get("label"))?.takeIf { it.isNotBlank() }
+    }
+
+    /**
+     * A drawn answer as what the user picked (#1677): a select stores the option's id, and the screen
+     * must show its label. [field] is the answer's field id, [answer] the stored value (a single pick,
+     * or a multi pick's list, whose labels are comma-joined). Null when nothing here applies, and the
+     * caller draws the stored value: no record, or a record for a different value (a default, or an
+     * answer written after the pick). A multi pick keeps the stored value of any item with no label.
+     * Never for a value that leaves the screen: an option's `value`, a URL, a hook's headers.
+     */
+    internal fun drawnAnswer(field: String, answer: Any?, selected: Map<String, Any?>): String? {
+        val records = when (val r = selected[field]) { is List<*> -> r; null -> emptyList<Any?>(); else -> listOf(r) }
+        fun labelFor(text: String): String? = records.firstNotNullOfOrNull { r ->
+            val v = HostDataResolver.stringifyTemplateValue((r as? Map<*, *>)?.get("value"))
+            if (v == text) drawnLabel(r) else null
+        }
+        if (answer is List<*>) {
+            if (answer.isEmpty()) return null
+            val texts = answer.map { item -> HostDataResolver.stringifyTemplateValue(item) ?: return null }
+            return texts.joinToString(", ") { labelFor(it) ?: it }
+        }
+        return HostDataResolver.stringifyTemplateValue(answer)?.let(::labelFor)
+    }
+
+    /** [drawnAnswer] for a `responses.` or `step.` path, the only roots that name an answer. */
+    internal fun drawnAnswerAt(path: String, answer: Any?, selected: Map<String, Any?>): String? =
+        if (path.startsWith("responses.") || path.startsWith("step.")) drawnAnswer(path.substringAfterLast('.'), answer, selected) else null
+
     /** The recorded option's keys whose text is a Google answer's content. */
     fun googleKeys(record: Any?): List<String> =
         ((record as? Map<*, *>)?.get(GOOGLE_KEYS_KEY) as? Map<*, *>)?.keys?.mapNotNull { it as? String }?.sorted().orEmpty()

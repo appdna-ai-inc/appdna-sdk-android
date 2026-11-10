@@ -1306,8 +1306,12 @@ class SharedFixtureTest(
                 "other" -> ai.appdna.sdk.core.TemplateSurface.OTHER
                 else -> unsupported("interpolate_template surface '$surface'")
             },
+            // The options the user picked, which a drawn answer shows the label of (#1677).
+            selected = sessionData.optJSONObject("selected")?.let { o -> o.keys().asSequence().associateWith { jsonValueToKotlin(o.get(it)) } } ?: emptyMap(),
         )
-        spy.state["interpolated"] = TemplateEngine.interpolate(action.getString("template"), context)
+        spy.state["interpolated"] = TemplateEngine.interpolate(
+            action.getString("template"), context, action.optStringOrNull("key"), action.optBoolean("is_option", false),
+        )
         action.optStringOrNull("missing_key")?.let {
             spy.state["missing_key_resolved_to"] = TemplateEngine.interpolate(it, context)
         }
@@ -1875,7 +1879,7 @@ class SharedFixtureTest(
                 val respJson = sessionData.optJSONObject("responses") ?: org.json.JSONObject()
                 val stepJson = sessionData.optJSONObject("step_inputs") ?: org.json.JSONObject()
                 val fixtureResponses: Map<String, Any> =
-                    respJson.keys().asSequence().associateWith { respJson.get(it) }
+                    respJson.keys().asSequence().associateWith { k -> respJson.get(k).let { v -> if (v is org.json.JSONArray) jsonValueToKotlin(v) else v } }
                 val fixtureStepInputs: Map<String, Any> =
                     stepJson.keys().asSequence().associateWith { stepJson.get(it) }
                 // The host's `{{hook_data.…}}` payload. This runner hardcoded

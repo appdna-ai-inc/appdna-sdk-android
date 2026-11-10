@@ -219,7 +219,7 @@ internal class HostDataStepPipeline(
         val legacy: (String) -> String? = { path: String -> tctx?.let { TemplateEngine.resolveToken(path, it) } }
         // A stored value (an option's value, a field default, a URL action) leaves the screen, so a
         // Google answer resolves there as it does on every other surface: to its typed text.
-        val storedContext: TemplateContext? by lazy { tctx?.copy(surface = ai.appdna.sdk.core.TemplateSurface.OTHER) }
+        val storedContext: TemplateContext? by lazy { tctx?.copy(surface = ai.appdna.sdk.core.TemplateSurface.OTHER, selected = emptyMap()) }
         val legacyStored: (String) -> String? = { path: String -> storedContext?.let { TemplateEngine.resolveToken(path, it) } }
         // `input.*` / `onboarding.*` read the session store's answers: an option whose text one fills
         // with a Google answer's content records the key, as a `responses` path does.

@@ -397,18 +397,16 @@ internal object HostDataResolver {
      */
     private fun multiSelectText(path: String, value: Any?, scope: Scope): String? {
         if (!path.startsWith("responses.") && !path.startsWith("step.")) return null
-        val items = (value as? List<*>)?.takeIf { it.isNotEmpty() } ?: return null
-        val field = path.substringAfterLast('.')
-        val records = ((scope.roots["selected"] as? Map<*, *>)?.get(field) as? List<*>).orEmpty()
-        val texts = items.map { item ->
-            val text = stringifyTemplateValue(item) ?: return null
-            records.firstNotNullOfOrNull { r ->
-                val o = r as? Map<*, *> ?: return@firstNotNullOfOrNull null
-                if (stringifyTemplateValue(o["value"]) == text) stringifyTemplateValue(o["label"]) else null
-            } ?: text
-        }
-        return texts.joinToString(", ")
+        if (value !is List<*>) return null
+        return SelectedOptionStore.drawnAnswer(path.substringAfterLast('.'), value, selectedRoot(scope))
     }
+
+    /** A drawn single-select answer as its option's label (#1677); null for anything else. iOS `pickedLabel`. */
+    private fun pickedLabel(path: String, value: Any?, scope: Scope): String? =
+        if (value is List<*>) null else SelectedOptionStore.drawnAnswerAt(path, value, selectedRoot(scope))
+
+    @Suppress("UNCHECKED_CAST")
+    private fun selectedRoot(scope: Scope): Map<String, Any?> = scope.roots["selected"] as? Map<String, Any?> ?: emptyMap()
 
     fun stringifyTemplateValue(v: Any?): String? = when (v) {
         is String -> v
@@ -698,7 +696,9 @@ internal object HostDataResolver {
             }
             val v = resolveScopePath(t.path, scope, typedText = typed)
             // A whole location answer, where asked, draws its line rather than nothing.
-            val s = stringifyTemplateValue(v) ?: multiSelectText(t.path, v, scope)
+            // What the user picked, where the token is drawn. A stored value or a URL keeps the option's id.
+            val s = (if (typed || url) null else pickedLabel(t.path, v, scope))
+                ?: stringifyTemplateValue(v) ?: multiSelectText(t.path, v, scope)
                 ?: if (wholeLocationAnswer && v is Map<*, *>) LocationAnswer.fieldText(v) else null
             if (s != null && !typed && readsGoogleAnswer(t.path, scope)) res.readGoogle = true
             if (s != null) {

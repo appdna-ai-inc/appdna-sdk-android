@@ -34,6 +34,11 @@ data class TemplateContext(
     val deviceInfo: Map<String, String>,
     /** Where the template is drawn. A context built by hand defaults to the restrictive surface. */
     val surface: TemplateSurface = TemplateSurface.OTHER,
+    /**
+     * The options the user picked ([SelectedOptionStore]), so a drawn answer shows its label. Empty when
+     * the text leaves the screen (a stored value, a URL, a hook's headers): those keep the option's id.
+     */
+    val selected: Map<String, Any?> = emptyMap(),
 )
 
 /**
@@ -70,6 +75,7 @@ object TemplateEngine {
             sessionData = sessionStore?.sessionData ?: emptyMap(),
             deviceInfo = deviceInfo(),
             surface = surface,
+            selected = ai.appdna.sdk.onboarding.SelectedOptionStore.snapshot(),
         )
     }
 
@@ -87,7 +93,7 @@ object TemplateEngine {
         } else {
             null
         }
-        val typedContext by lazy { context.copy(surface = TemplateSurface.OTHER) }
+        val typedContext by lazy { context.copy(surface = TemplateSurface.OTHER, selected = emptyMap()) }
 
         return regex.replace(value) { match ->
             val varPath = match.groupValues[1].trim()
@@ -140,10 +146,10 @@ object TemplateEngine {
                     val remaining = path.removePrefix("onboarding.")
                     val subParts = remaining.split(".", limit = 2)
                     if (subParts.size < 2) return null
-                    context.onboardingResponses[subParts[0]]?.get(subParts[1])?.let { answerText(it, context) }
+                    context.onboardingResponses[subParts[0]]?.get(subParts[1])?.let { answerText(it, context, subParts[1]) }
                 } else {
                     val step = context.onboardingResponses[parts[1]] ?: return null
-                    step[parts[2]]?.let { return answerText(it, context) }
+                    step[parts[2]]?.let { return answerText(it, context, parts[2]) }
                     // `{{onboarding.<step>.<field>.city}}`: the path is split at most three ways, so a key
                     // inside a structured answer (a location selection) arrives as `field.city`. Walk it.
                     val keys = parts[2].split(".")
@@ -155,7 +161,7 @@ object TemplateEngine {
                         }
                         value = (value as? Map<*, *>)?.get(key)
                     }
-                    value?.let { answerText(it, context) }
+                    value?.let { answerText(it, context, keys.last()) }
                 }
             }
 
@@ -184,7 +190,7 @@ object TemplateEngine {
                 if (parts.size < 2) return null
                 val fieldId = parts[1]
                 for ((_, stepData) in context.onboardingResponses) {
-                    stepData[fieldId]?.let { return answerText(it, context) }
+                    stepData[fieldId]?.let { return answerText(it, context, fieldId) }
                 }
                 null
             }
@@ -201,9 +207,11 @@ object TemplateEngine {
     /**
      * An onboarding answer as template text. Off onboarding, a Google answer (one carrying
      * `place_id`) is its `raw_query`, and a step or list holding one has it replaced the same way
-     * before it is stringified — so the whole-answer token never prints Google content either.
+     * before it is stringified — so the whole-answer token never prints Google content either. A select
+     * answer drawn here shows what the user picked (#1677); [field] is the answer's field id.
      */
-    private fun answerText(value: Any, context: TemplateContext): String? {
+    private fun answerText(value: Any, context: TemplateContext, field: String): String? {
+        ai.appdna.sdk.onboarding.SelectedOptionStore.drawnAnswer(field, value, context.selected)?.let { return it }
         if (context.surface != TemplateSurface.OTHER) return stringify(value)
         if (LocationAnswer.carriesPlaceId(value)) return typedText(value)
         return stringify(typedTextForGoogleAnswers(value))

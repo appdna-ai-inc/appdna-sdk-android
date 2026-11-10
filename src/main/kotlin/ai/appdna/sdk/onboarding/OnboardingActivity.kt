@@ -2508,7 +2508,8 @@ private fun interpolateVariables(value: String): String {
     // Delegate to shared TemplateEngine. The hook's headers go to the customer's server, not to this
     // screen, so nothing here can carry the step's Google credit: a Google answer is its typed text,
     // as on every surface other than an onboarding step's own text.
-    val ctx = ai.appdna.sdk.core.TemplateEngine.buildContext(ai.appdna.sdk.core.TemplateSurface.OTHER)
+    // Nor a picked option's label: the customer's server keeps the id it can join on.
+    val ctx = ai.appdna.sdk.core.TemplateEngine.buildContext(ai.appdna.sdk.core.TemplateSurface.OTHER).copy(selected = emptyMap())
     return ai.appdna.sdk.core.TemplateEngine.interpolate(value, ctx)
 }
 
