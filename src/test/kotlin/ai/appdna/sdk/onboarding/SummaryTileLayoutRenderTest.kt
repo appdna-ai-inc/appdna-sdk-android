@@ -29,7 +29,7 @@ import org.robolectric.annotation.GraphicsMode
 import java.io.File
 
 /**
- * RENDERED, through the real `ContentBlockRendererView` (#1680): a two-column summary tile's value breaks only
+ * RENDERED, through the real `ContentBlockRendererView`: a two-column summary tile's value breaks only
  * on word boundaries, and the tiles in one row share a height. A control: a short value keeps its authored size.
  */
 @RunWith(RobolectricTestRunner::class)

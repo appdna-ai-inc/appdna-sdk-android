@@ -401,7 +401,7 @@ internal object HostDataResolver {
         return SelectedOptionStore.drawnAnswer(path.substringAfterLast('.'), value, selectedRoot(scope))
     }
 
-    /** A drawn single-select answer as its option's label (#1677); null for anything else. iOS `pickedLabel`. */
+    /** A drawn single-select answer as its option's label; null for anything else. iOS `pickedLabel`. */
     private fun pickedLabel(path: String, value: Any?, scope: Scope): String? =
         if (value is List<*>) null else SelectedOptionStore.drawnAnswerAt(path, value, selectedRoot(scope))
 

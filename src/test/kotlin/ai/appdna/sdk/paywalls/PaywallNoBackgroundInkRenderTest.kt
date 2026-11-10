@@ -20,7 +20,7 @@ import org.robolectric.annotation.GraphicsMode
 import java.io.File
 
 /**
- * RENDERED, through the real `PaywallScreen` (#1681): a header whose paywall authored no background is drawn
+ * RENDERED, through the real `PaywallScreen`: a header whose paywall authored no background is drawn
  * in the ink of the page behind it. In a Light theme the page is light, and the title was white on it. THE
  * CONTROLS: the same paywall in a Dark theme draws light ink, and an authored dark page keeps its light ink.
  */

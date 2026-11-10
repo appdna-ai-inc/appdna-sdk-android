@@ -704,7 +704,7 @@ fun PaywallScreen(
     // `dark` overrides from console-designed paywall content based on this.
     @Suppress("UNUSED_PARAMETER") isDark: Boolean = false,
 ) {
-    // A paywall with no authored background paints the system's; every default ink reads THAT page (#1681).
+    // A paywall with no authored background paints the system's; every default ink reads THAT page.
     val systemPage = MaterialTheme.colorScheme.background
     @Suppress("NAME_SHADOWING")
     val config = remember(config, systemPage) {

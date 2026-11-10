@@ -38,12 +38,12 @@ object PaywallHeaderInset {
 internal fun PaywallConfig.pageBackgroundHex(): String? {
     val bg = layout.background ?: return null
     if (bg.type != "color") return null
-    // `{"type":"color"}` with no value paints white, so the ink reads white too (#1681).
+    // `{"type":"color"}` with no value paints white, so the ink reads white too.
     return bg.value?.takeIf { it.isNotBlank() } ?: bg.color?.takeIf { it.isNotBlank() } ?: "#FFFFFF"
 }
 
 /**
- * The config with the page's real colour filled in when the author set no background at all (#1681).
+ * The config with the page's real colour filled in when the author set no background at all.
  *
  * With no type the page paints the theme's background ([PaywallBackground]'s `else`), so [pageBackgroundHex]
  * had nothing to read and every default answered white: a white header on a white page in Light. The default

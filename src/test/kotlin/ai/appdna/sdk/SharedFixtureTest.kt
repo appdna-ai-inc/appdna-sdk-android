@@ -1308,7 +1308,7 @@ class SharedFixtureTest(
                 "other" -> ai.appdna.sdk.core.TemplateSurface.OTHER
                 else -> unsupported("interpolate_template surface '$surface'")
             },
-            // The options the user picked, which a drawn answer shows the label of (#1677).
+            // The options the user picked, which a drawn answer shows the label of.
             selected = sessionData.optJSONObject("selected")?.let { o -> o.keys().asSequence().associateWith { jsonValueToKotlin(o.get(it)) } } ?: emptyMap(),
         )
         spy.state["interpolated"] = TemplateEngine.interpolate(

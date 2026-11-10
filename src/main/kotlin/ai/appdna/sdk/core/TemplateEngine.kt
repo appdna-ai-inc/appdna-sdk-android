@@ -208,7 +208,7 @@ object TemplateEngine {
      * An onboarding answer as template text. Off onboarding, a Google answer (one carrying
      * `place_id`) is its `raw_query`, and a step or list holding one has it replaced the same way
      * before it is stringified — so the whole-answer token never prints Google content either. A select
-     * answer drawn here shows what the user picked (#1677); [field] is the answer's field id.
+     * answer drawn here shows what the user picked; [field] is the answer's field id.
      */
     private fun answerText(value: Any, context: TemplateContext, field: String): String? {
         ai.appdna.sdk.onboarding.SelectedOptionStore.drawnAnswer(field, value, context.selected)?.let { return it }

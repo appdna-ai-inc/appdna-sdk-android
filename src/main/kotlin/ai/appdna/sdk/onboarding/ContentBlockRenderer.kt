@@ -1364,7 +1364,7 @@ internal fun resolveTemplateStringReadingGoogle(
         val resolved = resolveDotPath(
             path, responses, hookData, userTraits, sessionData, stepInputs, typedText = typed,
         )
-        // What the user picked, where the token is drawn (#1677). `allTyped` is about Google credit, not
+        // What the user picked, where the token is drawn. `allTyped` is about Google credit, not
         // about what is drawn, so the position alone decides. A stored value or a link's target keeps the id.
         val placeRule = if (allTyped) HostDataResolver.typedTextRule(text, key, isOption) else rule
         val picked = if (placeRule.covers(matchResult.range.first)) null
@@ -3764,7 +3764,7 @@ private fun SummaryScreenBlock(
         "left" -> TextAlign.Start; "right" -> TextAlign.End; else -> TextAlign.Center
     }
     val perRow = if ((block.field_config?.get("stats_layout") as? String) == "vertical") 1 else 2
-    // #1680: the tile's inner width, so a value can shrink until its longest word fits (`SummaryTileFit`).
+    // The tile's inner width, so a value can shrink until its longest word fits (`SummaryTileFit`).
     androidx.compose.foundation.layout.BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
     val tileInnerWidth = (maxWidth - (if (perRow == 2) 12.dp else 0.dp)) / perRow - 32.dp
     val valueMeasurer = androidx.compose.ui.text.rememberTextMeasurer()
@@ -3784,7 +3784,7 @@ private fun SummaryScreenBlock(
         // index inside a ROW is not the index inside the block, so a stat in the second column would
         // derive a key that collides with the first column of the next row.
         stats.withIndex().chunked(perRow).forEach { rowStats ->
-            // Tiles in a row share a height (#1680). A tile hosting a control keeps its own: a control may
+            // Tiles in a row share a height. A tile hosting a control keeps its own: a control may
             // draw through a SubcomposeLayout, which cannot answer the intrinsic measure this needs.
             val sameHeight = rowStats.none { (it.value["input"] as? String ?: "none") != "none" }
             val rowHeight = if (sameHeight) Modifier.height(IntrinsicSize.Min) else Modifier
@@ -3839,7 +3839,7 @@ private fun SummaryScreenBlock(
                                 inputValues = inputValues,
                             )
                         } else {
-                            // A word wider than the tile shrinks the value rather than breaking (#1680).
+                            // A word wider than the tile shrinks the value rather than breaking.
                             val availablePx = with(LocalDensity.current) { tileInnerWidth.toPx() }
                             // Measured in the style the value is drawn in: the theme's letter spacing widens a word.
                             val drawnStyle = androidx.compose.material3.LocalTextStyle.current
