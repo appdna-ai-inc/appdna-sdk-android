@@ -234,7 +234,7 @@ internal class HostDataStepPipeline(
         val scope = HostDataResolver.Scope(
             mapOf(
                 "responses" to inputs.responses, "hook_data" to inputs.hookData, "step" to inputs.stepInputs,
-                "selected" to inputs.selected, "user" to inputs.user, "session" to inputs.session,
+                "selected" to inputs.selected, "flow_options" to SelectedOptionStore.flowOptions(), "user" to inputs.user, "session" to inputs.session,
             ),
         )
         // "Cost" — memoised per block on the values of every path it references under every root
@@ -278,6 +278,7 @@ internal class HostDataStepPipeline(
                     user = inputs.user,
                     session = inputs.session,
                     selected = inputs.selected,
+                    flowOptions = SelectedOptionStore.flowOptions(),
                     pending = inputs.pending,
                     localizations = stepLocs,
                     locale = inputs.locale,
@@ -328,6 +329,7 @@ internal class HostDataStepPipeline(
             val patchCtx = HostDataContext(
                 stepId = step.id, hookData = inputs.hookData, responses = inputs.responses, step = inputs.stepInputs,
                 user = inputs.user, session = inputs.session, selected = inputs.selected,
+                flowOptions = SelectedOptionStore.flowOptions(),
                 legacyToken = legacy.takeIf { tctx != null },
                 legacyTokenStored = legacyStored.takeIf { tctx != null },
                 legacyReadsGoogle = legacyReadsGoogle.takeIf { tctx != null },

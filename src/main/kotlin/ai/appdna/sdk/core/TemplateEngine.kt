@@ -75,7 +75,7 @@ object TemplateEngine {
             sessionData = sessionStore?.sessionData ?: emptyMap(),
             deviceInfo = deviceInfo(),
             surface = surface,
-            selected = ai.appdna.sdk.onboarding.SelectedOptionStore.snapshot(),
+            selected = ai.appdna.sdk.onboarding.SelectedOptionStore.drawingRecords(),
         )
     }
 

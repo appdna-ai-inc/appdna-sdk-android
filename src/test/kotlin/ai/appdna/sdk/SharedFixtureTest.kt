@@ -1309,7 +1309,10 @@ class SharedFixtureTest(
                 else -> unsupported("interpolate_template surface '$surface'")
             },
             // The options the user picked, which a drawn answer shows the label of.
-            selected = sessionData.optJSONObject("selected")?.let { o -> o.keys().asSequence().associateWith { jsonValueToKotlin(o.get(it)) } } ?: emptyMap(),
+            selected = SelectedOptionStore.drawingRecords(
+                sessionMap("selected") ?: emptyMap(),
+                sessionMap("flow_options") ?: emptyMap(),
+            ),
         )
         spy.state["interpolated"] = TemplateEngine.interpolate(
             action.getString("template"), context, action.optStringOrNull("key"), action.optBoolean("is_option", false),
@@ -1371,6 +1374,7 @@ class SharedFixtureTest(
             user = sessionMap("user"),
             session = sessionMap("session"),
             selected = sessionMap("selected"),
+            flowOptions = sessionMap("flow_options"),
             pending = sessionData.optBoolean("pending", false),
             localizations = sessionLocalizations(),
             locale = sessionData.optStringOrNull("locale"),
@@ -1918,6 +1922,7 @@ class SharedFixtureTest(
                 // resolve. It is a process-lifetime object, so it is reset first: a value left over
                 // from an earlier fixture would make this one pass for the wrong reason.
                 SelectedOptionStore.resetForTesting()
+                sessionMap("flow_options")?.let { SelectedOptionStore.seedFlowOptionsForTesting(it) }
                 val selectedJson = sessionData.optJSONObject("selected")
                 if (selectedJson != null) {
                     for (fieldId in selectedJson.keys()) {
@@ -1926,7 +1931,7 @@ class SharedFixtureTest(
                 }
 
                 if (fixtureResponses.isNotEmpty() || fixtureStepInputs.isNotEmpty() || selectedJson != null ||
-                    fixtureHookData.isNotEmpty()
+                    sessionData.optJSONObject("flow_options") != null || fixtureHookData.isNotEmpty()
                 ) {
                     // Drive the REAL whitelist, not resolveTemplateString directly. Calling the
                     // resolver by hand proves only that it can expand a token; it says nothing about

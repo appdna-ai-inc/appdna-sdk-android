@@ -57,6 +57,8 @@ internal data class HostDataContext(
     val session: Map<String, Any?>? = null,
     /** `SelectedOptionStore` snapshot (`{{selected.<field_id>.label}}`). */
     val selected: Map<String, Any?>? = null,
+    /** The flow's own options by field id, which label an answer with no recorded pick (not a token root). */
+    val flowOptions: Map<String, Any?>? = null,
     /** "Host data pending" — the step's delegate call is still in flight. */
     val pending: Boolean = false,
     val localizations: StepLocalizations? = null,
@@ -398,15 +400,19 @@ internal object HostDataResolver {
     private fun multiSelectText(path: String, value: Any?, scope: Scope): String? {
         if (!path.startsWith("responses.") && !path.startsWith("step.")) return null
         if (value !is List<*>) return null
-        return SelectedOptionStore.drawnAnswer(path.substringAfterLast('.'), value, selectedRoot(scope))
+        return SelectedOptionStore.drawnAnswer(path.substringAfterLast('.'), value, drawingRoot(scope))
     }
 
     /** A drawn single-select answer as its option's label; null for anything else. iOS `pickedLabel`. */
     private fun pickedLabel(path: String, value: Any?, scope: Scope): String? =
-        if (value is List<*>) null else SelectedOptionStore.drawnAnswerAt(path, value, selectedRoot(scope))
+        if (value is List<*>) null else SelectedOptionStore.drawnAnswerAt(path, value, drawingRoot(scope))
 
+    /** The picked records, then the flow's own options. */
     @Suppress("UNCHECKED_CAST")
-    private fun selectedRoot(scope: Scope): Map<String, Any?> = scope.roots["selected"] as? Map<String, Any?> ?: emptyMap()
+    private fun drawingRoot(scope: Scope): Map<String, Any?> = SelectedOptionStore.drawingRecords(
+        scope.roots["selected"] as? Map<String, Any?> ?: emptyMap(),
+        scope.roots["flow_options"] as? Map<String, Any?> ?: emptyMap(),
+    )
 
     fun stringifyTemplateValue(v: Any?): String? = when (v) {
         is String -> v
@@ -498,6 +504,7 @@ internal object HostDataResolver {
             "hook_data" to ctx.hookData,
             "step" to ctx.step,
             "selected" to ctx.selected,
+            "flow_options" to ctx.flowOptions,
             "user" to ctx.user,
             "session" to ctx.session,
         ),

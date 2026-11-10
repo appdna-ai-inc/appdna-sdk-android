@@ -1368,7 +1368,7 @@ internal fun resolveTemplateStringReadingGoogle(
         // about what is drawn, so the position alone decides. A stored value or a link's target keeps the id.
         val placeRule = if (allTyped) HostDataResolver.typedTextRule(text, key, isOption) else rule
         val picked = if (placeRule.covers(matchResult.range.first)) null
-            else SelectedOptionStore.drawnAnswerAt(path, resolved, SelectedOptionStore.snapshot())
+            else SelectedOptionStore.drawnAnswerAt(path, resolved, SelectedOptionStore.drawingRecords())
         // A JSON null (a trait identify kept, a null in hook data) is unresolved, never the text "null". So is an empty pick.
         val shown = picked ?: resolved?.takeIf { it != org.json.JSONObject.NULL && (it as? List<*>)?.isEmpty() != true }?.toString()
         if (shown != null && !typed && googleAnswers != null && GoogleCredit.pathCredits(path, googleAnswers)) readGoogle = true

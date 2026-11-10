@@ -300,6 +300,8 @@ class OnboardingActivity : ComponentActivity() {
             finish()
             return
         }
+        // Before anything draws: an answer already held (a resumed flow, a default) labels from this.
+        SelectedOptionStore.setFlowOptions(flow)
 
         /*
          * WARM THE MAPS RENDERER BEFORE THE STEP THAT NEEDS IT.

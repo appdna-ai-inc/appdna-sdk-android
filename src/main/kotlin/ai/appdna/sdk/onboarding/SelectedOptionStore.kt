@@ -43,6 +43,66 @@ internal object SelectedOptionStore {
     }
 
     /**
+     * The presented flow's own options, by field id, as `{ value, label }` records. An answer with no
+     * recorded pick (a resumed flow, a default, a host patch) still draws its label from these.
+     */
+    private var flowOptionRecords: Map<String, List<Map<String, Any>>> = emptyMap()
+
+    /** Keep this flow's option list. Replaces the previous flow's: only the flow on screen has answers to draw. */
+    @Synchronized
+    fun setFlowOptions(flow: OnboardingFlowConfig) {
+        flowOptionRecords = optionRecords(flow)
+        revision.intValue++
+    }
+
+    /** The flow's option records, for the raw pass (`flow_options`). */
+    @Synchronized
+    fun flowOptions(): Map<String, Any?> = flowOptionRecords
+
+    /** What a drawn answer looks up: each field's picked records, then the flow's own options. */
+    @Synchronized
+    fun drawingRecords(): Map<String, Any?> = drawingRecords(storage, flowOptionRecords)
+
+    /** Picks first, so a recorded pick wins over the flow's list. */
+    internal fun drawingRecords(selected: Map<String, Any?>, flowOptions: Map<String, Any?>): Map<String, Any?> {
+        val out = selected.toMutableMap()
+        for ((field, list) in flowOptions) {
+            val picks: List<Any?> = when (val p = selected[field]) { null -> emptyList(); is List<*> -> p; else -> listOf(p) }
+            out[field] = picks + ((list as? List<*>) ?: emptyList<Any?>())
+        }
+        return out
+    }
+
+    /**
+     * `{ value, label }` for every option a step of this flow authors. A label that is still a template
+     * has nothing to draw until it resolves, so it is left out and the stored value is drawn.
+     */
+    internal fun optionRecords(flow: OnboardingFlowConfig): Map<String, List<Map<String, Any>>> {
+        val out = mutableMapOf<String, MutableList<Map<String, Any>>>()
+        fun add(field: String?, value: String?, label: String?) {
+            if (field.isNullOrEmpty() || value.isNullOrEmpty() || value.contains("{{")) return
+            if (label.isNullOrBlank() || label.contains("{{")) return
+            out.getOrPut(field) { mutableListOf() }.add(mapOf("value" to value, "label" to label))
+        }
+        fun walk(blocks: List<ContentBlock>?) {
+            for (block in blocks.orEmpty()) {
+                if (block.type.startsWith("input_")) {
+                    for (option in block.field_options.orEmpty()) add(block.field_id, option.value ?: option.id, option.label)
+                }
+                walk(block.children)
+                walk(block.stack_children)
+            }
+        }
+        for (step in flow.steps) {
+            walk(step.config.content_blocks)
+            for (field in step.config.fields.orEmpty()) {
+                for (option in field.options.orEmpty()) add(field.id, HostDataResolver.stringifyTemplateValue(option.value) ?: option.id, option.label)
+            }
+        }
+        return out
+    }
+
+    /**
      * Keep only the recorded options whose value is still rendered (a multi-select
      * whose list shrank after host data arrived). Empty → the field is cleared.
      */
@@ -76,6 +136,14 @@ internal object SelectedOptionStore {
     @Synchronized
     fun resetForTesting() {
         storage.clear()
+        flowOptionRecords = emptyMap()
+    }
+
+    /** Test seam: the flow's option list in its stored shape, without building a whole flow. */
+    @Suppress("UNCHECKED_CAST")
+    @Synchronized
+    fun seedFlowOptionsForTesting(records: Map<String, Any?>) {
+        flowOptionRecords = records as Map<String, List<Map<String, Any>>>
     }
 
     /**
@@ -115,9 +183,9 @@ internal object SelectedOptionStore {
     /**
      * A drawn answer as what the user picked: a select stores the option's id, and the screen
      * must show its label. [field] is the answer's field id, [answer] the stored value (a single pick,
-     * or a multi pick's list, whose labels are comma-joined). Null when nothing here applies, and the
-     * caller draws the stored value: no record, or a record for a different value (a default, or an
-     * answer written after the pick). A multi pick keeps the stored value of any item with no label.
+     * or a multi pick's list, whose labels are comma-joined). [selected] is [drawingRecords], so it holds
+     * picks then the flow's own options. Null when nothing here applies, and the caller draws the stored
+     * value: no record for this value anywhere. A multi pick keeps the stored value of any item with no label.
      * Never for a value that leaves the screen: an option's `value`, a URL, a hook's headers.
      */
     internal fun drawnAnswer(field: String, answer: Any?, selected: Map<String, Any?>): String? {
