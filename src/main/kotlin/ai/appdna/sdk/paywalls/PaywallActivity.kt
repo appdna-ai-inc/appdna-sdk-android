@@ -79,6 +79,7 @@ import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.foundation.Canvas
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.geometry.Offset
 import kotlinx.coroutines.launch
@@ -703,6 +704,12 @@ fun PaywallScreen(
     // `dark` overrides from console-designed paywall content based on this.
     @Suppress("UNUSED_PARAMETER") isDark: Boolean = false,
 ) {
+    // A paywall with no authored background paints the system's; every default ink reads THAT page (#1681).
+    val systemPage = MaterialTheme.colorScheme.background
+    @Suppress("NAME_SHADOWING")
+    val config = remember(config, systemPage) {
+        config.withSystemPage(String.format("#%06X", systemPage.toArgb() and 0xFFFFFF))
+    }
     // Out-of-band, because one more PARAMETER on this composable made ART reject it
     // (see LocalPaywallAction).
     val onAction = LocalPaywallAction.current

@@ -38,5 +38,19 @@ object PaywallHeaderInset {
 internal fun PaywallConfig.pageBackgroundHex(): String? {
     val bg = layout.background ?: return null
     if (bg.type != "color") return null
-    return bg.value ?: bg.color
+    // `{"type":"color"}` with no value paints white, so the ink reads white too (#1681).
+    return bg.value?.takeIf { it.isNotBlank() } ?: bg.color?.takeIf { it.isNotBlank() } ?: "#FFFFFF"
+}
+
+/**
+ * The config with the page's real colour filled in when the author set no background at all (#1681).
+ *
+ * With no type the page paints the theme's background ([PaywallBackground]'s `else`), so [pageBackgroundHex]
+ * had nothing to read and every default answered white: a white header on a white page in Light. The default
+ * surface is the system's, as on iOS and in the console preview, so its ink comes from the same place. Only
+ * `layout.background` changes, which only [pageBackgroundHex] reads, so the paint is untouched.
+ */
+internal fun PaywallConfig.withSystemPage(systemHex: String): PaywallConfig {
+    if (background != null || layout.background != null) return this
+    return copy(layout = layout.copy(background = PaywallBackground(type = "color", value = systemHex)))
 }
