@@ -104,11 +104,25 @@ internal class EventTracker(
     val isConsentGranted: Boolean get() = analyticsConsent
 
     /**
+     * Where every tracked event goes for in-app message and survey trigger evaluation
+     * ([TriggerDispatcher.record]). Set by `configure()`; null in tests that do not need it.
+     *
+     * 🔴 This is the ONLY route to a trigger. The SDK's own events (`app_open`, `session_start`, the
+     * onboarding and billing events) are tracked here and never pass through the public
+     * `AppDNA.track`, which is where evaluation used to live — so none of them could show a message.
+     */
+    @Volatile
+    internal var triggerSink: ((String, Map<String, Any>?) -> Unit)? = null
+
+    /**
      * Track an event. If consent is false, the event is silently dropped.
      */
     fun track(event: String, properties: Map<String, Any>? = null, clientSeq: Long? = null) {
         if (!analyticsConsent) {
             Log.debug { "Event '$event' dropped — analytics consent is false" }
+            // Still a trigger: evaluation never depended on consent (a host event was evaluated in
+            // `AppDNA.track` whether or not the tracker then dropped it). An in-app message is not analytics.
+            triggerSink?.invoke(event, properties)
             return
         }
 
@@ -177,6 +191,10 @@ internal class EventTracker(
          * cannot mistake it for one of its own.
          */
         AppDNA.notifyEventTracked(event, properties ?: emptyMap())
+
+        // Last: in-app message and survey trigger evaluation ([TriggerDispatcher]), for this event and
+        // every one the SDK tracks itself.
+        triggerSink?.invoke(event, properties)
     }
 
     /** Build + enqueue the _sdk_events_dropped meta-event directly (NOT via track(),

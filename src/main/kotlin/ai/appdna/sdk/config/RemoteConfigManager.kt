@@ -147,6 +147,22 @@ internal class RemoteConfigManager(
     private val rawOnboardingData = mutableMapOf<String, Map<String, Any>>()
     private val rawMessageData = mutableMapOf<String, Map<String, Any>>()
 
+    /**
+     * True when a config from an earlier launch was read from disk at construction. Trigger evaluation
+     * ([ai.appdna.sdk.events.TriggerDispatcher]) treats that as ready at once. Declared before `init`, which sets it.
+     */
+    @Volatile
+    internal var hadDiskCache: Boolean = false
+        private set
+
+    /**
+     * Called once per fetch in which at least one document reached the server, after its configs are parsed and
+     * handed to the managers. [ai.appdna.sdk.events.TriggerDispatcher.markConfigReady]: the events held at launch
+     * are evaluated against the fetched config.
+     */
+    @Volatile
+    var onFetchSucceeded: (() -> Unit)? = null
+
     init {
         loadCachedConfigs()
     }
@@ -320,6 +336,10 @@ internal class RemoteConfigManager(
         val done = fetchCompletionCounter.incrementAndGet()
         val expected = fetchExpectedTotal.get()
         if (expected > 0 && done >= expected) {
+            if (fetchSuccessCounter.get() > 0) {
+                runCatching { onFetchSucceeded?.invoke() }
+                    .onFailure { Log.warning { "onFetchSucceeded threw: ${it.message}" } }
+            }
             try {
                 // (non-render) — emit `config_fetched` WITHOUT properties, matching iOS
                 // (RemoteConfigManager.swift emits `properties: nil`). Android previously attached
@@ -871,6 +891,8 @@ internal class RemoteConfigManager(
                 null
             }
         }
+        hadDiskCache = listOf("flags", "experiments", "surveys", "paywalls", "onboarding", "messages")
+            .any { storage.getString("cache_$it") != null }
         cached("flags")?.let { flags = it }
         cached("experiments")?.let { try { parseExperiments(it) } catch (_: Exception) {} }
         cached("surveys")?.let { try { parseSurveys(it) } catch (_: Exception) {} }

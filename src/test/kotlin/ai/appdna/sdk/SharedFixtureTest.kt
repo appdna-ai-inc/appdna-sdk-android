@@ -337,6 +337,8 @@ class SharedFixtureTest(
             "resolve_segmented_default" -> runSegmentedDefault(action, spy)
             "resolve_select_default" -> runSelectDefault(action, spy)
             "resolve_survey_answer_events" -> runSurveyAnswerEvents(action, spy)
+            // Every tracked event (SDK and host) → message / survey trigger evaluation, once.
+            "dispatch_triggers" -> runDispatchTriggers(action, spy)
             "resolve_rive_input_kind" -> runRiveInputKind(action, spy)
             "track_events_with_observer" -> runEventObserver(action, spy)
             // WHICH copy of content_blocks the real parser resolves, per step shape.
@@ -2780,6 +2782,63 @@ class SharedFixtureTest(
     }
 
     /** The production gate the survey renderer calls on every answer change and on Next / Submit. */
+    /**
+     * Trigger routing through the REAL [EventTracker.track] and the REAL
+     * [ai.appdna.sdk.events.TriggerDispatcher], wired exactly as `configure()` wires them (the
+     * tracker's `triggerSink` → `record`). `host_track` goes through the public [AppDNA.track] with the
+     * tracker installed, so a host event that is evaluated twice — once in the facade, once in the
+     * tracker — shows up as a duplicate result. The evaluator stands in for the two managers and
+     * records which surface saw which event; a `reactions` entry makes it track an event back through
+     * the same tracker, the way a presentation tracks its `*_shown`.
+     */
+    private fun runDispatchTriggers(action: JSONObject, spy: Spy) {
+        val script = action.optJSONArray("script") ?: unsupported("dispatch_triggers without script")
+        val reactions = action.optJSONObject("reactions") ?: JSONObject()
+        // A tracker with NO event queue: trigger routing never depends on the queue, and a real queue
+        // here would try to upload the ~40 events this driver tracks and hold the single upload claim
+        // (EventUploadCoordinator) that later upload tests in the same JVM need.
+        ClientSeqCounter.init(ctx)
+        DroppedEventsCounter.init(ctx)
+        val tracker = EventTracker(IdentityManager(LocalStorage(ctx)), "1.0", "sandbox")
+        val dispatcher = ai.appdna.sdk.events.TriggerDispatcher()
+        tracker.triggerSink = { e, props -> dispatcher.record(e, props) }
+        val out = mutableListOf<String>()
+        val reacted = mutableSetOf<String>()
+        val evaluator = ai.appdna.sdk.events.TriggerDispatcher.Evaluator { surface, event, _ ->
+            val key = "${surface.wire}:$event"
+            out.add(key)
+            val react = reactions.optStringOrNull(key)
+            if (react != null && reacted.add(key)) tracker.track(react, emptyMap())
+        }
+        AppDNA.installEventTrackerForTest(tracker)
+        try {
+            for (i in 0 until script.length()) {
+                val op = script.getJSONObject(i)
+                when (op.getString("op")) {
+                    "track" -> {
+                        val raw = op.optJSONObject("properties") ?: JSONObject()
+                        val map = raw.asMap().filterValues { it != null }.mapValues { it.value!! }
+                        tracker.track(op.getString("event"), map)
+                    }
+                    "track_many" -> {
+                        val prefix = op.getString("prefix")
+                        for (n in 1..op.getInt("count")) tracker.track("$prefix$n", emptyMap())
+                    }
+                    "host_track" -> AppDNA.track(op.getString("event"), emptyMap())
+                    "attach" -> dispatcher.attach(evaluator)
+                    "config_ready" -> dispatcher.markConfigReady()
+                    "set_consent" -> tracker.setConsent(op.getBoolean("analytics"))
+                    "expect_held" -> out.add("held=" + dispatcher.heldEventNames.joinToString(","))
+                    else -> unsupported("dispatch_triggers op ${op.getString("op")}")
+                }
+            }
+        } finally {
+            AppDNA.installEventTrackerForTest(null)
+        }
+        spy.state["results"] = out
+        spy.state["dropped_while_held"] = dispatcher.droppedWhileHeld
+    }
+
     private fun runSurveyAnswerEvents(action: JSONObject, spy: Spy) {
         val script = action.optJSONArray("script") ?: unsupported("survey_answer_events without script")
         val gate = ai.appdna.sdk.feedback.SurveyAnswerEvents()

@@ -554,6 +554,9 @@ object AppDNA {
     private var onboardingFlowManager: OnboardingFlowManager? = null
     private var surveyManager: SurveyManager? = null
     private var webEntitlementManager: WebEntitlementManager? = null
+    /** Every tracked event's route to in-app message and survey triggers. Built with the tracker. */
+    @Volatile
+    private var triggerDispatcher: ai.appdna.sdk.events.TriggerDispatcher? = null
     // SessionManager + MessageManager wired in configure().
     // Snapshot of the active message catalog kept alongside the manager so the
     // configProvider lambda has a stable read path when triggers evaluate.
@@ -825,6 +828,12 @@ object AppDNA {
             // test-key traffic to the sandbox dataset.
             val envTag = environment.name.lowercase()
             val tracker = EventTracker(identityMgr, appVersion, envTag)
+            // Trigger routing exists from the tracker's first event (the pre-init drain and the session
+            // start are tracked before the message and survey managers exist): those events are held by
+            // the dispatcher and evaluated once the managers attach (below) and the config is ready.
+            val triggers = ai.appdna.sdk.events.TriggerDispatcher()
+            this.triggerDispatcher = triggers
+            tracker.triggerSink = { e, props -> triggers.record(e, props) }
             // Resolve consent from the PERSISTED decision before
             // anything can be tracked — including the pre-init buffer drain and `sdk_initialized`.
             // A denied user used to be silently re-opted-in on every cold start.
@@ -1055,6 +1064,21 @@ object AppDNA {
             // between the two either sees this manager or is read by `applyTo` (both synchronized on the
             // module). Applied before publishing, a delegate set in that window reached neither.
             this.messageManager?.let { inAppMessages.applyTo(it) }
+
+            // Trigger evaluation, message then survey (iOS order). The managers exist now; the config is
+            // ready at once when an earlier launch's config is cached on disk, else when the first fetch
+            // reaches the server. Until both, the events tracked so far (the session start, the
+            // cold-launch `app_open`, the pre-init drain) are held, in order.
+            triggers.attach { surface, e, props ->
+                when (surface) {
+                    ai.appdna.sdk.events.TriggerDispatcher.Surface.MESSAGE ->
+                        messageManager?.onEvent(e, props ?: emptyMap())
+                    ai.appdna.sdk.events.TriggerDispatcher.Surface.SURVEY ->
+                        surveyManager?.onEvent(e, props)
+                }
+            }
+            remoteCfg.onFetchSucceeded = { triggers.markConfigReady() }
+            if (remoteCfg.hadDiskCache) triggers.markConfigReady()
 
             // NavigationInterceptor — observes Activity resume to
             // fire registered hooks. Compose-only screens use AppDNA.notifyScreenAppeared(...).
@@ -1461,13 +1485,10 @@ object AppDNA {
                 }
             }
         }
+        // Trigger evaluation (in-app messages, then surveys) happens inside the tracker, which hands every
+        // event — this one and every one the SDK tracks itself — to the `TriggerDispatcher`. Evaluating here
+        // as well would evaluate a host event twice.
         tracker!!.track(event, properties)
-        // Message-then-survey order matches iOS
-        // AppDNA.swift:265-267. The first surface to call show() wins via the
-        // global isPresenting guard, so reverse-order Android was producing
-        // a different surface than iOS for events that triggered both.
-        messageManager?.onEvent(event, properties ?: emptyMap())
-        surveyManager?.onEvent(event, properties)
     }
 
     /**
@@ -2777,6 +2798,9 @@ object AppDNA {
             val map = jsonObjectToMap(config)
             remoteConfigManager?.loadBundledConfig(map)
             Log.info("Loaded bundled config (version $bundleVersion)")
+            // A bundled config is a config the SDK serves: held trigger events are evaluated against it now
+            // rather than waiting for a fetch an offline first launch may never make.
+            triggerDispatcher?.markConfigReady()
         } catch (_: Exception) {
             Log.debug("No bundled config found at appdna-config.json — using remote/cached only")
         }
@@ -3126,7 +3150,10 @@ object AppDNA {
             // ARC (`shared.eventTracker = nil` etc. at AppDNA.swift:1126).
             lastShutdownEventQueueForTest = eventQueue
             eventQueue = null
+            eventTracker?.triggerSink = null
             eventTracker = null
+            triggerDispatcher?.detach()
+            triggerDispatcher = null
             eventDatabase = null
             connectivityMonitor = null
             apiClient = null

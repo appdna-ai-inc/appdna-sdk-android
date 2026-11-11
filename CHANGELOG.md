@@ -6,6 +6,10 @@ the project uses [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Fixed
+
+- **In-app messages and surveys trigger on the SDK's own events.** A message or survey whose trigger is an event the SDK tracks itself (`app_open`, which is the console's default message trigger, `session_start`, `onboarding_flow_completed`, the purchase events, and the others on the auto-tracked events page) never appeared: only events passed to `track()` were checked against triggers. Every tracked event is now checked once, message first. Events tracked before the SDK has its config, such as `app_open` on a cold launch, are held (up to 32) and checked once the config is ready; a config cached from an earlier launch, or bundled in the app, is used at once. A message never triggers on the `in_app_message_*` events and a survey never triggers on the `survey_*` events, so showing one cannot show another of the same kind.
+
 ### Added
 
 - **Foldables, tablets and wide windows.** Onboarding steps, paywalls, full-screen messages and surveys lay out in a centred column at most 560dp wide, with the background still filling the window; nothing changes at 560dp or narrower. On a window that is wider than tall, at least 720dp wide and 600dp or more in width class, an onboarding step that opens with a visual shows it in a leading pane beside the rest of the step, a paywall shows its pitch beside its plans and call to action, and a full-screen message shows its hero beside its copy (a container at most 1040dp wide; on a foldable in book posture the panes meet on the hinge, read through Jetpack WindowManager). Modals and banners are at most 560dp wide; surveys stay one column.
