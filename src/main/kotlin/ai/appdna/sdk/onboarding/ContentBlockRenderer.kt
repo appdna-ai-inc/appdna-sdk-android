@@ -137,6 +137,7 @@ import androidx.compose.foundation.interaction.collectIsFocusedAsState
 import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.requiredHeight
 import androidx.compose.ui.draw.clipToBounds
+import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.foundation.gestures.detectDragGestures
@@ -7543,10 +7544,28 @@ internal fun DateWheelPickerBlock(
                     } else Modifier
                 ),
         )
+    // Rows are clipped to the wheel while they move, and fade out over the last row at the top and bottom, as the
+    // system wheel's rows do (iOS `WheelWindowView`), so a row never slides past the wheel's edge as a hard-cut line.
+    // The band sits outside this Row, so the fade never touches it.
+    val fadeEdge = (40f / wheelHeightDp.value.coerceAtLeast(1f)).coerceAtMost(0.5f)
+    val rowFade = androidx.compose.ui.graphics.Brush.verticalGradient(
+        0f to Color.Black.copy(alpha = 0f),
+        fadeEdge / 2f to Color.Black.copy(alpha = 0.55f),
+        fadeEdge to Color.Black,
+        1f - fadeEdge to Color.Black,
+        1f - fadeEdge / 2f to Color.Black.copy(alpha = 0.55f),
+        1f to Color.Black.copy(alpha = 0f),
+    )
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .height(wheelHeightDp),
+            .height(wheelHeightDp)
+            .clipToBounds()
+            .graphicsLayer { compositingStrategy = androidx.compose.ui.graphics.CompositingStrategy.Offscreen }
+            .drawWithContent {
+                drawContent()
+                drawRect(brush = rowFade, blendMode = androidx.compose.ui.graphics.BlendMode.DstIn)
+            },
         horizontalArrangement = Arrangement.spacedBy(colSpacing),
     ) {
         // The columns in the order this locale writes a date; a year-only wheel has just the one.
