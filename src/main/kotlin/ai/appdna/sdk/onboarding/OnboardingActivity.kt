@@ -1448,21 +1448,25 @@ internal fun OnboardingFlowHost(
     // background luminance, white system icons are invisible on a light
     // onboarding background and vice versa. iOS handles this automatically
     // via `preferredStatusBarStyle` inheritance from the parent VC.
+    // The background the step actually DRAWS (its own, else the flow's, which the parser copies onto it), not the phone
+    // theme's: a dark flow on a Light phone took dark icons, and a light flow on a Dark phone light ones. Only a step with
+    // no colour of its own falls back to the theme. Same rule the step's ink follows (`UnstyledInk`).
+    val statusBarBackdrop = currentStep?.let { GoogleMapsAttribution.backdrop(ofStep = it.config, type = it.type) }
+        ?: GoogleMapsAttribution.Backdrop.Plain(null)
+    val darkIconsOnBars = systemBarsUseDarkIcons(statusBarBackdrop, googleAttributionThemeIsDark())
+    // The theme's background, for the top scrim below (a step with no colour of its own).
     val bgColorForStatusBar = MaterialTheme.colorScheme.background
     val view = androidx.compose.ui.platform.LocalView.current
     androidx.compose.runtime.SideEffect {
         val window = (view.context as? android.app.Activity)?.window
         if (window != null) {
-            val luminance = 0.2126 * bgColorForStatusBar.red +
-                0.7152 * bgColorForStatusBar.green +
-                0.0722 * bgColorForStatusBar.blue
             val controller = androidx.core.view.WindowInsetsControllerCompat(window, view)
-            controller.isAppearanceLightStatusBars = luminance > 0.5
+            controller.isAppearanceLightStatusBars = darkIconsOnBars
             // Also adapt the bottom nav-bar icon tint.
             // Same edge-to-edge problem as the status bar: without this, the
             // host app's nav-bar tint persists into onboarding and 3-button
             // nav icons are invisible against the onboarding background.
-            controller.isAppearanceLightNavigationBars = luminance > 0.5
+            controller.isAppearanceLightNavigationBars = darkIconsOnBars
         }
     }
 
@@ -5112,3 +5116,10 @@ private fun warmGoogleMapsRenderer(context: android.content.Context) {
             .onFailure { ai.appdna.sdk.Log.debug { "Maps renderer warm-up skipped: ${it.message}" } }
     }, "appdna-maps-warmup").apply { isDaemon = true }.start()
 }
+
+/**
+ * Whether the system bars take DARK icons (`isAppearanceLightStatusBars`) over [behind], the background a step draws: dark
+ * icons on a light background, light icons on a dark or busy one. A step with no colour of its own reads the theme.
+ */
+internal fun systemBarsUseDarkIcons(behind: GoogleMapsAttribution.Backdrop, themeIsDark: Boolean): Boolean =
+    !GoogleMapsAttribution.needsLightInk(behind, themeIsDark)
