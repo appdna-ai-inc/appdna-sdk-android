@@ -81,7 +81,7 @@ internal open class ConsentFixtureRunner(private val ctx: Context) {
         val dispatcher = StandardTestDispatcher(scheduler)
         val server = ConsentStubServer(setup.optJSONArray("request_replies")) { scheduler.currentTime }
         try {
-            // install, reset, seed, configure (§8's order)
+            // install, reset, seed, configure (the fixture's order)
             installClock(dispatcher) { epoch + scheduler.currentTime }
             resetSdk()
             pointAt(server.baseUrl)
