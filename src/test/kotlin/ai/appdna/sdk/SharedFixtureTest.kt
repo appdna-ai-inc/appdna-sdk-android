@@ -2726,7 +2726,7 @@ class SharedFixtureTest(
 
     private fun runSelectDefault(action: JSONObject, spy: Spy) {
         val cases = action.optJSONArray("cases") ?: unsupported("select_default without cases")
-        val setup = fixtureJson.optJSONObject("setup")?.optJSONArray("options") ?: unsupported("select_default without setup.options")
+        val setup = action.optJSONArray("options") ?: unsupported("select_default without action.options")
         val options = (0 until setup.length()).map { setup.getString(it) }
         fun plain(v: Any?): Any? = when (v) {
             null, JSONObject.NULL -> null
