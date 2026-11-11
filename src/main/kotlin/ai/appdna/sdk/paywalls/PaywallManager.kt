@@ -269,16 +269,10 @@ internal class PaywallManager(
                 resolver = ai.appdna.sdk.AppDNA.billing.manager?.priceResolver,
                 productIds = (presented.plans ?: emptyList()).map { it.product_id },
             )
-            val prices = facts.mapNotNull { (id, f) -> f.price?.let { id to it } }.toMap()
-            val periods = facts.mapNotNull { (id, f) -> f.periodIso?.let { id to it } }.toMap()
-            // Present ONLY for a product Play returned a free-trial offer for, which
-            // is Play saying this user is eligible (it filters the offer list). A user who has
-            // already used the trial yields no entry and therefore no sentence.
-            val trials = facts.mapNotNull { (id, f) -> f.trialIso?.let { id to it } }.toMap()
-            // Every place plans live, not only the root array — see `applyingStorePrices`.
-            val withPrices = presented.applyingStorePrices(prices)
-                .applyingStorePeriods(periods)
-                .applyingStoreTrials(trials)
+            // Every place plans live, not only the root array — see `applyingStorePrices`. A trial is
+            // present ONLY for a product Play returned a free-trial offer for (Play filtering the offer
+            // list to this user). The savings figure is filled LAST, over the prices actually drawn.
+            val withPrices = presented.applyingStoreFacts(facts)
             val sources = (withPrices.plans ?: emptyList()).map { it.priceSource }
             if (sources.isNotEmpty()) {
                 viewProps["price_source"] = sources.joinToString(",")

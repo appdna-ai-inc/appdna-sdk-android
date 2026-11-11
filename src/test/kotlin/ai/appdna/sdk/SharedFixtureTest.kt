@@ -1,5 +1,7 @@
 package ai.appdna.sdk
 
+import ai.appdna.sdk.paywalls.applyingStoreFacts
+
 /*
  * Cross-platform behavioral fixture runner for Android.
  *
@@ -304,6 +306,7 @@ class SharedFixtureTest(
             "resolve_step_auto_advance" -> runStepAutoAdvance(action, spy)
             "resolve_select_advance_on_pick" -> runSelectAdvanceOnPick(action, spy)
             "resolve_store_price" -> runStorePrice(action, spy)
+            "resolve_plan_savings" -> runPlanSavings(action, spy)
             "parse_blocks_leniently" -> runLenientBlocks(action, spy)
             "resolve_survey_choice_options" -> runSurveyChoiceOptions(action, spy)
             "resolve_button_label_colour" -> runButtonLabelColour(action, spy)
@@ -2880,6 +2883,42 @@ class SharedFixtureTest(
                 storePrice = if (v.has("store_price")) v.getString("store_price") else null,
             )
             listOf(out.priceDisplay, out.source)
+        }
+    }
+
+    /**
+     * A plan's savings claim against the prices the paywall DRAWS, through the real paywall PARSER, the
+     * presenter's real `applyingStoreFacts` and its savings pass — the path a device runs.
+     *
+     * Each case's plans are published inside a `plans` section in `layout.sections`, where every real
+     * paywall keeps them. `store_*` keys are what Play answered and are stripped from the published plan.
+     */
+    @Suppress("UNCHECKED_CAST")
+    private fun runPlanSavings(action: JSONObject, spy: Spy) {
+        val cases = action.optJSONArray("cases") ?: unsupported("resolve_plan_savings without cases")
+        spy.state["results"] = (0 until cases.length()).map { i ->
+            val raw = cases.getJSONObject(i).getJSONObject("value").getJSONArray("plans")
+            val facts = mutableMapOf<String, ai.appdna.sdk.billing.StorePriceLookup.StoreFacts>()
+            val published = (0 until raw.length()).map { j ->
+                val p = raw.getJSONObject(j)
+                val id = p.optString("product_id")
+                if (p.has("store_price") || p.has("store_period") || p.has("store_amount")) {
+                    facts[id] = ai.appdna.sdk.billing.StorePriceLookup.StoreFacts(
+                        price = if (p.has("store_price")) p.getString("store_price") else null,
+                        periodIso = if (p.has("store_period")) p.getString("store_period") else null,
+                        amount = if (p.has("store_amount")) p.getDouble("store_amount") else null,
+                    )
+                }
+                jsonToMap(p).filterKeys { !it.startsWith("store_") }
+            }
+            val doc = mapOf<String, Any>(
+                "layout" to mapOf("type" to "stack", "sections" to listOf(mapOf("type" to "plans", "config" to mapOf("plans" to published)))),
+            )
+            val config = ai.appdna.sdk.paywalls.PaywallConfigParser.parseSinglePaywall("fixture_paywall", doc)
+                ?: error("the paywall did not parse")
+            val drawn = config.applyingStoreFacts(facts)
+            val plans = drawn.sections.firstOrNull { it.type == "plans" }?.data?.plans ?: emptyList()
+            plans.map { listOf(it.badge, it.savings_text) }
         }
     }
 

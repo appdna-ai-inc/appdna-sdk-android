@@ -39,7 +39,13 @@ internal object StorePriceLookup {
      * They are still resolved together rather than separately, because a paywall showing this
      * month's price against last month's cadence is worse than showing neither.
      */
-    data class StoreFacts(val price: String?, val periodIso: String?, val trialIso: String? = null)
+    data class StoreFacts(
+        val price: String?,
+        val periodIso: String?,
+        val trialIso: String? = null,
+        /** The NUMERIC price (`priceMicros` / 1e6), for arithmetic on it — a savings figure. */
+        val amount: Double? = null,
+    )
 
     /**
      * Price AND period by product id, in one store round-trip. A product Play does not know is
@@ -53,8 +59,9 @@ internal object StorePriceLookup {
         val ids = productIds.filter { it.isNotBlank() }.distinct()
         if (ids.isEmpty() || resolver == null) return emptyMap()
 
-        // The price half reuses `prices`, cache rung and all — no second implementation to drift.
-        val priceMap = prices(resolver, ids, timeoutMs)
+        // The price half reuses `products`, cache rung and all — no second implementation to drift.
+        val productMap = products(resolver, ids, timeoutMs)
+        val priceMap = productMap.mapValues { it.value.formattedPrice }
 
         /*
          * The period half is ONE batched query. It cannot come off `ProductInfo`, which carries no
@@ -86,8 +93,9 @@ internal object StorePriceLookup {
             val price = priceMap[id]
             val period = periodMap[id]
             val trial = trialMap[id]
+            val amount = productMap[id]?.priceMicros?.takeIf { it > 0 }?.let { it / 1_000_000.0 }
             if (price == null && period == null && trial == null) null
-            else id to StoreFacts(price, period, trial)
+            else id to StoreFacts(price, period, trial, amount)
         }.toMap()
     }
 
@@ -99,29 +107,39 @@ internal object StorePriceLookup {
         resolver: PriceResolver?,
         productIds: List<String>,
         timeoutMs: Long = 1500L,
-    ): Map<String, String> {
+    ): Map<String, String> = products(resolver, productIds, timeoutMs).mapValues { it.value.formattedPrice }
+
+    /**
+     * The store's [ProductInfo] by product id — the localized price AND the numeric one off the same
+     * product. [prices] is this, projected to the display string.
+     */
+    suspend fun products(
+        resolver: PriceResolver?,
+        productIds: List<String>,
+        timeoutMs: Long = 1500L,
+    ): Map<String, ProductInfo> {
         val ids = productIds.filter { it.isNotBlank() }.distinct()
         if (ids.isEmpty() || resolver == null) return emptyMap()
 
         // The resolver's in-memory cache, first and free. It is populated by any earlier query this
         // session, so a second presentation pays nothing and renders the store price instantly.
-        val cached = mutableMapOf<String, String>()
+        val cached = mutableMapOf<String, ProductInfo>()
         for (id in ids) {
-            resolver.cachedPriceInfo(id)?.formattedPrice?.takeIf { it.isNotBlank() }?.let { cached[id] = it }
+            resolver.cachedPriceInfo(id)?.takeIf { it.formattedPrice.isNotBlank() }?.let { cached[id] = it }
         }
         val missing = ids.filterNot { cached.containsKey(it) }
         if (missing.isEmpty()) return cached
 
         val fetched = withTimeoutOrNull(timeoutMs) {
-            val out = mutableMapOf<String, String>()
+            val out = mutableMapOf<String, ProductInfo>()
             runCatching { resolver.getSubscriptionProducts(missing) }
                 .getOrDefault(emptyList())
-                .forEach { if (it.formattedPrice.isNotBlank()) out[it.id] = it.formattedPrice }
+                .forEach { if (it.formattedPrice.isNotBlank()) out[it.id] = it }
             val stillMissing = missing.filterNot { out.containsKey(it) }
             if (stillMissing.isNotEmpty()) {
                 runCatching { resolver.getInAppProducts(stillMissing) }
                     .getOrDefault(emptyList())
-                    .forEach { if (it.formattedPrice.isNotBlank()) out[it.id] = it.formattedPrice }
+                    .forEach { if (it.formattedPrice.isNotBlank()) out[it.id] = it }
             }
             out
         }

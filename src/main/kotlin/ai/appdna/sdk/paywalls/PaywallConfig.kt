@@ -623,6 +623,13 @@ data class PaywallPlan(
      */
     val resolvedStoreTrial: String? = null,
     /**
+     * The store's NUMERIC price for this plan's product, beside the localized [resolvedStorePrice].
+     * A savings figure is arithmetic, and a localized string ("79,99 €") is not a number to do it on.
+     */
+    val resolvedStoreAmount: Double? = null,
+    /** The saving [PlanSavings] computed for this plan from the prices drawn, or null when unknown. */
+    val resolvedSavingsPercent: Int? = null,
+    /**
      * NULLABLE, like iOS's `Int?`. This was `Int = 0`, which cannot tell "no rank" from
      * "rank 0" — and [PaywallPlanOrder]'s whole rule is `sort_order ?: index`, so collapsing the
      * two would have given every unranked plan rank 0 and made an explicit 0 indistinguishable from

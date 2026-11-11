@@ -8,6 +8,8 @@ the project uses [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- **A plan's savings figure is computed from the prices drawn.** Write `{{savings_percent}}` in a plan's `badge` or `savings_text` ("Best value – save {{savings_percent}}"). The SDK fills it from the prices the paywall shows (Google Play's once it answers, the authored ones otherwise), per month and rounded down, and hides the text when no figure can be worked out. A typed percentage is drawn as written.
+
 - **Onboarding flows and surveys can be asked for by name.** `presentOnboardingByPlacement(activity, placement)` and `surveys.presentByPlacement(placement)` show the item whose placement matches, set in the console. Several flows can share a name: higher audience priority first, then a targeted flow before a catch-all, then lowest id. `false` when nothing answers the name.
 
 - **A stacked option's title can carry links and coloured words.** `label_markdown` on an option draws inline markdown: `[Terms](https://example.com)` is a link in the block's `option_link_color`, `[word](color:EE6885)` colours a word, and `label` stays the stored answer.
