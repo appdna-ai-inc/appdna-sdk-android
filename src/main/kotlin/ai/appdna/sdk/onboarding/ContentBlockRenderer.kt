@@ -11164,11 +11164,34 @@ private fun FormInputSelectBlock(
      * reads the step's live map, and a default that only the view knows about would draw a
      * selected chip over an empty screen.
      */
-    LaunchedEffect(displayStyle, options.size) {
-        if (displayStyle != "bubble_scroll" || isMulti || selectedValue.isNotEmpty()) return@LaunchedEffect
-        segmentedDefault(inputValues[fieldId], options, required = block.field_required == true)?.let {
-            selectedValue = it
-            inputValues[fieldId] = it
+    /*
+     * An author's default answer (`field_config.default_value`) is preselected AND written, as a tap writes it, so a
+     * required question with a default can be continued at once and the answer leaves with the step like a picked one.
+     * Without a default only the bubble_scroll row above keeps its first-option rule. See [selectDefault].
+     */
+    LaunchedEffect(displayStyle, allOptions.size) {
+        if (selectedValue.isNotEmpty() || selectedValues.isNotEmpty()) return@LaunchedEffect
+        val written = selectDefault(
+            current = inputValues[fieldId],
+            optionValues = allOptions.map { it.value },
+            defaultValue = block.field_config?.get("default_value"),
+            multi = isMulti,
+            maxSelections = (block.field_config?.get("max_selections") as? Number)?.toInt(),
+            required = block.field_required == true,
+            firstOptionRule = displayStyle == "bubble_scroll" && !isMulti,
+        ) ?: return@LaunchedEffect
+        when (written) {
+            is String -> {
+                selectedValue = written
+                inputValues[fieldId] = written
+                allOptions.firstOrNull { it.value == written }?.let { SelectedOptionStore.record(fieldId, it) }
+            }
+            is List<*> -> {
+                val values = written.filterIsInstance<String>()
+                inputValues[fieldId] = values
+                selectedValues = values.toSet()
+                SelectedOptionStore.record(fieldId, values.mapNotNull { v -> allOptions.firstOrNull { it.value == v } })
+            }
         }
     }
     // A selection the step clears from outside (host data arrived and the value is no
@@ -12747,11 +12770,56 @@ internal fun segmentedSync(shown: String, previous: Any?, next: Any?): String? =
  * first option is selected AND written. A host-set value of another type is an answer — left alone
  * (null). Mirrors iOS `SegmentedDefault.pick`.
  */
-internal fun segmentedDefault(current: Any?, options: List<InputOption>, required: Boolean = false): String? {
-    // A required question starts empty, so the user has to answer it.
-    if (required) return null
-    if (current != null && !(current is String && current.isEmpty())) return null
-    return options.firstOrNull()?.value?.takeIf { it.isNotEmpty() }
+internal fun segmentedDefault(current: Any?, options: List<InputOption>, required: Boolean = false): String? =
+    // A required question starts empty, so the user has to answer it. The same rule [selectDefault] applies with no
+    // author default, so the two cannot drift.
+    selectDefault(current, options.map { it.value }, null, multi = false, maxSelections = null, required = required, firstOptionRule = true) as? String
+
+/**
+ * An author's default answer on a select question (`field_config.default_value`), on top of the first-option rule.
+ *
+ * Returns what to WRITE as the answer when the question shows: a String (single), a List<String> (multi), or null to
+ * write nothing. Only an unanswered question takes it (absent, "" or an empty list): a restored answer and a host value
+ * of another type win. A default naming no option is ignored; a number reads as its string; a multi default keeps the
+ * authored order, drops unknown and repeated values and is cut to `max_selections`. With no usable default, a single
+ * question whose presentation has the first-option rule ([firstOptionRule]: the segmented control, a bubble_scroll row)
+ * takes its first option unless it is required. Mirrors iOS `SelectDefault.initial`; shared fixture
+ * `select_default_answer`.
+ */
+internal fun selectDefault(
+    current: Any?,
+    optionValues: List<String>,
+    defaultValue: Any?,
+    multi: Boolean,
+    maxSelections: Int?,
+    required: Boolean,
+    firstOptionRule: Boolean,
+): Any? {
+    val unanswered = current == null || (current is String && current.isEmpty()) || (current is List<*> && current.isEmpty())
+    if (!unanswered) return null
+    val authored = when (defaultValue) {
+        null -> emptyList()
+        is List<*> -> defaultValue.mapNotNull(::selectDefaultValueString)
+        else -> listOfNotNull(selectDefaultValueString(defaultValue))
+    }.filter { it in optionValues }.distinct()
+    if (multi) {
+        if (authored.isEmpty()) return null
+        val cap = maxSelections?.takeIf { it > 0 }
+        return if (cap != null) authored.take(cap) else authored
+    }
+    authored.firstOrNull()?.let { return it }
+    if (!firstOptionRule || required) return null
+    return optionValues.firstOrNull()?.takeIf { it.isNotEmpty() }
+}
+
+/** An authored default value as an option value: a string, or a number as its string (`2`, not `2.0`). */
+private fun selectDefaultValueString(v: Any?): String? = when (v) {
+    is String -> v.takeIf { it.isNotEmpty() }
+    is Number -> {
+        val d = v.toDouble()
+        if (!d.isInfinite() && !d.isNaN() && d == Math.floor(d)) d.toLong().toString() else v.toString()
+    }
+    else -> null
 }
 
 /** Segmented picker input. */
@@ -12777,20 +12845,36 @@ private fun FormInputSegmentedBlock(
     // Restore saved value on back nav.
     // A host-patched answer of another type (a number, a bool) is NOT replaced by the
     // first option: the view shows nothing selected and writes nothing back (see `segmentedDefault`).
+    // An author's default answer beats the first-option rule and applies to a required question too (see [selectDefault]).
+    fun initialAnswer(): String? = selectDefault(
+        current = inputValues[fieldId],
+        optionValues = options.map { it.value },
+        defaultValue = block.field_config?.get("default_value"),
+        multi = false,
+        maxSelections = null,
+        required = block.field_required == true,
+        firstOptionRule = true,
+    ) as? String
     var selectedValue by remember {
-        mutableStateOf(
-            (inputValues[fieldId] as? String)?.takeIf { it.isNotEmpty() }
-                ?: segmentedDefault(inputValues[fieldId], options, required = block.field_required == true) ?: ""
-        )
+        mutableStateOf((inputValues[fieldId] as? String)?.takeIf { it.isNotEmpty() } ?: initialAnswer() ?: "")
     }
-    // Options that arrive only after pending ends (empty → non-empty) get the same
-    // default-first rule the first frame applies, when nothing is selected yet.
+    // The first frame's default is written here, and options that arrive only after pending ends (empty → non-empty)
+    // get the same rule, when nothing is selected yet.
     val hasOptions = options.isNotEmpty()
     LaunchedEffect(hasOptions) {
-        if (!hasOptions || selectedValue.isNotEmpty()) return@LaunchedEffect
-        segmentedDefault(inputValues[fieldId], options, required = block.field_required == true)?.let {
-            selectedValue = it
-            inputValues[fieldId] = it
+        if (!hasOptions) return@LaunchedEffect
+        val stored = inputValues[fieldId]
+        if (selectedValue.isNotEmpty() && stored == null) {
+            // Drawn on the first frame and not yet written: write it, as a tap would.
+            inputValues[fieldId] = selectedValue
+            options.firstOrNull { it.value == selectedValue }?.let { SelectedOptionStore.record(fieldId, it) }
+            return@LaunchedEffect
+        }
+        if (selectedValue.isNotEmpty()) return@LaunchedEffect
+        initialAnswer()?.let { v ->
+            selectedValue = v
+            inputValues[fieldId] = v
+            options.firstOrNull { it.value == v }?.let { SelectedOptionStore.record(fieldId, it) }
         }
     }
     // Re-sync with the step's value: a restored / host-written value shows, and a value

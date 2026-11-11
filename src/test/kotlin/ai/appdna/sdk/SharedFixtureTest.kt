@@ -328,6 +328,7 @@ class SharedFixtureTest(
             "resolve_named_icon_library" -> runNamedIconLibrary(action, spy)
             "resolve_segmented_presentation" -> runSegmentedPresentation(action, spy)
             "resolve_segmented_default" -> runSegmentedDefault(action, spy)
+            "resolve_select_default" -> runSelectDefault(action, spy)
             "resolve_rive_input_kind" -> runRiveInputKind(action, spy)
             "track_events_with_observer" -> runEventObserver(action, spy)
             // WHICH copy of content_blocks the real parser resolves, per step shape.
@@ -2701,6 +2702,33 @@ class SharedFixtureTest(
             val c = cases.getJSONObject(i)
             val current: Any? = if (c.isNull("current")) null else c.get("current")
             ai.appdna.sdk.onboarding.segmentedDefault(current, options, c.optBoolean("required")) ?: ""
+        }
+    }
+
+    private fun runSelectDefault(action: JSONObject, spy: Spy) {
+        val cases = action.optJSONArray("cases") ?: unsupported("select_default without cases")
+        val setup = fixtureJson.optJSONObject("setup")?.optJSONArray("options") ?: unsupported("select_default without setup.options")
+        val options = (0 until setup.length()).map { setup.getString(it) }
+        fun plain(v: Any?): Any? = when (v) {
+            null, JSONObject.NULL -> null
+            is org.json.JSONArray -> (0 until v.length()).map { plain(v.get(it)) }
+            else -> v
+        }
+        spy.state["results"] = (0 until cases.length()).map { i ->
+            val c = cases.getJSONObject(i)
+            val multi = c.optBoolean("multi")
+            val presentation = c.optString("presentation", "dropdown")
+            // The production rule, called as the renderers call it.
+            val written = ai.appdna.sdk.onboarding.selectDefault(
+                current = plain(c.opt("current")),
+                optionValues = options,
+                defaultValue = plain(c.opt("default")),
+                multi = multi,
+                maxSelections = if (c.has("max_selections")) c.getInt("max_selections") else null,
+                required = c.optBoolean("required"),
+                firstOptionRule = presentation == "segmented" || (presentation == "bubble_scroll" && !multi),
+            )
+            written ?: ""
         }
     }
 
