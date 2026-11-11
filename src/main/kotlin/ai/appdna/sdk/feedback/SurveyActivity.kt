@@ -761,6 +761,7 @@ fun SurveyScreen(
  */
 private fun parseColor(hex: String): Color = StyleEngine.parseColor(hex)
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun BottomSheetSurveyWrapper(
     config: SurveyConfig,
@@ -788,13 +789,18 @@ fun BottomSheetSurveyWrapper(
                     val answered = SurveyActivity.surveyAnsweredCountProvider?.invoke() ?: 0
                     onDismiss(answered)
                 }
-            },
+            }
+            // The keyboard's height is taken off the bottom, so what this wrapper centres or pins sits above it.
+            .imePadding(),
         contentAlignment = Alignment.BottomCenter
     ) {
+        // While the keyboard is up the sheet sits ABOVE it (the wrapper is padded for the IME below) and takes the room
+        // that is left, so the field and Submit / Back / Not now stay visible; a tap there no longer lands on a key.
+        val imeUp = androidx.compose.foundation.layout.WindowInsets.isImeVisible
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .fillMaxHeight(0.6f)
+                .fillMaxHeight(if (imeUp) 0.95f else 0.6f)
                 .clip(RoundedCornerShape(topStart = 20.dp, topEnd = 20.dp))
                 .background(
                     theme?.backgroundColor?.let { parseColor(it) }
@@ -823,6 +829,7 @@ fun BottomSheetSurveyWrapper(
     }
 }
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun ModalSurveyWrapper(
     config: SurveyConfig,
@@ -849,13 +856,16 @@ fun ModalSurveyWrapper(
                     val answered = SurveyActivity.surveyAnsweredCountProvider?.invoke() ?: 0
                     onDismiss(answered)
                 }
-            },
+            }
+            // The keyboard's height is taken off the bottom, so what this wrapper centres or pins sits above it.
+            .imePadding(),
         contentAlignment = Alignment.Center
     ) {
+        val imeUp = androidx.compose.foundation.layout.WindowInsets.isImeVisible
         Column(
             modifier = Modifier
                 .fillMaxWidth(0.9f)
-                .fillMaxHeight(0.7f)
+                .fillMaxHeight(if (imeUp) 0.95f else 0.7f)
                 .clip(RoundedCornerShape(16.dp))
                 .background(
                     theme?.backgroundColor?.let { parseColor(it) }
