@@ -121,18 +121,20 @@ internal fun WalkMenuScreen(activity: ComponentActivity?, title: String, items: 
             Text("${uri.host ?: ""}${uri.path ?: ""}", style = MaterialTheme.typography.titleLarge, fontFamily = FontFamily.Monospace)
             Text(link, fontFamily = FontFamily.Monospace, fontSize = 12.sp)
             Button(modifier = Modifier.fillMaxWidth(), onClick = { WalkLog.deepLink.value = null }) { Text("Back to the menu") }
-            return@Column
+        } else {
+            // An if / else, not an early `return@Column`: leaving an inline composable lambda early on recomposition
+            // unbalances Compose's group stack and crashed the app the moment a link arrived.
+            Text(title, style = MaterialTheme.typography.headlineSmall)
+            for (item in items) {
+                Button(modifier = Modifier.fillMaxWidth(), onClick = { activity?.let { WalkMenu.run(it, item) } }) { Text(item.title) }
+            }
+            Text("Log (newest first)", style = MaterialTheme.typography.titleMedium)
+            for (line in WalkLog.lines) Text(line, fontFamily = FontFamily.Monospace, fontSize = 11.sp)
+            Text("Stored onboarding responses", style = MaterialTheme.typography.titleMedium)
+            Text(
+                (ai.appdna.sdk.core.SessionDataStore.instance?.onboardingResponses ?: "(none stored)").toString(),
+                fontFamily = FontFamily.Monospace, fontSize = 11.sp,
+            )
         }
-        Text(title, style = MaterialTheme.typography.headlineSmall)
-        for (item in items) {
-            Button(modifier = Modifier.fillMaxWidth(), onClick = { activity?.let { WalkMenu.run(it, item) } }) { Text(item.title) }
-        }
-        Text("Log (newest first)", style = MaterialTheme.typography.titleMedium)
-        for (line in WalkLog.lines) Text(line, fontFamily = FontFamily.Monospace, fontSize = 11.sp)
-        Text("Stored onboarding responses", style = MaterialTheme.typography.titleMedium)
-        Text(
-            (ai.appdna.sdk.core.SessionDataStore.instance?.onboardingResponses ?: "(none stored)").toString(),
-            fontFamily = FontFamily.Monospace, fontSize = 11.sp,
-        )
     }
 }
