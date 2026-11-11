@@ -161,4 +161,9 @@ dependencies {
     // JVM test of the sample's push forwarding (no device required).
     testImplementation(libs.junit)
     testImplementation(libs.robolectric)
+    // Compose UI test of the walk menu (a deep link arriving while it is on screen).
+    testImplementation(composeBom)
+    testImplementation(libs.compose.ui.test.junit4)
+    // The test activity host: an app module takes it from the debug manifest, not the test classpath.
+    debugImplementation(libs.compose.ui.test.manifest)
 }
