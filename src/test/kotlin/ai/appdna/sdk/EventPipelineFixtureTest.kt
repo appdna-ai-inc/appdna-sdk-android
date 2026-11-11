@@ -221,6 +221,8 @@ class EventPipelineFixtureTest {
         return files.sortedBy { it.name }.mapNotNull { file ->
             val j = JSONObject(file.readText())
             if (j.getString("category") != "events") return@mapNotNull null
+            // A session-lifecycle fixture (`lifecycle` block) is driven by SessionLifecycleFixtureTest.
+            if (!j.has("pipeline")) return@mapNotNull null
             val plats = j.getJSONArray("platforms")
             val hasAndroid = (0 until plats.length()).any { plats.getString(it) == "android" }
             if (!hasAndroid) return@mapNotNull null

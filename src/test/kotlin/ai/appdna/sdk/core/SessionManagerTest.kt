@@ -37,6 +37,8 @@ class SessionManagerTest {
         SessionDataStore.initialize(ctx)
         dataStore = SessionDataStore.instance!!
         dataStore.clearAll()
+        // app_open-once-per-foreground state is process-wide; each test is a fresh process.
+        SessionManager.resetProcessStateForTest()
 
         val storage = LocalStorage(ctx)
         val identity = IdentityManager(storage)

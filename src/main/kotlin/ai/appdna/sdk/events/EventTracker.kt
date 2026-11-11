@@ -48,6 +48,12 @@ internal class EventTracker(
      */
     private var pushIdProvider: (() -> String?)? = null
 
+    /**
+     * Test-only observation seam (mirrors iOS `EventTracker.eventSink`): the name and properties of
+     * every event this tracker accepts, after it is enqueued. Null in production.
+     */
+    internal var eventSink: ((String, Map<String, Any>?) -> Unit)? = null
+
     fun setEventQueue(queue: EventQueue) {
         this.eventQueue = queue
     }
@@ -153,6 +159,7 @@ internal class EventTracker(
         )
 
         eventQueue?.enqueue(envelope)
+        eventSink?.invoke(event, properties)
         Log.debug { "Tracked event: $event" }
 
         /*

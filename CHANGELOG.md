@@ -22,6 +22,13 @@ the project uses [Semantic Versioning](https://semver.org/).
 
 ### Fixed
 
+- **`app_open` is tracked on a cold launch too.** It was tracked only when the app returned from the
+  background, so a user who opened the app from cold never sent it: journeys and funnels that start or wait on
+  `app_open` missed every cold launch. It is now tracked once per foreground entry: on the launch's first
+  `ON_START` and on each return. A second `ON_START` without an `ON_STOP` sends nothing, a process started in the
+  background (a push, a broadcast) sends it when its UI first appears, and a `shutdown()` and `configure()` inside
+  one foreground sends none. No properties, as before.
+
 - **`input_date`, `input_time` and `input_datetime` store the date wheel's shapes.** A date is `yyyy-MM-dd`; a time or
   date-and-time is the wall time picked in the app's time zone with its offset, and a saved answer is shown in that zone.
   They stored a UTC instant, which west of UTC showed a saved date as the day before; those answers still read.
