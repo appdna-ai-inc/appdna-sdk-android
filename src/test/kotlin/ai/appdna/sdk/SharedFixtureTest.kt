@@ -329,6 +329,7 @@ class SharedFixtureTest(
             "resolve_segmented_presentation" -> runSegmentedPresentation(action, spy)
             "resolve_segmented_default" -> runSegmentedDefault(action, spy)
             "resolve_select_default" -> runSelectDefault(action, spy)
+            "resolve_survey_answer_events" -> runSurveyAnswerEvents(action, spy)
             "resolve_rive_input_kind" -> runRiveInputKind(action, spy)
             "track_events_with_observer" -> runEventObserver(action, spy)
             // WHICH copy of content_blocks the real parser resolves, per step shape.
@@ -2703,6 +2704,24 @@ class SharedFixtureTest(
             val current: Any? = if (c.isNull("current")) null else c.get("current")
             ai.appdna.sdk.onboarding.segmentedDefault(current, options, c.optBoolean("required")) ?: ""
         }
+    }
+
+    /** The production gate the survey renderer calls on every answer change and on Next / Submit. */
+    private fun runSurveyAnswerEvents(action: JSONObject, spy: Spy) {
+        val script = action.optJSONArray("script") ?: unsupported("survey_answer_events without script")
+        val gate = ai.appdna.sdk.feedback.SurveyAnswerEvents()
+        val out = mutableListOf<String>()
+        for (i in 0 until script.length()) {
+            val op = script.getJSONObject(i)
+            val id = op.getString("question_id")
+            val e = when (op.getString("op")) {
+                "changed" -> gate.changed(id, op.getString("type"), op.get("answer"))
+                "leaving" -> gate.leaving(id)
+                else -> unsupported("survey_answer_events op ${op.getString("op")}")
+            }
+            e?.let { out.add("${it.questionId}=${it.answer}") }
+        }
+        spy.state["results"] = out
     }
 
     private fun runSelectDefault(action: JSONObject, spy: Spy) {

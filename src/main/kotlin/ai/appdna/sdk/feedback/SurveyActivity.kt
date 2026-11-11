@@ -238,6 +238,8 @@ fun SurveyScreen(
     isDark: Boolean = isSystemInDarkTheme(),
 ) {
     var currentIndex by remember { mutableIntStateOf(0) }
+    // `survey_question_answered` once per question answered, not once per keystroke.
+    val answerEvents = remember { SurveyAnswerEvents() }
     val answers = remember { mutableStateMapOf<String, SurveyAnswer>() }
 
     // Survey intro Lottie 2s gating.
@@ -466,6 +468,12 @@ fun SurveyScreen(
 
         Spacer(Modifier.weight(1f))
 
+        // The question on screen, left forward (Next / Submit): its typed answer is tracked now, once.
+        fun trackLeaving() {
+            val leaving = visibleQuestions.getOrNull(currentIndex) ?: return
+            answerEvents.leaving(leaving.id)?.let { e -> onQuestionAnswered?.invoke(e.questionId, e.type, e.answer) }
+        }
+
         // Current question
         if (currentIndex < visibleQuestions.size && !showCompletion) {
             val question = visibleQuestions[currentIndex]
@@ -473,7 +481,10 @@ fun SurveyScreen(
 
             val onAnswer: (SurveyAnswer) -> Unit = { ans ->
                 answers[question.id] = ans
-                onQuestionAnswered?.invoke(question.id, question.type, ans.answer)
+                // Once per question answered: a typed answer is tracked when the user moves on (see SurveyAnswerEvents).
+                answerEvents.changed(question.id, question.type, ans.answer)?.let { e ->
+                    onQuestionAnswered?.invoke(e.questionId, e.type, e.answer)
+                }
                 // Haptic on option select
                 HapticEngine.triggerIfEnabled(
                     currentView,
@@ -589,6 +600,7 @@ fun SurveyScreen(
                             // onboarding; the survey Next button fired no haptic on either variant.
                             .clickable {
                                 HapticEngine.triggerIfEnabled(currentView, config.appearance.haptic?.triggers?.on_step_advance, config.appearance.haptic)
+                                trackLeaving()
                                 currentIndex++
                             }
                             .padding(horizontal = 24.dp, vertical = 10.dp)
@@ -599,6 +611,7 @@ fun SurveyScreen(
                     Button(
                         onClick = {
                             HapticEngine.triggerIfEnabled(currentView, config.appearance.haptic?.triggers?.on_step_advance, config.appearance.haptic)
+                            trackLeaving()
                             currentIndex++
                         },
                         enabled = canAdvance,
@@ -611,6 +624,7 @@ fun SurveyScreen(
                 // buttonBrush gradient on
                 // Submit when configured.
                 val submitOnClick: () -> Unit = {
+                        trackLeaving()
                         // Haptic on submit
                         HapticEngine.triggerIfEnabled(
                             currentView,
