@@ -85,6 +85,9 @@ internal class LocalStorage(val context: Context) {
         storeFor(key).edit().putString(key, value).apply()
     }
 
+    /** One key, written with `commit()` so it is on disk when this returns (the consent ack record's write-ahead). */
+    fun setStringNow(key: String, value: String): Boolean = storeFor(key).edit().putString(key, value).commit()
+
     fun getInt(key: String, default: Int = 0): Int {
         migrateIfNeeded(key)
         return storeFor(key).getInt(key, default)
@@ -163,6 +166,9 @@ internal class LocalStorage(val context: Context) {
             "user_id",
             "user_traits",
             "push_token",
+            // the consent signal's ack record (last acknowledged triple / unknown mark, dropped
+            // triple). It names the anon and user ids, so it lives with them, encrypted.
+            "consent_ack_record",
         )
     }
 }

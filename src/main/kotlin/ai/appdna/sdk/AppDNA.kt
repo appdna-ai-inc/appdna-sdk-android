@@ -573,6 +573,16 @@ object AppDNA {
     private var connectivityMonitor: ai.appdna.sdk.network.ConnectivityMonitor? = null
     private var appContext: Context? = null
 
+    // ── the analytics-consent signal ─────────────────────────────────────────────────────
+    /** The sender of the current configure; null before `configure()` and after `shutdown()`. */
+    private var consentSender: ai.appdna.sdk.consent.ConsentSignalSender? = null
+    /** Row 0: a `setConsent` made while no sender exists, held until `configure()` writes it. */
+    private var heldConsent: Boolean? = null
+    private var consentRowZeroCall = false
+    /** Test clock seam (process-static: the reset keeps it). Null in production. */
+    @Volatile private var consentClockDispatcher: kotlinx.coroutines.CoroutineDispatcher? = null
+    @Volatile private var consentClockNow: (() -> Long)? = null
+
     /** When the app was first installed on this device (epoch ms), or null when it cannot be read. */
     internal fun installEpochMs(): Long? =
         ai.appdna.sdk.config.ExperimentEligibilityContext.current(appContext, emptyMap()).installEpochMs
@@ -783,6 +793,31 @@ object AppDNA {
             }
             val client = ApiClient(apiKey, resolvedBaseUrl)
             this.apiClient = client
+
+            // Consent-signal row 0 → row 3. A `setConsent` made before a sender existed is written now, BEFORE the
+            // tracker reads consent below, and the sender built here treats it as a setConsent (row 1) would.
+            heldConsent?.let { ai.appdna.sdk.storage.ConsentStore.setDecision(appContext, it) }
+            heldConsent = null
+            val consentRowZero = consentRowZeroCall
+            consentRowZeroCall = false
+            ai.appdna.sdk.consent.ConsentTestLatch.pass("configure_hold")
+            val consentSignal = ai.appdna.sdk.consent.ConsentSignalSender(
+                baseDispatcher = consentClockDispatcher ?: Dispatchers.Default,
+                nowMs = consentClockNow ?: { System.currentTimeMillis() },
+                persistence = ai.appdna.sdk.consent.PrefsConsentSignalPersistence(appContext),
+                post = { body -> client.postConsentOnce(ai.appdna.sdk.consent.ConsentSignalSender.PATH, body) },
+                handoff = { ev -> consentHandoff(ev) },
+            )
+            consentSender = consentSignal
+            identityMgr.currentIdentity.let { id ->
+                consentSignal.configure(
+                    ai.appdna.sdk.consent.ConsentSyncTable.Triple(
+                        id.anonId, id.userId,
+                        ai.appdna.sdk.storage.ConsentStore.effectiveConsent(appContext, options.requireConsent),
+                    ),
+                    consentRowZero,
+                )
+            }
 
             // 4. Initialize event system
             // Tag every emitted event with the active SDK
@@ -1106,6 +1141,8 @@ object AppDNA {
         }
 
         identityManager?.identify(userId, traits)
+        // a user change while analytics is declined re-signals with the new user (rows 1 / 2).
+        if (previousUserId != userId) notifyConsentUserChanged()
         // The push token's server row now names this user.
         pushTokenManager?.reregister()
 
@@ -1243,7 +1280,10 @@ object AppDNA {
      */
     @JvmStatic
     fun reset() {
+        val userBeforeReset = identityManager?.currentIdentity?.userId
         identityManager?.reset()
+        // the user became null; while analytics is declined that is re-signalled.
+        if (userBeforeReset != null) notifyConsentUserChanged()
         // The push token's server row no longer names the signed-out user.
         pushTokenManager?.reregister()
         experimentManager?.resetExposures()
@@ -2205,11 +2245,52 @@ object AppDNA {
      * Set analytics consent. When false, events are silently dropped.
      */
     fun setConsent(analytics: Boolean) {
-        // Persist FIRST. A crash before the write would lose a
-        // revocation, and the next launch would re-enable analytics for a user who opted out.
-        appContext?.let { ai.appdna.sdk.storage.ConsentStore.setDecision(it, analytics) }
-        eventTracker?.setConsent(analytics)
+        synchronized(this) {
+            // Persist FIRST. A crash before the write would lose a
+            // revocation, and the next launch would re-enable analytics for a user who opted out.
+            appContext?.let { ai.appdna.sdk.storage.ConsentStore.setDecision(it, analytics) }
+            eventTracker?.setConsent(analytics)
+            val sender = consentSender
+            if (sender == null) {
+                // Consent-signal row 0: no sender yet (before `configure()`, or after `shutdown()`). The decision is
+                // held — under the same monitor `configure()` reads it under — and applied when the SDK configures.
+                // (Before this, a call before `configure()` was silently dropped: there was no context to write to.)
+                heldConsent = analytics
+                consentRowZeroCall = true
+            } else {
+                consentEffective()?.let { sender.setConsent(it) }
+            }
+        }
         Log.info("Consent updated: analytics=$analytics")
+    }
+
+    /** E: the device's anon id, its user id or null, and `decision ?: !requireConsent`. */
+    private fun consentEffective(): ai.appdna.sdk.consent.ConsentSyncTable.Triple? {
+        val ctx = appContext ?: return null
+        val id = identityManager?.currentIdentity ?: return null
+        return ai.appdna.sdk.consent.ConsentSyncTable.Triple(
+            id.anonId, id.userId, ai.appdna.sdk.storage.ConsentStore.effectiveConsent(ctx, options.requireConsent),
+        )
+    }
+
+    private fun notifyConsentUserChanged() {
+        synchronized(this) {
+            val sender = consentSender ?: return
+            consentEffective()?.let { sender.userChanged(it) }
+        }
+    }
+
+    /** A public consent call that reached an ended sender is re-run on the current one, or held as row 0. */
+    private fun consentHandoff(ev: ai.appdna.sdk.consent.ConsentSyncTable.Event) {
+        synchronized(this) {
+            val sender = consentSender
+            if (sender == null) {
+                if (ev is ai.appdna.sdk.consent.ConsentSyncTable.Event.SetConsent) consentRowZeroCall = true
+                return
+            }
+            val e = consentEffective() ?: return
+            if (ev is ai.appdna.sdk.consent.ConsentSyncTable.Event.UserChanged) sender.userChanged(e) else sender.setConsent(e)
+        }
     }
 
     // MARK: - Public API: Log Level
@@ -2921,24 +3002,32 @@ object AppDNA {
      * handle, the survey/messages/push manager scopes, and the periodic
      * config-refresh worker.
      */
-    fun shutdown() {
+    fun shutdown() = shutdownInternal(flush = true)
+
+    private fun shutdownInternal(flush: Boolean) {
         synchronized(this) {
             // First, before anything below can throw: this ends the current configure's generation, so a
             // bootstrap still running for it is stale from here on (see [configureEpoch]).
             configureEpoch += 1
+            // Consent-signal row 11: end the consent sender's epoch. Its retry is cancelled; a request in flight is
+            // abandoned (its late completion meets the fence). The slot and the unknown mark are persisted, so the
+            // next configure re-sends.
+            consentSender?.end()
+            consentSender = null
             // A failed bootstrap's retry loop belongs to the configure that just ended.
             bootstrapRecovery?.stop()
             bootstrapRecovery = null
             // The queue's final upload attempt owns the event database from here: when it has finished it
             // schedules the WorkManager upload for what is left and closes the database (EventQueue.shutdown).
-            val queueOwnsDatabase = eventQueue != null
-            eventQueue?.shutdown()
+            // `flush = false` is the test reset (process death): the queue is dropped unflushed.
+            val queueOwnsDatabase = flush && eventQueue != null
+            if (flush) eventQueue?.shutdown()
             // Schedule background upload for remaining events — here only when there is no queue
             // (a configure that failed before building it); otherwise the queue does it after its attempt.
             val ctx = appContext
             val key = apiKey
             val db = eventDatabase
-            if (!queueOwnsDatabase && ctx != null && key != null && db != null) {
+            if (flush && !queueOwnsDatabase && ctx != null && key != null && db != null) {
                 // 🔴 This was UNGUARDED, while the identical call in `configure()`
                 // (the `bgScheduler` lambda) is wrapped. `WorkManager.getInstance()` THROWS
                 // `IllegalStateException` in any app that disables `WorkManagerInitializer` — a
@@ -3129,6 +3218,100 @@ object AppDNA {
             Log.info("SDK shut down")
         }
     }
+
+    // ── consent-signal test hooks (internal, test-only; never public API — test-only) ─────────
+    // `@JvmName` keeps the JVM names un-mangled so the RN and Flutter plugin tests reach them by reflection;
+    // `@RestrictTo(LIBRARY_GROUP)` makes lint flag any host call.
+
+    /** The test reset: process death in a process that does not die. Row 11 for the consent sender, no flush. */
+    @JvmName("resetForTesting")
+    @androidx.annotation.VisibleForTesting
+    @androidx.annotation.RestrictTo(androidx.annotation.RestrictTo.Scope.LIBRARY_GROUP)
+    internal fun resetForTesting() {
+        synchronized(this) {
+            heldConsent = null
+            consentRowZeroCall = false
+            ai.appdna.sdk.consent.ConsentTestLatch.clear()
+            ai.appdna.sdk.consent.ConsentSignalSender.STALE_ARRIVALS.set(0)
+        }
+        shutdownInternal(flush = false)
+    }
+
+    /** The clock seam: the consent sender's dispatcher and time source. Process-static; null clears it. */
+    @JvmName("installConsentClockForTesting")
+    @androidx.annotation.VisibleForTesting
+    @androidx.annotation.RestrictTo(androidx.annotation.RestrictTo.Scope.LIBRARY_GROUP)
+    internal fun installConsentClockForTesting(dispatcher: kotlinx.coroutines.CoroutineDispatcher?, nowMs: (() -> Long)?) {
+        consentClockDispatcher = dispatcher
+        consentClockNow = nowMs
+    }
+
+    /**
+     * Seeds a consent case's `setup` (JSON) into the real stores: `anon_id`, `persisted_user_id`, `ack_state`,
+     * `dropped_state`, `stored_decision`. Only while unconfigured.
+     */
+    @JvmName("seedConsentFixtureForTesting")
+    @androidx.annotation.VisibleForTesting
+    @androidx.annotation.RestrictTo(androidx.annotation.RestrictTo.Scope.LIBRARY_GROUP)
+    internal fun seedConsentFixtureForTesting(context: Context, setupJson: String) {
+        check(consentSender == null) { "seed only while unconfigured" }
+        val setup = JSONObject(setupJson)
+        val storage = LocalStorage(context)
+        val consentPrefs = context.getSharedPreferences(
+            ai.appdna.sdk.consent.PrefsConsentSignalPersistence.PREFS_NAME, Context.MODE_PRIVATE,
+        )
+        consentPrefs.edit().clear().commit()
+        storage.remove("consent_ack_record")
+        setup.optString("anon_id").takeIf { it.isNotEmpty() }?.let { storage.setStringNow("anon_id", it) }
+        if (setup.has("persisted_user_id")) {
+            if (setup.isNull("persisted_user_id")) storage.remove("user_id")
+            else storage.setStringNow("user_id", setup.getString("persisted_user_id"))
+        }
+        if (setup.has("stored_decision") && !setup.isNull("stored_decision")) {
+            ai.appdna.sdk.storage.ConsentStore.setDecision(context, setup.getBoolean("stored_decision"))
+        }
+        val ack = setup.optJSONObject("ack_state")
+        val record = JSONObject()
+            .put("ack", when {
+                ack == null -> "none"
+                ack.optBoolean("unknown", false) -> "unknown"
+                else -> ack
+            })
+            .put("dropped", setup.optJSONObject("dropped_state") ?: JSONObject.NULL)
+        storage.setStringNow("consent_ack_record", record.toString())
+    }
+
+    /** Waits until no consent request is on the wire; returns the completions not yet run, or -1 on timeout. */
+    @JvmName("awaitConsentSenderIdleForTesting")
+    @androidx.annotation.VisibleForTesting
+    @androidx.annotation.RestrictTo(androidx.annotation.RestrictTo.Scope.LIBRARY_GROUP)
+    internal fun awaitConsentSenderIdleForTesting(timeoutMs: Long): Int =
+        synchronized(this) { consentSender }?.awaitIdle(timeoutMs) ?: 0
+
+    /** The sender's next retry deadline on the seam's clock, or null. */
+    @JvmName("nextConsentDeadlineForTesting")
+    @androidx.annotation.VisibleForTesting
+    @androidx.annotation.RestrictTo(androidx.annotation.RestrictTo.Scope.LIBRARY_GROUP)
+    internal fun nextConsentDeadlineForTesting(): Long? = synchronized(this) { consentSender }?.nextDeadline()
+
+    /** Holds the next pass through `point` (`io_return`, `check_act`, `configure_hold`) for `holdMs`, once. */
+    @JvmName("setConsentLatchForTesting")
+    @androidx.annotation.VisibleForTesting
+    @androidx.annotation.RestrictTo(androidx.annotation.RestrictTo.Scope.LIBRARY_GROUP)
+    internal fun setConsentLatchForTesting(point: String, holdMs: Long) =
+        ai.appdna.sdk.consent.ConsentTestLatch.arm(point, holdMs)
+
+    @JvmName("awaitConsentLatchEngagedForTesting")
+    @androidx.annotation.VisibleForTesting
+    @androidx.annotation.RestrictTo(androidx.annotation.RestrictTo.Scope.LIBRARY_GROUP)
+    internal fun awaitConsentLatchEngagedForTesting(timeoutMs: Long): Boolean =
+        ai.appdna.sdk.consent.ConsentTestLatch.awaitEngaged(timeoutMs)
+
+    /** Completions, retry fires and evaluations that arrived at an ended sender (counted at the fence). */
+    @JvmName("staleConsentArrivalsForTesting")
+    @androidx.annotation.VisibleForTesting
+    @androidx.annotation.RestrictTo(androidx.annotation.RestrictTo.Scope.LIBRARY_GROUP)
+    internal fun staleConsentArrivalsForTesting(): Int = ai.appdna.sdk.consent.ConsentSignalSender.STALE_ARRIVALS.get()
 }
 
 /**

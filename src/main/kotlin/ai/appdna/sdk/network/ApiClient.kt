@@ -487,6 +487,36 @@ internal class ApiClient(
     }
 
     /**
+     * the consent signal (`POST /api/v1/ingest/consent`), ONE network attempt. The sender owns the
+     * retry policy (the consent state table), so this uses [singleAttemptClient]: OkHttp's silent re-send on a failed
+     * pooled connection would deliver a body behind the table's back. Classified by [dispositionFor], the same table
+     * the event upload uses (`permanent_4xx_dropped`). Must be called off the main thread.
+     */
+    fun postConsentOnce(path: String, body: String): ConsentPostOutcome = try {
+        val request = Request.Builder()
+            .url("$baseUrl$path")
+            .header("x-api-key", apiKey)
+            .header("Content-Type", "application/json")
+            .post(body.toRequestBody(jsonMediaType))
+            .build()
+        singleAttemptClient.newCall(request).execute().use { response ->
+            val code = response.code
+            when (dispositionFor(code)) {
+                EventUploadDisposition.SUCCESS -> ConsentPostOutcome.Success
+                EventUploadDisposition.DROP_PERMANENT -> {
+                    Log.warning("Consent signal rejected (HTTP $code): dropped until the next launch.")
+                    ConsentPostOutcome.Drop(code)
+                }
+                EventUploadDisposition.RETRY_TRANSIENT ->
+                    ConsentPostOutcome.Transient(code, parseRetryAfter(response.header("Retry-After")))
+            }
+        }
+    } catch (e: IOException) {
+        Log.warning("Consent signal network error: ${e.message}")
+        ConsentPostOutcome.Transient(null, null)
+    }
+
+    /**
      * Best-effort decode of `{error_code, message}` from a 4xx
      * response. Returns (errorCode, message) when the body parses as JSON;
      * (null, null) otherwise. Always safe to call — never throws.
@@ -675,4 +705,11 @@ internal fun decodeErrorCode(raw: String): String? = try {
         ?: obj.optJSONObject("error")?.optString("code", "")?.ifEmpty { null }
 } catch (_: Throwable) {
     null
+}
+
+/** The outcome of one consent-signal POST ([ApiClient.postConsentOnce]). */
+internal sealed class ConsentPostOutcome {
+    object Success : ConsentPostOutcome()
+    data class Transient(val status: Int?, val retryAfterSeconds: Long?) : ConsentPostOutcome()
+    data class Drop(val status: Int) : ConsentPostOutcome()
 }

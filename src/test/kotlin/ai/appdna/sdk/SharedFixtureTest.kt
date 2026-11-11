@@ -233,6 +233,8 @@ class SharedFixtureTest(
             "show_screen" -> runShowScreen(action, spy)
             "track_event" -> runTrackEvent(action, spy)
             "identify" -> runIdentify(action, spy)
+            // the consent-signal fixtures: scripted SDK calls against a stub server (real AppDNA).
+            "script" -> ai.appdna.sdk.consent.ConsentFixtureRunner(ctx).runAll(fixtureName, action)
             "report_paying_user" -> runReportPayingUser(action, spy)
             "evaluate_audience" -> runEvaluateAudience(spy)
             "evaluate_screen_trigger" -> runEvaluateScreenTrigger(action, spy)
