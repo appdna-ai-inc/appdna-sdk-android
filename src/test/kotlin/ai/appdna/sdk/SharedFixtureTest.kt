@@ -312,6 +312,8 @@ class SharedFixtureTest(
             "parse_blocks_leniently" -> runLenientBlocks(action, spy)
             "resolve_survey_choice_options" -> runSurveyChoiceOptions(action, spy)
             "resolve_button_label_colour" -> runButtonLabelColour(action, spy)
+            "resolve_surface_column" -> runSurfaceColumn(action, spy)
+            "resolve_surface_layout" -> runSurfaceLayout(action, spy)
             "resolve_onboarding_celebration" -> runOnboardingCelebration(action, spy)
             "resolve_block_collapse" -> runBlockCollapse(action, spy)
             "resolve_banner_icon" -> runBannerIcon(action, spy)
@@ -2340,6 +2342,72 @@ class SharedFixtureTest(
      * OPPOSITE rules, and a test that re-implements the rule can only agree with whichever side
      * wrote it (Rule 25). `""` stands for "neither authored", so the null case is asserted too.
      */
+    /**
+     * The content column for a width, through the REAL `SurfaceColumn` and the step inset
+     * `BlockFullBleed` both onboarding layouts resolve against the column. Rounded to 4 places so the
+     * float column and the double inset compare to the digit with iOS and the console.
+     */
+    private fun runSurfaceColumn(action: JSONObject, spy: Spy) {
+        val cases = action.optJSONArray("cases") ?: unsupported("resolve_surface_column without cases")
+        fun r4(v: Double) = kotlin.math.round(v * 10_000) / 10_000
+        spy.state["results"] = (0 until cases.length()).map { i ->
+            val w = cases.getJSONObject(i).getDouble("value").toFloat()
+            val column = ai.appdna.sdk.core.SurfaceColumn.width(w)
+            linkedMapOf(
+                "column" to r4(column.toDouble()),
+                "gutter" to r4(ai.appdna.sdk.core.SurfaceColumn.gutter(w).toDouble()),
+                "step_inset" to r4(ai.appdna.sdk.onboarding.BlockFullBleed.stepHorizontalInset(column.toDouble())),
+            )
+        }
+    }
+
+    /**
+     * column or split, and the three partitions, through the REAL `SurfaceLayout` the
+     * onboarding, paywall and full-screen message renderers call.
+     */
+    private fun runSurfaceLayout(action: JSONObject, spy: Spy) {
+        val cases = action.optJSONArray("cases") ?: unsupported("resolve_surface_layout without cases")
+        fun r4(v: Float) = kotlin.math.round(v.toDouble() * 10_000) / 10_000
+        fun pairs(arr: JSONArray?): List<Pair<String, String?>> =
+            (0 until (arr?.length() ?: 0)).map { k ->
+                val o = arr!!.getJSONObject(k)
+                o.optString("type") to (o.optStringOrNull("zone") ?: o.optStringOrNull("vertical_align"))
+            }
+        val L = ai.appdna.sdk.core.SurfaceLayout
+        spy.state["results"] = (0 until cases.length()).map { i ->
+            val v = cases.getJSONObject(i).getJSONObject("value")
+            when (val kind = v.getString("kind")) {
+                "mode" -> {
+                    val w = v.getDouble("width").toFloat()
+                    val h = v.getDouble("height").toFloat()
+                    val mode = L.mode(w, h, v.getBoolean("regular"))
+                    val split = mode == ai.appdna.sdk.core.SurfaceLayoutMode.SPLIT
+                    val container = L.containerWidth(w, split)
+                    linkedMapOf(
+                        "mode" to if (split) "split" else "column",
+                        "column_container" to r4(L.containerWidth(w, false)),
+                        "split_container" to r4(container),
+                        "pane" to r4(if (split) L.paneWidth(w) else container),
+                    )
+                }
+                "onboarding" -> {
+                    val r = L.onboardingSplit(pairs(v.optJSONArray("blocks")))
+                    linkedMapOf("hero" to r.hero, "splits" to r.splits)
+                }
+                "paywall" -> {
+                    val r = L.paywallSplit(pairs(v.optJSONArray("sections")))
+                    linkedMapOf("pitch" to r.pitch, "splits" to r.splits)
+                }
+                "message" -> linkedMapOf(
+                    "splits" to L.messageSplits(
+                        v.getString("message_type"), v.optBoolean("hero"), v.optBoolean("copy"),
+                    ),
+                )
+                else -> unsupported("resolve_surface_layout kind $kind")
+            }
+        }
+    }
+
     private fun runButtonLabelColour(action: JSONObject, spy: Spy) {
         val cases = action.optJSONArray("cases") ?: unsupported("resolve_button_label_colour without cases")
         spy.state["results"] = (0 until cases.length()).map { i ->

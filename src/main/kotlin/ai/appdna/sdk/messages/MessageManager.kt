@@ -311,10 +311,12 @@ class MessageManager internal constructor(
         mainHandler.post { delegate?.onMessageShown(messageId, triggerEvent) }
 
         try {
-            val dialog = InAppMessageDialog.build(
+            // `show` keeps the message on screen across a recreation of the host's activity (a fold,
+            // an unfold, a rotation), and runs onClosed once, when it is really gone.
+            InAppMessageDialog.show(
                 activity,
                 config,
-                onCTATap = { dialog ->
+                onCTATap = { onActivity ->
                     val ctaActionType = config.content.cta_action?.type ?: "dismiss"
                     AppDNA.trackInternal(
                         "in_app_message_clicked",
@@ -324,22 +326,19 @@ class MessageManager internal constructor(
                     val ctaData: Map<String, Any>? = config.content.cta_action?.url?.let { mapOf("url" to it) }
                     mainHandler.post { delegate?.onMessageAction(messageId, ctaActionType, ctaData) }
 
-                    handleCTAAction(activity, config.content.cta_action)
-                    dialog.dismiss()
+                    handleCTAAction(onActivity, config.content.cta_action)
                 },
-                onDismiss = { dialog ->
+                onDismiss = {
                     AppDNA.trackInternal(
                         "in_app_message_dismissed",
                         mapOf("message_id" to messageId),
                     )
-                    dialog.dismiss()
+                },
+                onClosed = {
+                    isPresenting.set(false)
+                    mainHandler.post { delegate?.onMessageDismissed(messageId) }
                 },
             )
-            dialog.setOnDismissListener {
-                isPresenting.set(false)
-                mainHandler.post { delegate?.onMessageDismissed(messageId) }
-            }
-            dialog.show()
         } catch (e: Throwable) {
             Log.warning("[Messages] present failed for $messageId: ${e.message}")
             isPresenting.set(false)

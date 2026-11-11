@@ -123,10 +123,12 @@ internal class PendingMessageListener(
                 return@post
             }
             try {
-                val dialog = InAppMessageDialog.build(
+                isPresenting = true
+                // Kept on screen across a recreation of the host's activity (a fold, a rotation).
+                InAppMessageDialog.show(
                     activity,
                     config,
-                    onCTATap = { dialog ->
+                    onCTATap = { onActivity ->
                         eventTracker?.track(
                             "in_app_message_clicked",
                             mapOf(
@@ -135,10 +137,9 @@ internal class PendingMessageListener(
                                 "source" to "pending_messages",
                             ),
                         )
-                        handleCTAAction(activity, config.content.cta_action)
-                        dialog.dismiss()
+                        handleCTAAction(onActivity, config.content.cta_action)
                     },
-                    onDismiss = { dialog ->
+                    onDismiss = {
                         eventTracker?.track(
                             "in_app_message_dismissed",
                             mapOf(
@@ -146,12 +147,9 @@ internal class PendingMessageListener(
                                 "source" to "pending_messages",
                             ),
                         )
-                        dialog.dismiss()
                     },
+                    onClosed = { isPresenting = false },
                 )
-                isPresenting = true
-                dialog.setOnDismissListener { isPresenting = false }
-                dialog.show()
                 completion(true)
             } catch (err: Throwable) {
                 isPresenting = false

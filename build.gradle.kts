@@ -256,6 +256,8 @@ dependencies {
     implementation(libs.compose.material.icons.ext)
     implementation(libs.compose.ui.tooling.preview)
     implementation(libs.activity.compose)
+    // Fold posture and hinge bounds (WindowInfoTracker → FoldingFeature) for the two-pane layout.
+    implementation(libs.window)
     debugImplementation(libs.compose.ui.tooling)
 
     // Firebase Firestore for remote config
@@ -366,4 +368,6 @@ dependencies {
     testImplementation(libs.roborazzi)
     testImplementation(libs.roborazzi.compose)
     testImplementation(libs.roborazzi.junit.rule)
+    // FoldingFeature test factory: a hinge reported to the two-pane layout under Robolectric.
+    testImplementation(libs.window.testing)
 }

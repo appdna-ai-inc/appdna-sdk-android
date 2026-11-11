@@ -8,6 +8,8 @@ the project uses [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- **Foldables, tablets and wide windows.** Onboarding steps, paywalls, full-screen messages and surveys lay out in a centred column at most 560dp wide, with the background still filling the window; nothing changes at 560dp or narrower. On a window that is wider than tall, at least 720dp wide and 600dp or more in width class, an onboarding step that opens with a visual shows it in a leading pane beside the rest of the step, a paywall shows its pitch beside its plans and call to action, and a full-screen message shows its hero beside its copy (a container at most 1040dp wide; on a foldable in book posture the panes meet on the hinge, read through Jetpack WindowManager). Modals and banners are at most 560dp wide; surveys stay one column.
+
 - **The SDK tells AppDNA when a user declines analytics.** Declined users' events never leave the device, so the
   server could not honour the decision on messages it sends itself. The SDK now sends one small consent signal
   (`POST /api/v1/ingest/consent`: the device's anonymous ID, the user's ID if known, the decision and a timestamp)
@@ -30,6 +32,8 @@ the project uses [Semantic Versioning](https://semver.org/).
 - **A date wheel can ask for a year only.** With `picker_mode` set to `year` the wheel shows only the year column and answers with four digits, for example `1994`.
 
 ### Fixed
+
+- **A fold, an unfold or a rotation no longer restarts a surface.** The onboarding, paywall, survey and screen activities handle size and density configuration changes themselves, so the step, answers, selected plan, survey score and scroll position are kept. An in-app message shown over an activity that is recreated by such a change moves to the new activity instead of disappearing, and the next message is no longer blocked behind it.
 
 - **`app_open` is tracked on a cold launch too.** It was tracked only when the app returned from the
   background, so a user who opened the app from cold never sent it: journeys and funnels that start or wait on

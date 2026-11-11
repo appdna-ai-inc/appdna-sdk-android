@@ -20,6 +20,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.*
+import androidx.compose.ui.platform.testTag
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.*
 import androidx.compose.material3.darkColorScheme
@@ -414,7 +415,15 @@ fun SurveyScreen(
                 if (brush != null) mod.background(brush) else mod.background(bgColor)
             }
             .applyBlurBackdrop(theme?.blurBackdrop)
-            .padding(24.dp),
+            .padding(24.dp)
+            // The survey stays ONE centred column, `min(width, 560)`, on a wide window
+            // (a tablet, an unfolded foldable): one question at a time, whose answer controls (the
+            // 0–10 row, stars, choices) read at phone proportions, and nothing to put beside it.
+            // The background above still fills the window.
+            .wrapContentWidth(Alignment.CenterHorizontally)
+            .widthIn(max = ai.appdna.sdk.core.SurfaceColumn.MAX_WIDTH.dp)
+            .fillMaxWidth()
+            .testTag("appdna_survey_column"),
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
         // Intro Lottie shows
@@ -799,6 +808,8 @@ fun BottomSheetSurveyWrapper(
         val imeUp = androidx.compose.foundation.layout.WindowInsets.isImeVisible
         Column(
             modifier = Modifier
+                // The sheet is centred and no wider than the survey column plus its padding.
+                .widthIn(max = (ai.appdna.sdk.core.SurfaceColumn.MAX_WIDTH + 48f).dp)
                 .fillMaxWidth()
                 .fillMaxHeight(if (imeUp) 0.95f else 0.6f)
                 .clip(RoundedCornerShape(topStart = 20.dp, topEnd = 20.dp))
@@ -864,6 +875,8 @@ fun ModalSurveyWrapper(
         val imeUp = androidx.compose.foundation.layout.WindowInsets.isImeVisible
         Column(
             modifier = Modifier
+                // At most the survey column (560dp) wide; 90% of the window below that.
+                .widthIn(max = (ai.appdna.sdk.core.SurfaceColumn.MAX_WIDTH / 0.9f).dp)
                 .fillMaxWidth(0.9f)
                 .fillMaxHeight(if (imeUp) 0.95f else 0.7f)
                 .clip(RoundedCornerShape(16.dp))

@@ -2008,6 +2008,9 @@ fun ContentBlockRendererView(
     ) {
         var animationCount = 0
         visibleBlocks.forEach { rawBlock ->
+          // Keyed by block id: when a split moves the step's hero out of this list on a
+          // fold, the blocks after it keep their own state rather than inheriting a neighbour's.
+          androidx.compose.runtime.key(rawBlock.id) {
             // Resolve dynamic bindings and template strings
             // Fold host-pushed per-block field_config overrides UNCONDITIONALLY here,
             // AFTER resolveBlockBindings (which early-returns raw blocks that have no bindings — i.e.
@@ -2073,6 +2076,7 @@ fun ContentBlockRendererView(
                     }
                 }
             }
+          }
         }
     }
 }
@@ -2163,7 +2167,7 @@ internal fun RenderBlock(
      */
     val blockBleeds = BlockFullBleed.isOn(block.field_config?.get("background_full_bleed"))
     val blockBleedInset = BlockFullBleed
-        .stepHorizontalInset(LocalConfiguration.current.screenWidthDp.toDouble())
+        .stepHorizontalInset(ai.appdna.sdk.core.surfaceColumnWidthDp().toDouble())
         .dp
     val contentModifier = with(StyleEngine) {
         Modifier
@@ -7981,7 +7985,7 @@ private fun MultiButtonsBlock(
     // is what puts the buttons back where they were.
     val bleeds = BlockFullBleed.isOn(block.field_config?.get("background_full_bleed"))
     val inset = BlockFullBleed
-        .stepHorizontalInset(LocalConfiguration.current.screenWidthDp.toDouble())
+        .stepHorizontalInset(ai.appdna.sdk.core.surfaceColumnWidthDp().toDouble())
         .dp
 
     Column(
@@ -9323,7 +9327,8 @@ private fun WheelPickerBlock(
                 // before the next hit the screen edge). Same value drives item slot + sidePad so
                 // the centred value stays exactly at the viewport midpoint.
                 val itemWidth = 56.dp
-                val sidePad = (LocalConfiguration.current.screenWidthDp.dp - itemWidth) / 2
+                // The column the wheel is in, not the screen: on a wide window the screen is not its width.
+                val sidePad = (ai.appdna.sdk.core.surfaceColumnWidthDp().dp - itemWidth) / 2
                 LazyRow(
                     state = listState,
                     modifier = Modifier.fillMaxSize(),
