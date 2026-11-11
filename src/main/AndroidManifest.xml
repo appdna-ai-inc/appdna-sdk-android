@@ -102,10 +102,19 @@
             edge-to-edge backgrounds.
         -->
 
+        <!--
+            `android:configChanges` (all four SDK activities): a fold, an unfold, a rotation, a
+            multi-window resize or a display-density change (a foldable's two displays differ) is a
+            re-layout, not a recreation. Compose re-measures in place, so the step, the answers, the
+            selected plan, the survey score and the scroll position are kept, and the surface moves
+            between its centred column and its two panes without starting over.
+        -->
+
         <!-- Paywall — packages/.../paywalls/PaywallActivity.kt -->
         <activity
             android:name="ai.appdna.sdk.paywalls.PaywallActivity"
             android:exported="false"
+            android:configChanges="orientation|screenSize|smallestScreenSize|screenLayout|density"
             android:theme="@android:style/Theme.Translucent.NoTitleBar"
             android:windowSoftInputMode="adjustResize" />
 
@@ -113,6 +122,7 @@
         <activity
             android:name="ai.appdna.sdk.onboarding.OnboardingActivity"
             android:exported="false"
+            android:configChanges="orientation|screenSize|smallestScreenSize|screenLayout|density"
             android:theme="@android:style/Theme.Translucent.NoTitleBar"
             android:windowSoftInputMode="adjustResize" />
 
@@ -120,6 +130,7 @@
         <activity
             android:name="ai.appdna.sdk.feedback.SurveyActivity"
             android:exported="false"
+            android:configChanges="orientation|screenSize|smallestScreenSize|screenLayout|density"
             android:theme="@android:style/Theme.Translucent.NoTitleBar"
             android:windowSoftInputMode="adjustResize" />
 
@@ -132,6 +143,7 @@
         <activity
             android:name="ai.appdna.sdk.screens.ScreenHostActivity"
             android:exported="false"
+            android:configChanges="orientation|screenSize|smallestScreenSize|screenLayout|density"
             android:theme="@android:style/Theme.Translucent.NoTitleBar"
             android:windowSoftInputMode="adjustResize" />
 

@@ -66,6 +66,8 @@ import ai.appdna.sdk.core.ConfettiOverlay
 import ai.appdna.sdk.core.HapticEngine
 import ai.appdna.sdk.core.LocalizationEngine
 import ai.appdna.sdk.core.entryAnimation
+import ai.appdna.sdk.core.surfaceColumnCentred
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.geometry.Offset
 import ai.appdna.sdk.AppDNA
@@ -1566,12 +1568,14 @@ internal fun OnboardingFlowHost(
         // `safeDrawingPadding()` insets for status + nav bars so chrome
         // (progress, back/close, step body) avoids the system gutters
         // while the background underneath stays full-bleed.
-        Box(
+        // Measures the usable size, the window class and a vertical hinge, and publishes
+        // them to the step layout, which centres a column or splits into two panes from them.
+        ai.appdna.sdk.core.SurfaceMeasure(
             modifier = Modifier
                 .fillMaxSize()
                 .imePadding()
                 .safeDrawingPadding()
-        ) {
+        ) { surface ->
         Column(modifier = Modifier.fillMaxSize()) {
             // Progress bar (Gap 9: custom progress_color/progress_track_color)
             // hide_progress per-step: hidden on this step but still counts in total
@@ -1636,7 +1640,8 @@ internal fun OnboardingFlowHost(
                 // Optional "Skip" link beside the progress. When set the bar shrinks to make
                 // room for the Skip on the trailing side; when null the Box fills the row (no visual change).
                 val progressSkipLabel = flow.settings.progress_skip_label
-                Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                // In the surface column: on a wide window the bar stops stretching edge to edge.
+                Row(modifier = Modifier.surfaceColumnCentred(surface.column), verticalAlignment = Alignment.CenterVertically) {
                   Box(Modifier.weight(1f)) {
                 when (flow.settings.progress_style?.lowercase()) {
                     "none" -> { /* explicit suppress */ }
@@ -2805,7 +2810,12 @@ fun OnboardingStepView(
         // Legacy step views use the theme's `onBackground` and system controls: they resolve against the step's surface.
         SurfaceTheme(attributionBackdrop) {
         Column(modifier = Modifier.fillMaxSize()) {
-            Box(modifier = Modifier.weight(1f).fillMaxWidth()) {
+            // A legacy step (question, form, welcome, chat) lays out in the centred
+            // column; a block step centres or splits itself (ThreeZoneBlockLayout).
+            ai.appdna.sdk.core.SurfaceColumnLimit(
+                limit = effectiveConfig.content_blocks.isNullOrEmpty(),
+                modifier = Modifier.weight(1f).fillMaxWidth(),
+            ) {
                 OnboardingStepBody(
                     step = step,
                     effectiveConfig = effectiveConfig,
@@ -3331,17 +3341,52 @@ internal fun ThreeZoneBlockLayout(
     // Fixing makes the same flow render with the same vertical rhythm
     // on both platforms (was P0: a block authored without an explicit
     // zone landed in different parts of the screen on each native).
-    val top = mutableListOf<ContentBlock>()
-    val center = mutableListOf<ContentBlock>()
+    val allTop = mutableListOf<ContentBlock>()
+    val allCenter = mutableListOf<ContentBlock>()
     val bottom = mutableListOf<ContentBlock>()
     for (block in visibleBlocks) {
         val effectiveZone = (block.zone ?: block.vertical_align ?: "top").lowercase()
         when (effectiveZone) {
-            "center" -> center.add(block)
+            "center" -> allCenter.add(block)
             "bottom" -> bottom.add(block)
-            else -> top.add(block)
+            else -> allTop.add(block)
         }
     }
+    /*
+     * On a wide window the step's hero (the leading run of visual blocks in the first
+     * non-empty zone of top, then centre) moves into a leading pane beside everything else. The rule
+     * is shared with iOS and the console (`surface_layout` fixture). The trailing pane below is the
+     * same composition in both modes, so a fold or unfold keeps typed text, picks and scroll.
+     */
+    val partition = ai.appdna.sdk.core.SurfaceLayout.onboardingSplit(
+        visibleBlocks.map { it.type to (it.zone ?: it.vertical_align) },
+    )
+    val heroFromTop = allTop.isNotEmpty()
+    val heroBlocks = (if (heroFromTop) allTop else allCenter).take(partition.hero)
+    ai.appdna.sdk.core.SurfacePanes(
+        splits = partition.splits,
+        modifier = modifier,
+        lead = {
+            OnboardingHeroPane(
+                hero = heroBlocks,
+                onAction = onAction,
+                toggleValues = toggleValues,
+                inputValues = inputValues,
+                loc = loc,
+                responses = responses,
+                hookData = hookData,
+                currentStepIndex = currentStepIndex,
+                totalSteps = totalSteps,
+                onInteract = onInteract,
+                fieldConfigOverrides = fieldConfigOverrides,
+                fieldOptionsOverrides = fieldOptionsOverrides,
+                stepGateBlocks = stepGateBlocks,
+                stepId = stepId,
+            )
+        },
+    ) { split ->
+    val top = if (split && heroFromTop) allTop.drop(partition.hero) else allTop
+    val center = if (split && !heroFromTop) allCenter.drop(partition.hero) else allCenter
     // 🔴 The scrolling content reserved a FIXED 80dp for the pinned bottom zone.
     //
     // The bottom zone is an overlay (`align(Alignment.BottomCenter)`), so that number is the only
@@ -3357,7 +3402,6 @@ internal fun ThreeZoneBlockLayout(
 
     val onlyCenterContent = top.isEmpty() && center.isNotEmpty()
 
-    val configuration = androidx.compose.ui.platform.LocalConfiguration.current
     // iOS uses `max(24, screenWidth * 0.08)` for responsive
     // horizontal margins (`ThreeZoneStepLayout.swift:106`). Mirror the
     // formula in dp so wider screens (foldables, tablets) get proportional
@@ -3365,13 +3409,14 @@ internal fun ThreeZoneBlockLayout(
     // The ONE definition of the step's horizontal inset, shared with the full-bleed modifier that
     // has to cancel it. A constant there and a formula here is how a background "reaching
     // the screen edges" stopped short on iOS.
-    val horizontalPadding = BlockFullBleed.stepHorizontalInset(configuration.screenWidthDp.toDouble()).dp
+    // A fraction of the COLUMN (or pane) the content is in, not of the screen.
+    val horizontalPadding = BlockFullBleed.stepHorizontalInset(ai.appdna.sdk.core.surfaceColumnWidthDp().toDouble()).dp
 
     val keyboardController = androidx.compose.ui.platform.LocalSoftwareKeyboardController.current
     val focusManager = androidx.compose.ui.platform.LocalFocusManager.current
 
     androidx.compose.foundation.layout.Box(
-        modifier = modifier
+        modifier = Modifier
             .fillMaxSize()
             // Root-level keyboard dismiss to
             // match iOS OnboardingRenderer.swift:123-129. Was scoped to the
@@ -3554,6 +3599,62 @@ internal fun ThreeZoneBlockLayout(
                     stepId = stepId,
                 )
             }
+        }
+    }
+    }
+}
+
+
+/**
+ * The leading pane of a split step: the step's hero (its leading visual blocks),
+ * vertically centred in the pane at the pane's own inset. Only composed while the step is split;
+ * moving between modes restarts this decorative media at most once, which is the one accepted loss.
+ * It scrolls only if the hero is taller than the pane.
+ */
+@androidx.compose.runtime.Composable
+private fun OnboardingHeroPane(
+    hero: List<ContentBlock>,
+    onAction: (String) -> Unit,
+    toggleValues: MutableMap<String, Boolean>,
+    inputValues: MutableMap<String, Any>,
+    loc: ((String, String) -> String)?,
+    responses: Map<String, Any>,
+    hookData: Map<String, Any>?,
+    currentStepIndex: Int,
+    totalSteps: Int,
+    onInteract: (String, String, String?) -> Unit,
+    fieldConfigOverrides: Map<String, Map<String, Any>>,
+    fieldOptionsOverrides: Map<String, List<InputOption>>,
+    stepGateBlocks: List<ContentBlock>,
+    stepId: String,
+) {
+    val inset = BlockFullBleed.stepHorizontalInset(ai.appdna.sdk.core.surfaceColumnWidthDp().toDouble()).dp
+    BoxWithConstraints(modifier = Modifier.fillMaxSize().testTag("appdna_split_lead")) {
+        val viewport = maxHeight
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .verticalScroll(rememberScrollState())
+                .heightIn(min = viewport)
+                .padding(horizontal = inset),
+            verticalArrangement = Arrangement.Center,
+        ) {
+            ContentBlockRendererView(
+                blocks = hero,
+                onAction = onAction,
+                toggleValues = toggleValues,
+                inputValues = inputValues,
+                loc = loc,
+                responses = responses,
+                hookData = hookData,
+                currentStepIndex = currentStepIndex,
+                totalSteps = totalSteps,
+                onInteract = onInteract,
+                fieldConfigOverrides = fieldConfigOverrides,
+                fieldOptionsOverrides = fieldOptionsOverrides,
+                stepBlocks = stepGateBlocks,
+                stepId = stepId,
+            )
         }
     }
 }
@@ -4435,7 +4536,8 @@ private fun BlockBasedStepView(
                         }
                     }
                 }
-                "image_split" -> {
+                // A variant with its own authored image keeps to the centred column.
+                "image_split" -> ai.appdna.sdk.core.SurfaceColumnLimit(limit = true) {
                     Row(Modifier.fillMaxSize()) {
                         // Image side (40%)
                         ai.appdna.sdk.core.NetworkImage(
@@ -4454,7 +4556,8 @@ private fun BlockBasedStepView(
                         }
                     }
                 }
-                "image_bottom" -> {
+                // A variant with its own authored image keeps to the centred column.
+                "image_bottom" -> ai.appdna.sdk.core.SurfaceColumnLimit(limit = true) {
                     // Hotfix-1.0.33 — outer scroll removed; TZBL owns scrolling.
                     Column(
                         modifier = Modifier
@@ -4470,7 +4573,8 @@ private fun BlockBasedStepView(
                         )
                     }
                 }
-                "image_top" -> {
+                // A variant with its own authored image keeps to the centred column.
+                "image_top" -> ai.appdna.sdk.core.SurfaceColumnLimit(limit = true) {
                     // Hotfix-1.0.33 — outer scroll removed; TZBL owns scrolling.
                     Column(
                         modifier = Modifier

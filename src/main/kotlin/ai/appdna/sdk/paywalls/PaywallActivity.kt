@@ -717,7 +717,8 @@ fun PaywallScreen(
     // Out-of-band, because one more PARAMETER on this composable made ART reject it
     // (see LocalPaywallAction).
     val onAction = LocalPaywallAction.current
-    var selectedPlanId by remember { mutableStateOf<String?>(null) }
+    // Saveable: a recreation the activity does not handle (a theme change) keeps the user's pick.
+    var selectedPlanId by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf<String?>(null) }
     var showDismiss by remember { mutableStateOf(false) }
     // The Back button has its OWN delay, so it cannot ride on `showDismiss`.
     var showBack by remember { mutableStateOf(false) }
@@ -972,10 +973,41 @@ fun PaywallScreen(
         var viewportHeightPx by remember { mutableStateOf(0) }
         var bottomZoneOverflowed by remember { mutableStateOf(false) }
 
+        /*
+         * The paywall lays out in the surface column (`min(width, 560)`, centred), and on a
+         * wide window (regular width, ≥ 720dp, wider than tall) a paywall with a pitch before its
+         * plans splits: the pitch (header, features, testimonials, images…) in a leading pane, the
+         * plans and the pinned call to action in the trailing pane. The rule is shared with iOS and
+         * the console (`surface_layout` fixture). The trailing pane is the same composition in both
+         * modes, so the selected plan, a typed promo code and the scroll survive a fold or unfold.
+         */
+        val surfacePartition = ai.appdna.sdk.core.SurfaceLayout.paywallSplit(
+            config.sections.map { it.type to it.zone },
+        )
+        val pitchSections: Set<PaywallSection> = surfacePartition.pitch.map { config.sections[it] }.toSet()
+        ai.appdna.sdk.core.SurfaceMeasure(modifier = Modifier.fillMaxSize()) { _ ->
+        ai.appdna.sdk.core.SurfacePanes(
+            splits = surfacePartition.splits,
+            lead = {
+                PaywallPitchPane(
+                    sections = config.sections.filter { it in pitchSections },
+                    config = config,
+                    headerCloseInset = PaywallHeaderInset.resolve(config.dismiss).dp,
+                    loc = ::loc,
+                    toggleStates = toggleStates,
+                    onDismiss = { triggerDismiss() },
+                    onRestore = onRestore,
+                )
+            },
+        ) { paywallSplit ->
         // Content in a Column with scrollable area + sticky footer
         Column(
             modifier = Modifier
                 .fillMaxSize()
+                // Split: the trailing pane starts below the close control, which sits over its top
+                // corner, so the first plan's badge is never under the ✕ (the pitch pane's header
+                // already reserves it). The control's footprint is the same figure the header uses.
+                .padding(top = if (paywallSplit) PaywallHeaderInset.resolve(config.dismiss).dp else 0.dp)
                 // The viewport the pinned-zone cap is measured against. It has to be
                 // measured in THIS scope: the state the cap reads lives here, and the root Box
                 // further down the file is a different composable that cannot see it.
@@ -1087,7 +1119,9 @@ fun PaywallScreen(
             val bottomZoneSections = if (bottomZoneOverflowed) emptyList() else authoredBottomZone
             val scrollableSections = config.sections.filter {
                 it.type != "sticky_footer" && it.type != "cta" && it !in pinnedLegalSet &&
-                    it !in bottomZoneSections
+                    it !in bottomZoneSections &&
+                    // Split: the pitch is drawn in the leading pane instead.
+                    !(paywallSplit && it in pitchSections)
             }
 
             /*
@@ -1325,6 +1359,8 @@ fun PaywallScreen(
             }
             } // end pinned bottom group (footer_padding wrapper)
         }
+        } // end SurfacePanes main pane
+        } // end SurfaceMeasure
 
         // Confetti overlay
         if (showConfetti && config.particle_effect != null) {
@@ -1632,6 +1668,55 @@ private fun appendPlanName(
     // The format is localised too, so a locale can change the separator or the order.
     val format = loc("cta.plan_format", config.cta?.plan_format ?: CtaPlanName.DEFAULT_FORMAT)
     return CtaPlanName.compose(localised, name, format)
+}
+
+/**
+ * The leading pane of a split paywall: the pitch (every scrolling section before the
+ * first plans section), in its own scroll at the paywall's padding. Only composed while split. The
+ * pitch carries no plan selection or purchase, so its section callbacks are inert apart from an
+ * authored dismiss or restore button.
+ */
+@Composable
+private fun PaywallPitchPane(
+    sections: List<PaywallSection>,
+    config: PaywallConfig,
+    headerCloseInset: androidx.compose.ui.unit.Dp,
+    loc: (String, String) -> String,
+    toggleStates: MutableMap<String, Boolean>,
+    onDismiss: () -> Unit,
+    onRestore: () -> Unit,
+) {
+    androidx.compose.foundation.lazy.LazyColumn(
+        modifier = Modifier
+            .fillMaxSize()
+            .testTag("appdna_split_lead")
+            .padding((config.layout.padding ?: 20f).dp),
+        verticalArrangement = Arrangement.Center,
+    ) {
+        itemsIndexed(
+            items = sections,
+            key = { idx, section -> "${section.type}_${section.id ?: idx}" },
+        ) { _, section ->
+            PaywallSectionView(
+                section = section,
+                config = config,
+                headerCloseInset = headerCloseInset,
+                selectedPlanId = null,
+                isPurchasing = false,
+                onPlanSelect = {},
+                onCTATap = {},
+                onRestore = onRestore,
+                onDismiss = onDismiss,
+                loc = loc,
+                toggleStates = toggleStates,
+                promoCode = "",
+                promoState = "idle",
+                onPromoCodeChange = {},
+                onPromoStateChange = {},
+            )
+            Spacer(modifier = Modifier.height((config.layout.spacing ?: 16f).dp))
+        }
+    }
 }
 
 @Composable

@@ -6,6 +6,8 @@ import androidx.compose.foundation.*
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.*
+import androidx.compose.ui.platform.testTag
+import ai.appdna.sdk.core.SurfaceColumn
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -199,6 +201,8 @@ private fun BannerMessageView(
         ) {
             Card(
                 modifier = Modifier
+                    // At most the surface column (560dp) wide, centred.
+                    .widthIn(max = (SurfaceColumn.MAX_WIDTH + 32f).dp)
                     .fillMaxWidth()
                     .padding(horizontal = 16.dp)
                     .padding(if (isTop) PaddingValues(top = 8.dp) else PaddingValues(bottom = 8.dp)),
@@ -390,6 +394,9 @@ private fun ModalMessageView(
         // Modal card
         Card(
             modifier = Modifier
+                // The card is at most the surface column (560dp) wide, centred, so it does
+                // not stretch across a tablet or an unfolded foldable.
+                .widthIn(max = (SurfaceColumn.MAX_WIDTH + 64f).dp)
                 .fillMaxWidth()
                 .padding(horizontal = 32.dp)
                 .clickable(enabled = false, onClick = {}), // Prevent click-through
@@ -580,45 +587,12 @@ private fun ModalMessageView(
 
 // MARK: - Fullscreen
 
+/**
+ * The full-screen message's hero: Lottie, Rive or video (preferred), else the static image, each
+ * followed by its gap. Drawn above the copy in the column, or alone in the leading pane of a split.
+ */
 @Composable
-private fun FullscreenMessageView(
-    content: MessageContent,
-    onCTATap: () -> Unit,
-    onDismiss: () -> Unit,
-    dismissUnlocked: Boolean = true,
-) {
-    val textColor = content.text_color?.let { StyleEngine.parseColor(it) } ?: Color.Unspecified
-    val buttonColor = content.button_color?.let { StyleEngine.parseColor(it) } ?: Color(0xFF6366F1)
-    // Fall back to MaterialTheme.surface so dark
-    // mode picks up the seeded scheme color rather than hard-coded white.
-    val bgColor = content.background_color?.let { StyleEngine.parseColor(it) } ?: MaterialTheme.colorScheme.surface
-    val cornerRadius = content.corner_radius ?: 14
-    val currentView = LocalView.current
-    var showConfetti by remember { mutableStateOf(false) }
-
-    LaunchedEffect(Unit) {
-        // iOS parity — haptic on appear,
-        // matches iOS FullscreenView.swift:145.
-        HapticEngine.triggerIfEnabled(currentView, content.haptic?.triggers?.on_button_tap, content.haptic)
-        if (content.particle_effect?.trigger == "on_appear") {
-            showConfetti = true
-        }
-    }
-
-    Box(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(bgColor),
-    ) {
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(horizontal = 24.dp),
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.Center,
-        ) {
-            Spacer(modifier = Modifier.weight(1f))
-
+private fun ColumnScope.FullscreenMessageHero(content: MessageContent) {
             // Lottie/Rive/Video hero (preferred over static image)
             if (content.lottie_url != null) {
                 LottieBlockView(
@@ -663,6 +637,70 @@ private fun FullscreenMessageView(
                     Spacer(modifier = Modifier.height(24.dp))
                 }
             }
+
+}
+
+@Composable
+private fun FullscreenMessageView(
+    content: MessageContent,
+    onCTATap: () -> Unit,
+    onDismiss: () -> Unit,
+    dismissUnlocked: Boolean = true,
+) {
+    val textColor = content.text_color?.let { StyleEngine.parseColor(it) } ?: Color.Unspecified
+    val buttonColor = content.button_color?.let { StyleEngine.parseColor(it) } ?: Color(0xFF6366F1)
+    // Fall back to MaterialTheme.surface so dark
+    // mode picks up the seeded scheme color rather than hard-coded white.
+    val bgColor = content.background_color?.let { StyleEngine.parseColor(it) } ?: MaterialTheme.colorScheme.surface
+    val cornerRadius = content.corner_radius ?: 14
+    val currentView = LocalView.current
+    var showConfetti by remember { mutableStateOf(false) }
+
+    LaunchedEffect(Unit) {
+        // iOS parity — haptic on appear,
+        // matches iOS FullscreenView.swift:145.
+        HapticEngine.triggerIfEnabled(currentView, content.haptic?.triggers?.on_button_tap, content.haptic)
+        if (content.particle_effect?.trigger == "on_appear") {
+            showConfetti = true
+        }
+    }
+
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(bgColor),
+    ) {
+        /*
+         * The copy lays out in the surface column (`min(width, 560)`, centred); on a wide
+         * window (regular width, ≥ 720dp, wider than tall) a message with hero media AND copy splits:
+         * the hero in a leading pane, the title, body and buttons in the trailing one. The rule is
+         * shared with iOS and the console (`surface_layout` fixture).
+         */
+        val hasHero = content.lottie_url != null || content.rive_url != null ||
+            content.video_url != null || content.image_url != null
+        val hasCopy = content.title != null || content.body != null || content.cta_text != null
+        ai.appdna.sdk.core.SurfaceMeasure(modifier = Modifier.fillMaxSize()) { _ ->
+        ai.appdna.sdk.core.SurfacePanes(
+            splits = ai.appdna.sdk.core.SurfaceLayout.messageSplits("fullscreen", hasHero, hasCopy),
+            lead = {
+                Box(
+                    modifier = Modifier.fillMaxSize().padding(horizontal = 24.dp).testTag("appdna_split_lead"),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) { FullscreenMessageHero(content) }
+                }
+            },
+        ) { split ->
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(horizontal = 24.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.Center,
+        ) {
+            Spacer(modifier = Modifier.weight(1f))
+
+            if (!split) FullscreenMessageHero(content)
 
             // Title
             content.title?.let {
@@ -759,6 +797,8 @@ private fun FullscreenMessageView(
 
             Spacer(modifier = Modifier.height(32.dp))
         }
+        } // end SurfacePanes main pane
+        } // end SurfaceMeasure
 
         // Close button
         val fullscreenCloseCd = stringResource(R.string.appdna_a11y_message_close)
