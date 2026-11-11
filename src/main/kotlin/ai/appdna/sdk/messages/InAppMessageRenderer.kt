@@ -1,5 +1,6 @@
 package ai.appdna.sdk.messages
 
+import ai.appdna.sdk.core.authoredImageSemantics
 import androidx.compose.animation.*
 import androidx.compose.animation.core.*
 import androidx.compose.foundation.*
@@ -469,7 +470,9 @@ private fun ModalMessageView(
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .height(160.dp)
-                                .clip(RoundedCornerShape(8.dp)),
+                                .clip(RoundedCornerShape(8.dp))
+                                // No description can be authored for this image, so it is decorative: TalkBack skips it (AuthoredImageAccessibility).
+                                .authoredImageSemantics(null),
                             // Mirror iOS ModalView.swift:66 `.scaledToFit()` so
                             // portrait posters render fully (Crop was cutting
                             // top/bottom on tall images).
@@ -631,7 +634,9 @@ private fun ColumnScope.FullscreenMessageHero(content: MessageContent) {
                         url = imageUrl,
                         modifier = Modifier
                             .size(300.dp)
-                            .clip(RoundedCornerShape(16.dp)),
+                            .clip(RoundedCornerShape(16.dp))
+                            // No description can be authored for this image, so it is decorative: TalkBack skips it (AuthoredImageAccessibility).
+                            .authoredImageSemantics(null),
                         contentScale = ContentScale.Fit,
                     )
                     Spacer(modifier = Modifier.height(24.dp))

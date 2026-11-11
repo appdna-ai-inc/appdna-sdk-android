@@ -1,5 +1,6 @@
 package ai.appdna.sdk.paywalls
 
+import ai.appdna.sdk.core.authoredImageSemantics
 import ai.appdna.sdk.AppDNA
 import ai.appdna.sdk.Log
 import android.content.Context
@@ -4959,18 +4960,12 @@ internal fun PaywallSectionView(
                 url = section.data?.image_url,
                 // The console's "Alt Text": TalkBack reads it as the image's description — set on the
                 // section's own node (one node, an image), so it is there while the image loads or fails
-                // as well as once it has drawn.
+                // as well as once it has drawn. A blank Alt Text makes the image decorative: skipped.
                 modifier = Modifier
                     .fillMaxWidth()
                     .height((section.data?.height ?: 240f).dp)
                     .clip(RoundedCornerShape((section.data?.corner_radius ?: 12f).dp))
-                    .run {
-                        val alt = PaywallImageAccessibility.label(section.data)
-                        if (alt == null) this else clearAndSetSemantics {
-                            contentDescription = alt
-                            role = Role.Image
-                        }
-                    }
+                    .then(Modifier.authoredImageSemantics(PaywallImageAccessibility.label(section.data)))
                     .run { with(StyleEngine) { applyContainerStyle(section.style?.container) } },
                 contentScale = androidx.compose.ui.layout.ContentScale.Crop,
             )

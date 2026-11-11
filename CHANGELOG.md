@@ -12,6 +12,13 @@ the project uses [Semantic Versioning](https://semver.org/).
 
 - **An onboarding button can add the app's widget to the home screen.** A button with the `add_widget` action asks the launcher to pin the app's own home-screen widget (`AppWidgetManager.requestPinAppWidget`, Android 8 and later); the SDK ships no widget, it pins the one the app declares. With no code in the app, the SDK finds the app's widget provider; an app with several names one in the button's `action_value` (the class name, fully qualified or simple), otherwise the first by class name is used. Where the launcher cannot or will not show a pin dialog (Android 7, a launcher without pinning, a refused request, or no dialog within a short wait), the button's `howto_blocks_android` sheet is shown instead: its Done button ends the attempt, and closing it any other way (swipe, back, a tap outside, a `dismiss` button) returns to the step. The step then advances once with `widget_status` in its answers, `added`, `not_added` or `unavailable` (the app has no widget), so next-step rules can branch on it. A widget counts as added when the launcher confirms it or a new widget id of that provider appears. A widget with a configuration activity is pinned without that activity being shown, so it must draw a sensible default. Events: `widget_add_tapped`, `widget_pin_requested`, `widget_pin_unavailable`, `widget_howto_shown`, `widget_howto_dismissed`, `widget_added`, `widget_not_added` and `widget_add_unavailable`, each with `flow_id` and `step_id`. The library manifest declares one non-exported receiver for the launcher's success callback.
 
+### Changed
+
+- **An image with no description is decorative, and screen readers skip it.** An onboarding image block, a
+  paywall image section or a screen image section whose Alt text is blank or unset is now hidden from TalkBack
+  (it was announced as "Image", or with no description); one with Alt text is read as that text, as an image. An
+  in-app message's image and a survey question's image have no description field, so they are always skipped.
+
 ### Fixed
 
 - **The Date Picker draws the style chosen in the console.** `field_config.picker_variant` (`graphical` · `wheel` · `compact`) decides what a `date_wheel_picker` draws — Android drew the wheel whatever it said, and now draws the calendar for a date with no style set, as iOS always has; unset, a date is the calendar and a date-and-time or a year the wheel. A **Date** field (`input_date` / `input_datetime`) with `picker_presentation: inline` — the console's default — always drew the calendar, so its Picker Variant changed nothing: it now draws the variant chosen.

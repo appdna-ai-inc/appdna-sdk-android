@@ -1,5 +1,6 @@
 package ai.appdna.sdk.onboarding
 
+import ai.appdna.sdk.core.authoredImageSemantics
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -27,10 +28,6 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
-import androidx.compose.ui.semantics.Role
-import androidx.compose.ui.semantics.contentDescription
-import androidx.compose.ui.semantics.role
-import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImagePainter
 import coil.compose.rememberAsyncImagePainter
@@ -120,10 +117,8 @@ internal fun AnimatedImageBlock(block: ContentBlock) {
             .fillMaxWidth()
             .height(maxOf(1.0, block.height ?: AnimatedImageMarquee.DEFAULT_HEIGHT).dp)
             .clip(RoundedCornerShape((block.corner_radius ?: 0.0).dp))
-            .semantics {
-                role = Role.Image
-                block.alt?.takeIf { it.isNotBlank() }?.let { contentDescription = it }
-            },
+            // The same rule as every authored image: alt read as the image, blank alt decorative (no node at all).
+            .then(Modifier.authoredImageSemantics(block.imageAccessibilityLabel)),
     )
 }
 

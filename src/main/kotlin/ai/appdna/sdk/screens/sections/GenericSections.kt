@@ -1,5 +1,6 @@
 package ai.appdna.sdk.screens.sections
 
+import ai.appdna.sdk.core.authoredImageSemantics
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -272,6 +273,16 @@ private fun handleButtonAction(button: Map<String, Any?>, context: SectionContex
 }
 
 /**
+ * A screen image section's accessibility: the screens editor's "Alt Text" (`alt`), trimmed, or null when it is
+ * blank and the image is decorative ([ai.appdna.sdk.core.AuthoredImageAccessibility]). iOS
+ * `ScreenImageAccessibility` is the same; `packages/sdk-shared-fixtures/dto_parsing/screen_image_alt.fixture.json`
+ * pins both.
+ */
+object ScreenImageAccessibility {
+    fun label(section: ScreenSection): String? = ai.appdna.sdk.core.AuthoredImageAccessibility.label(section.data["alt"])
+}
+
+/**
  * image_section now loads `image_url`
  * via [ai.appdna.sdk.core.NetworkImage] (Coil under the hood) instead
  * of rendering a gray Box. Mirrors iOS BundledAsyncImage.
@@ -285,10 +296,12 @@ internal fun ImageSectionRenderer(section: ScreenSection, context: SectionContex
     val mod = Modifier.fillMaxWidth().height(height.dp)
         .let { if (cornerRadius > 0) it.clip(RoundedCornerShape(cornerRadius.dp)) else it }
     if (url != null) {
+        val alt = ScreenImageAccessibility.label(section)
         ai.appdna.sdk.core.NetworkImage(
             url = url,
-            modifier = mod,
-            contentDescription = section.data["alt"] as? String,
+            // The screens editor's "Alt Text" is read as the image's description; blank is decorative and skipped.
+            modifier = mod.then(Modifier.authoredImageSemantics(alt)),
+            contentDescription = alt,
         )
     } else {
         Box(modifier = mod.background(Color.Gray.copy(alpha = 0.1f)))

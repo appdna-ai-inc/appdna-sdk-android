@@ -1,5 +1,6 @@
 package ai.appdna.sdk.screens.sections
 
+import ai.appdna.sdk.core.authoredImageSemantics
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -569,7 +570,9 @@ private fun PaywallImageSection(section: ScreenSection) {
             .height(height.dp)
             .padding(horizontal = 20.dp)
             .clip(RoundedCornerShape(radius.dp))
-            .background(Color.Gray.copy(alpha = 0.1f)),
+            .background(Color.Gray.copy(alpha = 0.1f))
+            // A paywall image section's "Alt Text": read as its description, or skipped when blank (decorative).
+            .then(Modifier.authoredImageSemantics(ai.appdna.sdk.core.AuthoredImageAccessibility.label(section.data["alt"]))),
     ) {
         if (url != null) {
             ai.appdna.sdk.core.NetworkImage(
@@ -912,7 +915,9 @@ internal fun MessageSectionWrapper(section: ScreenSection, context: SectionConte
                             .fillMaxWidth()
                             .height(140.dp)
                             .clip(RoundedCornerShape(8.dp))
-                            .background(Color.Gray.copy(alpha = 0.1f)),
+                            .background(Color.Gray.copy(alpha = 0.1f))
+                            // No description can be authored for this image, so it is decorative: TalkBack skips it.
+                            .authoredImageSemantics(null),
                     ) {
                         ai.appdna.sdk.core.NetworkImage(
                             url = imageUrl,

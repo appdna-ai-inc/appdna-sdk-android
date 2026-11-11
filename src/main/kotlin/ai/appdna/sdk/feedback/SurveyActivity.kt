@@ -1,6 +1,7 @@
 package ai.appdna.sdk.feedback
 
 // Re-wrap interpolated options as ImmutableList for Compose stability.
+import ai.appdna.sdk.core.authoredImageSemantics
 import kotlinx.collections.immutable.toImmutableList
 import kotlinx.coroutines.launch
 import androidx.compose.ui.text.style.TextAlign
@@ -524,7 +525,9 @@ fun SurveyScreen(
                     contentDescription = null,
                     modifier = Modifier
                         .heightIn(max = 140.dp)
-                        .padding(bottom = 12.dp),
+                        .padding(bottom = 12.dp)
+                        // No description can be authored for this image, so it is decorative: TalkBack skips it (AuthoredImageAccessibility).
+                        .authoredImageSemantics(null),
                 )
             }
 

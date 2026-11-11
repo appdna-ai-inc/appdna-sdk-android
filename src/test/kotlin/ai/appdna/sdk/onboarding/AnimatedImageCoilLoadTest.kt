@@ -55,7 +55,9 @@ class AnimatedImageCoilLoadTest {
             compose.mainClock.advanceTimeByFrame()
             org.robolectric.shadows.ShadowLooper.idleMainLooper()
             Thread.sleep(50)
-            if (compose.onAllNodesWithTag("animated_image_strip").fetchSemanticsNodes().isNotEmpty()) { drawn = true; break }
+            // The UNMERGED tree: a block with no alt is decorative, so its node clears its children's semantics
+            // (test tags included) from the tree TalkBack reads; the drawn strip is still there underneath.
+            if (compose.onAllNodesWithTag("animated_image_strip", useUnmergedTree = true).fetchSemanticsNodes().isNotEmpty()) { drawn = true; break }
         }
         org.junit.Assert.assertTrue("the image never loaded, so the strip never drew", drawn)
     }

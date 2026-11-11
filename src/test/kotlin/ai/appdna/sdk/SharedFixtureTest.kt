@@ -281,6 +281,7 @@ class SharedFixtureTest(
             "resolve_message_dismiss" -> runResolveMessageDismiss(action, spy)
             "resolve_paywall_image_alt" -> runPaywallImageAlt(action, spy)
             "resolve_onboarding_image_alt" -> runOnboardingImageAlt(action, spy)
+            "resolve_screen_image_alt" -> runScreenImageAlt(action, spy)
             "resolve_option_label_markdown" -> runOptionLabelMarkdown(action, spy)
             "resolve_date_wheel" -> runDateWheel(action, spy)
             "resolve_container_children" -> runContainerChildren(action, spy)
@@ -3687,6 +3688,25 @@ class SharedFixtureTest(
             val section = paywall.sections.firstOrNull { it.type == "image" }
                 ?: throw AssertionError("[resolve_paywall_image_alt] case $name: the image section was dropped")
             ai.appdna.sdk.paywalls.PaywallImageAccessibility.label(section.data)
+        }
+    }
+
+    /**
+     * A screen image section's alt text, through the REAL `ScreenConfig.fromMap` and the REAL
+     * `ScreenImageAccessibility.label` — the description the image section hands TalkBack (null: skipped).
+     */
+    private fun runScreenImageAlt(action: JSONObject, spy: Spy) {
+        val cases = action.optJSONArray("cases") ?: unsupported("resolve_screen_image_alt without cases")
+        spy.state["results"] = (0 until cases.length()).map { i ->
+            val c = cases.getJSONObject(i)
+            val name = c.optString("name", "?")
+            val data = jsonToMap(c.optJSONObject("data") ?: unsupported("resolve_screen_image_alt case without data"))
+            val screen = ai.appdna.sdk.screens.ScreenConfig.fromMap(
+                mapOf("id" to "scr_alt_$name", "sections" to listOf(mapOf("id" to "s1", "type" to "image_section", "data" to data))),
+            )
+            val section = screen.sections.firstOrNull { it.type == "image_section" }
+                ?: throw AssertionError("[resolve_screen_image_alt] case $name: the image section was dropped")
+            ai.appdna.sdk.screens.sections.ScreenImageAccessibility.label(section)
         }
     }
 

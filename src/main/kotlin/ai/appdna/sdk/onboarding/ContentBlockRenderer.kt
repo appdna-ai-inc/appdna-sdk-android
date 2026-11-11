@@ -7,6 +7,7 @@
 
 package ai.appdna.sdk.onboarding
 
+import ai.appdna.sdk.core.authoredImageSemantics
 import androidx.compose.foundation.relocation.BringIntoViewRequester
 import androidx.compose.foundation.relocation.bringIntoViewRequester
 import androidx.compose.foundation.background
@@ -2935,6 +2936,7 @@ private fun ImageBlock(block: ContentBlock) {
             modifier = Modifier
                 .clip(RoundedCornerShape(outerR))
                 .background(androidx.compose.ui.graphics.Color(0xFF101012))
+                .authoredImageSemantics(block.imageAccessibilityLabel)
                 .padding(bezelPad),
         ) {
             Box {
@@ -2991,6 +2993,7 @@ private fun ImageBlock(block: ContentBlock) {
                 )
                 .clip(RoundedCornerShape(if (isGlow) imageRadius else frameRadius))
                 .background(if (isGlow) androidx.compose.ui.graphics.Color.Transparent else frameColor)
+                .authoredImageSemantics(block.imageAccessibilityLabel)
                 .padding(if (isGlow) 0.dp else 6.dp),
         ) {
             ai.appdna.sdk.core.NetworkImage(
@@ -3013,14 +3016,12 @@ private fun ImageBlock(block: ContentBlock) {
             .then(imgWidthMod)
             .then(aspectMod)
             .heightIn(max = imgHeightMax)
-            .then(shapeModifier),
+            .then(shapeModifier)
+            // A described image is one node read as its alt; a blank alt is decorative and skipped — in every
+            // phase (loading, failed, drawn), the same rule as iOS.
+            .authoredImageSemantics(block.imageAccessibilityLabel),
         contentScale = if (explicitW != null) androidx.compose.ui.layout.ContentScale.Fit else contentScale,
         alignment = imageAlignment,
-        // Fall back to "Image" when
-        // alt unset, matching iOS accessibilityLabel(block.alt ?? "Image")
-        // at ContentBlockRendererView.swift:340. Was passing null — TalkBack
-        // treats null contentDescription on an Image as "decorative" so the
-        // image is silently skipped.
         contentDescription = block.imageAccessibilityLabel,
     )
 }
