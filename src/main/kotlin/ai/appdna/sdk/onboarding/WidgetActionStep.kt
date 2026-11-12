@@ -67,8 +67,14 @@ internal fun rememberWidgetStepWiring(
                 if (!ok) OnboardingPressedButton.clear()
                 return ok
             }
-            override fun track(name: String, properties: Map<String, Any>) = ai.appdna.sdk.AppDNA.track(name, properties)
-            override fun advance(status: String) = adv.value(status)
+            override fun track(name: String, properties: Map<String, Any>) {
+                WidgetPinTiming.event(name, properties)
+                ai.appdna.sdk.AppDNA.track(name, properties)
+            }
+            override fun advance(status: String) {
+                WidgetPinTiming.mark("advance status=$status")
+                adv.value(status)
+            }
             override fun showHowto(blocks: List<ContentBlock>) { howto.value = blocks }
             override fun closeHowto() { howto.value = null }
             override fun onAttemptRetired() = OnboardingPressedButton.clear()

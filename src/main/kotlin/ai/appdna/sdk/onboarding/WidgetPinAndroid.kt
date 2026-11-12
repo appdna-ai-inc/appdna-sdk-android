@@ -176,6 +176,13 @@ internal object WidgetPinTiming {
         if (!enabled) return
         android.util.Log.i("AppDNA-E2E", "AppDNA-E2E widget_pin $what t=${SystemClock.elapsedRealtime()}")
     }
+
+    /** Each widget event with its properties, so a device walk can read what was reported. */
+    fun event(name: String, properties: Map<String, Any>) {
+        if (!enabled) return
+        val props = properties.entries.sortedBy { it.key }.joinToString(" ") { "${it.key}=${it.value}" }
+        android.util.Log.i("AppDNA-E2E", "AppDNA-E2E widget_event $name $props t=${SystemClock.elapsedRealtime()}")
+    }
 }
 
 /** Main-thread timers for the production attempt. */
