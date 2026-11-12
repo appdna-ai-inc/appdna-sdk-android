@@ -409,11 +409,13 @@ internal class HostDataStepPipeline(
         out += block.id
         block.children?.forEach { collectBlockIds(it, out) }
         block.stack_children?.forEach { collectBlockIds(it, out) }
+        block.howto_blocks_ios?.forEach { collectBlockIds(it, out) }
+        block.howto_blocks_android?.forEach { collectBlockIds(it, out) }
     }
 
     private fun collectIds(block: Map<*, *>, out: MutableSet<String>) {
         (block["id"] as? String)?.let { out += it }
-        for (key in listOf("children", "stack_children")) (block[key] as? List<*>)?.forEach { c -> (c as? Map<*, *>)?.let { collectIds(it, out) } }
+        for (key in NESTED_BLOCK_KEYS) (block[key] as? List<*>)?.forEach { c -> (c as? Map<*, *>)?.let { collectIds(it, out) } }
         (block["field_options"] as? List<*>)?.forEach { o ->
             ((o as? Map<*, *>)?.get("sheet_blocks") as? List<*>)?.forEach { sb -> (sb as? Map<*, *>)?.let { collectIds(it, out) } }
         }
@@ -429,7 +431,7 @@ internal class HostDataStepPipeline(
             out["$id|$oid"] = sheet
             sheet.forEach { collectSheets(it, out) }
         }
-        for (key in listOf("children", "stack_children")) {
+        for (key in NESTED_BLOCK_KEYS) {
             (block[key] as? List<*>)?.forEach { c -> (c as? Map<String, Any?>)?.let { collectSheets(it, out) } }
         }
     }
@@ -484,6 +486,8 @@ internal class HostDataStepPipeline(
 
     companion object {
         private const val MAX_REVERTS = 64
+        /** Block lists nested in a block: containers, and an "Add widget" button's how-to sheets. */
+        private val NESTED_BLOCK_KEYS = listOf("children", "stack_children", "howto_blocks_ios", "howto_blocks_android")
         private val MISSING = Any()
         /** Patch keys dropped in the interaction layering. */
         val LAYER_DROPPED_KEYS = setOf("resolve_state", "empty_state", "sheet_step_paths", "repeat", "option_set_id")
@@ -851,7 +855,14 @@ internal fun stampGoogleKeys(block: ContentBlock, keys: Map<String, Map<String, 
         }?.toImmutableList(),
         children = block.children?.map { stampGoogleKeys(it, keys) }?.toImmutableList(),
         stack_children = block.stack_children?.map { stampGoogleKeys(it, keys) }?.toImmutableList(),
-    ).withPlanGoogleKeys(own)
+    ).withPlanGoogleKeys(own).let { b ->
+        // An "Add widget" button's how-to sheets, as children are.
+        if (b.howto_blocks_ios == null && b.howto_blocks_android == null) b
+        else b.withHowtoBlocks(
+            b.howto_blocks_ios?.map { stampGoogleKeys(it, keys) },
+            b.howto_blocks_android?.map { stampGoogleKeys(it, keys) },
+        )
+    }
 }
 
 /** [this] with every pricing plan [own] names given its keys ([planKey]). */
@@ -887,6 +898,8 @@ internal fun googleKeysOf(blocks: List<ContentBlock>): Map<String, Map<String, M
         }
         b.children?.forEach(::visit)
         b.stack_children?.forEach(::visit)
+        b.howto_blocks_ios?.forEach(::visit)
+        b.howto_blocks_android?.forEach(::visit)
     }
     blocks.forEach(::visit)
     return out

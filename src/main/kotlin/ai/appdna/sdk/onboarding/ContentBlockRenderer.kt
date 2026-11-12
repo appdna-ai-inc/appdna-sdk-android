@@ -143,6 +143,7 @@ import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.input.pointer.changedToDown
 import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.ui.graphics.asImageBitmap
 import kotlinx.coroutines.launch
@@ -3110,13 +3111,23 @@ private fun ButtonBlock(
     // it through the local, not a parameter). Null in Screens / SDUI and inside option sheets, where the
     // explicit `onInteract` stays in charge. Never read with a tap override (sound_button).
     val stepInteraction = if (onClickOverride == null && block.action == "refresh_step") LocalStepInteraction.current else null
+    // An `add_widget` button inside an onboarding step hands the step its decoded block (the how-to
+    // blocks, the provider name, the id). Null outside a step and inside every sheet — then the action
+    // takes the ordinary unrecognised-action path below, which advances and keeps the answers.
+    val widgetChannel = if (onClickOverride == null && block.action == WidgetPinAttempt.ACTION_NAME) LocalWidgetAction.current else null
+    // Inside an "Add widget" how-to every action goes to the sheet's own handler, `link` included.
+    val forwardEveryAction = LocalForwardEveryButtonAction.current
     val refreshLoading = stepInteraction != null && stepInteraction.loadingBlockId == block.id
     val refreshTappable = stepInteraction?.isTappable(block.id) ?: true
 
     val actOnClick: () -> Unit = onClickOverride ?: {
         val action = block.action ?: "next"
-        OnboardingPressedButton.record(block.id, action)
-        when (action) {
+        // A how-to's own Done must not be remembered as the press that left the step: the
+        // `add_widget` button that opened it already was.
+        if (!forwardEveryAction) OnboardingPressedButton.record(block.id, action)
+        if (forwardEveryAction) onAction(action)
+        else if (widgetChannel != null) widgetChannel.tap(block)
+        else when (action) {
             // Refresh the step in place. iOS parity: ContentBlockRendererView `buttonBlock`.
             // A tap while not tappable is refused (with a debug log) by the step's coordinator.
             "refresh_step" -> (stepInteraction?.onInteract ?: onInteract)(block.id, "refresh", block.action_value)
@@ -14135,34 +14146,116 @@ private fun OptionBottomSheetBody(option: InputOption, parentBlockId: String, on
         presentedSheetBlocks = option.sheet_blocks.orEmpty(),
         sheetInputs = sheetInputs,
     ) ?: false
+    BlockSheet(
+        blocks = sheetBlocks,
+        loc = null,
+        // The CTA closes the sheet; the flow continues underneath, where the option is already selected.
+        onDone = onDismiss,
+        onClose = { onDismiss() },
+        toggleValues = sheetToggles,
+        inputValues = sheetInputs,
+        rawResolved = rawSheet != null,
+        showsGoogleCredit = showsGoogleCredit,
+    )
+}
+
+/**
+ * A modal bottom sheet of ordinary content blocks — the one engine behind an option's
+ * `sheet_blocks` and the "Add widget" how-to (`howto_blocks_android` here; `howto_blocks_ios` is the
+ * iOS sheet, never shown on Android). Mirrors iOS `BlockSheetView`.
+ *
+ * [onDone] runs for a `next` / `continue` button, [onClose] for a `dismiss` button (`"dismiss"`) and
+ * for the sheet's own dismissal: `"swipe"` (dragged down), `"scrim"` (a tap outside) or `"back"`.
+ * Any other action is logged and ignored.
+ *
+ * The step's interaction wiring and its widget channel are both null inside: the sheet is composed
+ * under the step, and a `refresh_step` or `add_widget` button in it must not reach the step.
+ *
+ * [forwardEveryAction] (the how-to) sends every button action here, `link` included, so the button
+ * renderer's own handling never runs inside it. The option sheet keeps today's behaviour.
+ */
+@OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
+@Composable
+internal fun BlockSheet(
+    blocks: List<ContentBlock>,
+    loc: ((String, String) -> String)?,
+    onDone: () -> Unit,
+    onClose: (via: String) -> Unit,
+    toggleValues: MutableMap<String, Boolean> = remember { mutableStateMapOf() },
+    inputValues: MutableMap<String, Any> = remember { mutableStateMapOf() },
+    rawResolved: Boolean = false,
+    showsGoogleCredit: Boolean = false,
+    forwardEveryAction: Boolean = false,
+    skipPartiallyExpanded: Boolean = false,
+) {
+    // Which gesture is dismissing the sheet. ModalBottomSheet reports every dismissal through one
+    // `onDismissRequest`, so the cause is read on the way: a swipe and a scrim tap both ask
+    // `confirmValueChange(Hidden)` first (a swipe after a drag that began on the sheet), and the back
+    // gesture hides the sheet without asking — so a dismissal nobody confirmed is `back`.
+    val dragged = remember { booleanArrayOf(false) }
+    val via = remember { arrayOfNulls<String>(1) }
+    val sheetState = androidx.compose.material3.rememberModalBottomSheetState(
+        skipPartiallyExpanded = skipPartiallyExpanded,
+        confirmValueChange = { value ->
+            if (value == androidx.compose.material3.SheetValue.Hidden) via[0] = if (dragged[0]) "swipe" else "scrim"
+            dragged[0] = false
+            true
+        },
+    )
+    val markDrag = Modifier.pointerInput(Unit) {
+        awaitPointerEventScope {
+            while (true) {
+                val e = awaitPointerEvent(androidx.compose.ui.input.pointer.PointerEventPass.Initial)
+                val c = e.changes.firstOrNull() ?: continue
+                if (c.changedToDown()) dragged[0] = false
+                else if (c.pressed && (c.position - c.previousPosition).getDistance() > 0f) dragged[0] = true
+            }
+        }
+    }
     val sheetContainerColor = androidx.compose.material3.BottomSheetDefaults.ContainerColor
     val sheetBackdrop = GoogleMapsAttribution.Backdrop.Plain(GoogleMapsAttribution.hexOf(sheetContainerColor))
-    androidx.compose.material3.ModalBottomSheet(onDismissRequest = onDismiss, containerColor = sheetContainerColor) {
+    androidx.compose.material3.ModalBottomSheet(
+        onDismissRequest = {
+            val cause = via[0] ?: "back"
+            via[0] = null
+            onClose(cause)
+        },
+        sheetState = sheetState,
+        containerColor = sheetContainerColor,
+        dragHandle = { Box(markDrag) { androidx.compose.material3.BottomSheetDefaults.DragHandle() } },
+    ) {
         Column(
             modifier = Modifier
+                .then(markDrag)
                 .fillMaxWidth()
                 .padding(horizontal = 20.dp)
                 .padding(bottom = 24.dp),
         ) {
             // The sheet is composed under the step, so the step's interaction wiring
             // would leak into it: a `refresh_step` button in `sheet_blocks` fires NOTHING (the sheet has
-            // its own inputs and no interaction channel; the publish validator warns).
+            // its own inputs and no interaction channel; the publish validator warns). The same holds
+            // for the widget channel: an `add_widget` button in a sheet never starts an attempt.
             androidx.compose.runtime.CompositionLocalProvider(
-                LocalHostDataRawResolved provides (rawSheet != null),
+                LocalHostDataRawResolved provides rawResolved,
                 LocalStepInteraction provides null,
+                LocalWidgetAction provides null,
+                LocalForwardEveryButtonAction provides forwardEveryAction,
                 // The sheet is filled with its own container colour, whatever the step underneath
                 // draws: a Google logo inside the sheet picks its variant from the sheet.
                 LocalGoogleAttributionBackdrop provides sheetBackdrop,
             ) {
             ContentBlockRendererView(
-                blocks = sheetBlocks,
+                blocks = blocks,
                 onAction = { action ->
-                    // The CTA closes the sheet; the flow continues underneath, where the
-                    // option is already selected.
-                    if (action == "next" || action == "continue" || action == "dismiss") onDismiss()
+                    when (action) {
+                        "next", "continue" -> onDone()
+                        "dismiss" -> onClose("dismiss")
+                        else -> ai.appdna.sdk.Log.debug("Sheet: ignored button action \"$action\"")
+                    }
                 },
-                toggleValues = sheetToggles,
-                inputValues = sheetInputs,
+                toggleValues = toggleValues,
+                inputValues = inputValues,
+                loc = loc,
             )
             }
             // Google's attribution inside the sheet, the container its text is drawn in, on the

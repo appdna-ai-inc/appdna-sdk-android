@@ -4320,6 +4320,33 @@ private fun BlockBasedStepView(
     // What nested renderers (row, stack, section_background, carousel pages) read.
     val stepInteraction = rememberStepInteraction(coordinator, ::handleInteract) { liveParamsState.value.pending }
 
+    // "Add widget" — the step's pin attempt, which an `add_widget` button at any depth reaches through
+    // [LocalWidgetAction]. The required-field gate runs FIRST (a refusal starts nothing), and the one
+    // advance carries `widget_status`, merged last, exactly as a flag CTA's key is.
+    fun widgetGateMessage(gate: RequiredFieldGate.Result): String =
+        if (gate.toastKind == "loading") "Loading…" else "Please fill in ${gate.fieldLabel ?: "required fields"}"
+    val widgetWiring = rememberWidgetStepWiring(
+        context = activityCtx,
+        flowId = flowId,
+        stepId = stepId,
+        gatePasses = {
+            val gate = canAdvance()
+            if (!gate.canAdvance) validationMessage = widgetGateMessage(gate)
+            gate.canAdvance
+        },
+        advance = { status ->
+            // Nothing on the step can change while a dialog or modal sheet is up, so this passes the
+            // gate the tap passed. Should it not, the user sees why and stays; the attempt is over.
+            val gate = canAdvance()
+            if (!gate.canAdvance) {
+                Log.warning("Add widget: the step's gate refused the advance after the attempt; staying")
+                validationMessage = widgetGateMessage(gate)
+            } else {
+                onNext(StepAdvancePayload.build(inputValues, toggleValues, mapOf(WidgetPinAttempt.STATUS_KEY to status)))
+            }
+        },
+    )
+
     /*
      * The step's scroll stands down while a finger is on an embedded map.
      *
@@ -4341,7 +4368,9 @@ private fun BlockBasedStepView(
         LocalHostDataSheets provides (hostResolved?.sheetRaw ?: emptyMap()),
         LocalStepGateBlocks provides gateBlocks,
         LocalStepInteraction provides stepInteraction,
+        LocalWidgetAction provides widgetWiring.channel,
     ) {
+    WidgetHowtoSheet(widgetWiring, ::loc)
     Box(modifier = modifier.entryAnimation(effectiveConfig.animation?.entry_animation, effectiveConfig.animation?.entry_duration_ms)) {
         // Step-level background (color, gradient, image)
         effectiveConfig.background?.let { bg ->

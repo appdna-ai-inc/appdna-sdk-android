@@ -180,5 +180,14 @@
             android:name="ai.appdna.sdk.integrations.PushDismissReceiver"
             android:exported="false" />
 
+        <!--
+            The "Add widget" button action asks the launcher to pin the host's own widget with a
+            success callback, an explicit PendingIntent to this receiver; exported="false" because
+            only a PendingIntent the app created may reach it.
+        -->
+        <receiver
+            android:name="ai.appdna.sdk.onboarding.AppDNAWidgetPinReceiver"
+            android:exported="false" />
+
     </application>
 </manifest>

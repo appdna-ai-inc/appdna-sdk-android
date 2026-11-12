@@ -23,7 +23,9 @@ internal object OnboardingPressedButton {
      */
     fun advances(action: String): Boolean =
         action == "next" || action == "continue" || action == OnboardingCTAFlag.ACTION_NAME ||
-            action == PendingCompletionRoute.ACTION_NAME || action == "permission"
+            action == PendingCompletionRoute.ACTION_NAME || action == "permission" ||
+            // The advance comes when the widget attempt ends; a how-to closed without Done clears it.
+            action == WidgetPinAttempt.ACTION_NAME
 
     @Synchronized
     fun record(id: String, action: String) {

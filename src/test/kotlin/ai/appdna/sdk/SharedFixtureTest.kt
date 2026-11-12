@@ -228,6 +228,8 @@ class SharedFixtureTest(
         val action = fixtureJson.getJSONObject("action")
         when (val kind = action.getString("kind")) {
             "tap_button" -> runTapButton(action, spy)
+            // The "Add widget" attempt: the REAL WidgetPinAttempt, its stimuli fed in order.
+            "add_widget_attempt" -> runAddWidgetAttempt(action, spy)
             "submit_form" -> runSubmitForm(action, spy)
             "fire_hook" -> runFireHook(action, spy)
             "show_screen" -> runShowScreen(action, spy)
@@ -4929,13 +4931,123 @@ class SharedFixtureTest(
     }
 
     // ---------------------------------------------------------------------------------------------
+    // add_widget_attempt — the REAL WidgetPinAttempt, the REAL gate, receiver and advance machine
+    // ---------------------------------------------------------------------------------------------
+
+    /** The fake launcher behind the attempt's [WidgetPinPlatform] seam, built from `setup.widget_env.android`. */
+    private class FixtureWidgetPlatform(env: JSONObject) : ai.appdna.sdk.onboarding.WidgetPinPlatform {
+        override val sdkInt: Int = env.getInt("sdk_int")
+        private val providers = env.getJSONArray("providers").let { a -> (0 until a.length()).map { a.getString(it) } }
+        private val pinSupported = env.getBoolean("pin_supported")
+        private val requestResult = env.getString("request_result")
+        private val before = env.getJSONArray("ids_before").let { a -> (0 until a.length()).map { a.getInt(it) }.toSet() }
+        private val after = env.getJSONArray("ids_after").let { a -> (0 until a.length()).map { a.getInt(it) }.toSet() }
+        var widgetAdded = false
+        var requests = 0
+        var lastToken: String? = null
+
+        override fun homeScreenProviders(): List<String> = providers
+        override fun isRequestPinSupported(): Boolean = pinSupported
+        override fun requestPin(providerClass: String, token: String): Boolean {
+            requests++
+            lastToken = token
+            return when (requestResult) {
+                "true" -> true
+                "false" -> false
+                else -> throw IllegalStateException("fixture: request_result=throws")
+            }
+        }
+        override fun widgetIds(providerClass: String): Set<Int> = if (widgetAdded) after else before
+    }
+
+    private fun findBlock(blocks: List<ai.appdna.sdk.onboarding.ContentBlock>, id: String): ai.appdna.sdk.onboarding.ContentBlock? {
+        for (b in blocks) {
+            if (b.id == id) return b
+            findBlock(b.children.orEmpty() + b.stack_children.orEmpty(), id)?.let { return it }
+        }
+        return null
+    }
+
+    private fun runAddWidgetAttempt(action: JSONObject, spy: Spy) {
+        val p = Pipeline(fixtureName).also { pipeline = it }
+        val env = setup.optJSONObject("widget_env")?.optJSONObject("android")
+            ?: unsupported("add_widget_attempt with no setup.widget_env.android")
+        val stimuli = action.optJSONObject("events")?.optJSONArray("android")
+            ?: unsupported("add_widget_attempt with no action.events.android")
+        val flow = flowFromSetup()
+        val currentIndex = flow.steps.indexOfFirst { it.id == action.getString("step_id") }
+        if (currentIndex < 0) unsupported("step ${action.getString("step_id")} is not in the flow")
+        val step = flow.steps[currentIndex]
+        val stepBlocks = step.config.content_blocks.orEmpty()
+        val button = findBlock(stepBlocks, action.getString("button_id"))
+            ?: unsupported("button ${action.getString("button_id")} is not on the step")
+        val platform = FixtureWidgetPlatform(env)
+        val inputValues = mutableMapOf<String, Any>()
+
+        spy.state["widget_status"] = null
+        spy.state["current_step_id"] = step.id
+        val effects = object : ai.appdna.sdk.onboarding.WidgetPinEffects {
+            // The step's REAL gate, over the step's own blocks and (empty) answers.
+            override fun gatePasses(): Boolean = RequiredFieldGate.evaluateDetailed(stepBlocks, inputValues, emptySet()).canAdvance
+            override fun track(name: String, properties: Map<String, Any>) = p.tracker.track(name, properties)
+            // The step's REAL advance: the payload from the SDK's own assembly, then the REAL
+            // OnboardingAdvance machine, so `next_step_rules` route on `widget_status`.
+            override fun advance(status: String) {
+                spy.state["widget_status"] = status
+                val responses = responsesFromSetup().toMutableMap()
+                StepAdvancePayload.build(inputValues, emptyMap(), mapOf(ai.appdna.sdk.onboarding.WidgetPinAttempt.STATUS_KEY to status))
+                    ?.let { responses[step.id] = it }
+                applyAdvance(flow, currentIndex, responses, StepAdvanceResult.Proceed, spy, p.tracker, hookRan = false)
+            }
+            override fun showHowto(blocks: List<ai.appdna.sdk.onboarding.ContentBlock>) { spy.state["howto_open"] = true }
+            override fun closeHowto() { spy.state["howto_open"] = false }
+            // Timers never fire on their own here: `t_pause`, `g_tick` and `g_end` are fed explicitly.
+            override fun schedule(delayMs: Long, action: () -> Unit) = ai.appdna.sdk.onboarding.WidgetPinTimer { }
+        }
+        val attempt = ai.appdna.sdk.onboarding.WidgetPinAttempt(platform, effects, flow.id, step.id)
+        // The launcher's success broadcast goes through the REAL receiver and registry.
+        val onCallback: (String?) -> Unit = { attempt.onCallback(it) }
+        ai.appdna.sdk.onboarding.WidgetPinRegistry.register(onCallback)
+        try {
+            for (i in 0 until stimuli.length()) {
+                when (val stimulus = stimuli.getString(i)) {
+                    "tap" -> attempt.tap(button)
+                    "user_adds_widget" -> platform.widgetAdded = true
+                    "pause" -> attempt.onPause()
+                    "resume" -> attempt.onResume()
+                    "callback" -> ai.appdna.sdk.onboarding.AppDNAWidgetPinReceiver().onReceive(
+                        ctx,
+                        android.content.Intent(ai.appdna.sdk.onboarding.AppDNAWidgetPinReceiver.ACTION_PINNED)
+                            .putExtra(ai.appdna.sdk.onboarding.AppDNAWidgetPinReceiver.EXTRA_TOKEN, platform.lastToken),
+                    )
+                    "t_pause" -> attempt.onPauseTimeout()
+                    "g_tick" -> attempt.onGraceTick()
+                    "g_end" -> attempt.onGraceEnd()
+                    "done_cta" -> attempt.onDoneCta()
+                    "destroy" -> attempt.onDestroy()
+                    else -> if (stimulus.startsWith("close:")) attempt.onClose(stimulus.removePrefix("close:"))
+                        else unsupported("add_widget_attempt stimulus '$stimulus'")
+                }
+            }
+        } finally {
+            ai.appdna.sdk.onboarding.WidgetPinRegistry.unregister(onCallback)
+        }
+        spy.state["pin_requests"] = platform.requests
+        // The fixture asserts the attempt's own events; the advance machine's step events are
+        // asserted by the step_advance fixtures.
+        spy.events += p.envelopes().map { it.toEventPair() }.filter { it.first.startsWith("widget_") }
+    }
+
+    // ---------------------------------------------------------------------------------------------
     // Assertions
     // ---------------------------------------------------------------------------------------------
 
     private fun assertExpectations(spy: Spy) {
         val expect = fixtureJson.getJSONObject("expect")
 
-        val expectedEvents = expect.optJSONArray("events") ?: JSONArray()
+        // A fixture whose platforms legitimately emit different sequences carries them per platform.
+        val expectedEvents = expect.optJSONObject("events_by_platform")?.optJSONArray("android")
+            ?: expect.optJSONArray("events") ?: JSONArray()
         assertEquals(
             "[$fixtureName] event count (SDK emitted ${spy.events.map { it.first }})",
             expectedEvents.length(),
