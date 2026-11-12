@@ -94,6 +94,12 @@ android {
          *
          *     ./gradlew :sample:assembleDebug -PappdnaWalkMenu=<base64>
          */
+        /*
+         * Predictive back, for walking a surface that handles back through OnBackInvokedCallback
+         * (API 33+): `-PappdnaPredictiveBack=true`. Off by default, as in an app that has not opted in.
+         */
+        manifestPlaceholders["appdnaPredictiveBack"] =
+            (project.findProperty("appdnaPredictiveBack") as String?) ?: "false"
         manifestPlaceholders["appdnaWalkMenu"] =
             (project.findProperty("appdnaWalkMenu") as String?) ?: ""
     }
