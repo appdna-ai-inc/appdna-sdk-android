@@ -336,6 +336,9 @@ class SharedFixtureTest(
             "resolve_segmented_presentation" -> runSegmentedPresentation(action, spy)
             "resolve_segmented_default" -> runSegmentedDefault(action, spy)
             "resolve_select_default" -> runSelectDefault(action, spy)
+            // The measurement wheel's palette and the date picker's style (onboarding/PickerFixtureDrivers.kt).
+            "resolve_measurement_palette" ->
+                spy.state["results"] = ai.appdna.sdk.onboarding.PickerFixtureDrivers.palettes(casesOf(action))
             "resolve_survey_answer_events" -> runSurveyAnswerEvents(action, spy)
             // Every tracked event (SDK and host) → message / survey trigger evaluation, once.
             "dispatch_triggers" -> runDispatchTriggers(action, spy)
@@ -4035,6 +4038,12 @@ class SharedFixtureTest(
         }
         spy.state["results"] = results
     }
+
+    /** `action.cases` as plain maps (JSON null → null), for the drivers that live beside the code they drive. */
+    @Suppress("UNCHECKED_CAST")
+    private fun casesOf(action: JSONObject): List<Map<String, Any?>> =
+        (action.optJSONArray("cases")?.takeIf { it.length() > 0 } ?: unsupported("${action.optString("kind")} without action.cases"))
+            .asList().map { it as Map<String, Any?> }
 
     /** `location_field_attribution` — REAL `LocationAnswer.carriesPlaceId` per case. */
     @Suppress("UNCHECKED_CAST")

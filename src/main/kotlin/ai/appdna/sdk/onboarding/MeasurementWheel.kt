@@ -41,7 +41,6 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.wrapContentWidth
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
@@ -282,6 +281,66 @@ fun parseMeasurementConfig(block: ContentBlock): MeasurementConfig? {
     )
 }
 
+// MARK: - Palette — every colour the measurement picker draws, one key each
+
+/**
+ * The colour of every part of a measurement picker, resolved from `field_config`.
+ *
+ * Before, the drum styles (`wheel`, `dial`) drew their band, the value on the band and the rows around it
+ * from keys named for the ruler (`track_color`, `needle_color`) and tinted every row with the accent, the
+ * unit label, the field label and the inactive toggle in the theme's onSurface, and the active toggle's
+ * label in white, so an author could not set those at all. Each part now has its own key; an unset key
+ * falls back to the pinned default iOS and the console preview draw. Shared through the
+ * `resolve_measurement_palette` fixture.
+ */
+data class MeasurementPalette(
+    val value: String,
+    val unit: String,
+    val label: String,
+    val toggleActive: String,
+    val toggleActiveText: String,
+    val toggleText: String,
+    val tick: String,
+    val track: String,
+    /** `null` = the track colour at 60% opacity. */
+    val band: String?,
+    val bandText: String,
+    val rowText: String,
+) {
+    /** The fixture's view: role name → hex (`band` null when derived). */
+    fun roles(): Map<String, Any?> = linkedMapOf(
+        "value" to value, "unit" to unit, "label" to label,
+        "toggle_active" to toggleActive, "toggle_active_text" to toggleActiveText, "toggle_text" to toggleText,
+        "tick" to tick, "track" to track, "band" to band, "band_text" to bandText, "row_text" to rowText,
+    )
+}
+
+/** One rule for every platform: an authored, non-blank string wins; otherwise the pinned default. */
+fun measurementPalette(cfg: Map<String, Any?>, highlight: String?, dark: Boolean): MeasurementPalette {
+    fun s(k: String): String? = (cfg[k] as? String)?.trim()?.takeIf { it.isNotEmpty() }
+    val accent = highlight?.trim()?.takeIf { it.isNotEmpty() } ?: "#6366F1"
+    val muted = if (dark) "#94A3B8" else "#64748B"
+    val value = s("needle_color") ?: accent
+    val tick = s("tick_color") ?: if (dark) "#475569" else "#CBD5E1"
+    return MeasurementPalette(
+        value = value,
+        unit = s("unit_color") ?: muted,
+        label = s("label_color") ?: muted,
+        toggleActive = s("toggle_active_color") ?: accent,
+        toggleActiveText = s("toggle_active_text_color") ?: "#FFFFFF",
+        toggleText = s("toggle_text_color") ?: muted,
+        tick = tick,
+        track = s("track_color") ?: if (dark) "#334155" else "#E2E8F0",
+        band = s("band_color"),
+        bandText = s("band_text_color") ?: value,
+        rowText = s("row_text_color") ?: tick,
+    )
+}
+
+/** A drum row's opacity by its distance from the band — iOS `drumVisual`'s rule. */
+internal fun measurementDrumRowAlpha(offset: Int): Float =
+    if (offset == 0) 1f else (1f - 0.30f * abs(offset)).coerceAtLeast(0.18f)
+
 // MARK: - Render helpers (pure)
 
 /** Discrete values in the given unit, from min to max by step. */
@@ -343,11 +402,17 @@ internal fun MeasurementWheelBlock(
     // Snapped display value in the current unit (base held constant + re-clamped).
     val currentDisplay = measurementSnap(measurementFromBase(holdBase, currentUnit), currentUnit)
 
-    // Colors (pinned defaults; dark-mode-aware for tick/track).
-    val tickColor = StyleEngine.parseColor(config.tickColorHex ?: if (isDark) "#475569" else "#CBD5E1")
-    val trackColor = StyleEngine.parseColor(config.trackColorHex ?: if (isDark) "#334155" else "#E2E8F0")
-    val accentColor = StyleEngine.parseColor(config.needleColorHex ?: block.highlight_color ?: "#6366F1")
-    val toggleColor = StyleEngine.parseColor(config.toggleActiveColorHex ?: block.highlight_color ?: "#6366F1")
+    // Colors — one key per drawn part, through the shared palette rule.
+    val palette = measurementPalette(block.field_config ?: emptyMap(), block.highlight_color, isDark)
+    val tickColor = StyleEngine.parseColor(palette.tick)
+    val trackColor = StyleEngine.parseColor(palette.track)
+    val accentColor = StyleEngine.parseColor(palette.value)
+    val toggleColor = StyleEngine.parseColor(palette.toggleActive)
+    val drumColors = MeasurementDrumColors(
+        band = palette.band?.let { StyleEngine.parseColor(it) } ?: trackColor.copy(alpha = 0.6f),
+        bandText = StyleEngine.parseColor(palette.bandText),
+        rowText = StyleEngine.parseColor(palette.rowText),
+    )
 
     // Persist + return the snapshot so callers can fire the delegate. The
     // `onElementInteraction` payload = { value, display_value, unit }; `value` (base scalar) is the
@@ -405,7 +470,7 @@ internal fun MeasurementWheelBlock(
             Text(
                 text = label,
                 fontSize = 15.sp,
-                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f),
+                color = StyleEngine.parseColor(palette.label),
             )
         }
 
@@ -424,7 +489,7 @@ internal fun MeasurementWheelBlock(
                     text = currentUnit.label,
                     fontSize = config.unitFontSize.sp,
                     fontWeight = FontWeight.Medium,
-                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f),
+                    color = StyleEngine.parseColor(palette.unit),
                 )
             }
         }
@@ -451,8 +516,7 @@ internal fun MeasurementWheelBlock(
                             text = u.label,
                             fontSize = 14.sp,
                             fontWeight = FontWeight.SemiBold,
-                            color = if (selected) Color.White
-                            else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f),
+                            color = StyleEngine.parseColor(if (selected) palette.toggleActiveText else palette.toggleText),
                         )
                     }
                 }
@@ -465,8 +529,8 @@ internal fun MeasurementWheelBlock(
             val vals = generateMeasurementValues(currentUnit)
             when (config.style) {
                 "gauge" -> MeasurementGauge(currentDisplay, currentUnit, trackColor, accentColor) { pick(it) }
-                "dial" -> MeasurementDrum(vals, currentDisplay, currentUnit, accentColor, trackColor, perspective = true) { pick(it) }
-                "wheel" -> MeasurementDrum(vals, currentDisplay, currentUnit, accentColor, trackColor, perspective = false) { pick(it) }
+                "dial" -> MeasurementDrum(vals, currentDisplay, currentUnit, drumColors, perspective = true) { pick(it) }
+                "wheel" -> MeasurementDrum(vals, currentDisplay, currentUnit, drumColors, perspective = false) { pick(it) }
                 else -> MeasurementRuler(vals, currentDisplay, currentUnit, tickColor, accentColor, config.majorTickInterval) { pick(it) }
             }
         }
@@ -578,13 +642,15 @@ private fun MeasurementRuler(
 // a static snapshot or reliably on device.
 private const val MEASUREMENT_DRUM_RADIUS = 2 // 5 visible rows
 
+/** The drum's three colours: the band, the value on it, and the rows around it. */
+internal data class MeasurementDrumColors(val band: Color, val bandText: Color, val rowText: Color)
+
 @Composable
 private fun MeasurementDrum(
     values: List<Double>,
     currentDisplay: Double,
     unit: MeasurementUnit,
-    accentColor: Color,
-    trackColor: Color,
+    colors: MeasurementDrumColors,
     perspective: Boolean,
     onPick: (Double) -> Unit,
 ) {
@@ -619,7 +685,7 @@ private fun MeasurementDrum(
             modifier = Modifier
                 .fillMaxWidth()
                 .height(40.dp)
-                .background(trackColor.copy(alpha = 0.6f), RoundedCornerShape(8.dp)),
+                .background(colors.band, RoundedCornerShape(8.dp)),
         )
         // Fixed window of rows centered on the current value.
         Column(horizontalAlignment = Alignment.CenterHorizontally) {
@@ -642,8 +708,8 @@ private fun MeasurementDrum(
                             text = formatMeasurement(values[idx], unit),
                             fontSize = if (isCenter) 22.sp else 16.sp,
                             fontWeight = if (isCenter) FontWeight.Bold else FontWeight.Normal,
-                            color = if (isCenter) accentColor
-                            else accentColor.copy(alpha = (0.6f - 0.16f * a).coerceAtLeast(0.25f)),
+                            color = if (isCenter) colors.bandText
+                            else colors.rowText.copy(alpha = colors.rowText.alpha * measurementDrumRowAlpha(off)),
                             textAlign = TextAlign.Center,
                             modifier = Modifier.clickable { onPick(values[idx]) },
                         )
