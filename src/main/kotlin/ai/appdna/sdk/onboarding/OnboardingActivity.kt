@@ -2219,6 +2219,9 @@ internal fun OnboardingFlowHost(
                     totalSteps = flow.steps.size,
                 )
                 } // LocalStepHostDataWiring
+                // #1432 — the countdown the author turned on, drawn over THIS step while it waits to
+                // advance by itself. Its clock starts when the step composes, as the timer does.
+                AutoAdvanceIndicatorOverlay(step = step)
                 }
             }
         }

@@ -234,6 +234,11 @@ data class OnboardingStep(
      * with [auto_advance_seconds] rather than replacing it. Mirrors iOS.
      */
     val tap_anywhere_advances: Boolean? = null,
+    /**
+     * #1432 — the countdown this step draws while it waits to advance by itself ([AutoAdvanceIndicator]).
+     * Off unless `show: true`. Root first, then the nested config, like the timer. Mirrors iOS.
+     */
+    val auto_advance_indicator: Map<String, Any?>? = null,
     val next_step_rules: ImmutableList<NextStepRule>? = null,
     /**
      * The step's authored name ("Screen path 1").
@@ -1622,6 +1627,8 @@ internal object OnboardingConfigParser {
             // place misses half the flows.
             tap_anywhere_advances = map.bool(SURFACE, path, "tap_anywhere_advances")
                 ?: configMap.bool(SURFACE, path, "tap_anywhere_advances"),
+            auto_advance_indicator = map.objMap(SURFACE, path, "auto_advance_indicator")
+                ?: configMap.objMap(SURFACE, path, "auto_advance_indicator"),
             next_step_rules = nextStepRules,
             name = map.str(SURFACE, path, "name"),
             rawContentBlocks = stampedRaw,

@@ -313,6 +313,7 @@ class SharedFixtureTest(
             "resolve_select_advance_confirm" -> runSelectAdvanceConfirm(action, spy)
             "resolve_cta_dependencies" -> runCtaDependencies(action, spy)
             "resolve_block_bleed" -> runBlockBleed(action, spy)
+            "resolve_auto_advance_indicator" -> runAutoAdvanceIndicator(action, spy)
             "resolve_animated_image" -> runAnimatedImage(action, spy)
             "resolve_store_price" -> runStorePrice(action, spy)
             "resolve_plan_savings" -> runPlanSavings(action, spy)
@@ -3134,6 +3135,25 @@ class SharedFixtureTest(
             val block = step.config.content_blocks!!.single()
             ai.appdna.sdk.onboarding.SelectAnswerFeedback.message(block, selection)?.let {
                 mapOf("verdict" to if (it.isCorrect) "correct" else "wrong", "text" to it.text, "color" to it.colorHex)
+            }
+        }
+    }
+
+    /** #1432 — the countdown a self-advancing step draws, through the REAL step parser and the real resolver. */
+    private fun runAutoAdvanceIndicator(action: JSONObject, spy: Spy) {
+        val cases = action.optJSONArray("cases") ?: unsupported("resolve_auto_advance_indicator without cases")
+        spy.state["results"] = (0 until cases.length()).map { i ->
+            val c = cases.getJSONObject(i)
+            val raw = jsonToMap(c.getJSONObject("step")).toMutableMap()
+            raw.putIfAbsent("id", "fixture_step")
+            raw.putIfAbsent("type", "splash")
+            val step = ai.appdna.sdk.onboarding.OnboardingConfigParser.parseStepForTest(raw) ?: error("a step did not parse")
+            ai.appdna.sdk.onboarding.AutoAdvanceIndicator.resolve(step, c.getDouble("elapsed_seconds"))?.let {
+                mapOf(
+                    "style" to it.style, "label" to it.label, "fraction" to it.fraction, "position" to it.position,
+                    "text_color" to it.textColor, "font_size" to it.fontSize, "bar_color" to it.barColor,
+                    "track_color" to it.trackColor, "bar_height" to it.barHeight,
+                )
             }
         }
     }
