@@ -228,6 +228,8 @@ class SharedFixtureTest(
         val action = fixtureJson.getJSONObject("action")
         when (val kind = action.getString("kind")) {
             "tap_button" -> runTapButton(action, spy)
+            // The "Add widget" attempt: the REAL WidgetPinAttempt, its stimuli fed in order.
+            "add_widget_attempt" -> runAddWidgetAttempt(action, spy)
             "submit_form" -> runSubmitForm(action, spy)
             "fire_hook" -> runFireHook(action, spy)
             "show_screen" -> runShowScreen(action, spy)
@@ -285,6 +287,7 @@ class SharedFixtureTest(
             "resolve_message_dismiss" -> runResolveMessageDismiss(action, spy)
             "resolve_paywall_image_alt" -> runPaywallImageAlt(action, spy)
             "resolve_onboarding_image_alt" -> runOnboardingImageAlt(action, spy)
+            "resolve_screen_image_alt" -> runScreenImageAlt(action, spy)
             "resolve_option_label_markdown" -> runOptionLabelMarkdown(action, spy)
             "resolve_date_wheel" -> runDateWheel(action, spy)
             "resolve_container_children" -> runContainerChildren(action, spy)
@@ -313,6 +316,12 @@ class SharedFixtureTest(
             "resolve_location_search" -> runLocationSearch(action, spy)
             "resolve_step_auto_advance" -> runStepAutoAdvance(action, spy)
             "resolve_select_advance_on_pick" -> runSelectAdvanceOnPick(action, spy)
+            "resolve_select_answer_feedback" -> runSelectAnswerFeedback(action, spy)
+            "resolve_select_advance_confirm" -> runSelectAdvanceConfirm(action, spy)
+            "resolve_cta_dependencies" -> runCtaDependencies(action, spy)
+            "resolve_block_bleed" -> runBlockBleed(action, spy)
+            "resolve_auto_advance_indicator" -> runAutoAdvanceIndicator(action, spy)
+            "resolve_animated_image" -> runAnimatedImage(action, spy)
             "resolve_store_price" -> runStorePrice(action, spy)
             "resolve_plan_savings" -> runPlanSavings(action, spy)
             "parse_blocks_leniently" -> runLenientBlocks(action, spy)
@@ -342,6 +351,15 @@ class SharedFixtureTest(
             "resolve_segmented_presentation" -> runSegmentedPresentation(action, spy)
             "resolve_segmented_default" -> runSegmentedDefault(action, spy)
             "resolve_select_default" -> runSelectDefault(action, spy)
+            // The measurement wheel's palette and the date picker's style (onboarding/PickerFixtureDrivers.kt).
+            "resolve_measurement_palette" ->
+                spy.state["results"] = ai.appdna.sdk.onboarding.PickerFixtureDrivers.palettes(casesOf(action))
+            "resolve_measurement_linear" ->
+                spy.state["results"] = ai.appdna.sdk.onboarding.PickerFixtureDrivers.linear(casesOf(action))
+            "resolve_date_picker_style" ->
+                spy.state["results"] = ai.appdna.sdk.onboarding.PickerFixtureDrivers.datePickerStyle(casesOf(action))
+            "resolve_date_range" ->
+                spy.state["results"] = ai.appdna.sdk.onboarding.PickerFixtureDrivers.dateRange(casesOf(action))
             "resolve_survey_answer_events" -> runSurveyAnswerEvents(action, spy)
             // Every tracked event (SDK and host) → message / survey trigger evaluation, once.
             "dispatch_triggers" -> runDispatchTriggers(action, spy)
@@ -3077,6 +3095,131 @@ class SharedFixtureTest(
         }
     }
 
+    /** Whether a button's dependencies hold, through the REAL block parse and the real policy. */
+    @Suppress("UNCHECKED_CAST")
+    private fun runCtaDependencies(action: JSONObject, spy: Spy) {
+        val cases = action.optJSONArray("cases") ?: unsupported("resolve_cta_dependencies without cases")
+        spy.state["results"] = (0 until cases.length()).map { i ->
+            val v = cases.getJSONObject(i).getJSONObject("value")
+            val blocks = v.getJSONArray("blocks").asList() + listOf(v.getJSONObject("button").asMap())
+            val step = ai.appdna.sdk.onboarding.OnboardingConfigParser.parseStepForTest(
+                mapOf("id" to "fixture_step", "type" to "custom", "config" to mapOf("content_blocks" to blocks)),
+            ) ?: error("a step did not parse")
+            val parsed = step.config.content_blocks!!
+            val button = parsed.single { it.id == "cta" }
+            ai.appdna.sdk.onboarding.CtaDependencies.met(button, parsed, v.getJSONObject("input_values").asMap())
+        }
+    }
+
+    /** The question asked before a Select's advance, through the REAL block parse and the real policy. */
+    private fun runSelectAdvanceConfirm(action: JSONObject, spy: Spy) {
+        val cases = action.optJSONArray("cases") ?: unsupported("resolve_select_advance_confirm without cases")
+        spy.state["results"] = (0 until cases.length()).map { i ->
+            val v = cases.getJSONObject(i).getJSONObject("value")
+            val step = ai.appdna.sdk.onboarding.OnboardingConfigParser.parseStepForTest(
+                mapOf(
+                    "id" to "fixture_step", "type" to "custom",
+                    "config" to mapOf("content_blocks" to listOf(v.getJSONObject("block").asMap())),
+                ),
+            ) ?: error("a step did not parse")
+            val block = step.config.content_blocks!!.single()
+            ai.appdna.sdk.onboarding.SelectAdvanceOnPick.confirmation(block)?.let { mapOf("text" to it.text, "yes" to it.yes, "no" to it.no) }
+        }
+    }
+
+    /** The right/wrong message for a selection, through the REAL block parse and the real policy. */
+    private fun runSelectAnswerFeedback(action: JSONObject, spy: Spy) {
+        val cases = action.optJSONArray("cases") ?: unsupported("resolve_select_answer_feedback without cases")
+        spy.state["results"] = (0 until cases.length()).map { i ->
+            val v = cases.getJSONObject(i).getJSONObject("value")
+            val selection = v.getJSONArray("selection").let { a -> (0 until a.length()).map { a.getString(it) } }
+            val step = ai.appdna.sdk.onboarding.OnboardingConfigParser.parseStepForTest(
+                mapOf(
+                    "id" to "fixture_step", "type" to "custom",
+                    "config" to mapOf("content_blocks" to listOf(v.getJSONObject("block").asMap())),
+                ),
+            ) ?: error("a step did not parse")
+            val block = step.config.content_blocks!!.single()
+            ai.appdna.sdk.onboarding.SelectAnswerFeedback.message(block, selection)?.let {
+                mapOf("verdict" to if (it.isCorrect) "correct" else "wrong", "text" to it.text, "color" to it.colorHex)
+            }
+        }
+    }
+
+    /** The countdown a self-advancing step draws, through the REAL step parser and the real resolver. */
+    private fun runAutoAdvanceIndicator(action: JSONObject, spy: Spy) {
+        val cases = action.optJSONArray("cases") ?: unsupported("resolve_auto_advance_indicator without cases")
+        spy.state["results"] = (0 until cases.length()).map { i ->
+            val c = cases.getJSONObject(i)
+            val raw = jsonToMap(c.getJSONObject("step")).toMutableMap()
+            raw.putIfAbsent("id", "fixture_step")
+            raw.putIfAbsent("type", "splash")
+            val step = ai.appdna.sdk.onboarding.OnboardingConfigParser.parseStepForTest(raw) ?: error("a step did not parse")
+            ai.appdna.sdk.onboarding.AutoAdvanceIndicator.resolve(step, c.getDouble("elapsed_seconds"))?.let {
+                mapOf(
+                    "style" to it.style, "label" to it.label, "fraction" to it.fraction, "position" to it.position,
+                    "text_color" to it.textColor, "font_size" to it.fontSize, "bar_color" to it.barColor,
+                    "track_color" to it.trackColor, "bar_height" to it.barHeight,
+                )
+            }
+        }
+    }
+
+    /**
+     * How far a block's background reaches on each side, through the REAL block parse (Firestore
+     * hands an integral number back as a Long, a string stays a string) and the real resolver.
+     */
+    private fun runBlockBleed(action: JSONObject, spy: Spy) {
+        val cases = action.optJSONArray("cases") ?: unsupported("resolve_block_bleed without cases")
+        spy.state["results"] = (0 until cases.length()).map { i ->
+            val c = cases.getJSONObject(i)
+            val step = ai.appdna.sdk.onboarding.OnboardingConfigParser.parseStepForTest(
+                mapOf(
+                    "id" to "fixture_step", "type" to "custom",
+                    "config" to mapOf(
+                        "content_blocks" to listOf(
+                            mapOf("id" to "bleed", "type" to "multi_buttons", "field_config" to jsonToMap(c.getJSONObject("field_config"))),
+                        ),
+                    ),
+                ),
+            ) ?: error("a step did not parse")
+            val block = step.config?.content_blocks?.firstOrNull() ?: error("the block did not parse")
+            val r = ai.appdna.sdk.onboarding.BlockFullBleed.resolve(
+                block.field_config,
+                stepInset = c.getDouble("step_inset"),
+                edgeTop = c.getDouble("edge_top"),
+                edgeBottom = c.getDouble("edge_bottom"),
+            )
+            listOf(r.top, r.right, r.bottom, r.left)
+        }
+    }
+
+    /** An animated_image strip's direction, speed, tile length and loop offset, through the REAL block parse. */
+    private fun runAnimatedImage(action: JSONObject, spy: Spy) {
+        val cases = action.optJSONArray("cases") ?: unsupported("resolve_animated_image without cases")
+        spy.state["results"] = (0 until cases.length()).map { i ->
+            val c = cases.getJSONObject(i)
+            val step = ai.appdna.sdk.onboarding.OnboardingConfigParser.parseStepForTest(
+                mapOf(
+                    "id" to "fixture_step", "type" to "custom",
+                    "config" to mapOf(
+                        "content_blocks" to listOf(
+                            mapOf("id" to "anim", "type" to "animated_image", "field_config" to jsonToMap(c.getJSONObject("field_config"))),
+                        ),
+                    ),
+                ),
+            ) ?: error("a step did not parse")
+            val cfg = (step.config?.content_blocks?.firstOrNull() ?: error("the block did not parse")).field_config
+            val m = ai.appdna.sdk.onboarding.AnimatedImageMarquee
+            val d = m.direction(cfg?.get("scroll_direction"))
+            val s = m.speed(cfg?.get("scroll_speed"))
+            val natural = c.getJSONArray("natural_size")
+            val box = c.getJSONArray("block_size")
+            val tile = m.tileLength(d, natural.getDouble(0), natural.getDouble(1), box.getDouble(0), box.getDouble(1))
+            listOf(d, s, Math.round(tile * 1000).toDouble() / 1000, m.offset(d, s, tile, c.getDouble("elapsed_seconds")))
+        }
+    }
+
     /** Whether a pick advances the step, through the REAL block parse and the real policy. */
     private fun runSelectAdvanceOnPick(action: JSONObject, spy: Spy) {
         val cases = action.optJSONArray("cases") ?: unsupported("resolve_select_advance_on_pick without cases")
@@ -3551,6 +3694,25 @@ class SharedFixtureTest(
             val section = paywall.sections.firstOrNull { it.type == "image" }
                 ?: throw AssertionError("[resolve_paywall_image_alt] case $name: the image section was dropped")
             ai.appdna.sdk.paywalls.PaywallImageAccessibility.label(section.data)
+        }
+    }
+
+    /**
+     * A screen image section's alt text, through the REAL `ScreenConfig.fromMap` and the REAL
+     * `ScreenImageAccessibility.label` — the description the image section hands TalkBack (null: skipped).
+     */
+    private fun runScreenImageAlt(action: JSONObject, spy: Spy) {
+        val cases = action.optJSONArray("cases") ?: unsupported("resolve_screen_image_alt without cases")
+        spy.state["results"] = (0 until cases.length()).map { i ->
+            val c = cases.getJSONObject(i)
+            val name = c.optString("name", "?")
+            val data = jsonToMap(c.optJSONObject("data") ?: unsupported("resolve_screen_image_alt case without data"))
+            val screen = ai.appdna.sdk.screens.ScreenConfig.fromMap(
+                mapOf("id" to "scr_alt_$name", "sections" to listOf(mapOf("id" to "s1", "type" to "image_section", "data" to data))),
+            )
+            val section = screen.sections.firstOrNull { it.type == "image_section" }
+                ?: throw AssertionError("[resolve_screen_image_alt] case $name: the image section was dropped")
+            ai.appdna.sdk.screens.sections.ScreenImageAccessibility.label(section)
         }
     }
 
@@ -4041,6 +4203,12 @@ class SharedFixtureTest(
         }
         spy.state["results"] = results
     }
+
+    /** `action.cases` as plain maps (JSON null → null), for the drivers that live beside the code they drive. */
+    @Suppress("UNCHECKED_CAST")
+    private fun casesOf(action: JSONObject): List<Map<String, Any?>> =
+        (action.optJSONArray("cases")?.takeIf { it.length() > 0 } ?: unsupported("${action.optString("kind")} without action.cases"))
+            .asList().map { it as Map<String, Any?> }
 
     /** `location_field_attribution` — REAL `LocationAnswer.carriesPlaceId` per case. */
     @Suppress("UNCHECKED_CAST")
@@ -4813,13 +4981,123 @@ class SharedFixtureTest(
     }
 
     // ---------------------------------------------------------------------------------------------
+    // add_widget_attempt — the REAL WidgetPinAttempt, the REAL gate, receiver and advance machine
+    // ---------------------------------------------------------------------------------------------
+
+    /** The fake launcher behind the attempt's [WidgetPinPlatform] seam, built from `setup.widget_env.android`. */
+    private class FixtureWidgetPlatform(env: JSONObject) : ai.appdna.sdk.onboarding.WidgetPinPlatform {
+        override val sdkInt: Int = env.getInt("sdk_int")
+        private val providers = env.getJSONArray("providers").let { a -> (0 until a.length()).map { a.getString(it) } }
+        private val pinSupported = env.getBoolean("pin_supported")
+        private val requestResult = env.getString("request_result")
+        private val before = env.getJSONArray("ids_before").let { a -> (0 until a.length()).map { a.getInt(it) }.toSet() }
+        private val after = env.getJSONArray("ids_after").let { a -> (0 until a.length()).map { a.getInt(it) }.toSet() }
+        var widgetAdded = false
+        var requests = 0
+        var lastToken: String? = null
+
+        override fun homeScreenProviders(): List<String> = providers
+        override fun isRequestPinSupported(): Boolean = pinSupported
+        override fun requestPin(providerClass: String, token: String): Boolean {
+            requests++
+            lastToken = token
+            return when (requestResult) {
+                "true" -> true
+                "false" -> false
+                else -> throw IllegalStateException("fixture: request_result=throws")
+            }
+        }
+        override fun widgetIds(providerClass: String): Set<Int> = if (widgetAdded) after else before
+    }
+
+    private fun findBlock(blocks: List<ai.appdna.sdk.onboarding.ContentBlock>, id: String): ai.appdna.sdk.onboarding.ContentBlock? {
+        for (b in blocks) {
+            if (b.id == id) return b
+            findBlock(b.children.orEmpty() + b.stack_children.orEmpty(), id)?.let { return it }
+        }
+        return null
+    }
+
+    private fun runAddWidgetAttempt(action: JSONObject, spy: Spy) {
+        val p = Pipeline(fixtureName).also { pipeline = it }
+        val env = setup.optJSONObject("widget_env")?.optJSONObject("android")
+            ?: unsupported("add_widget_attempt with no setup.widget_env.android")
+        val stimuli = action.optJSONObject("events")?.optJSONArray("android")
+            ?: unsupported("add_widget_attempt with no action.events.android")
+        val flow = flowFromSetup()
+        val currentIndex = flow.steps.indexOfFirst { it.id == action.getString("step_id") }
+        if (currentIndex < 0) unsupported("step ${action.getString("step_id")} is not in the flow")
+        val step = flow.steps[currentIndex]
+        val stepBlocks = step.config.content_blocks.orEmpty()
+        val button = findBlock(stepBlocks, action.getString("button_id"))
+            ?: unsupported("button ${action.getString("button_id")} is not on the step")
+        val platform = FixtureWidgetPlatform(env)
+        val inputValues = mutableMapOf<String, Any>()
+
+        spy.state["widget_status"] = null
+        spy.state["current_step_id"] = step.id
+        val effects = object : ai.appdna.sdk.onboarding.WidgetPinEffects {
+            // The step's REAL gate, over the step's own blocks and (empty) answers.
+            override fun gatePasses(): Boolean = RequiredFieldGate.evaluateDetailed(stepBlocks, inputValues, emptySet()).canAdvance
+            override fun track(name: String, properties: Map<String, Any>) = p.tracker.track(name, properties)
+            // The step's REAL advance: the payload from the SDK's own assembly, then the REAL
+            // OnboardingAdvance machine, so `next_step_rules` route on `widget_status`.
+            override fun advance(status: String) {
+                spy.state["widget_status"] = status
+                val responses = responsesFromSetup().toMutableMap()
+                StepAdvancePayload.build(inputValues, emptyMap(), mapOf(ai.appdna.sdk.onboarding.WidgetPinAttempt.STATUS_KEY to status))
+                    ?.let { responses[step.id] = it }
+                applyAdvance(flow, currentIndex, responses, StepAdvanceResult.Proceed, spy, p.tracker, hookRan = false)
+            }
+            override fun showHowto(blocks: List<ai.appdna.sdk.onboarding.ContentBlock>) { spy.state["howto_open"] = true }
+            override fun closeHowto() { spy.state["howto_open"] = false }
+            // Timers never fire on their own here: `t_pause`, `g_tick` and `g_end` are fed explicitly.
+            override fun schedule(delayMs: Long, action: () -> Unit) = ai.appdna.sdk.onboarding.WidgetPinTimer { }
+        }
+        val attempt = ai.appdna.sdk.onboarding.WidgetPinAttempt(platform, effects, flow.id, step.id)
+        // The launcher's success broadcast goes through the REAL receiver and registry.
+        val onCallback: (String?) -> Unit = { attempt.onCallback(it) }
+        ai.appdna.sdk.onboarding.WidgetPinRegistry.register(onCallback)
+        try {
+            for (i in 0 until stimuli.length()) {
+                when (val stimulus = stimuli.getString(i)) {
+                    "tap" -> attempt.tap(button)
+                    "user_adds_widget" -> platform.widgetAdded = true
+                    "pause" -> attempt.onPause()
+                    "resume" -> attempt.onResume()
+                    "callback" -> ai.appdna.sdk.onboarding.AppDNAWidgetPinReceiver().onReceive(
+                        ctx,
+                        android.content.Intent(ai.appdna.sdk.onboarding.AppDNAWidgetPinReceiver.ACTION_PINNED)
+                            .putExtra(ai.appdna.sdk.onboarding.AppDNAWidgetPinReceiver.EXTRA_TOKEN, platform.lastToken),
+                    )
+                    "t_pause" -> attempt.onPauseTimeout()
+                    "g_tick" -> attempt.onGraceTick()
+                    "g_end" -> attempt.onGraceEnd()
+                    "done_cta" -> attempt.onDoneCta()
+                    "destroy" -> attempt.onDestroy()
+                    else -> if (stimulus.startsWith("close:")) attempt.onClose(stimulus.removePrefix("close:"))
+                        else unsupported("add_widget_attempt stimulus '$stimulus'")
+                }
+            }
+        } finally {
+            ai.appdna.sdk.onboarding.WidgetPinRegistry.unregister(onCallback)
+        }
+        spy.state["pin_requests"] = platform.requests
+        // The fixture asserts the attempt's own events; the advance machine's step events are
+        // asserted by the step_advance fixtures.
+        spy.events += p.envelopes().map { it.toEventPair() }.filter { it.first.startsWith("widget_") }
+    }
+
+    // ---------------------------------------------------------------------------------------------
     // Assertions
     // ---------------------------------------------------------------------------------------------
 
     private fun assertExpectations(spy: Spy) {
         val expect = fixtureJson.getJSONObject("expect")
 
-        val expectedEvents = expect.optJSONArray("events") ?: JSONArray()
+        // A fixture whose platforms legitimately emit different sequences carries them per platform.
+        val expectedEvents = expect.optJSONObject("events_by_platform")?.optJSONArray("android")
+            ?: expect.optJSONArray("events") ?: JSONArray()
         assertEquals(
             "[$fixtureName] event count (SDK emitted ${spy.events.map { it.first }})",
             expectedEvents.length(),

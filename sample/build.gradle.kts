@@ -94,6 +94,12 @@ android {
          *
          *     ./gradlew :sample:assembleDebug -PappdnaWalkMenu=<base64>
          */
+        /*
+         * Predictive back, for walking a surface that handles back through OnBackInvokedCallback
+         * (API 33+): `-PappdnaPredictiveBack=true`. Off by default, as in an app that has not opted in.
+         */
+        manifestPlaceholders["appdnaPredictiveBack"] =
+            (project.findProperty("appdnaPredictiveBack") as String?) ?: "false"
         manifestPlaceholders["appdnaWalkMenu"] =
             (project.findProperty("appdnaWalkMenu") as String?) ?: ""
     }
@@ -118,6 +124,30 @@ android {
 
     buildFeatures {
         compose = true
+    }
+
+    /*
+     * Walking the onboarding "Add widget" button. The SDK pins the HOST's own widget, so the walk
+     * needs an app with one widget, with two, and with none. A stock build declares none; a walk build
+     * merges a debug manifest declaring the synthetic providers in `widget/SampleWidgets.kt`:
+     *
+     *     ./gradlew :sample:assembleDebug -PappdnaSampleWidgets=one     # StreakWidget
+     *     ./gradlew :sample:assembleDebug -PappdnaSampleWidgets=two     # StreakWidget + TasksWidget
+     *
+     * A build property rather than product flavours, so the APK path and every task name other walks
+     * use stay exactly as they are.
+     *
+     * `-PappdnaSampleBundle=<dir>` adds `<dir>` as a debug assets dir, so a walk can ship an
+     * `appdna-config.json` (the SDK's bundled-config path) carrying the flow it walks, offline.
+     */
+    sourceSets.getByName("debug") {
+        when (project.findProperty("appdnaSampleWidgets") as String?) {
+            "one" -> manifest.srcFile("src/widgetsOne/AndroidManifest.xml")
+            "two" -> manifest.srcFile("src/widgetsTwo/AndroidManifest.xml")
+            null, "", "none" -> Unit
+            else -> error("appdnaSampleWidgets must be one, two or none")
+        }
+        (project.findProperty("appdnaSampleBundle") as String?)?.takeIf { it.isNotBlank() }?.let { assets.srcDir(it) }
     }
 
     composeOptions {

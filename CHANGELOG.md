@@ -6,13 +6,50 @@ the project uses [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Added
+
+- **A step that advances by itself can show a countdown.** `auto_advance_indicator` on the step (beside `auto_advance_seconds`): `show` (default false), `style` (`text`, `bar`, `both`), `text` (`{seconds}` = whole seconds left), `text_color`, `font_size`, `bar_color`, `track_color`, `bar_height`, `position` (`top`, `bottom`). Off by default, so published flows are unchanged.
+
+- **An onboarding button can add the app's widget to the home screen.** A button with the `add_widget` action asks the launcher to pin the app's own home-screen widget (`AppWidgetManager.requestPinAppWidget`, Android 8 and later); the SDK ships no widget, it pins the one the app declares. With no code in the app, the SDK finds the app's widget provider; an app with several names one in the button's `action_value` (the class name, fully qualified or simple), otherwise the first by class name is used. Where the launcher cannot or will not show a pin dialog (Android 7, a launcher without pinning, a refused request, or no dialog within a short wait), the button's `howto_blocks_android` sheet is shown instead: its Done button ends the attempt, and closing it any other way (swipe, back, a tap outside, a `dismiss` button) returns to the step. The step then advances once with `widget_status` in its answers, `added`, `not_added` or `unavailable` (the app has no widget), so next-step rules can branch on it. A widget counts as added when the launcher confirms it or a new widget id of that provider appears. A widget with a configuration activity is pinned without that activity being shown, so it must draw a sensible default. Events: `widget_add_tapped`, `widget_pin_requested`, `widget_pin_unavailable`, `widget_howto_shown`, `widget_howto_dismissed`, `widget_added`, `widget_not_added` and `widget_add_unavailable`, each with `flow_id` and `step_id`. The library manifest declares one non-exported receiver for the launcher's success callback.
+
+### Changed
+
+- **An image with no description is decorative, and screen readers skip it.** An onboarding image block, a
+  paywall image section or a screen image section whose Alt text is blank or unset is now hidden from TalkBack
+  (it was announced as "Image", or with no description); one with Alt text is read as that text, as an image. An
+  in-app message's image and a survey question's image have no description field, so they are always skipped.
+
 ### Fixed
 
 - **A journey's in-app messages reach users who have not signed in.** The SDK listened for messages a journey sends only after `identify`, so a journey's "Send in-app message" step to an anonymous user was counted as sent and never shown. The SDK now listens from `configure` on the device's anonymous ID; after `identify` on the anonymous ID and the user ID (a journey that started before sign-in keeps sending to the anonymous ID); after `reset()` on the anonymous ID again. A message that arrives while another is on screen is shown when that one closes, a message that cannot be drawn yet (no foreground activity at a cold launch) is retried, and a message is never shown twice.
 
+- **The Date Picker draws the style chosen in the console.** `field_config.picker_variant` (`graphical` · `wheel` · `compact`) decides what a `date_wheel_picker` draws — Android drew the wheel whatever it said, and now draws the calendar for a date with no style set, as iOS always has; unset, a date is the calendar and a date-and-time or a year the wheel. A **Date** field (`input_date` / `input_datetime`) with `picker_presentation: inline` — the console's default — always drew the calendar, so its Picker Variant changed nothing: it now draws the variant chosen.
+
+- **Every colour of a measurement wheel picker can be set.** The `wheel` and `dial` styles drew their band, the value on the band and the rows around it from the ruler's keys, and the unit label, the field label and both unit-toggle labels in colours no key reached. Each part now has its own `field_config` key: `band_color`, `band_text_color`, `row_text_color`, `unit_color`, `label_color`, `toggle_active_text_color` and `toggle_text_color`, beside the existing `needle_color`, `tick_color`, `track_color` and `toggle_active_color`. Unset keys draw what was drawn before. The rows around the band were tinted with the accent colour; they now take `row_text_color`, else `tick_color`, and fade by distance as on iOS.
+
 - **In-app messages and surveys trigger on the SDK's own events.** A message or survey whose trigger is an event the SDK tracks itself (`app_open`, which is the console's default message trigger, `session_start`, `onboarding_flow_completed`, the purchase events, and the others on the auto-tracked events page) never appeared: only events passed to `track()` were checked against triggers. Every tracked event is now checked once, message first. Events tracked before the SDK has its config, such as `app_open` on a cold launch, are held (up to 32) and checked once the config is ready; a config cached from an earlier launch, or bundled in the app, is used at once. A message never triggers on the `in_app_message_*` events and a survey never triggers on the `survey_*` events, so showing one cannot show another of the same kind.
 
 ### Added
+
+- **A Date Picker can pick a range of days.** `field_config.selection_mode: "range"` (date mode) draws a month calendar where two taps pick a range, joined by a bar in `field_config.range_color` (unset: `highlight_color` at 20%). The answer is `<field_id>` = `start/end` (`2026-11-07/2026-11-15`) with `<field_id>_start`, `<field_id>_end` and `<field_id>_days` (both ends included); until both ends are picked `<field_id>` is unset. Tapping the month and year opens a list of years to jump to.
+
+- **A linear style for the measurement wheel picker.** `measurement_style: "linear"` draws a vertical slider on the left, filled from the bottom (the unit's `min`) to the value, with the value and its unit on the right — the simplest height picker. With one unit the unit is locked on screen. A tap or drag picks the value under it, snapped to the unit's step, and the interaction fires when the finger lifts; the slider is adjustable with VoiceOver/TalkBack. Sizes: `linear_height` (240), `track_width` (8), `thumb_size` (28); `thumb_color` defaults to `needle_color`.
+
+- **A button can depend on other elements on its screen.** `field_config.cta_dependencies` lists
+  `{ block_id, condition }` entries (`answered`, `all_selected`, `min_selected` with `count`, `correct`, `equals` with
+  `value`). Until every one holds the button is inactive (a tap does nothing) and draws in `cta_disabled_bg_color`, or its
+  own colour faded; then it draws in `cta_enabled_bg_color` and acts. An entry naming an element not on the step holds.
+- **A Select that advances on the pick can ask first.** `field_config.advance_confirm: true` beside `auto_advance` opens
+  a dialog (`advance_confirm_text`, default "Are you sure?") before the step moves on; its confirm button
+  (`advance_confirm_yes`, default "Yes") advances, and its cancel button (`advance_confirm_no`, default "No") stays with
+  the pick kept.
+- **A Select can say whether the pick was right.** `field_config.correct_values` marks the correct option(s); once
+  the user has answered, `feedback_correct_text` (default "Correct!") in `feedback_correct_color` (default #16A34A) or
+  `feedback_wrong_text` (default "Not quite.") in `feedback_wrong_color` (default #DC2626) shows under the options. A
+  multi-select is judged once as many options are picked as are marked.
+- **`animated_image`: one long image scrolling in a seamless loop.** Set `image_url`, `height` (the visible height; the block fills the width), `corner_radius`, `alt`, and in `field_config` `scroll_direction` (`left`, `right`, `up`, `down`) and `scroll_speed` (points per second, 1–400, default 30). The image fills the block across the scroll direction and repeats along it, so the loop never jumps.
+
+- **A block's background can reach past it on each side.** `field_config.background_bleed_top`, `background_bleed_bottom`, `background_bleed_left` and `background_bleed_right` take `"edge"` (reach the screen edge on that side) or a number of points (up to 400). The block's content stays where it was; only the background moves. Left and right still follow `background_full_bleed`, and an authored value wins over it. Set from the console on Multi-buttons: to the edges for a group at the bottom of a screen, by a set amount for a group in the middle.
 
 - **Foldables, tablets and wide windows.** Onboarding steps, paywalls, full-screen messages and surveys lay out in a centred column at most 560dp wide, with the background still filling the window; nothing changes at 560dp or narrower. On a window that is wider than tall, at least 720dp wide and 600dp or more in width class, an onboarding step that opens with a visual shows it in a leading pane beside the rest of the step, a paywall shows its pitch beside its plans and call to action, and a full-screen message shows its hero beside its copy (a container at most 1040dp wide; on a foldable in book posture the panes meet on the hinge, read through Jetpack WindowManager). Modals and banners are at most 560dp wide; surveys stay one column.
 

@@ -24,7 +24,7 @@ class DateWheelYearOnlyTest {
 
     private val inputs = mutableMapOf<String, Any>()
     private fun show(mode: String) {
-        val block = ContentBlock(id = "wheel", type = "date_wheel_picker", field_id = "born", picker_mode = mode, default_date_value = "2000-06-15")
+        val block = ContentBlock(id = "wheel", type = "date_wheel_picker", field_id = "born", picker_mode = mode, default_date_value = "2000-06-15", field_config = mapOf("picker_variant" to "wheel"))
         compose.setContent { DateWheelPickerBlock(block, inputs) }
         compose.mainClock.advanceTimeBy(500)
     }
@@ -44,7 +44,7 @@ class DateWheelYearOnlyTest {
     }
 
     private fun showDate(date: String) {
-        val block = ContentBlock(id = "wheel", type = "date_wheel_picker", field_id = "born", picker_mode = "date", default_date_value = date)
+        val block = ContentBlock(id = "wheel", type = "date_wheel_picker", field_id = "born", picker_mode = "date", default_date_value = date, field_config = mapOf("picker_variant" to "wheel"))
         compose.setContent { DateWheelPickerBlock(block, inputs) }
         compose.mainClock.advanceTimeBy(500)
     }

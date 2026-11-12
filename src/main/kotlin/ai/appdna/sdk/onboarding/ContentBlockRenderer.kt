@@ -7,6 +7,7 @@
 
 package ai.appdna.sdk.onboarding
 
+import ai.appdna.sdk.core.authoredImageSemantics
 import androidx.compose.foundation.relocation.BringIntoViewRequester
 import androidx.compose.foundation.relocation.bringIntoViewRequester
 import androidx.compose.foundation.background
@@ -69,6 +70,10 @@ import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.input.key.key
+import androidx.compose.ui.input.key.type
+import androidx.compose.ui.input.key.onPreviewKeyEvent
+import androidx.compose.foundation.focusable
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.LinearEasing
@@ -122,6 +127,9 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.layout
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.layout.positionInRoot
+import androidx.compose.ui.layout.findRootCoordinates
 import androidx.compose.runtime.DisposableEffect
 import ai.appdna.sdk.AppDNA
 import androidx.compose.animation.AnimatedVisibility
@@ -140,6 +148,7 @@ import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.input.pointer.changedToDown
 import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.ui.graphics.asImageBitmap
 import kotlinx.coroutines.launch
@@ -2165,13 +2174,42 @@ internal fun RenderBlock(
      * composable gives the ROWS the inset back, which is what leaves the buttons where they were
      * and moves only the background.
      */
-    val blockBleeds = BlockFullBleed.isOn(block.field_config?.get("background_full_bleed"))
-    val blockBleedInset = BlockFullBleed
-        .stepHorizontalInset(ai.appdna.sdk.core.surfaceColumnWidthDp().toDouble())
-        .dp
+    /*
+     * Each side reaches out on its own (`background_bleed_top/_bottom/_left/_right`, or the older
+     * two-sided `background_full_bleed`): "edge" left/right cancels the step inset; "edge" top/bottom
+     * is the measured distance from this block's SLOT to the window edge, read by
+     * `onGloballyPositioned` OUTSIDE the bleed so the measurement cannot feed on its own result.
+     */
+    val needsEdge = BlockFullBleed.needsMeasuredEdge(block.field_config)
+    var edgeDistances by remember(block.id) { mutableStateOf(Pair(0.0, 0.0)) }
+    val density = androidx.compose.ui.platform.LocalDensity.current
+    val bleed = BlockFullBleed.resolve(
+        block.field_config,
+        stepInset = BlockFullBleed.stepHorizontalInset(ai.appdna.sdk.core.surfaceColumnWidthDp().toDouble()),
+        edgeTop = edgeDistances.first,
+        edgeBottom = edgeDistances.second,
+    )
+    val blockBleeds = !bleed.isZero
     val contentModifier = with(StyleEngine) {
         Modifier
-            .then(if (blockBleeds) Modifier.fullBleedHorizontal(blockBleedInset) else Modifier)
+            .then(
+                if (needsEdge) {
+                    Modifier.onGloballyPositioned { coords ->
+                        val root = coords.findRootCoordinates()
+                        val top = coords.positionInRoot().y
+                        val bottom = root.size.height - (top + coords.size.height)
+                        val next = with(density) {
+                            Pair(maxOf(0f, top).toDp().value.toDouble(), maxOf(0f, bottom).toDp().value.toDouble())
+                        }
+                        if (kotlin.math.abs(next.first - edgeDistances.first) >= 0.5 ||
+                            kotlin.math.abs(next.second - edgeDistances.second) >= 0.5
+                        ) {
+                            edgeDistances = next
+                        }
+                    }
+                } else Modifier,
+            )
+            .then(if (blockBleeds) Modifier.fullBleed(bleed) else Modifier)
             // The container style is the OUTER layer and `block_style` the inner one, as the console preview
             // and iOS draw them: a block carrying both shows its `block_style` fill over the container fill.
             // It was applied last (Compose: the innermost), so the container fill covered `block_style`.
@@ -2202,16 +2240,27 @@ internal fun RenderBlock(
                 contentAlignment = blockAlignment,
             ) {
                 Box(modifier = contentModifier) {
-                    RenderBlockContent(block, onAction, toggleValues, inputValues, loc, currentStepIndex, totalSteps, onInteract, stepBlocks)
+                    androidx.compose.runtime.CompositionLocalProvider(LocalBlockBleed provides bleed) {
+                        RenderBlockContent(block, onAction, toggleValues, inputValues, loc, currentStepIndex, totalSteps, onInteract, stepBlocks)
+                    }
                 }
             }
         } else {
             Box(modifier = contentModifier) {
-                RenderBlockContent(block, onAction, toggleValues, inputValues, loc, currentStepIndex, totalSteps, onInteract, stepBlocks)
+                androidx.compose.runtime.CompositionLocalProvider(LocalBlockBleed provides bleed) {
+                    RenderBlockContent(block, onAction, toggleValues, inputValues, loc, currentStepIndex, totalSteps, onInteract, stepBlocks)
+                }
             }
         }
     }
 }
+
+/**
+ * How far the block being rendered reaches its background out on each side ([BlockFullBleed.resolve]).
+ * The block's own content reads it to give that space back as padding, so only the background moves.
+ * Every [RenderBlock] provides its own, so a nested child never inherits its parent's bleed.
+ */
+internal val LocalBlockBleed = androidx.compose.runtime.compositionLocalOf { BlockFullBleed.Insets.ZERO }
 
 @Composable
 private fun RenderBlockContent(
@@ -2232,6 +2281,7 @@ private fun RenderBlockContent(
         "text" -> TextBlock(block, loc)
         "image" -> ImageBlock(block)
         "media_gallery" -> MediaGalleryBlock(block)
+        "animated_image" -> AnimatedImageBlock(block)
         "section_background" -> SectionBackgroundBlock(block, onAction, toggleValues, inputValues, loc, stepBlocks)
         "carousel" -> CarouselBlock(block, onAction, toggleValues, inputValues, loc, stepBlocks)
         "otp_input" -> OtpInputBlock(block, inputValues, onInteract)
@@ -2886,6 +2936,7 @@ private fun ImageBlock(block: ContentBlock) {
             modifier = Modifier
                 .clip(RoundedCornerShape(outerR))
                 .background(androidx.compose.ui.graphics.Color(0xFF101012))
+                .authoredImageSemantics(block.imageAccessibilityLabel)
                 .padding(bezelPad),
         ) {
             Box {
@@ -2942,6 +2993,7 @@ private fun ImageBlock(block: ContentBlock) {
                 )
                 .clip(RoundedCornerShape(if (isGlow) imageRadius else frameRadius))
                 .background(if (isGlow) androidx.compose.ui.graphics.Color.Transparent else frameColor)
+                .authoredImageSemantics(block.imageAccessibilityLabel)
                 .padding(if (isGlow) 0.dp else 6.dp),
         ) {
             ai.appdna.sdk.core.NetworkImage(
@@ -2964,14 +3016,12 @@ private fun ImageBlock(block: ContentBlock) {
             .then(imgWidthMod)
             .then(aspectMod)
             .heightIn(max = imgHeightMax)
-            .then(shapeModifier),
+            .then(shapeModifier)
+            // A described image is one node read as its alt; a blank alt is decorative and skipped — in every
+            // phase (loading, failed, drawn), the same rule as iOS.
+            .authoredImageSemantics(block.imageAccessibilityLabel),
         contentScale = if (explicitW != null) androidx.compose.ui.layout.ContentScale.Fit else contentScale,
         alignment = imageAlignment,
-        // Fall back to "Image" when
-        // alt unset, matching iOS accessibilityLabel(block.alt ?? "Image")
-        // at ContentBlockRendererView.swift:340. Was passing null — TalkBack
-        // treats null contentDescription on an Image as "decorative" so the
-        // image is silently skipped.
         contentDescription = block.imageAccessibilityLabel,
     )
 }
@@ -3022,9 +3072,18 @@ private fun ButtonBlock(
     val ctaDisabledHex = block.field_config?.get("cta_disabled_bg_color") as? String
     // The markers count only on raw-resolved blocks, exactly as in the advance gate.
     val rawIds = hostDataRawResolvedIds()
+    // `cta_dependencies`: the button is inactive (a tap does nothing) until every named condition on the step holds,
+    // drawn in `cta_disabled_bg_color`, or its own colour faded when none is set. iOS parity.
+    val hasDependencies = CtaDependencies.has(block)
+    val dependenciesMet = !hasDependencies || CtaDependencies.met(block, stepBlocks, inputValues)
+    val fadesInactive = hasDependencies && !dependenciesMet && ctaDisabledHex == null
     val fillHex = run {
         val fallback = block.bg_color ?: (ai.appdna.sdk.AppDNA.brandAccentHex ?: "#6366F1")
-        if (ctaEnabledHex == null && ctaDisabledHex == null) {
+        if (hasDependencies) {
+            val gateMet = (ctaEnabledHex == null && ctaDisabledHex == null) ||
+                RequiredFieldGate.evaluate(stepBlocks, inputValues, rawIds).first
+            if (dependenciesMet && gateMet) (ctaEnabledHex ?: fallback) else (ctaDisabledHex ?: fallback)
+        } else if (ctaEnabledHex == null && ctaDisabledHex == null) {
             fallback
         } else {
             val satisfied = RequiredFieldGate.evaluate(stepBlocks, inputValues, rawIds).first
@@ -3057,13 +3116,23 @@ private fun ButtonBlock(
     // it through the local, not a parameter). Null in Screens / SDUI and inside option sheets, where the
     // explicit `onInteract` stays in charge. Never read with a tap override (sound_button).
     val stepInteraction = if (onClickOverride == null && block.action == "refresh_step") LocalStepInteraction.current else null
+    // An `add_widget` button inside an onboarding step hands the step its decoded block (the how-to
+    // blocks, the provider name, the id). Null outside a step and inside every sheet — then the action
+    // takes the ordinary unrecognised-action path below, which advances and keeps the answers.
+    val widgetChannel = if (onClickOverride == null && block.action == WidgetPinAttempt.ACTION_NAME) LocalWidgetAction.current else null
+    // Inside an "Add widget" how-to every action goes to the sheet's own handler, `link` included.
+    val forwardEveryAction = LocalForwardEveryButtonAction.current
     val refreshLoading = stepInteraction != null && stepInteraction.loadingBlockId == block.id
     val refreshTappable = stepInteraction?.isTappable(block.id) ?: true
 
-    val onClick: () -> Unit = onClickOverride ?: {
+    val actOnClick: () -> Unit = onClickOverride ?: {
         val action = block.action ?: "next"
-        OnboardingPressedButton.record(block.id, action)
-        when (action) {
+        // A how-to's own Done must not be remembered as the press that left the step: the
+        // `add_widget` button that opened it already was.
+        if (!forwardEveryAction) OnboardingPressedButton.record(block.id, action)
+        if (forwardEveryAction) onAction(action)
+        else if (widgetChannel != null) widgetChannel.tap(block)
+        else when (action) {
             // Refresh the step in place. iOS parity: ContentBlockRendererView `buttonBlock`.
             // A tap while not tappable is refused (with a debug log) by the step's coordinator.
             "refresh_step" -> (stepInteraction?.onInteract ?: onInteract)(block.id, "refresh", block.action_value)
@@ -3121,6 +3190,8 @@ private fun ButtonBlock(
             else -> onAction(action)
         }
     }
+    // Inactive until its dependencies hold: the tap is not an action.
+    val onClick: () -> Unit = { if (dependenciesMet) actOnClick() }
 
     // Pressed style — collect interaction source for scale/opacity
     val interactionSource = remember { MutableInteractionSource() }
@@ -3157,6 +3228,8 @@ private fun ButtonBlock(
     } else {
         Modifier.wrapContentWidth()
     }.then(refreshStateSemantics(refreshLoading, refreshTappable))
+        .then(if (fadesInactive) Modifier.graphicsLayer(alpha = CtaDependencies.INACTIVE_OPACITY) else Modifier)
+        .then(if (hasDependencies) Modifier.testTag(if (dependenciesMet) "cta-active" else "cta-inactive") else Modifier)
 
     // Gap 5: Gradient background support
     val shape = RoundedCornerShape(cornerRadius)
@@ -7408,6 +7481,33 @@ internal fun DateWheelPickerBlock(
     }
     val dayCount = DateWheelModel.daysInMonth(selectedYear, selectedMonth)
 
+    // The console's "Picker Style" (field_config.picker_variant) and "Selection" (selection_mode). This block drew the
+    // wheel whatever they said; the calendar and the compact field are the form date field's own pickers, and a range
+    // of days is the range calendar. A form field reusing these wheels (`modeOverride`) is already a wheel.
+    if (modeOverride == null) {
+        val style = DatePickerStyle.standalone(block.picker_mode, (block.field_config?.get("picker_variant") as? String)
+            ?: (block.field_config?.get("date_picker_variant") as? String), block.field_config?.get("selection_mode") as? String)
+        fun day(y: DateWheelModel.Ymd) = "%04d-%02d-%02d".format(java.util.Locale.US, y.year, y.month, y.day)
+        if (style == "range") {
+            DateRangeBlock(block, inputValues,
+                minDay = minBound?.let { day(it) } ?: "%04d-01-01".format(java.util.Locale.US, minYear),
+                maxDay = maxBound?.let { day(it) } ?: "%04d-12-31".format(java.util.Locale.US, maxYear),
+                initialDay = day(openOn))
+            return
+        }
+        if (style == "graphical" || style == "compact") {
+            block.text?.takeIf { it.isNotEmpty() }?.let { Text(it, color = wheelTextColor, fontSize = 15.sp) }
+            FormInputDateBlock(
+                block.copy(
+                    picker_presentation = if (block.picker_presentation == "field") "field" else "inline",
+                    field_config = (block.field_config ?: emptyMap()) + ("picker_variant" to style),
+                ),
+                inputValues, mode,
+            )
+            return
+        }
+    }
+
     // Emit the combined value honoring the active mode.
     fun emit() {
         val wanted = DateWheelModel.Ymd(selectedYear, selectedMonth, selectedDay)
@@ -7873,6 +7973,32 @@ internal fun Modifier.fullBleedHorizontal(inset: Dp): Modifier = this.layout { m
 }
 
 /**
+ * The four-sided form of [fullBleedHorizontal]: the box paints `insets` past its slot on each side
+ * while still OCCUPYING only its slot, so the column around it does not move. Measured against
+ * widened constraints and placed back by the top-left inset — Compose rejects a negative padding at
+ * construction. An unbounded height (a block in a scrolling column) stays unbounded.
+ */
+internal fun Modifier.fullBleed(insets: BlockFullBleed.Insets): Modifier = this.layout { measurable, constraints ->
+    val l = insets.left.dp.roundToPx()
+    val r = insets.right.dp.roundToPx()
+    val t = insets.top.dp.roundToPx()
+    val b = insets.bottom.dp.roundToPx()
+    val extraW = l + r
+    val extraH = t + b
+    val widened = constraints.copy(
+        minWidth = (constraints.minWidth + extraW).coerceAtMost(constraints.maxWidth + extraW),
+        maxWidth = constraints.maxWidth + extraW,
+        minHeight = if (constraints.hasBoundedHeight) (constraints.minHeight + extraH).coerceAtMost(constraints.maxHeight + extraH) else constraints.minHeight,
+        maxHeight = if (constraints.hasBoundedHeight) constraints.maxHeight + extraH else constraints.maxHeight,
+    )
+    val placeable = measurable.measure(widened)
+    // The SLOT's size: the original width, and the measured height less what was added on top and
+    // bottom (the content gave it back as padding, so this is the height it would have had).
+    val width = if (extraW == 0) placeable.width else constraints.maxWidth
+    layout(width, (placeable.height - extraH).coerceAtLeast(0)) { placeable.place(-l, -t) }
+}
+
+/**
  * Whether a button should stretch to the width it is offered.
  *
  * A button hardcoded `fillMaxWidth()` on Android, `.frame(maxWidth: .infinity)` on iOS and
@@ -7981,15 +8107,14 @@ private fun MultiButtonsBlock(
      * rejects) and the rows get the inset back, leaving the buttons exactly where they were and
      * moving only the background behind them. The inset is shared with iOS in [BlockFullBleed].
      */
-    // The WRAPPER widens now (it owns the background); this keeps only the row inset, which
-    // is what puts the buttons back where they were.
-    val bleeds = BlockFullBleed.isOn(block.field_config?.get("background_full_bleed"))
-    val inset = BlockFullBleed
-        .stepHorizontalInset(ai.appdna.sdk.core.surfaceColumnWidthDp().toDouble())
-        .dp
+    // The WRAPPER bleeds (it owns the background, see RenderBlock); this gives every side it
+    // reached out by back to the buttons, which is what leaves them where they were.
+    val bleed = LocalBlockBleed.current
 
     Column(
-        modifier = Modifier.fillMaxWidth(),
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(top = bleed.top.dp, bottom = bleed.bottom.dp),
         verticalArrangement = Arrangement.spacedBy(gap),
     ) {
         // The row split is a pure, tested rule (multiButtonRowPlan), not an inline chunk.
@@ -8003,7 +8128,7 @@ private fun MultiButtonsBlock(
                     .fillMaxWidth()
                     // The inset the column just cancelled, given back to the BUTTONS, so
                     // only the background behind them reaches the edges.
-                    .then(if (bleeds) Modifier.padding(horizontal = inset) else Modifier),
+                    .padding(start = bleed.left.dp, end = bleed.right.dp),
                 horizontalArrangement = Arrangement.spacedBy(gap),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
@@ -10484,11 +10609,12 @@ internal fun FormInputDateBlock(
     // controls inline graphical vs compact. picker_mode similarly may
     // override the function `mode` parameter.
     val effectiveMode = block.picker_mode ?: mode
-    val pickerVariant = when {
-        block.picker_presentation == "field" -> "compact"
-        block.picker_presentation == "inline" -> "graphical"
-        else -> (block.field_config?.get("picker_variant") as? String)?.lowercase() ?: "compact"
-    }
+    // The console's "Picker Variant" decides for an inline field too; it used to be overridden by the calendar
+    // whenever the presentation was `inline`, the default (DatePickerStyle.formField).
+    val pickerVariant = DatePickerStyle.formField(
+        block.picker_presentation, block.field_config?.get("picker_variant") as? String,
+        hasDate = effectiveMode == "date" || effectiveMode == "datetime",
+    )
     val inlineGraphical = pickerVariant == "graphical" && (effectiveMode == "date" || effectiveMode == "datetime")
     // Drain2 parity — picker_variant="wheel" (presentation unset) renders an inline
     // spinning wheel like iOS (FormInputBlockViews.swift:374) + preview, reusing the
@@ -11241,13 +11367,31 @@ private fun FormInputSelectBlock(
     // The pending advance after a pick. Leaving the step cancels the scope; a later pick replaces it.
     val advanceScope = rememberCoroutineScope()
     var advanceJob by remember(block.id) { mutableStateOf<kotlinx.coroutines.Job?>(null) }
+    // The question asked before an advance (`field_config.advance_confirm`), while it is showing.
+    var pendingConfirmation by remember(block.id) { mutableStateOf<SelectAdvanceOnPick.Confirmation?>(null) }
     fun advanceAfterPick(before: List<String>, after: List<String>, opensSheet: Boolean) {
         if (onAdvance == null || !SelectAdvanceOnPick.shouldAdvance(block, before, after, opensSheet)) return
         advanceJob?.cancel()
         advanceJob = advanceScope.launch {
             kotlinx.coroutines.delay(SelectAdvanceOnPick.DELAY_MS)
-            onAdvance()
+            // The author asked to confirm: the beat draws the pick, then the question; only its confirm advances.
+            val ask = SelectAdvanceOnPick.confirmation(block)
+            if (ask != null) pendingConfirmation = ask else onAdvance()
         }
+    }
+    // "Are you sure?" before the advance. Cancel stays on the screen with the pick kept, so the user can pick again.
+    pendingConfirmation?.let { ask ->
+        AlertDialog(
+            onDismissRequest = { pendingConfirmation = null },
+            confirmButton = {
+                TextButton(onClick = {
+                    pendingConfirmation = null
+                    onAdvance?.invoke()
+                }) { Text(ask.yes) }
+            },
+            dismissButton = { TextButton(onClick = { pendingConfirmation = null }) { Text(ask.no) } },
+            title = { Text(ask.text) },
+        )
     }
     fun pickOption(value: String) {
         val before = if (isMulti) storedMultiSelection(inputValues[fieldId]) else emptyList()
@@ -11322,6 +11466,17 @@ private fun FormInputSelectBlock(
         }
 
         SelectGridTooltip(block, displayStyle)
+
+        // Right or wrong, once the user has answered (`field_config.correct_values`). iOS parity.
+        SelectAnswerFeedback.message(block, if (isMulti) selectedValues.toList() else listOf(selectedValue))?.let { feedback ->
+            Text(
+                text = feedback.text,
+                fontSize = 15.sp,
+                fontWeight = FontWeight.SemiBold,
+                color = StyleEngine.parseColor(feedback.colorHex),
+                modifier = Modifier.fillMaxWidth().padding(top = 4.dp).testTag("select-answer-feedback"),
+            )
+        }
     }
 }
 
@@ -14024,34 +14179,165 @@ private fun OptionBottomSheetBody(option: InputOption, parentBlockId: String, on
         presentedSheetBlocks = option.sheet_blocks.orEmpty(),
         sheetInputs = sheetInputs,
     ) ?: false
+    BlockSheet(
+        blocks = sheetBlocks,
+        loc = null,
+        // The CTA closes the sheet; the flow continues underneath, where the option is already selected.
+        onDone = onDismiss,
+        onClose = { onDismiss() },
+        toggleValues = sheetToggles,
+        inputValues = sheetInputs,
+        rawResolved = rawSheet != null,
+        showsGoogleCredit = showsGoogleCredit,
+    )
+}
+
+/**
+ * A modal bottom sheet of ordinary content blocks — the one engine behind an option's
+ * `sheet_blocks` and the "Add widget" how-to (`howto_blocks_android` here; `howto_blocks_ios` is the
+ * iOS sheet, never shown on Android). Mirrors iOS `BlockSheetView`.
+ *
+ * [onDone] runs for a `next` / `continue` button, [onClose] for a `dismiss` button (`"dismiss"`) and
+ * for the sheet's own dismissal: `"swipe"` (dragged down), `"scrim"` (a tap outside) or `"back"`.
+ * Any other action is logged and ignored.
+ *
+ * The step's interaction wiring and its widget channel are both null inside: the sheet is composed
+ * under the step, and a `refresh_step` or `add_widget` button in it must not reach the step.
+ *
+ * [forwardEveryAction] (the how-to) sends every button action here, `link` included, so the button
+ * renderer's own handling never runs inside it. The option sheet keeps today's behaviour.
+ */
+@OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
+@Composable
+internal fun BlockSheet(
+    blocks: List<ContentBlock>,
+    loc: ((String, String) -> String)?,
+    onDone: () -> Unit,
+    onClose: (via: String) -> Unit,
+    toggleValues: MutableMap<String, Boolean> = remember { mutableStateMapOf() },
+    inputValues: MutableMap<String, Any> = remember { mutableStateMapOf() },
+    rawResolved: Boolean = false,
+    showsGoogleCredit: Boolean = false,
+    forwardEveryAction: Boolean = false,
+    skipPartiallyExpanded: Boolean = false,
+) {
+    // Which gesture is dismissing the sheet. ModalBottomSheet reports every dismissal through one
+    // `onDismissRequest`, and asks `confirmValueChange(Hidden)` on the way for a swipe, a scrim tap AND
+    // its own back handling (measured on an API 34 emulator: back and swipe both came out as the scrim
+    // when the cause was read from that alone). So the sheet tells them apart itself:
+    //  - back: when [forwardEveryAction] (the how-to) the sheet handles back itself — M3's own back
+    //    dismissal is off, the key arrives here (and, on API 33+ in an app opted into predictive back,
+    //    the window's back callback) and closes with `"back"`;
+    //  - swipe vs scrim: the FIRST `confirmValueChange(Hidden)` of a dismissal decides — a drag that
+    //    began on the sheet is a swipe, anything else (a tap outside it) the scrim.
+    val dragged = remember { booleanArrayOf(false) }
+    val via = remember { arrayOfNulls<String>(1) }
+    val ownsBack = forwardEveryAction
+    val sheetState = androidx.compose.material3.rememberModalBottomSheetState(
+        skipPartiallyExpanded = skipPartiallyExpanded,
+        confirmValueChange = { value ->
+            if (value == androidx.compose.material3.SheetValue.Hidden) {
+                if (via[0] == null) via[0] = if (dragged[0]) "swipe" else "scrim"
+            } else {
+                via[0] = null
+            }
+            dragged[0] = false
+            true
+        },
+    )
+    var closedByBack by remember { mutableStateOf(false) }
+    val closeByBack: () -> Unit = {
+        if (!closedByBack) {
+            closedByBack = true
+            onClose("back")
+        }
+    }
+    val backFocus = remember { androidx.compose.ui.focus.FocusRequester() }
+    val latestClose by androidx.compose.runtime.rememberUpdatedState(closeByBack)
+    if (ownsBack) {
+        LaunchedEffect(Unit) { runCatching { backFocus.requestFocus() } }
+    }
+    val markDrag = Modifier.pointerInput(Unit) {
+        awaitPointerEventScope {
+            while (true) {
+                val e = awaitPointerEvent(androidx.compose.ui.input.pointer.PointerEventPass.Initial)
+                val c = e.changes.firstOrNull() ?: continue
+                if (c.changedToDown()) dragged[0] = false
+                else if (c.pressed && (c.position - c.previousPosition).getDistance() > 0f) dragged[0] = true
+            }
+        }
+    }
     val sheetContainerColor = androidx.compose.material3.BottomSheetDefaults.ContainerColor
     val sheetBackdrop = GoogleMapsAttribution.Backdrop.Plain(GoogleMapsAttribution.hexOf(sheetContainerColor))
-    androidx.compose.material3.ModalBottomSheet(onDismissRequest = onDismiss, containerColor = sheetContainerColor) {
+    androidx.compose.material3.ModalBottomSheet(
+        onDismissRequest = {
+            val cause = via[0] ?: "back"
+            via[0] = null
+            if (!closedByBack) onClose(cause)
+        },
+        sheetState = sheetState,
+        properties = androidx.compose.material3.ModalBottomSheetProperties(
+            securePolicy = androidx.compose.ui.window.SecureFlagPolicy.Inherit,
+            isFocusable = true,
+            shouldDismissOnBackPress = !ownsBack,
+        ),
+        containerColor = sheetContainerColor,
+        dragHandle = { Box(markDrag) { androidx.compose.material3.BottomSheetDefaults.DragHandle() } },
+    ) {
+        if (ownsBack) {
+            // Registered from INSIDE the sheet: here `LocalView` is the sheet's own window, the one
+            // that has focus while it is up, so back reaches it. Registered on the step's view (outside
+            // the sheet) the callback sat on the activity window, which never receives back while the
+            // sheet is focused — in an app opted into predictive back, back did nothing.
+            val sheetWindowView = androidx.compose.ui.platform.LocalView.current
+            androidx.compose.runtime.DisposableEffect(sheetWindowView) {
+                val unregister = registerSheetBackCallback(sheetWindowView) { latestClose() }
+                onDispose { unregister() }
+            }
+        }
         Column(
             modifier = Modifier
+                .then(markDrag)
+                .then(
+                    if (ownsBack) Modifier
+                        .focusRequester(backFocus)
+                        .onPreviewKeyEvent { e ->
+                            if (e.key != androidx.compose.ui.input.key.Key.Back) return@onPreviewKeyEvent false
+                            if (e.type == androidx.compose.ui.input.key.KeyEventType.KeyUp) closeByBack()
+                            true
+                        }
+                        .focusable()
+                    else Modifier,
+                )
                 .fillMaxWidth()
                 .padding(horizontal = 20.dp)
                 .padding(bottom = 24.dp),
         ) {
             // The sheet is composed under the step, so the step's interaction wiring
             // would leak into it: a `refresh_step` button in `sheet_blocks` fires NOTHING (the sheet has
-            // its own inputs and no interaction channel; the publish validator warns).
+            // its own inputs and no interaction channel; the publish validator warns). The same holds
+            // for the widget channel: an `add_widget` button in a sheet never starts an attempt.
             androidx.compose.runtime.CompositionLocalProvider(
-                LocalHostDataRawResolved provides (rawSheet != null),
+                LocalHostDataRawResolved provides rawResolved,
                 LocalStepInteraction provides null,
+                LocalWidgetAction provides null,
+                LocalForwardEveryButtonAction provides forwardEveryAction,
                 // The sheet is filled with its own container colour, whatever the step underneath
                 // draws: a Google logo inside the sheet picks its variant from the sheet.
                 LocalGoogleAttributionBackdrop provides sheetBackdrop,
             ) {
             ContentBlockRendererView(
-                blocks = sheetBlocks,
+                blocks = blocks,
                 onAction = { action ->
-                    // The CTA closes the sheet; the flow continues underneath, where the
-                    // option is already selected.
-                    if (action == "next" || action == "continue" || action == "dismiss") onDismiss()
+                    when (action) {
+                        "next", "continue" -> onDone()
+                        "dismiss" -> onClose("dismiss")
+                        else -> ai.appdna.sdk.Log.debug("Sheet: ignored button action \"$action\"")
+                    }
                 },
-                toggleValues = sheetToggles,
-                inputValues = sheetInputs,
+                toggleValues = toggleValues,
+                inputValues = inputValues,
+                loc = loc,
             )
             }
             // Google's attribution inside the sheet, the container its text is drawn in, on the
@@ -14064,6 +14350,19 @@ private fun OptionBottomSheetBody(option: InputOption, parentBlockId: String, on
             }
         }
     }
+}
+
+/**
+ * On API 33+, the sheet window's own back callback, for a host opted into predictive back (there the
+ * key never reaches the content). Below 33, or in a host that has not opted in, back arrives as a key
+ * event and the sheet's key handler takes it. Returns the unregister call.
+ */
+private fun registerSheetBackCallback(view: android.view.View, onBack: () -> Unit): () -> Unit {
+    if (android.os.Build.VERSION.SDK_INT < 33) return {}
+    val dispatcher = view.findOnBackInvokedDispatcher() ?: return {}
+    val callback = android.window.OnBackInvokedCallback { onBack() }
+    dispatcher.registerOnBackInvokedCallback(android.window.OnBackInvokedDispatcher.PRIORITY_DEFAULT, callback)
+    return { dispatcher.unregisterOnBackInvokedCallback(callback) }
 }
 
 /**

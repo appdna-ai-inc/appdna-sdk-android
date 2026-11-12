@@ -25,6 +25,7 @@ import org.json.JSONObject
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
@@ -173,7 +174,8 @@ class EventShutdownHandoffTest {
         val db = EventDatabase(ctx, 10_000, "claim_held_${UUID.randomUUID()}.db")
         try {
             db.insertEvent(event(1).toString())
-            assertTrue(EventUploadCoordinator.tryAcquire())
+            val claim = EventUploadCoordinator.tryAcquire()
+            assertNotNull(claim)
             try {
                 assertEquals(
                     "a run that cannot get the upload claim must come back, not succeed with nothing sent",
@@ -181,7 +183,7 @@ class EventShutdownHandoffTest {
                     EventUploadWorker.uploadPending(db, "adn_test_claim", server!!.baseUrl),
                 )
             } finally {
-                EventUploadCoordinator.release()
+                EventUploadCoordinator.release(claim!!)
             }
             assertEquals("nothing may be sent while another owner holds the claim", 0, server!!.rawBodies.size)
             assertEquals(1, db.count())

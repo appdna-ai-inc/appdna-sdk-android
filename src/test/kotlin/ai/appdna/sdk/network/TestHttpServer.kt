@@ -151,6 +151,12 @@ internal class TestHttpServer(
          * every worker inside Robolectric's native SQLite forever — was `EventQueue`'s auto-flush
          * spinning on an overflowed `flushInterval * 1000`, fixed with this test.) The code under test
          * does its HTTP on that pool, so a real-network test first lets it drain. Returns the ms spent.
+         *
+         * It also takes back the process-wide upload claim. A queue an earlier test left
+         * uploading — to a server that test has closed, or in a retry backoff — holds it for seconds, and
+         * this test's flush or worker would defer to it and send nothing: the full-suite-only failures
+         * of `EventShutdownHandoffTest`, `EventWindowAndWorkerTest`, `RuntimeSettingsTest` and
+         * `SingleAttemptUploadTest`. That owner's late release is a no-op after the reset.
          */
         fun settleIoDispatcher(maxSeconds: Long = 60): Long {
             val started = System.nanoTime()
@@ -166,6 +172,7 @@ internal class TestHttpServer(
             }
             val ms = TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - started)
             if (ms > 1_000) println("TestHttpServer: waited ${ms} ms for Dispatchers.IO to drain earlier tests' work")
+            ai.appdna.sdk.events.EventUploadCoordinator.resetForTest()?.let { println("TestHttpServer: $it") }
             return ms
         }
 

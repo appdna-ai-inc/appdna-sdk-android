@@ -234,6 +234,11 @@ data class OnboardingStep(
      * with [auto_advance_seconds] rather than replacing it. Mirrors iOS.
      */
     val tap_anywhere_advances: Boolean? = null,
+    /**
+     * The countdown this step draws while it waits to advance by itself ([AutoAdvanceIndicator]).
+     * Off unless `show: true`. Root first, then the nested config, like the timer. Mirrors iOS.
+     */
+    val auto_advance_indicator: Map<String, Any?>? = null,
     val next_step_rules: ImmutableList<NextStepRule>? = null,
     /**
      * The step's authored name ("Screen path 1").
@@ -1622,6 +1627,8 @@ internal object OnboardingConfigParser {
             // place misses half the flows.
             tap_anywhere_advances = map.bool(SURFACE, path, "tap_anywhere_advances")
                 ?: configMap.bool(SURFACE, path, "tap_anywhere_advances"),
+            auto_advance_indicator = map.objMap(SURFACE, path, "auto_advance_indicator")
+                ?: configMap.objMap(SURFACE, path, "auto_advance_indicator"),
             next_step_rules = nextStepRules,
             name = map.str(SURFACE, path, "name"),
             rawContentBlocks = stampedRaw,
@@ -2128,6 +2135,11 @@ internal object OnboardingConfigParser {
                 val particleMulticolor = bm.bool(SURFACE, path, "particle_multicolor")
                 val timeFormat = bm.str(SURFACE, path, "time_format")
                 val timeTextSize = (bm.num(SURFACE, path, "time_text_size"))?.toDouble()
+                // The "Add widget" button's how-to sheets: ordinary block lists, decoded by this same
+                // path and folded in under their own key names (budget-locked, as above). Read back
+                // through `ContentBlock.howto_blocks_android` / `howto_blocks_ios`.
+                val howtoIos = parseChildBlocks(bm["howto_blocks_ios"], "$path.howto_blocks_ios")
+                val howtoAndroid = parseChildBlocks(bm["howto_blocks_android"], "$path.howto_blocks_android")
                 if (labelFormat == null && customLabel == null && videoControls == null &&
                     particleColor == null && particleOpacity == null && particleSpeed == null &&
                     timerVariant == null && labelPlacement == null && loadingTextAlign == null &&
@@ -2135,7 +2147,7 @@ internal object OnboardingConfigParser {
                     audioUrl == null && buttonTextAlign == null && dividerPosition == null &&
                     dotShape == null && galleryAutoscroll == null && galleryAutoscrollSpeed == null &&
                     galleryFill == null && particleMulticolor == null && timeFormat == null &&
-                    timeTextSize == null) {
+                    timeTextSize == null && howtoIos == null && howtoAndroid == null) {
                     base
                 } else {
                     val merged = base ?: mutableMapOf()
@@ -2160,6 +2172,8 @@ internal object OnboardingConfigParser {
                     if (particleMulticolor != null) merged.putIfAbsent("particle_multicolor", particleMulticolor)
                     if (timeFormat != null) merged.putIfAbsent("time_format", timeFormat)
                     if (timeTextSize != null) merged.putIfAbsent("time_text_size", timeTextSize)
+                    if (howtoIos != null) merged[HOWTO_BLOCKS_IOS] = howtoIos
+                    if (howtoAndroid != null) merged[HOWTO_BLOCKS_ANDROID] = howtoAndroid
                     merged
                 }
             },
@@ -2589,9 +2603,10 @@ internal object OnboardingConfigParser {
 }
 
 /**
- * What TalkBack says for an image block: the console's "Alt text" (`alt`), trimmed, else "Image". One rule
- * for every place an image block is drawn; iOS `ContentBlock.imageAccessibilityLabel` is the same, and
+ * What TalkBack says for an image block: the console's "Alt text" (`alt`), trimmed — or null when it is blank,
+ * and the image is then decorative and skipped ([ai.appdna.sdk.core.AuthoredImageAccessibility]). One rule for
+ * every place an image block is drawn; iOS `ContentBlock.imageAccessibilityLabel` is the same, and
  * `packages/sdk-shared-fixtures/dto_parsing/onboarding_image_alt.fixture.json` pins both.
  */
-val ContentBlock.imageAccessibilityLabel: String
-    get() = alt?.trim()?.takeIf { it.isNotEmpty() } ?: "Image"
+val ContentBlock.imageAccessibilityLabel: String?
+    get() = ai.appdna.sdk.core.AuthoredImageAccessibility.label(alt)

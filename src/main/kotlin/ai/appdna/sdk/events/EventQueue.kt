@@ -275,7 +275,8 @@ internal class EventQueue(
 
         // Single upload owner — skip if the background Worker holds the claim, so
         // the same rows are never POSTed by both paths concurrently. Released in the finally below.
-        if (!EventUploadCoordinator.tryAcquire()) {
+        val claim = EventUploadCoordinator.tryAcquire()
+        if (claim == null) {
             Log.debug("Flush deferred — background uploader is active")
             return
         }
@@ -371,7 +372,7 @@ internal class EventQueue(
             }
         }
         } finally {
-            EventUploadCoordinator.release() // Release the cross-path upload claim
+            EventUploadCoordinator.release(claim) // Release the cross-path upload claim
         }
     }
 
@@ -605,9 +606,25 @@ internal interface BackgroundUploadScheduler {
  * process-wide claim does. Non-blocking: whoever wins uploads, the other skips this cycle.
  */
 internal object EventUploadCoordinator {
-    private val uploading = java.util.concurrent.atomic.AtomicBoolean(false)
-    fun tryAcquire(): Boolean = uploading.compareAndSet(false, true)
-    fun release() { uploading.set(false) }
+    /** One owner's hold on the claim: whoever took it, and when (for a reset's diagnostic). */
+    class Claim internal constructor(internal val thread: String, internal val atNanos: Long)
+
+    private val owner = java.util.concurrent.atomic.AtomicReference<Claim?>(null)
+
+    /** Takes the claim; the [Claim] releases it. Null when another owner holds it. */
+    fun tryAcquire(): Claim? {
+        val claim = Claim(Thread.currentThread().name, System.nanoTime())
+        return if (owner.compareAndSet(null, claim)) claim else null
+    }
+
+    /**
+     * Releases [claim] — only if it is still the one held. An owner whose claim a [resetForTest] took
+     * back must not free the claim a later owner holds, or two owners would upload at once.
+     */
+    fun release(claim: Claim) { owner.compareAndSet(claim, null) }
+
+    /** Whether any owner holds the claim now. */
+    internal fun isHeld(): Boolean = owner.get() != null
 
     /**
      * The `event_id`s an upload owner resolved (delivered, or dropped on a 4xx) in this process, most
@@ -636,4 +653,19 @@ internal object EventUploadCoordinator {
 
     @Synchronized
     internal fun clearResolvedForTest() = resolved.clear()
+
+    /**
+     * Test isolation for the process-wide state: forgets the resolved ids AND takes back the claim. A
+     * queue an earlier test left uploading (a request to a server that test has closed, or a retry
+     * backoff of up to 7 s) still holds the claim, and in one JVM the next test's flush and worker then
+     * defer to it and send nothing. Its own `release` is then a no-op, so it cannot free the
+     * claim of an owner that starts after this reset.
+     */
+    @Synchronized
+    internal fun resetForTest(): String? {
+        resolved.clear()
+        val held = owner.getAndSet(null) ?: return null
+        val ms = (System.nanoTime() - held.atNanos) / 1_000_000
+        return "took back an upload claim held for $ms ms by ${held.thread}"
+    }
 }

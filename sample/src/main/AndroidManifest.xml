@@ -18,6 +18,7 @@
         android:label="@string/app_name"
         android:icon="@mipmap/ic_launcher"
         android:theme="@style/Theme.AppDNASample"
+        android:enableOnBackInvokedCallback="${appdnaPredictiveBack}"
         android:allowBackup="false">
 
         <!-- TEST-ONLY: the Maps key the sample is given at build time (see sample/build.gradle.kts).

@@ -123,7 +123,10 @@ internal object HostDataResolver {
     /** Option-bearing inputs ("Select"). */
     val OPTION_BEARING_TYPES: Set<String> = setOf("input_select", "input_chips", "input_segmented")
     /** Keys whose array elements are content blocks (order matters: it is the id-stamping order). */
-    private val BLOCK_LIST_KEYS = listOf("children", "stack_children")
+    // An "Add widget" button's how-to sheets are plain block lists rendered with the step's own
+    // inputs and localizations (unlike an option's `sheet_blocks`, which have inputs of their own), so
+    // they are walked exactly as children are: ids stamped, bindings and templates resolved.
+    private val BLOCK_LIST_KEYS = listOf("children", "stack_children", "howto_blocks_ios", "howto_blocks_android")
     /** The repeat cap. */
     const val REPEAT_DEFAULT_MAX = 20
     const val REPEAT_HARD_MAX = 50
@@ -784,7 +787,7 @@ internal object HostDataResolver {
     // Id stamping and the skip rule
     // ─────────────────────────────────────────────────────────────────────────────────────────────
 
-    /** Visit every block object in a block tree (the block, children, stack_children, option sheet_blocks). */
+    /** Visit every block object in a block tree (the block, children, stack_children, howto_blocks_ios / _android, option sheet_blocks). */
     private fun forEachBlock(
         block: JsonObj,
         path: String,

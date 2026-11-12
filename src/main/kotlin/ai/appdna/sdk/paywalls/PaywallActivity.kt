@@ -1,5 +1,6 @@
 package ai.appdna.sdk.paywalls
 
+import ai.appdna.sdk.core.authoredImageSemantics
 import ai.appdna.sdk.AppDNA
 import ai.appdna.sdk.Log
 import android.content.Context
@@ -1006,8 +1007,14 @@ fun PaywallScreen(
                 .fillMaxSize()
                 // Split: the trailing pane starts below the close control, which sits over its top
                 // corner, so the first plan's badge is never under the ✕ (the pitch pane's header
-                // already reserves it). The control's footprint is the same figure the header uses.
-                .padding(top = if (paywallSplit) PaywallHeaderInset.resolve(config.dismiss).dp else 0.dp)
+                // already reserves it). The control sits below the status bar, and draws its 48dp
+                // minimum touch target, so both are counted, plus an 8dp gap.
+                .padding(
+                    top = if (paywallSplit && PaywallHeaderInset.closeControlBottom(config.dismiss) > 0) {
+                        WindowInsets.statusBars.asPaddingValues().calculateTopPadding() +
+                            PaywallHeaderInset.closeControlBottom(config.dismiss).dp + 8.dp
+                    } else 0.dp,
+                )
                 // The viewport the pinned-zone cap is measured against. It has to be
                 // measured in THIS scope: the state the cap reads lives here, and the root Box
                 // further down the file is a different composable that cannot see it.
@@ -1523,17 +1530,19 @@ fun PaywallScreen(
                             .statusBarsPadding()
                             .padding(16.dp)
                             .size((backSize * 2).dp)
-                            .clip(CircleShape)
-                            .background(Color.Black.copy(alpha = 0.3f))
                             .semantics { contentDescription = backCd },
                     ) {
-                        Text(
-                            // ‹ chevron or ← arrow — the glyph is the only visual difference.
-                            text = if ((back.style ?: "chevron") == "arrow") "\u2190" else "\u2039",
-                            color = backColor,
-                            fontSize = backSize.sp,
-                            fontWeight = FontWeight.SemiBold,
-                        )
+                        // The circle is drawn INSIDE the button at 2 × glyph, as iOS draws it; the
+                        // button's own 48dp minimum touch target stays around it, invisible.
+                        PaywallTopControlCircle(sizeDp = backSize * 2) {
+                            Text(
+                                // ‹ chevron or ← arrow — the glyph is the only visual difference.
+                                text = if ((back.style ?: "chevron") == "arrow") "\u2190" else "\u2039",
+                                color = backColor,
+                                fontSize = backSize.sp,
+                                fontWeight = FontWeight.SemiBold,
+                            )
+                        }
                     }
                 }
             }
@@ -1606,20 +1615,23 @@ fun PaywallScreen(
                             .statusBarsPadding()
                             .padding(16.dp)
                             .size((glyphSize * 2).dp)
-                            .clip(CircleShape)
-                            .background(Color.Black.copy(alpha = 0.3f))
                             // \u2014 close X has no semantic icon
                             // (it's a Text composable with the unicode glyph),
                             // so attach an a11y label that TalkBack reads.
                             .semantics { contentDescription = closeCd },
                     ) {
-                        Text(
-                            // ✕ for close, ‹ for back — the glyph is the only visual difference.
-                            text = if (dismissType == "back_button") "\u2039" else "\u2715",
-                            color = glyphColor,
-                            fontSize = glyphSize.sp,
-                            fontWeight = FontWeight.SemiBold
-                        )
+                        // Drawn at 2 × glyph inside the button, as iOS draws it and as the header's
+                        // side reserve (PaywallHeaderInset.resolve) assumes. Clipped on the button
+                        // itself, the circle took the button's 48dp minimum touch target as its size.
+                        PaywallTopControlCircle(sizeDp = glyphSize * 2) {
+                            Text(
+                                // ✕ for close, ‹ for back — the glyph is the only visual difference.
+                                text = if (dismissType == "back_button") "\u2039" else "\u2715",
+                                color = glyphColor,
+                                fontSize = glyphSize.sp,
+                                fontWeight = FontWeight.SemiBold
+                            )
+                        }
                     }
                 }
             }
@@ -1676,6 +1688,18 @@ private fun appendPlanName(
  * pitch carries no plan selection or purchase, so its section callbacks are inert apart from an
  * authored dismiss or restore button.
  */
+/** The translucent circle a paywall's top-corner control (✕ or Back) is drawn in, [sizeDp] wide. */
+@Composable
+private fun PaywallTopControlCircle(sizeDp: Float, content: @Composable () -> Unit) {
+    Box(
+        modifier = Modifier
+            .size(sizeDp.dp)
+            .clip(CircleShape)
+            .background(Color.Black.copy(alpha = 0.3f)),
+        contentAlignment = Alignment.Center,
+    ) { content() }
+}
+
 @Composable
 private fun PaywallPitchPane(
     sections: List<PaywallSection>,
@@ -4936,18 +4960,12 @@ internal fun PaywallSectionView(
                 url = section.data?.image_url,
                 // The console's "Alt Text": TalkBack reads it as the image's description — set on the
                 // section's own node (one node, an image), so it is there while the image loads or fails
-                // as well as once it has drawn.
+                // as well as once it has drawn. A blank Alt Text makes the image decorative: skipped.
                 modifier = Modifier
                     .fillMaxWidth()
                     .height((section.data?.height ?: 240f).dp)
                     .clip(RoundedCornerShape((section.data?.corner_radius ?: 12f).dp))
-                    .run {
-                        val alt = PaywallImageAccessibility.label(section.data)
-                        if (alt == null) this else clearAndSetSemantics {
-                            contentDescription = alt
-                            role = Role.Image
-                        }
-                    }
+                    .then(Modifier.authoredImageSemantics(PaywallImageAccessibility.label(section.data)))
                     .run { with(StyleEngine) { applyContainerStyle(section.style?.container) } },
                 contentScale = androidx.compose.ui.layout.ContentScale.Crop,
             )

@@ -26,7 +26,9 @@ import androidx.compose.runtime.compositionLocalOf
  *
  * An option's `sheet_blocks` are a modal ABOVE the step, so the step's walk skips them and each sheet
  * walks its own, drawing the credit inside the sheet; a sheet resolves its `step` root against its own
- * inputs, as the sheet renderer does.
+ * inputs, as the sheet renderer does. An "Add widget" button's how-to sheets (`howto_blocks_ios`,
+ * `howto_blocks_android`) are modals above the step too: skipped by the step's walk, walked by the
+ * how-to sheet itself ([howtoShows]) with the step's own answers.
  *
  * Only what can be DRAWN is walked, so a key or an entry nothing renders never credits — the same rule
  * as the Swift twin, which the `onboarding_google_credit` fixtures hold the pair to:
@@ -324,13 +326,23 @@ internal object GoogleCredit {
 
     // ---- The walk -------------------------------------------------------------------------------
 
-    /** Every string in [value], `sheet_blocks` skipped. Exposed so the fixture runner drives this. */
+    /** The "Add widget" how-to sheets a button carries: modals above the step, like `sheet_blocks`. */
+    val HOWTO_KEYS: Set<String> = setOf("howto_blocks_ios", "howto_blocks_android")
+
+    /** A how-to sheet's credit: its own blocks, every root the step's. */
+    fun howtoShows(howtoBlocks: List<ContentBlock>, answers: Answers): Boolean {
+        if (!answers.holdAGoogleAnswer) return false
+        return howtoBlocks.any { walk(blockSource(it), answers) }
+    }
+
+    /** Every string in [value], `sheet_blocks` and the how-to sheets skipped. Exposed so the fixture runner drives this. */
     fun walk(value: Any, answers: Answers): Boolean = when (value) {
         is String -> tokensCredit(value, answers)
         is Map<*, *> -> value.entries.any { (key, child) ->
             when {
                 child == null -> false
                 key == "sheet_blocks" -> false
+                key in HOWTO_KEYS -> false
                 key == "bindings" && bindingsCredit(child, answers) -> true
                 else -> walk(child, answers)
             }
@@ -504,13 +516,17 @@ internal object GoogleCredit {
             field_config = null, custom_config = null, rive_inputs = null, icon_ref = null,
         ).toString(),
         "bindings" to b.bindings,
-        "field_config" to b.field_config,
+        // The how-to lists ride in field_config; they are walked (skipped) under their own keys below.
+        "field_config" to b.field_config?.filterKeys { it !in HOWTO_KEYS },
         "custom_config" to b.custom_config,
         "rive_inputs" to b.rive_inputs,
         "icon_ref" to b.icon_ref,
         "children" to b.children?.map(::blockSource),
         "stack_children" to b.stack_children?.map(::blockSource),
         "field_options" to b.field_options?.map(::optionSource),
+        // Kept as structure under their own keys, so [walk] skips them as the modals they are.
+        "howto_blocks_ios" to b.howto_blocks_ios?.map(::blockSource),
+        "howto_blocks_android" to b.howto_blocks_android?.map(::blockSource),
     )
 
     /**

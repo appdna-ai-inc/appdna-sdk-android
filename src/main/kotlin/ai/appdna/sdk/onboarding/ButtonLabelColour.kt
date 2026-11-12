@@ -77,4 +77,72 @@ object BlockFullBleed {
         is Number -> value.toDouble() != 0.0
         else -> false
     }
+
+    /** The most a side can reach by an authored value, in dp. */
+    const val MAX_BLEED: Double = 400.0
+
+    /** How far the background reaches past the block on each side, in dp. */
+    data class Insets(val top: Double, val right: Double, val bottom: Double, val left: Double) {
+        val isZero: Boolean get() = top == 0.0 && right == 0.0 && bottom == 0.0 && left == 0.0
+        companion object { val ZERO = Insets(0.0, 0.0, 0.0, 0.0) }
+    }
+
+    /** One side as authored: the screen edge ([Side.Edge]) or a number of dp (0 = not at all). */
+    sealed class Side {
+        object Edge : Side()
+        data class Points(val value: Double) : Side()
+    }
+
+    private val sideKeys = mapOf(
+        "top" to "background_bleed_top", "bottom" to "background_bleed_bottom",
+        "left" to "background_bleed_left", "right" to "background_bleed_right",
+    )
+
+    /**
+     * One side as authored, or null when it is not authored at all (the caller applies its fallback).
+     * Anything that is neither `"edge"` nor a positive number is an AUTHORED 0: an explicit value has
+     * to beat `background_full_bleed`, or an author could never take one side back off. Mirrors iOS
+     * and `src/lib/onboarding/block-bleed.ts`.
+     */
+    fun side(raw: Any?): Side? {
+        if (raw == null) return null
+        if (raw == "edge") return Side.Edge
+        val n = when (raw) {
+            is Boolean -> Double.NaN
+            is Number -> raw.toDouble()
+            is String -> raw.trim().takeIf { it.isNotEmpty() }?.toDoubleOrNull() ?: Double.NaN
+            else -> Double.NaN
+        }
+        if (!n.isFinite() || n <= 0.0) return Side.Points(0.0)
+        return Side.Points(minOf(n, MAX_BLEED))
+    }
+
+    /** The side the renderer applies, after the `background_full_bleed` fallback for left and right. */
+    fun effectiveSide(fieldConfig: Map<String, Any?>?, name: String): Side {
+        side(fieldConfig?.get(sideKeys[name]))?.let { return it }
+        if ((name == "left" || name == "right") && isOn(fieldConfig?.get("background_full_bleed"))) return Side.Edge
+        return Side.Points(0.0)
+    }
+
+    /** Whether the top or bottom reaches an edge, so the renderer has to measure where the block sits. */
+    fun needsMeasuredEdge(fieldConfig: Map<String, Any?>?): Boolean =
+        effectiveSide(fieldConfig, "top") == Side.Edge || effectiveSide(fieldConfig, "bottom") == Side.Edge
+
+    /**
+     * How far the background reaches on each side. `"edge"` is the step's horizontal inset on the left
+     * and right, and the MEASURED distance from the block's slot to the surface edge on the top and
+     * bottom. Pinned by the shared fixture `dto_parsing/block_background_bleed`.
+     */
+    fun resolve(fieldConfig: Map<String, Any?>?, stepInset: Double, edgeTop: Double, edgeBottom: Double): Insets {
+        fun value(name: String, edge: Double): Double = when (val s = effectiveSide(fieldConfig, name)) {
+            Side.Edge -> maxOf(0.0, edge)
+            is Side.Points -> s.value
+        }
+        return Insets(
+            top = value("top", edgeTop),
+            right = value("right", stepInset),
+            bottom = value("bottom", edgeBottom),
+            left = value("left", stepInset),
+        )
+    }
 }

@@ -1933,10 +1933,11 @@ internal object PaywallConfigParser {
 }
 
 /**
- * What a screen reader says for a paywall image section: the authored alt text, trimmed, or null when there
- * is none. ONE rule; iOS `PaywallImageAccessibility` is the same, and
+ * What a screen reader says for a paywall image section: the authored alt text, trimmed, or null when it is
+ * blank — the image is then decorative and skipped ([ai.appdna.sdk.core.AuthoredImageAccessibility]). ONE rule;
+ * iOS `PaywallImageAccessibility` is the same, and
  * `packages/sdk-shared-fixtures/dto_parsing/paywall_image_alt.fixture.json` pins both.
  */
 object PaywallImageAccessibility {
-    fun label(data: PaywallSectionData?): String? = data?.alt?.trim()?.takeIf { it.isNotEmpty() }
+    fun label(data: PaywallSectionData?): String? = ai.appdna.sdk.core.AuthoredImageAccessibility.label(data?.alt)
 }
