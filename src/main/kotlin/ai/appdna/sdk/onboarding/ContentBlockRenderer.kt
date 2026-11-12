@@ -14253,13 +14253,8 @@ internal fun BlockSheet(
         }
     }
     val backFocus = remember { androidx.compose.ui.focus.FocusRequester() }
+    val latestClose by androidx.compose.runtime.rememberUpdatedState(closeByBack)
     if (ownsBack) {
-        val sheetView = androidx.compose.ui.platform.LocalView.current
-        val latestClose by androidx.compose.runtime.rememberUpdatedState(closeByBack)
-        androidx.compose.runtime.DisposableEffect(sheetView) {
-            val unregister = registerSheetBackCallback(sheetView) { latestClose() }
-            onDispose { unregister() }
-        }
         LaunchedEffect(Unit) { runCatching { backFocus.requestFocus() } }
     }
     val markDrag = Modifier.pointerInput(Unit) {
@@ -14289,6 +14284,17 @@ internal fun BlockSheet(
         containerColor = sheetContainerColor,
         dragHandle = { Box(markDrag) { androidx.compose.material3.BottomSheetDefaults.DragHandle() } },
     ) {
+        if (ownsBack) {
+            // Registered from INSIDE the sheet: here `LocalView` is the sheet's own window, the one
+            // that has focus while it is up, so back reaches it. Registered on the step's view (outside
+            // the sheet) the callback sat on the activity window, which never receives back while the
+            // sheet is focused — in an app opted into predictive back, back did nothing (#1746).
+            val sheetWindowView = androidx.compose.ui.platform.LocalView.current
+            androidx.compose.runtime.DisposableEffect(sheetWindowView) {
+                val unregister = registerSheetBackCallback(sheetWindowView) { latestClose() }
+                onDispose { unregister() }
+            }
+        }
         Column(
             modifier = Modifier
                 .then(markDrag)
