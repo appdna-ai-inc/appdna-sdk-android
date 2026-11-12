@@ -680,6 +680,9 @@ object BlockKeyTypes {
         "agreement" to mapOf(
             "agreement_text" to "string",
         ),
+        "button" to mapOf(
+            "cta_dependencies" to "any",
+        ),
         "input_select" to mapOf(
             "advance_confirm" to "bool",
             "advance_confirm_no" to "string",

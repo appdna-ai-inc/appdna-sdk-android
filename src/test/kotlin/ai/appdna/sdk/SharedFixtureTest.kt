@@ -309,6 +309,7 @@ class SharedFixtureTest(
             "resolve_select_advance_on_pick" -> runSelectAdvanceOnPick(action, spy)
             "resolve_select_answer_feedback" -> runSelectAnswerFeedback(action, spy)
             "resolve_select_advance_confirm" -> runSelectAdvanceConfirm(action, spy)
+            "resolve_cta_dependencies" -> runCtaDependencies(action, spy)
             "resolve_store_price" -> runStorePrice(action, spy)
             "resolve_plan_savings" -> runPlanSavings(action, spy)
             "parse_blocks_leniently" -> runLenientBlocks(action, spy)
@@ -3073,6 +3074,22 @@ class SharedFixtureTest(
             val step = ai.appdna.sdk.onboarding.OnboardingConfigParser.parseStepForTest(raw)
                 ?: error("a step did not parse")
             ai.appdna.sdk.onboarding.StepAutoAdvance.delaySeconds(step)
+        }
+    }
+
+    /** Whether a button's dependencies hold, through the REAL block parse and the real policy. */
+    @Suppress("UNCHECKED_CAST")
+    private fun runCtaDependencies(action: JSONObject, spy: Spy) {
+        val cases = action.optJSONArray("cases") ?: unsupported("resolve_cta_dependencies without cases")
+        spy.state["results"] = (0 until cases.length()).map { i ->
+            val v = cases.getJSONObject(i).getJSONObject("value")
+            val blocks = v.getJSONArray("blocks").asList() + listOf(v.getJSONObject("button").asMap())
+            val step = ai.appdna.sdk.onboarding.OnboardingConfigParser.parseStepForTest(
+                mapOf("id" to "fixture_step", "type" to "custom", "config" to mapOf("content_blocks" to blocks)),
+            ) ?: error("a step did not parse")
+            val parsed = step.config.content_blocks!!
+            val button = parsed.single { it.id == "cta" }
+            ai.appdna.sdk.onboarding.CtaDependencies.met(button, parsed, v.getJSONObject("input_values").asMap())
         }
     }
 

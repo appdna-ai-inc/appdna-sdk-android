@@ -3022,9 +3022,18 @@ private fun ButtonBlock(
     val ctaDisabledHex = block.field_config?.get("cta_disabled_bg_color") as? String
     // The markers count only on raw-resolved blocks, exactly as in the advance gate.
     val rawIds = hostDataRawResolvedIds()
+    // `cta_dependencies`: the button is inactive (a tap does nothing) until every named condition on the step holds,
+    // drawn in `cta_disabled_bg_color`, or its own colour faded when none is set. iOS parity.
+    val hasDependencies = CtaDependencies.has(block)
+    val dependenciesMet = !hasDependencies || CtaDependencies.met(block, stepBlocks, inputValues)
+    val fadesInactive = hasDependencies && !dependenciesMet && ctaDisabledHex == null
     val fillHex = run {
         val fallback = block.bg_color ?: (ai.appdna.sdk.AppDNA.brandAccentHex ?: "#6366F1")
-        if (ctaEnabledHex == null && ctaDisabledHex == null) {
+        if (hasDependencies) {
+            val gateMet = (ctaEnabledHex == null && ctaDisabledHex == null) ||
+                RequiredFieldGate.evaluate(stepBlocks, inputValues, rawIds).first
+            if (dependenciesMet && gateMet) (ctaEnabledHex ?: fallback) else (ctaDisabledHex ?: fallback)
+        } else if (ctaEnabledHex == null && ctaDisabledHex == null) {
             fallback
         } else {
             val satisfied = RequiredFieldGate.evaluate(stepBlocks, inputValues, rawIds).first
@@ -3060,7 +3069,7 @@ private fun ButtonBlock(
     val refreshLoading = stepInteraction != null && stepInteraction.loadingBlockId == block.id
     val refreshTappable = stepInteraction?.isTappable(block.id) ?: true
 
-    val onClick: () -> Unit = onClickOverride ?: {
+    val actOnClick: () -> Unit = onClickOverride ?: {
         val action = block.action ?: "next"
         OnboardingPressedButton.record(block.id, action)
         when (action) {
@@ -3121,6 +3130,8 @@ private fun ButtonBlock(
             else -> onAction(action)
         }
     }
+    // Inactive until its dependencies hold: the tap is not an action.
+    val onClick: () -> Unit = { if (dependenciesMet) actOnClick() }
 
     // Pressed style — collect interaction source for scale/opacity
     val interactionSource = remember { MutableInteractionSource() }
@@ -3157,6 +3168,8 @@ private fun ButtonBlock(
     } else {
         Modifier.wrapContentWidth()
     }.then(refreshStateSemantics(refreshLoading, refreshTappable))
+        .then(if (fadesInactive) Modifier.graphicsLayer(alpha = CtaDependencies.INACTIVE_OPACITY) else Modifier)
+        .then(if (hasDependencies) Modifier.testTag(if (dependenciesMet) "cta-active" else "cta-inactive") else Modifier)
 
     // Gap 5: Gradient background support
     val shape = RoundedCornerShape(cornerRadius)
