@@ -658,7 +658,7 @@ internal object EventUploadCoordinator {
      * Test isolation for the process-wide state: forgets the resolved ids AND takes back the claim. A
      * queue an earlier test left uploading (a request to a server that test has closed, or a retry
      * backoff of up to 7 s) still holds the claim, and in one JVM the next test's flush and worker then
-     * defer to it and send nothing (#1747). Its own `release` is then a no-op, so it cannot free the
+     * defer to it and send nothing. Its own `release` is then a no-op, so it cannot free the
      * claim of an owner that starts after this reset.
      */
     @Synchronized

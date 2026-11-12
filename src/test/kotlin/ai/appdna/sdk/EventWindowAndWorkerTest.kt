@@ -95,7 +95,7 @@ class EventWindowAndWorkerTest {
     }
 
     /**
-     * #1747. In one JVM a queue an earlier test left uploading — to a server it has closed, or sleeping in
+     * In one JVM a queue an earlier test left uploading — to a server it has closed, or sleeping in
      * a retry backoff — still holds the process-wide upload claim, and this test's worker then deferred to
      * it: RETRY with nothing sent (the `1 ≠ 0 ingests` failure of [theWorkerEndsItsRunAfterARejectedBatch]
      * in the full suite). The per-test `TestHttpServer.settleIoDispatcher()` takes the claim back; the late owner's release then must not

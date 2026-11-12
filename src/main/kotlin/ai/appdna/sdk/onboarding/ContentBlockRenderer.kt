@@ -14288,7 +14288,7 @@ internal fun BlockSheet(
             // Registered from INSIDE the sheet: here `LocalView` is the sheet's own window, the one
             // that has focus while it is up, so back reaches it. Registered on the step's view (outside
             // the sheet) the callback sat on the activity window, which never receives back while the
-            // sheet is focused — in an app opted into predictive back, back did nothing (#1746).
+            // sheet is focused — in an app opted into predictive back, back did nothing.
             val sheetWindowView = androidx.compose.ui.platform.LocalView.current
             androidx.compose.runtime.DisposableEffect(sheetWindowView) {
                 val unregister = registerSheetBackCallback(sheetWindowView) { latestClose() }

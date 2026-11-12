@@ -152,7 +152,7 @@ internal class TestHttpServer(
          * spinning on an overflowed `flushInterval * 1000`, fixed with this test.) The code under test
          * does its HTTP on that pool, so a real-network test first lets it drain. Returns the ms spent.
          *
-         * It also takes back the process-wide upload claim (#1747). A queue an earlier test left
+         * It also takes back the process-wide upload claim. A queue an earlier test left
          * uploading — to a server that test has closed, or in a retry backoff — holds it for seconds, and
          * this test's flush or worker would defer to it and send nothing: the full-suite-only failures
          * of `EventShutdownHandoffTest`, `EventWindowAndWorkerTest`, `RuntimeSettingsTest` and

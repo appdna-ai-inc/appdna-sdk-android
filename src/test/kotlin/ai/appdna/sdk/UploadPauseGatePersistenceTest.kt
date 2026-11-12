@@ -38,7 +38,7 @@ class UploadPauseGatePersistenceTest {
 
     @Before fun setUp() {
         // An upload cycle here needs the process-wide upload claim; an earlier test's queue may still
-        // hold it, and the cycle would then defer instead of failing (#1747). Settling takes it back.
+        // hold it, and the cycle would then defer instead of failing. Settling takes it back.
         ai.appdna.sdk.network.TestHttpServer.settleIoDispatcher()
         UploadPauseGate.setForTest(ctx, false)
         EventUploadCoordinator.clearResolvedForTest()
