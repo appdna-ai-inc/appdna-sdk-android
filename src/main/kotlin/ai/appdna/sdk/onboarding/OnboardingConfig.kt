@@ -235,7 +235,7 @@ data class OnboardingStep(
      */
     val tap_anywhere_advances: Boolean? = null,
     /**
-     * #1432 — the countdown this step draws while it waits to advance by itself ([AutoAdvanceIndicator]).
+     * The countdown this step draws while it waits to advance by itself ([AutoAdvanceIndicator]).
      * Off unless `show: true`. Root first, then the nested config, like the timer. Mirrors iOS.
      */
     val auto_advance_indicator: Map<String, Any?>? = null,

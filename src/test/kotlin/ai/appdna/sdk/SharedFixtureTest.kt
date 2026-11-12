@@ -3139,7 +3139,7 @@ class SharedFixtureTest(
         }
     }
 
-    /** #1432 — the countdown a self-advancing step draws, through the REAL step parser and the real resolver. */
+    /** The countdown a self-advancing step draws, through the REAL step parser and the real resolver. */
     private fun runAutoAdvanceIndicator(action: JSONObject, spy: Spy) {
         val cases = action.optJSONArray("cases") ?: unsupported("resolve_auto_advance_indicator without cases")
         spy.state["results"] = (0 until cases.length()).map { i ->
