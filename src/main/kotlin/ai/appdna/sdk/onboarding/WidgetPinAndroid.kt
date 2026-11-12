@@ -125,16 +125,22 @@ internal object WidgetPinRegistry {
  * Read only when the host app is debuggable (`FLAG_DEBUGGABLE`, as the base-URL override is);
  * a release build never reads it. Set with
  *
- *     adb shell setprop debug.appdna.widget_pin_simulate <unsupported|refused|throws|silent>
+ *     adb shell setprop debug.appdna.widget_pin_simulate <unsupported|refused|throws|silent|no_callback>
  *
  *  - `unsupported` → the launcher does not support pinning (`launcher_unsupported`);
  *  - `refused`     → `requestPinAppWidget` returns false (`request_refused`);
  *  - `throws`      → it throws `IllegalStateException` (`request_refused`);
- *  - `silent`      → it returns true and no dialog ever appears (`silent_launcher`).
+ *  - `silent`      → it returns true and no dialog ever appears (`silent_launcher`);
+ *  - `no_callback` → the REAL request is sent and the real dialog shows, but its success callback
+ *    carries a token no attempt holds, so it is dropped as stale: the attempt returns from the dialog
+ *    with no callback and the grace window (the widget-id set) has to decide — the launcher behaviour
+ *    the platform allows ("if the pinning operation fails, your app isn't notified") and an emulator
+ *    never shows, because there the callback always lands before the activity resumes.
  */
 internal object WidgetPinSimulation {
     const val PROPERTY = "debug.appdna.widget_pin_simulate"
-    val MODES = setOf("unsupported", "refused", "throws", "silent")
+    val MODES = setOf("unsupported", "refused", "throws", "silent", "no_callback")
+    const val WITHHELD_SUFFIX = "#withheld"
 
     fun mode(appInfo: ApplicationInfo, read: (String) -> String? = ::systemProperty): String? {
         if ((appInfo.flags and ApplicationInfo.FLAG_DEBUGGABLE) == 0) return null
@@ -153,6 +159,7 @@ internal object WidgetPinSimulation {
                 "refused" -> false
                 "throws" -> throw IllegalStateException("simulated: $PROPERTY=throws")
                 "silent" -> true
+                "no_callback" -> real.requestPin(providerClass, token + WITHHELD_SUFFIX)
                 else -> real.requestPin(providerClass, token)
             }
         }

@@ -133,5 +133,44 @@ class WidgetPinPlatformTest {
         assertEquals("no simulated mode reaches the real launcher", 0, real.requests)
         assertTrue(WidgetPinSimulation.wrap(real, null).requestPin("a.B", "t"))
         assertEquals(1, real.requests)
+        assertTrue(WidgetPinSimulation.wrap(real, "no_callback").requestPin("a.B", "t"))
+        assertEquals("no_callback sends the REAL request", 2, real.requests)
+    }
+
+    @Test fun `no_callback sends the real request with a token the live attempt drops, so the grace window decides`() {
+        var sentToken: String? = null
+        var ids = setOf<Int>()
+        val real = object : WidgetPinPlatform {
+            override val sdkInt = 34
+            override fun homeScreenProviders() = listOf("a.B")
+            override fun isRequestPinSupported() = true
+            override fun requestPin(providerClass: String, token: String): Boolean { sentToken = token; return true }
+            override fun widgetIds(providerClass: String) = ids
+        }
+        val events = mutableListOf<String>(); val advances = mutableListOf<String>()
+        val timers = mutableListOf<() -> Unit>()
+        val effects = object : WidgetPinEffects {
+            override fun gatePasses() = true
+            override fun track(name: String, properties: Map<String, Any>) { events += name }
+            override fun advance(status: String) { advances += status }
+            override fun showHowto(blocks: List<ContentBlock>) {}
+            override fun closeHowto() {}
+            override fun schedule(delayMs: Long, action: () -> Unit): WidgetPinTimer { if (delayMs == WidgetPinAttempt.GRACE_TICK_MS) timers += action; return WidgetPinTimer {} }
+        }
+        val attempt = WidgetPinAttempt(WidgetPinSimulation.wrap(real, "no_callback"), effects, "f", "s")
+        val cb: (String?) -> Unit = { attempt.onCallback(it) }
+        WidgetPinRegistry.register(cb)
+        try {
+            attempt.tap(ContentBlock(id = "b", type = "button", action = "add_widget"))
+            attempt.onPause()
+            ids = setOf(7)
+            // The launcher's broadcast, through the real receiver: dropped as stale.
+            AppDNAWidgetPinReceiver().onReceive(ctx, Intent().putExtra(AppDNAWidgetPinReceiver.EXTRA_TOKEN, sentToken))
+            assertEquals(WidgetPinAttempt.State.AWAY, attempt.state)
+            attempt.onResume()
+            assertEquals(WidgetPinAttempt.State.GRACE, attempt.state)
+            timers.last()()
+            assertEquals(listOf("added"), advances)
+        } finally { WidgetPinRegistry.unregister(cb) }
     }
 }

@@ -78,7 +78,10 @@ internal fun rememberWidgetStepWiring(
             override fun showHowto(blocks: List<ContentBlock>) { howto.value = blocks }
             override fun closeHowto() { howto.value = null }
             override fun onAttemptRetired() = OnboardingPressedButton.clear()
-            override fun schedule(delayMs: Long, action: () -> Unit): WidgetPinTimer = mainThreadSchedule(delayMs, action)
+            override fun schedule(delayMs: Long, action: () -> Unit): WidgetPinTimer {
+                WidgetPinTiming.mark("timer_set ms=$delayMs")
+                return mainThreadSchedule(delayMs) { WidgetPinTiming.mark("timer_fired ms=$delayMs"); action() }
+            }
         }
         WidgetStepWiring(WidgetPinAttempt(HostWidgetPinPlatform(context), effects, flowId, stepId), howto)
     }
