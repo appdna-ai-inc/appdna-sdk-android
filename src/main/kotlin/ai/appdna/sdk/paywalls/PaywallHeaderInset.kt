@@ -34,10 +34,10 @@ object PaywallHeaderInset {
      * never under the ✕.
      *
      * Not [resolve]'s figure. The control is laid out as a `2 × glyph` box 16dp in from the corner,
-     * but it is a Material `IconButton`, which grows to its 48dp minimum touch target CENTRED on that
-     * box, and its circle is drawn at that size. For the default 16dp glyph the box ends at 48 and the
-     * circle at 16 + 16 + 24 = 56; the pane started at 48 (below the status bar it started at 0), so
-     * the circle covered the first plan card's corner.
+     * and its circle is drawn at that size, but it is a Material `IconButton`, which grows its touch
+     * target to 48dp CENTRED on that box. The pane starts below the touch target, not only the circle,
+     * so a tap on the first plan's corner selects the plan instead of closing the paywall: for the
+     * default 16dp glyph 16 + 16 + 24 = 56.
      */
     fun closeControlBottom(dismiss: PaywallDismiss?): Double {
         if (resolve(dismiss) == 0.0) return 0.0

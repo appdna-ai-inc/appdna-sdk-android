@@ -1529,17 +1529,19 @@ fun PaywallScreen(
                             .statusBarsPadding()
                             .padding(16.dp)
                             .size((backSize * 2).dp)
-                            .clip(CircleShape)
-                            .background(Color.Black.copy(alpha = 0.3f))
                             .semantics { contentDescription = backCd },
                     ) {
-                        Text(
-                            // ‹ chevron or ← arrow — the glyph is the only visual difference.
-                            text = if ((back.style ?: "chevron") == "arrow") "\u2190" else "\u2039",
-                            color = backColor,
-                            fontSize = backSize.sp,
-                            fontWeight = FontWeight.SemiBold,
-                        )
+                        // The circle is drawn INSIDE the button at 2 × glyph, as iOS draws it; the
+                        // button's own 48dp minimum touch target stays around it, invisible.
+                        PaywallTopControlCircle(sizeDp = backSize * 2) {
+                            Text(
+                                // ‹ chevron or ← arrow — the glyph is the only visual difference.
+                                text = if ((back.style ?: "chevron") == "arrow") "\u2190" else "\u2039",
+                                color = backColor,
+                                fontSize = backSize.sp,
+                                fontWeight = FontWeight.SemiBold,
+                            )
+                        }
                     }
                 }
             }
@@ -1612,20 +1614,23 @@ fun PaywallScreen(
                             .statusBarsPadding()
                             .padding(16.dp)
                             .size((glyphSize * 2).dp)
-                            .clip(CircleShape)
-                            .background(Color.Black.copy(alpha = 0.3f))
                             // \u2014 close X has no semantic icon
                             // (it's a Text composable with the unicode glyph),
                             // so attach an a11y label that TalkBack reads.
                             .semantics { contentDescription = closeCd },
                     ) {
-                        Text(
-                            // ✕ for close, ‹ for back — the glyph is the only visual difference.
-                            text = if (dismissType == "back_button") "\u2039" else "\u2715",
-                            color = glyphColor,
-                            fontSize = glyphSize.sp,
-                            fontWeight = FontWeight.SemiBold
-                        )
+                        // Drawn at 2 × glyph inside the button, as iOS draws it and as the header's
+                        // side reserve (PaywallHeaderInset.resolve) assumes. Clipped on the button
+                        // itself, the circle took the button's 48dp minimum touch target as its size.
+                        PaywallTopControlCircle(sizeDp = glyphSize * 2) {
+                            Text(
+                                // ✕ for close, ‹ for back — the glyph is the only visual difference.
+                                text = if (dismissType == "back_button") "\u2039" else "\u2715",
+                                color = glyphColor,
+                                fontSize = glyphSize.sp,
+                                fontWeight = FontWeight.SemiBold
+                            )
+                        }
                     }
                 }
             }
@@ -1682,6 +1687,18 @@ private fun appendPlanName(
  * pitch carries no plan selection or purchase, so its section callbacks are inert apart from an
  * authored dismiss or restore button.
  */
+/** The translucent circle a paywall's top-corner control (✕ or Back) is drawn in, [sizeDp] wide. */
+@Composable
+private fun PaywallTopControlCircle(sizeDp: Float, content: @Composable () -> Unit) {
+    Box(
+        modifier = Modifier
+            .size(sizeDp.dp)
+            .clip(CircleShape)
+            .background(Color.Black.copy(alpha = 0.3f)),
+        contentAlignment = Alignment.Center,
+    ) { content() }
+}
+
 @Composable
 private fun PaywallPitchPane(
     sections: List<PaywallSection>,
