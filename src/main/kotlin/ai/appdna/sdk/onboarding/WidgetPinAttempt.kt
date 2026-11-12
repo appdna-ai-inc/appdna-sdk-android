@@ -59,7 +59,7 @@ internal class WidgetPinAttempt(
 
         val chosen = WidgetProviderDiscovery.choose(platform.homeScreenProviders(), button.action_value)
         if (chosen == null) {
-            track(EVENT_ADD_UNAVAILABLE, mapOf("reason" to "no_widget"))
+            track(ADD_UNAVAILABLE_EVENT, mapOf("reason" to "no_widget"))
             finish(STATUS_UNAVAILABLE)
             return
         }
@@ -69,7 +69,7 @@ internal class WidgetPinAttempt(
         val token = newToken()
         liveToken = token
         s0 = platform.widgetIds(chosen)
-        track(EVENT_ADD_TAPPED, mapOf("block_id" to button.id, "existing_count" to s0?.size))
+        track(ADD_TAPPED_EVENT, mapOf("block_id" to button.id, "existing_count" to s0?.size))
 
         val unsupportedReason = when {
             platform.sdkInt < 26 -> "api_level"
@@ -77,7 +77,7 @@ internal class WidgetPinAttempt(
             else -> null
         }
         if (unsupportedReason != null) {
-            track(EVENT_PIN_UNAVAILABLE, mapOf("reason" to unsupportedReason))
+            track(PIN_UNAVAILABLE_EVENT, mapOf("reason" to unsupportedReason))
             enterHowto()
             return
         }
@@ -89,11 +89,11 @@ internal class WidgetPinAttempt(
             false
         }
         if (!sent) {
-            track(EVENT_PIN_UNAVAILABLE, mapOf("reason" to "request_refused"))
+            track(PIN_UNAVAILABLE_EVENT, mapOf("reason" to "request_refused"))
             enterHowto()
             return
         }
-        track(EVENT_PIN_REQUESTED, mapOf("provider" to chosen))
+        track(PIN_REQUESTED_EVENT, mapOf("provider" to chosen))
         state = State.WAITING_DIALOG
         pauseTimer = effects.schedule(effects.pauseTimeoutMs) { onPauseTimeout() }
     }
@@ -128,7 +128,7 @@ internal class WidgetPinAttempt(
             State.HOWTO -> {
                 if (grew()) {
                     effects.closeHowto()
-                    track(EVENT_HOWTO_DISMISSED, mapOf("via" to "detected"))
+                    track(HOWTO_DISMISSED_EVENT, mapOf("via" to "detected"))
                     added(METHOD_HOWTO)
                 }
             }
@@ -155,7 +155,7 @@ internal class WidgetPinAttempt(
             State.HOWTO -> {
                 // A late pin, after the silent-launcher timer had already shown the how-to.
                 effects.closeHowto()
-                track(EVENT_HOWTO_DISMISSED, mapOf("via" to "detected"))
+                track(HOWTO_DISMISSED_EVENT, mapOf("via" to "detected"))
                 added(METHOD_PIN)
             }
             else -> Unit
@@ -166,7 +166,7 @@ internal class WidgetPinAttempt(
     fun onPauseTimeout() {
         if (state != State.WAITING_DIALOG) return
         pauseTimer = null
-        track(EVENT_PIN_UNAVAILABLE, mapOf("reason" to "silent_launcher"))
+        track(PIN_UNAVAILABLE_EVENT, mapOf("reason" to "silent_launcher"))
         enterHowto()
     }
 
@@ -194,12 +194,12 @@ internal class WidgetPinAttempt(
         val now = provider?.let { platform.widgetIds(it) }
         val grew = isGrowth(now)
         if (grew) {
-            track(EVENT_ADDED, mapOf("method" to METHOD_HOWTO, "provider" to provider))
+            track(ADDED_EVENT, mapOf("method" to METHOD_HOWTO, "provider" to provider))
         } else {
-            track(EVENT_NOT_ADDED, mapOf("method" to METHOD_HOWTO, "detection" to detection(now)))
+            track(NOT_ADDED_EVENT, mapOf("method" to METHOD_HOWTO, "detection" to detection(now)))
         }
         effects.closeHowto()
-        track(EVENT_HOWTO_DISMISSED, mapOf("via" to "cta"))
+        track(HOWTO_DISMISSED_EVENT, mapOf("via" to "cta"))
         finish(if (grew) STATUS_ADDED else STATUS_NOT_ADDED)
     }
 
@@ -209,7 +209,7 @@ internal class WidgetPinAttempt(
      */
     fun onClose(via: String) {
         if (state != State.HOWTO) return
-        track(EVENT_HOWTO_DISMISSED, mapOf("via" to via))
+        track(HOWTO_DISMISSED_EVENT, mapOf("via" to via))
         effects.closeHowto()
         effects.onAttemptRetired()
         reset()
@@ -234,26 +234,26 @@ internal class WidgetPinAttempt(
             ai.appdna.sdk.Log.warning("Add widget: the button has no Android how-to; advancing")
             val now = provider?.let { platform.widgetIds(it) }
             if (isGrowth(now)) {
-                track(EVENT_ADDED, mapOf("method" to METHOD_HOWTO, "provider" to provider))
+                track(ADDED_EVENT, mapOf("method" to METHOD_HOWTO, "provider" to provider))
                 finish(STATUS_ADDED)
             } else {
-                track(EVENT_NOT_ADDED, mapOf("method" to METHOD_HOWTO, "detection" to detection(now)))
+                track(NOT_ADDED_EVENT, mapOf("method" to METHOD_HOWTO, "detection" to detection(now)))
                 finish(STATUS_NOT_ADDED)
             }
             return
         }
         effects.showHowto(howto)
-        track(EVENT_HOWTO_SHOWN, mapOf("block_id" to block?.id))
+        track(HOWTO_SHOWN_EVENT, mapOf("block_id" to block?.id))
     }
 
     private fun added(method: String) {
-        track(EVENT_ADDED, mapOf("method" to method, "provider" to provider))
+        track(ADDED_EVENT, mapOf("method" to method, "provider" to provider))
         finish(STATUS_ADDED)
     }
 
     private fun notAdded(method: String) {
         val now = provider?.let { platform.widgetIds(it) }
-        track(EVENT_NOT_ADDED, mapOf("method" to method, "detection" to detection(now)))
+        track(NOT_ADDED_EVENT, mapOf("method" to method, "detection" to detection(now)))
         finish(STATUS_NOT_ADDED)
     }
 
@@ -309,14 +309,14 @@ internal class WidgetPinAttempt(
         const val METHOD_PIN = "pin"
         const val METHOD_HOWTO = "howto"
 
-        const val EVENT_ADD_TAPPED = "widget_add_tapped"
-        const val EVENT_PIN_REQUESTED = "widget_pin_requested"
-        const val EVENT_PIN_UNAVAILABLE = "widget_pin_unavailable"
-        const val EVENT_HOWTO_SHOWN = "widget_howto_shown"
-        const val EVENT_HOWTO_DISMISSED = "widget_howto_dismissed"
-        const val EVENT_ADDED = "widget_added"
-        const val EVENT_NOT_ADDED = "widget_not_added"
-        const val EVENT_ADD_UNAVAILABLE = "widget_add_unavailable"
+        const val ADD_TAPPED_EVENT = "widget_add_tapped"
+        const val PIN_REQUESTED_EVENT = "widget_pin_requested"
+        const val PIN_UNAVAILABLE_EVENT = "widget_pin_unavailable"
+        const val HOWTO_SHOWN_EVENT = "widget_howto_shown"
+        const val HOWTO_DISMISSED_EVENT = "widget_howto_dismissed"
+        const val ADDED_EVENT = "widget_added"
+        const val NOT_ADDED_EVENT = "widget_not_added"
+        const val ADD_UNAVAILABLE_EVENT = "widget_add_unavailable"
 
         /**
          * The silent-launcher timer: how long after a request the launcher has to pause the activity
