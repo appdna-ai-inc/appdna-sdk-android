@@ -361,25 +361,30 @@ data class MeasurementPalette(
 
 /** One rule for every platform: an authored, non-blank string wins; otherwise the pinned default. */
 fun measurementPalette(cfg: Map<String, Any?>, highlight: String?, dark: Boolean): MeasurementPalette {
-    fun s(k: String): String? = (cfg[k] as? String)?.trim()?.takeIf { it.isNotEmpty() }
-    val accent = highlight?.trim()?.takeIf { it.isNotEmpty() } ?: "#6366F1"
-    val muted = if (dark) "#94A3B8" else "#64748B"
-    val value = s("needle_color") ?: accent
-    val tick = s("tick_color") ?: if (dark) "#475569" else "#CBD5E1"
+    val c = MeasurementPaletteSource(cfg, highlight)
+    // Every default is written as the fallback of the key that overrides it, so each colour on screen is authorable.
+    val value = c.key("needle_color") ?: c.highlight ?: "#6366F1"
+    val tick = c.key("tick_color") ?: (if (dark) "#475569" else "#CBD5E1")
     return MeasurementPalette(
         value = value,
-        unit = s("unit_color") ?: muted,
-        label = s("label_color") ?: muted,
-        toggleActive = s("toggle_active_color") ?: accent,
-        toggleActiveText = s("toggle_active_text_color") ?: "#FFFFFF",
-        toggleText = s("toggle_text_color") ?: muted,
+        unit = c.key("unit_color") ?: (if (dark) "#94A3B8" else "#64748B"),
+        label = c.key("label_color") ?: (if (dark) "#94A3B8" else "#64748B"),
+        toggleActive = c.key("toggle_active_color") ?: c.highlight ?: "#6366F1",
+        toggleActiveText = c.key("toggle_active_text_color") ?: "#FFFFFF",
+        toggleText = c.key("toggle_text_color") ?: (if (dark) "#94A3B8" else "#64748B"),
         tick = tick,
-        track = s("track_color") ?: if (dark) "#334155" else "#E2E8F0",
-        band = s("band_color"),
-        bandText = s("band_text_color") ?: value,
-        rowText = s("row_text_color") ?: tick,
-        thumb = s("thumb_color") ?: value,
+        track = c.key("track_color") ?: (if (dark) "#334155" else "#E2E8F0"),
+        band = c.key("band_color"),
+        bandText = c.key("band_text_color") ?: value,
+        rowText = c.key("row_text_color") ?: tick,
+        thumb = c.key("thumb_color") ?: value,
     )
+}
+
+/** The authored strings the palette reads: a key's value, or the block's `highlight_color`, trimmed; blank = unset. */
+private class MeasurementPaletteSource(private val cfg: Map<String, Any?>, highlight: String?) {
+    val highlight: String? = highlight?.trim()?.takeIf { it.isNotEmpty() }
+    fun key(k: String): String? = (cfg[k] as? String)?.trim()?.takeIf { it.isNotEmpty() }
 }
 
 /** A drum row's opacity by its distance from the band — iOS `drumVisual`'s rule. */
