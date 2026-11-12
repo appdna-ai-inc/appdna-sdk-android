@@ -3,13 +3,13 @@ package ai.appdna.sdk.messages
 import org.json.JSONObject
 
 /**
- * #1731 — the fake edges of a `follow_pending_messages` run (the shared fixture
+ * The fake edges of a `follow_pending_messages` run (the shared fixture
  * `action_dispatch/pending_messages_follow_identity`), around the REAL [PendingMessageListener.follow] and its REAL
  * queueing, de-duplication and retry. The Firestore subscription is a store that answers the listener's
  * `consumed == false` query the way Firestore does (everything unconsumed at once when a listener opens, then each
  * new document); the screen is a presenter that draws synchronously when a foreground activity exists.
  *
- * `legacyUserOnly` replays the pre-#1731 rule (nothing before identify, the user id only after it) through the same
+ * `legacyUserOnly` replays the previous rule (nothing before identify, the user id only after it) through the same
  * listener, for the red control in `PendingMessageFollowTest`.
  */
 internal class PendingFollowRig {

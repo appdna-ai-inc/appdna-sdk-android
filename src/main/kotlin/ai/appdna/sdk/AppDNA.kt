@@ -1212,7 +1212,7 @@ object AppDNA {
         val appId = bootstrapAppId
         if (orgId != null && appId != null) {
             webEntitlementManager?.startObserving(orgId, appId, userId)
-            // #1731 — journey in-app messages: the anon id stays listened on (a journey that enrolled this device
+            // Journey in-app messages: the anon id stays listened on (a journey that enrolled this device
             // anonymously keeps delivering there), and the user id joins it.
             followPendingMessages()
             // Re-point the Firestore entitlement listener at the new user (owning only).
@@ -1289,7 +1289,7 @@ object AppDNA {
     }
 
     /**
-     * #1731 — points the journey in-app message listener at the ids a journey delivers to: the anon id, and the user
+     * Points the journey in-app message listener at the ids a journey delivers to: the anon id, and the user
      * id when identified ([ai.appdna.sdk.messages.PendingMessageListener.listenIds]). Needs the bootstrap's org and app.
      */
     private fun followPendingMessages() {
@@ -1325,7 +1325,7 @@ object AppDNA {
         experimentManager?.resetExposures()
         surveyManager?.resetSession()
         webEntitlementManager?.stopObserving()
-        // #1731 — the signed-out user's deliveries are no longer listened on; the anon id's still are.
+        // The signed-out user's deliveries are no longer listened on; the anon id's still are.
         followPendingMessages()
         // Clear in-session message frequency counters + queue.
         messageManager?.resetSession()
@@ -2684,7 +2684,7 @@ object AppDNA {
                 }
 
                 // Start web entitlement observer if user is already identified
-                // #1731 — journey in-app messages are listened for from configure, on the anon id (and the user id
+                // Journey in-app messages are listened for from configure, on the anon id (and the user id
                 // when one is already identified). They used to start only for an identified user, so a journey's
                 // in-app step to an anonymous user was marked sent and never shown.
                 followPendingMessages()
