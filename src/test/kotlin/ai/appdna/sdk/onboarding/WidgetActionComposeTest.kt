@@ -6,6 +6,10 @@ import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performKeyInput
+import androidx.compose.ui.test.pressKey
+import androidx.compose.ui.test.requestFocus
+import androidx.compose.ui.input.key.Key
 import androidx.test.core.app.ApplicationProvider
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
@@ -147,5 +151,16 @@ class WidgetActionComposeTest {
         assertEquals(0, o.done)
         assertEquals(emptyList<String>(), o.closes)
         assertTrue(compose.onAllNodes(hasText("Done")).fetchSemanticsNodes().isNotEmpty())
+    }
+
+    @OptIn(androidx.compose.ui.test.ExperimentalTestApi::class)
+    @Test
+    fun `back closes the how-to and is reported as back, not as the scrim`() {
+        val o = Outcome()
+        showSheet(o)
+        compose.onNodeWithText("Done").requestFocus().performKeyInput { pressKey(Key.Back) }
+        compose.waitForIdle()
+        assertEquals(listOf("back"), o.closes)
+        assertEquals(0, o.done)
     }
 }

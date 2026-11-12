@@ -321,20 +321,25 @@ internal class WidgetPinAttempt(
         /**
          * The silent-launcher timer: how long after a request the launcher has to pause the activity
          * with its dialog before the SDK concludes no dialog is coming and shows the how-to.
-         * Measured on the API 34 emulator (request → ON_PAUSE); see [PAUSE_TIMEOUT_MEASUREMENT].
+         *
+         * Measured 2026-11-12 on the API 34 emulator (Pixel launcher), request → ON_PAUSE, N = 15
+         * (10 accepted, 3 cancelled, 1 double tap, 1 Multi-buttons child): 18–145 ms, slowest 145 ms.
+         * T_PAUSE = max(3 × 145, 1,500) = 1,500 ms.
          */
         const val PAUSE_TIMEOUT_MS = 1_500L
 
         /**
-         * The grace window after the activity returns from the pin dialog with no callback yet:
-         * the callback is not guaranteed, so the id set is polled every [GRACE_TICK_MS] until it
-         * ends. Measured on the API 34 emulator (ON_RESUME → callback); see [GRACE_MEASUREMENT].
+         * The grace window after the activity returns from the pin dialog with no callback yet: the
+         * callback is not guaranteed, so the id set is polled every [GRACE_TICK_MS] until it ends.
+         *
+         * Measured 2026-11-12 on the API 34 emulator, ON_RESUME → success callback for an accepted
+         * pin, N = 11 (10 accepted runs + 1 Multi-buttons child): the callback arrived BEFORE the
+         * resume every time, 147–292 ms earlier, so the attempt went AWAY → pinned → RESUME and the
+         * grace window was never needed. G = clamp(2 × slowest, 500, 3,000) = 500 ms (the floor).
          */
-        const val GRACE_MS = 1_000L
+        const val GRACE_MS = 500L
         const val GRACE_TICK_MS = 250L
 
-        const val PAUSE_TIMEOUT_MEASUREMENT = "pending"
-        const val GRACE_MEASUREMENT = "pending"
     }
 }
 

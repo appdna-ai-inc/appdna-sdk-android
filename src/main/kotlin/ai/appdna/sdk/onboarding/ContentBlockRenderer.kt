@@ -69,6 +69,10 @@ import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.input.key.key
+import androidx.compose.ui.input.key.type
+import androidx.compose.ui.input.key.onPreviewKeyEvent
+import androidx.compose.foundation.focusable
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.LinearEasing
@@ -14217,19 +14221,46 @@ internal fun BlockSheet(
     skipPartiallyExpanded: Boolean = false,
 ) {
     // Which gesture is dismissing the sheet. ModalBottomSheet reports every dismissal through one
-    // `onDismissRequest`, so the cause is read on the way: a swipe and a scrim tap both ask
-    // `confirmValueChange(Hidden)` first (a swipe after a drag that began on the sheet), and the back
-    // gesture hides the sheet without asking — so a dismissal nobody confirmed is `back`.
+    // `onDismissRequest`, and asks `confirmValueChange(Hidden)` on the way for a swipe, a scrim tap AND
+    // its own back handling (measured on an API 34 emulator: back and swipe both came out as the scrim
+    // when the cause was read from that alone). So the sheet tells them apart itself:
+    //  - back: when [forwardEveryAction] (the how-to) the sheet handles back itself — M3's own back
+    //    dismissal is off, the key arrives here (and, on API 33+ in an app opted into predictive back,
+    //    the window's back callback) and closes with `"back"`;
+    //  - swipe vs scrim: the FIRST `confirmValueChange(Hidden)` of a dismissal decides — a drag that
+    //    began on the sheet is a swipe, anything else (a tap outside it) the scrim.
     val dragged = remember { booleanArrayOf(false) }
     val via = remember { arrayOfNulls<String>(1) }
+    val ownsBack = forwardEveryAction
     val sheetState = androidx.compose.material3.rememberModalBottomSheetState(
         skipPartiallyExpanded = skipPartiallyExpanded,
         confirmValueChange = { value ->
-            if (value == androidx.compose.material3.SheetValue.Hidden) via[0] = if (dragged[0]) "swipe" else "scrim"
+            if (value == androidx.compose.material3.SheetValue.Hidden) {
+                if (via[0] == null) via[0] = if (dragged[0]) "swipe" else "scrim"
+            } else {
+                via[0] = null
+            }
             dragged[0] = false
             true
         },
     )
+    var closedByBack by remember { mutableStateOf(false) }
+    val closeByBack: () -> Unit = {
+        if (!closedByBack) {
+            closedByBack = true
+            onClose("back")
+        }
+    }
+    val backFocus = remember { androidx.compose.ui.focus.FocusRequester() }
+    if (ownsBack) {
+        val sheetView = androidx.compose.ui.platform.LocalView.current
+        val latestClose by androidx.compose.runtime.rememberUpdatedState(closeByBack)
+        androidx.compose.runtime.DisposableEffect(sheetView) {
+            val unregister = registerSheetBackCallback(sheetView) { latestClose() }
+            onDispose { unregister() }
+        }
+        LaunchedEffect(Unit) { runCatching { backFocus.requestFocus() } }
+    }
     val markDrag = Modifier.pointerInput(Unit) {
         awaitPointerEventScope {
             while (true) {
@@ -14246,15 +14277,31 @@ internal fun BlockSheet(
         onDismissRequest = {
             val cause = via[0] ?: "back"
             via[0] = null
-            onClose(cause)
+            if (!closedByBack) onClose(cause)
         },
         sheetState = sheetState,
+        properties = androidx.compose.material3.ModalBottomSheetProperties(
+            securePolicy = androidx.compose.ui.window.SecureFlagPolicy.Inherit,
+            isFocusable = true,
+            shouldDismissOnBackPress = !ownsBack,
+        ),
         containerColor = sheetContainerColor,
         dragHandle = { Box(markDrag) { androidx.compose.material3.BottomSheetDefaults.DragHandle() } },
     ) {
         Column(
             modifier = Modifier
                 .then(markDrag)
+                .then(
+                    if (ownsBack) Modifier
+                        .focusRequester(backFocus)
+                        .onPreviewKeyEvent { e ->
+                            if (e.key != androidx.compose.ui.input.key.Key.Back) return@onPreviewKeyEvent false
+                            if (e.type == androidx.compose.ui.input.key.KeyEventType.KeyUp) closeByBack()
+                            true
+                        }
+                        .focusable()
+                    else Modifier,
+                )
                 .fillMaxWidth()
                 .padding(horizontal = 20.dp)
                 .padding(bottom = 24.dp),
@@ -14296,6 +14343,19 @@ internal fun BlockSheet(
             }
         }
     }
+}
+
+/**
+ * On API 33+, the sheet window's own back callback, for a host opted into predictive back (there the
+ * key never reaches the content). Below 33, or in a host that has not opted in, back arrives as a key
+ * event and the sheet's key handler takes it. Returns the unregister call.
+ */
+private fun registerSheetBackCallback(view: android.view.View, onBack: () -> Unit): () -> Unit {
+    if (android.os.Build.VERSION.SDK_INT < 33) return {}
+    val dispatcher = view.findOnBackInvokedDispatcher() ?: return {}
+    val callback = android.window.OnBackInvokedCallback { onBack() }
+    dispatcher.registerOnBackInvokedCallback(android.window.OnBackInvokedDispatcher.PRIORITY_DEFAULT, callback)
+    return { dispatcher.unregisterOnBackInvokedCallback(callback) }
 }
 
 /**
