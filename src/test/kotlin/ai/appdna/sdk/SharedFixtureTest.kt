@@ -311,6 +311,7 @@ class SharedFixtureTest(
             "resolve_select_advance_confirm" -> runSelectAdvanceConfirm(action, spy)
             "resolve_cta_dependencies" -> runCtaDependencies(action, spy)
             "resolve_block_bleed" -> runBlockBleed(action, spy)
+            "resolve_animated_image" -> runAnimatedImage(action, spy)
             "resolve_store_price" -> runStorePrice(action, spy)
             "resolve_plan_savings" -> runPlanSavings(action, spy)
             "parse_blocks_leniently" -> runLenientBlocks(action, spy)
@@ -3157,6 +3158,32 @@ class SharedFixtureTest(
                 edgeBottom = c.getDouble("edge_bottom"),
             )
             listOf(r.top, r.right, r.bottom, r.left)
+        }
+    }
+
+    /** An animated_image strip's direction, speed, tile length and loop offset, through the REAL block parse. */
+    private fun runAnimatedImage(action: JSONObject, spy: Spy) {
+        val cases = action.optJSONArray("cases") ?: unsupported("resolve_animated_image without cases")
+        spy.state["results"] = (0 until cases.length()).map { i ->
+            val c = cases.getJSONObject(i)
+            val step = ai.appdna.sdk.onboarding.OnboardingConfigParser.parseStepForTest(
+                mapOf(
+                    "id" to "fixture_step", "type" to "custom",
+                    "config" to mapOf(
+                        "content_blocks" to listOf(
+                            mapOf("id" to "anim", "type" to "animated_image", "field_config" to jsonToMap(c.getJSONObject("field_config"))),
+                        ),
+                    ),
+                ),
+            ) ?: error("a step did not parse")
+            val cfg = (step.config?.content_blocks?.firstOrNull() ?: error("the block did not parse")).field_config
+            val m = ai.appdna.sdk.onboarding.AnimatedImageMarquee
+            val d = m.direction(cfg?.get("scroll_direction"))
+            val s = m.speed(cfg?.get("scroll_speed"))
+            val natural = c.getJSONArray("natural_size")
+            val box = c.getJSONArray("block_size")
+            val tile = m.tileLength(d, natural.getDouble(0), natural.getDouble(1), box.getDouble(0), box.getDouble(1))
+            listOf(d, s, Math.round(tile * 1000).toDouble() / 1000, m.offset(d, s, tile, c.getDouble("elapsed_seconds")))
         }
     }
 

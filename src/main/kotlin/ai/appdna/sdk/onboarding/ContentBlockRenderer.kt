@@ -2275,6 +2275,7 @@ private fun RenderBlockContent(
         "text" -> TextBlock(block, loc)
         "image" -> ImageBlock(block)
         "media_gallery" -> MediaGalleryBlock(block)
+        "animated_image" -> AnimatedImageBlock(block)
         "section_background" -> SectionBackgroundBlock(block, onAction, toggleValues, inputValues, loc, stepBlocks)
         "carousel" -> CarouselBlock(block, onAction, toggleValues, inputValues, loc, stepBlocks)
         "otp_input" -> OtpInputBlock(block, inputValues, onInteract)
