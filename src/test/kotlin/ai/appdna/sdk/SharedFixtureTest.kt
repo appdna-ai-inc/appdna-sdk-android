@@ -348,6 +348,10 @@ class SharedFixtureTest(
                 spy.state["results"] = ai.appdna.sdk.onboarding.PickerFixtureDrivers.palettes(casesOf(action))
             "resolve_measurement_linear" ->
                 spy.state["results"] = ai.appdna.sdk.onboarding.PickerFixtureDrivers.linear(casesOf(action))
+            "resolve_date_picker_style" ->
+                spy.state["results"] = ai.appdna.sdk.onboarding.PickerFixtureDrivers.datePickerStyle(casesOf(action))
+            "resolve_date_range" ->
+                spy.state["results"] = ai.appdna.sdk.onboarding.PickerFixtureDrivers.dateRange(casesOf(action))
             "resolve_survey_answer_events" -> runSurveyAnswerEvents(action, spy)
             // Every tracked event (SDK and host) → message / survey trigger evaluation, once.
             "dispatch_triggers" -> runDispatchTriggers(action, spy)

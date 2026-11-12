@@ -37,4 +37,20 @@ internal object PickerFixtureDrivers {
                 else -> throw AssertionError("unknown op ${c["op"]}")
             }
         }
+
+    /** REAL: `DatePickerStyle.standalone` / `formField`, which the Date Picker and the Date field draw from. */
+    fun datePickerStyle(cases: List<Map<String, Any?>>): List<String> =
+        cases.map { c ->
+            if (c["surface"] == "form") DatePickerStyle.formField(c["presentation"] as? String, c["variant"] as? String, c["has_date"] as? Boolean ?: true)
+            else DatePickerStyle.standalone(c["mode"] as? String, c["variant"] as? String, c["selection"] as? String)
+        }
+
+    /** REAL: `DateRangeSelection.tapping` and `answer`, which the range calendar calls on every tap. */
+    @Suppress("UNCHECKED_CAST")
+    fun dateRange(cases: List<Map<String, Any?>>): List<Map<String, Any?>> =
+        cases.map { c ->
+            var sel = DateRangeSelection()
+            for (t in (c["taps"] as? List<String>) ?: emptyList()) sel = sel.tapping(t)
+            sel.answer(c["field_id"] as? String ?: "f")
+        }
 }

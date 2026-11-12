@@ -7476,6 +7476,33 @@ internal fun DateWheelPickerBlock(
     }
     val dayCount = DateWheelModel.daysInMonth(selectedYear, selectedMonth)
 
+    // The console's "Picker Style" (field_config.picker_variant) and "Selection" (selection_mode). This block drew the
+    // wheel whatever they said; the calendar and the compact field are the form date field's own pickers, and a range
+    // of days is the range calendar. A form field reusing these wheels (`modeOverride`) is already a wheel.
+    if (modeOverride == null) {
+        val style = DatePickerStyle.standalone(block.picker_mode, (block.field_config?.get("picker_variant") as? String)
+            ?: (block.field_config?.get("date_picker_variant") as? String), block.field_config?.get("selection_mode") as? String)
+        fun day(y: DateWheelModel.Ymd) = "%04d-%02d-%02d".format(java.util.Locale.US, y.year, y.month, y.day)
+        if (style == "range") {
+            DateRangeBlock(block, inputValues,
+                minDay = minBound?.let { day(it) } ?: "%04d-01-01".format(java.util.Locale.US, minYear),
+                maxDay = maxBound?.let { day(it) } ?: "%04d-12-31".format(java.util.Locale.US, maxYear),
+                initialDay = day(openOn))
+            return
+        }
+        if (style == "graphical" || style == "compact") {
+            block.text?.takeIf { it.isNotEmpty() }?.let { Text(it, color = wheelTextColor, fontSize = 15.sp) }
+            FormInputDateBlock(
+                block.copy(
+                    picker_presentation = if (block.picker_presentation == "field") "field" else "inline",
+                    field_config = (block.field_config ?: emptyMap()) + ("picker_variant" to style),
+                ),
+                inputValues, mode,
+            )
+            return
+        }
+    }
+
     // Emit the combined value honoring the active mode.
     fun emit() {
         val wanted = DateWheelModel.Ymd(selectedYear, selectedMonth, selectedDay)
@@ -10577,11 +10604,12 @@ internal fun FormInputDateBlock(
     // controls inline graphical vs compact. picker_mode similarly may
     // override the function `mode` parameter.
     val effectiveMode = block.picker_mode ?: mode
-    val pickerVariant = when {
-        block.picker_presentation == "field" -> "compact"
-        block.picker_presentation == "inline" -> "graphical"
-        else -> (block.field_config?.get("picker_variant") as? String)?.lowercase() ?: "compact"
-    }
+    // The console's "Picker Variant" decides for an inline field too; it used to be overridden by the calendar
+    // whenever the presentation was `inline`, the default (DatePickerStyle.formField).
+    val pickerVariant = DatePickerStyle.formField(
+        block.picker_presentation, block.field_config?.get("picker_variant") as? String,
+        hasDate = effectiveMode == "date" || effectiveMode == "datetime",
+    )
     val inlineGraphical = pickerVariant == "graphical" && (effectiveMode == "date" || effectiveMode == "datetime")
     // Drain2 parity — picker_variant="wheel" (presentation unset) renders an inline
     // spinning wheel like iOS (FormInputBlockViews.swift:374) + preview, reusing the

@@ -50,7 +50,7 @@ class DateWheelClipRenderTest {
     private fun show() {
         val block = ContentBlock(id = "wheel", type = "date_wheel_picker", field_id = "born", picker_mode = "date",
             default_date_value = "2010-06-15", min_date = "1950-01-01", max_date = "2025-12-31", highlight_color = "#00FF00",
-            wheel_height = 200.0, field_config = mapOf("wheel_text_color" to "#0000FF"))
+            wheel_height = 200.0, field_config = mapOf("wheel_text_color" to "#0000FF", "picker_variant" to "wheel"))
         compose.setContent {
             // White space above and below the wheel, so a row drawn outside it would land on something readable.
             Box(Modifier.fillMaxWidth().background(Color.White).padding(vertical = 80.dp)) {

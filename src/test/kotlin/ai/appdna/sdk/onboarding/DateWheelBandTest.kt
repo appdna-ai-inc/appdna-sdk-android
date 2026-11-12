@@ -32,7 +32,7 @@ class DateWheelBandTest {
 
     private fun show(mode: String = "date", default: String? = null, min: String? = null, max: String? = null) {
         val block = ContentBlock(id = "wheel", type = "date_wheel_picker", field_id = "born", picker_mode = mode,
-            default_date_value = default, min_date = min, max_date = max)
+            default_date_value = default, min_date = min, max_date = max, field_config = mapOf("picker_variant" to "wheel"))
         compose.setContent { DateWheelPickerBlock(block, inputs) }
         compose.mainClock.advanceTimeBy(500)
         compose.waitForIdle()

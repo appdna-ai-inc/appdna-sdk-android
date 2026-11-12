@@ -29,7 +29,7 @@ class DateWheelTimeZoneTest {
 
     private fun stored(mode: String, zone: String?, default: String = "2000-06-15"): Any? {
         AppDNA.appTimeZoneId = zone
-        val block = ContentBlock(id = "wheel", type = "date_wheel_picker", field_id = "born", picker_mode = mode, default_date_value = default)
+        val block = ContentBlock(id = "wheel", type = "date_wheel_picker", field_id = "born", picker_mode = mode, default_date_value = default, field_config = mapOf("picker_variant" to "wheel"))
         compose.setContent { DateWheelPickerBlock(block, inputs) }
         compose.mainClock.advanceTimeBy(500)
         compose.waitForIdle()
