@@ -11241,13 +11241,31 @@ private fun FormInputSelectBlock(
     // The pending advance after a pick. Leaving the step cancels the scope; a later pick replaces it.
     val advanceScope = rememberCoroutineScope()
     var advanceJob by remember(block.id) { mutableStateOf<kotlinx.coroutines.Job?>(null) }
+    // The question asked before an advance (`field_config.advance_confirm`), while it is showing.
+    var pendingConfirmation by remember(block.id) { mutableStateOf<SelectAdvanceOnPick.Confirmation?>(null) }
     fun advanceAfterPick(before: List<String>, after: List<String>, opensSheet: Boolean) {
         if (onAdvance == null || !SelectAdvanceOnPick.shouldAdvance(block, before, after, opensSheet)) return
         advanceJob?.cancel()
         advanceJob = advanceScope.launch {
             kotlinx.coroutines.delay(SelectAdvanceOnPick.DELAY_MS)
-            onAdvance()
+            // The author asked to confirm: the beat draws the pick, then the question; only its confirm advances.
+            val ask = SelectAdvanceOnPick.confirmation(block)
+            if (ask != null) pendingConfirmation = ask else onAdvance()
         }
+    }
+    // "Are you sure?" before the advance. Cancel stays on the screen with the pick kept, so the user can pick again.
+    pendingConfirmation?.let { ask ->
+        AlertDialog(
+            onDismissRequest = { pendingConfirmation = null },
+            confirmButton = {
+                TextButton(onClick = {
+                    pendingConfirmation = null
+                    onAdvance?.invoke()
+                }) { Text(ask.yes) }
+            },
+            dismissButton = { TextButton(onClick = { pendingConfirmation = null }) { Text(ask.no) } },
+            title = { Text(ask.text) },
+        )
     }
     fun pickOption(value: String) {
         val before = if (isMulti) storedMultiSelection(inputValues[fieldId]) else emptyList()

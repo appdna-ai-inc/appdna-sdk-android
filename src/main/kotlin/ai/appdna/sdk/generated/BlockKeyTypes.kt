@@ -681,6 +681,10 @@ object BlockKeyTypes {
             "agreement_text" to "string",
         ),
         "input_select" to mapOf(
+            "advance_confirm" to "bool",
+            "advance_confirm_no" to "string",
+            "advance_confirm_text" to "string",
+            "advance_confirm_yes" to "string",
             "categories[].icon" to "string",
             "categories[].label" to "string",
             "correct_values" to "string_list",

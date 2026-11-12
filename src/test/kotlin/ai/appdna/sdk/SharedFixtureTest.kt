@@ -308,6 +308,7 @@ class SharedFixtureTest(
             "resolve_step_auto_advance" -> runStepAutoAdvance(action, spy)
             "resolve_select_advance_on_pick" -> runSelectAdvanceOnPick(action, spy)
             "resolve_select_answer_feedback" -> runSelectAnswerFeedback(action, spy)
+            "resolve_select_advance_confirm" -> runSelectAdvanceConfirm(action, spy)
             "resolve_store_price" -> runStorePrice(action, spy)
             "resolve_plan_savings" -> runPlanSavings(action, spy)
             "parse_blocks_leniently" -> runLenientBlocks(action, spy)
@@ -3072,6 +3073,22 @@ class SharedFixtureTest(
             val step = ai.appdna.sdk.onboarding.OnboardingConfigParser.parseStepForTest(raw)
                 ?: error("a step did not parse")
             ai.appdna.sdk.onboarding.StepAutoAdvance.delaySeconds(step)
+        }
+    }
+
+    /** The question asked before a Select's advance, through the REAL block parse and the real policy. */
+    private fun runSelectAdvanceConfirm(action: JSONObject, spy: Spy) {
+        val cases = action.optJSONArray("cases") ?: unsupported("resolve_select_advance_confirm without cases")
+        spy.state["results"] = (0 until cases.length()).map { i ->
+            val v = cases.getJSONObject(i).getJSONObject("value")
+            val step = ai.appdna.sdk.onboarding.OnboardingConfigParser.parseStepForTest(
+                mapOf(
+                    "id" to "fixture_step", "type" to "custom",
+                    "config" to mapOf("content_blocks" to listOf(v.getJSONObject("block").asMap())),
+                ),
+            ) ?: error("a step did not parse")
+            val block = step.config.content_blocks!!.single()
+            ai.appdna.sdk.onboarding.SelectAdvanceOnPick.confirmation(block)?.let { mapOf("text" to it.text, "yes" to it.yes, "no" to it.no) }
         }
     }
 
