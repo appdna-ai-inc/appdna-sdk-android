@@ -3,7 +3,7 @@
 // A walk needs a dozen surfaces, and this sample has one button per surface type with ids baked into
 // the code. A walk build instead carries its menu in the merged manifest (`-PappdnaWalkMenu=<base64>`,
 // see build.gradle.kts): base64 of {"title", "items": [{"title", "kind", "value"}]}, where kind is one
-// of flow, placement, paywall, survey, screen, track, push. Empty by default, so a stock build opens
+// of flow, placement, paywall, survey, screen, track, identify, reset, push. Empty by default, so a stock build opens
 // on the demo screen exactly as before. 🔴 This module is mirrored to the PUBLIC SDK repo: no key, id or
 // URL is committed here — the values are supplied by whoever builds the walk.
 package ai.appdna.sample
@@ -66,6 +66,8 @@ internal object WalkMenu {
                 WalkLog.note("showScreen(${item.title})")
             }
             "track" -> { AppDNA.track(event = item.value); WalkLog.note("track(${item.value})") }
+            "identify" -> { AppDNA.identify(userId = item.value); WalkLog.note("identify(${item.value})") }
+            "reset" -> { AppDNA.reset(); WalkLog.note("reset()") }
             "push" -> AppDNA.push.requestPermissionFuture(activity).whenComplete { granted, _ ->
                 WalkLog.note("notification permission → ${if (granted == true) "granted" else "denied"}")
             }

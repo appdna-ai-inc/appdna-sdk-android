@@ -1212,8 +1212,9 @@ object AppDNA {
         val appId = bootstrapAppId
         if (orgId != null && appId != null) {
             webEntitlementManager?.startObserving(orgId, appId, userId)
-            // Start journey-triggered pending-messages listener.
-            pendingMessageListener?.startObserving(orgId, appId, userId)
+            // #1731 — journey in-app messages: the anon id stays listened on (a journey that enrolled this device
+            // anonymously keeps delivering there), and the user id joins it.
+            followPendingMessages()
             // Re-point the Firestore entitlement listener at the new user (owning only).
             if (previousUserId != userId) {
                 synchronized(this@AppDNA) {
@@ -1288,6 +1289,17 @@ object AppDNA {
     }
 
     /**
+     * #1731 — points the journey in-app message listener at the ids a journey delivers to: the anon id, and the user
+     * id when identified ([ai.appdna.sdk.messages.PendingMessageListener.listenIds]). Needs the bootstrap's org and app.
+     */
+    private fun followPendingMessages() {
+        val orgId = bootstrapOrgId ?: return
+        val appId = bootstrapAppId ?: return
+        val identity = identityManager?.currentIdentity ?: return
+        pendingMessageListener?.follow(orgId, appId, identity.anonId, identity.userId)
+    }
+
+    /**
      * Clear user identity (keeps anonymous ID).
      *
      * Resets the host-supplied user identity, experiment exposures, the
@@ -1313,7 +1325,8 @@ object AppDNA {
         experimentManager?.resetExposures()
         surveyManager?.resetSession()
         webEntitlementManager?.stopObserving()
-        pendingMessageListener?.stopObserving()
+        // #1731 — the signed-out user's deliveries are no longer listened on; the anon id's still are.
+        followPendingMessages()
         // Clear in-session message frequency counters + queue.
         messageManager?.resetSession()
         // The subscription snapshot is device-global; identity is not. Clear it on sign-out so the next
@@ -2671,10 +2684,12 @@ object AppDNA {
                 }
 
                 // Start web entitlement observer if user is already identified
+                // #1731 — journey in-app messages are listened for from configure, on the anon id (and the user id
+                // when one is already identified). They used to start only for an identified user, so a journey's
+                // in-app step to an anonymous user was marked sent and never shown.
+                followPendingMessages()
                 identityManager?.currentIdentity?.userId?.let { userId ->
                     webEntitlementManager?.startObserving(orgId, appId, userId)
-                    // Pending-messages listener when already identified.
-                    pendingMessageListener?.startObserving(orgId, appId, userId)
                     // The Firestore entitlement listener — it never ran before, because
                     // billing init sees no orgId. The user id is re-read under this lock; only when
                     // the SDK owns transactions (the doc is written by AppDNA's own verification).

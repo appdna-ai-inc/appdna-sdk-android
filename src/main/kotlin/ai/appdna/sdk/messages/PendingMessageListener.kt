@@ -14,33 +14,217 @@ import com.google.firebase.firestore.QueryDocumentSnapshot
 
 /**
  * Listens for journey-triggered in-app messages at
- * `orgs/{orgId}/apps/{appId}/users/{userId}/pending_messages` and
+ * `orgs/{orgId}/apps/{appId}/users/{id}/pending_messages` and
  * renders them via `InAppMessageView` (the same composable used for
  * remote-config-driven messages — modal/fullscreen/banner/tooltip with
  * full styling + rich media). Writes `consumed: true` back to Firestore
  * after display so repeat polls / the REST fallback don't double-deliver.
+ *
+ * #1731 — WHICH ids it listens on. A journey enrols the unit the server keys every event on, `user_id ?: anon_id`,
+ * and delivers each of its in-app steps to that enrolment's id for the life of the enrolment. So:
+ *  - from configure, the device's ANON id — an anonymous user's journey writes there (the listener used to start only
+ *    at `identify`, so those messages were marked sent and never drawn);
+ *  - after `identify`, the anon id AND the user id — a journey that enrolled the device anonymously keeps writing to
+ *    the anon id after the user signs in, and a journey that enrols the signed-in user writes to the user id;
+ *  - after `reset()`, the anon id again (the anon id survives a reset; the signed-out user's id is dropped).
+ * [listenIds] is that rule; [follow] applies it, keeping a listener that is still wanted (no restart, so no
+ * re-delivery) and remembering what it presented (a delivery is drawn at most once per process).
  */
 internal class PendingMessageListener(
     private val eventTracker: EventTracker?,
     private val appContext: Context?,
+    subscribe: Subscribe? = null,
+    present: Present? = null,
+    schedule: Schedule? = null,
 ) {
-    private var listener: ListenerRegistration? = null
-    private var isPresenting = false
+    /** One delivery document as a subscription hands it over. */
+    internal class Delivery(val id: String, val data: Map<String, Any?>, val markConsumed: () -> Unit)
 
-    fun startObserving(orgId: String, appId: String, userId: String) {
-        stopObserving()
+    /** Opens a listener on one user's unconsumed deliveries; returns its remover, or null when there is no Firestore. */
+    internal fun interface Subscribe {
+        fun open(orgId: String, appId: String, id: String, onAdded: (Delivery) -> Unit): (() -> Unit)?
+    }
 
-        val db = AppDNA.firestoreDB ?: run {
-            Log.debug("PendingMessageListener: Firestore not available — skipping")
+    /** Draws a delivery: `onShown(true)` once on screen, `onShown(false)` when it cannot be drawn yet; `onClosed` on dismiss. */
+    internal fun interface Present {
+        fun show(deliveryId: String, config: MessageConfig, onShown: (Boolean) -> Unit, onClosed: () -> Unit)
+    }
+
+    /** Runs `block` after `seconds` — the retry of a delivery that could not be drawn yet. */
+    internal fun interface Schedule {
+        fun after(seconds: Double, block: () -> Unit)
+    }
+
+    private class Pending(val key: String, val ownerKey: String, val delivery: Delivery, val config: MessageConfig)
+
+    private val subscribeFn: Subscribe = subscribe ?: Subscribe(::firestoreSubscribe)
+    private val presentFn: Present = present ?: Present(::presentOnForegroundActivity)
+    private val scheduleFn: Schedule = schedule ?: Schedule { seconds, block ->
+        Handler(Looper.getMainLooper()).postDelayed({ block() }, (seconds * 1000).toLong())
+    }
+    private val lock = Any()
+    /** A live subscription; `remove` is null while the listener is being opened. Compared by identity. */
+    private class Subscription(val remove: (() -> Unit)?)
+    /** Live subscriptions, keyed `org/app/id`. */
+    private val subscriptions = LinkedHashMap<String, Subscription>()
+    /** The delivery on screen (or being put there), keyed `org/app/id/deliveryId`. */
+    private var presentingKey: String? = null
+    /** Deliveries that arrived while another was on screen, in arrival order. */
+    private val waiting = ArrayList<Pending>()
+    /** Deliveries drawn by this process — a re-delivered document is never drawn twice. */
+    private val presented = HashSet<String>()
+    private val attempts = HashMap<String, Int>()
+
+    /**
+     * Listen on exactly [listenIds] under this org and app: a listener still wanted is kept as it is, one no longer
+     * wanted is removed (and its waiting deliveries dropped), a new one is opened. Called at configure (once the
+     * bootstrap names the org and app), on `identify` and on `reset()`.
+     */
+    fun follow(orgId: String, appId: String, anonId: String?, userId: String?) {
+        val wanted = listenIds(anonId, userId).map { it to "$orgId/$appId/$it" }
+        val wantedKeys = wanted.map { it.second }.toSet()
+        val removed: List<() -> Unit>
+        val toOpen: List<Pair<String, String>>
+        val placeholders = HashMap<String, Subscription>()
+        synchronized(lock) {
+            val gone = subscriptions.keys.filter { it !in wantedKeys }
+            removed = gone.mapNotNull { subscriptions.remove(it)?.remove }
+            waiting.removeAll { it.ownerKey !in wantedKeys }
+            toOpen = wanted.filter { it.second !in subscriptions }
+            // Registered before the listener opens: its first snapshot (the deliveries already waiting) may arrive at once.
+            for ((_, key) in toOpen) {
+                val placeholder = Subscription(null)
+                placeholders[key] = placeholder
+                subscriptions[key] = placeholder
+            }
+        }
+        removed.forEach { it() }
+        for ((id, key) in toOpen) {
+            Log.debug("PendingMessageListener: observing orgs/$orgId/apps/$appId/users/$id/pending_messages")
+            val remove = subscribeFn.open(orgId, appId, id) { delivery ->
+                handleIncoming(key, delivery, System.currentTimeMillis())
+            }
+            val stillOurs = synchronized(lock) {
+                val ours = subscriptions[key] === placeholders[key]
+                if (ours) {
+                    if (remove != null) subscriptions[key] = Subscription(remove) else subscriptions.remove(key)
+                }
+                ours
+            }
+            if (!stillOurs) remove?.invoke()
+        }
+    }
+
+    /** The ids listened on now (`org/app/id`), sorted — what a test reads. */
+    val observedKeys: List<String>
+        get() = synchronized(lock) { subscriptions.keys.sorted() }
+
+    /** Tear down every listener. Called from `AppDNA.shutdown()`. */
+    fun stopObserving() {
+        val all = synchronized(lock) {
+            val l = subscriptions.values.mapNotNull { it.remove }
+            subscriptions.clear()
+            waiting.clear()
+            l
+        }
+        all.forEach { it() }
+    }
+
+    private fun handleIncoming(ownerKey: String, delivery: Delivery, now: Long) {
+        val config = decodeDelivery(delivery.data, now) ?: run {
+            Log.debug("PendingMessageListener: skipping ${delivery.id} (expired or missing content)")
             return
         }
+        val key = "$ownerKey/${delivery.id}"
+        val firstSight = synchronized(lock) {
+            // Still listened on (a late callback from a removed listener is ignored), and not already drawn or queued.
+            if (ownerKey !in subscriptions || key in presented || presentingKey == key || waiting.any { it.key == key }) {
+                return
+            }
+            val first = key !in attempts
+            if (first) attempts[key] = 0
+            first
+        }
+        if (firstSight) {
+            eventTracker?.track(
+                "in_app_message_received",
+                mapOf(
+                    "delivery_id" to delivery.id,
+                    "trigger" to ((delivery.data["trigger"] as? String) ?: "journey"),
+                    "source" to "pending_messages",
+                ),
+            )
+        }
+        enqueue(Pending(key, ownerKey, delivery, config))
+    }
 
-        val path = "orgs/$orgId/apps/$appId/users/$userId/pending_messages"
-        Log.debug("PendingMessageListener: observing $path")
+    private fun enqueue(p: Pending) {
+        synchronized(lock) {
+            if (presentingKey != null) {
+                Log.debug("PendingMessageListener: another message presenting — queueing ${p.delivery.id}")
+                waiting.add(p)
+                return
+            }
+            presentingKey = p.key
+        }
+        presentNow(p)
+    }
 
-        listener = db.collection("orgs").document(orgId)
+    private fun presentNow(p: Pending) {
+        presentFn.show(p.delivery.id, p.config, { rendered ->
+            if (rendered) {
+                synchronized(lock) { presented.add(p.key) }
+                p.delivery.markConsumed()
+                eventTracker?.track(
+                    "in_app_message_shown",
+                    mapOf(
+                        "delivery_id" to p.delivery.id,
+                        "source" to "pending_messages",
+                        "message_type" to p.config.message_type.value,
+                    ),
+                )
+            } else {
+                // Not drawn (no activity yet at a cold launch): the document stays unconsumed; retried a few times.
+                val n = synchronized(lock) {
+                    presentingKey = null
+                    val n = (attempts[p.key] ?: 0) + 1
+                    attempts[p.key] = n
+                    n
+                }
+                if (n < MAX_PRESENT_ATTEMPTS) scheduleFn.after(n.toDouble()) { retry(p) }
+                presentNext()
+            }
+        }, {
+            synchronized(lock) { presentingKey = null }
+            presentNext()
+        })
+    }
+
+    private fun retry(p: Pending) {
+        val live = synchronized(lock) {
+            p.ownerKey in subscriptions && p.key !in presented && presentingKey != p.key && waiting.none { it.key == p.key }
+        }
+        if (live) enqueue(p)
+    }
+
+    private fun presentNext() {
+        val next = synchronized(lock) {
+            if (presentingKey != null || waiting.isEmpty()) return
+            val n = waiting.removeAt(0)
+            presentingKey = n.key
+            n
+        }
+        presentNow(next)
+    }
+
+    private fun firestoreSubscribe(orgId: String, appId: String, id: String, onAdded: (Delivery) -> Unit): (() -> Unit)? {
+        val db = AppDNA.firestoreDB ?: run {
+            Log.debug("PendingMessageListener: Firestore not available — skipping")
+            return null
+        }
+        val registration: ListenerRegistration = db.collection("orgs").document(orgId)
             .collection("apps").document(appId)
-            .collection("users").document(userId)
+            .collection("users").document(id)
             .collection("pending_messages")
             .whereEqualTo("consumed", false)
             .addSnapshotListener { snapshot, error ->
@@ -49,54 +233,19 @@ internal class PendingMessageListener(
                     return@addSnapshotListener
                 }
                 val docChanges = snapshot?.documentChanges ?: return@addSnapshotListener
-                val now = System.currentTimeMillis()
                 for (change in docChanges) {
                     if (change.type.name != "ADDED") continue
-                    handleIncoming(change.document, now)
+                    val doc: QueryDocumentSnapshot = change.document
+                    onAdded(Delivery(doc.id, doc.data) {
+                        doc.reference.update("consumed", true)
+                            .addOnFailureListener { err ->
+                                Log.warning("PendingMessageListener: failed to mark consumed: ${err.message}")
+                            }
+                    })
                 }
             }
+        return { registration.remove() }
     }
-
-    fun stopObserving() {
-        listener?.remove()
-        listener = null
-    }
-
-    private fun handleIncoming(doc: QueryDocumentSnapshot, now: Long) {
-        val data = doc.data
-
-        val config = decodeDelivery(data, now) ?: run {
-            Log.debug("PendingMessageListener: skipping ${doc.id} (expired or missing content)")
-            return
-        }
-
-        eventTracker?.track(
-            "in_app_message_received",
-            mapOf(
-                "delivery_id" to doc.id,
-                "trigger" to ((data["trigger"] as? String) ?: "journey"),
-                "source" to "pending_messages",
-            ),
-        )
-
-        present(doc.id, config) { rendered ->
-            if (rendered) {
-                doc.reference.update("consumed", true)
-                    .addOnFailureListener { err ->
-                        Log.warning("PendingMessageListener: failed to mark consumed: ${err.message}")
-                    }
-                eventTracker?.track(
-                    "in_app_message_shown",
-                    mapOf(
-                        "delivery_id" to doc.id,
-                        "source" to "pending_messages",
-                        "message_type" to config.message_type.value,
-                    ),
-                )
-            }
-        }
-    }
-
 
     /**
      * Present the InAppMessageView composable in a `ComponentDialog`
@@ -105,25 +254,20 @@ internal class PendingMessageListener(
      * identical UX (modal/fullscreen/banner/tooltip, styling, rich
      * media) instead of a plain AlertDialog.
      */
-    private fun present(
+    private fun presentOnForegroundActivity(
         messageId: String,
         config: MessageConfig,
-        completion: (Boolean) -> Unit,
+        onShown: (Boolean) -> Unit,
+        onClosed: () -> Unit,
     ) {
         val activity = currentActivity() ?: run {
-            Log.warning("PendingMessageListener: no foreground activity — cannot present $messageId")
-            completion(false)
+            Log.warning("PendingMessageListener: no foreground activity — cannot present $messageId yet")
+            onShown(false)
             return
         }
 
         Handler(Looper.getMainLooper()).post {
-            if (isPresenting) {
-                Log.debug("PendingMessageListener: another message presenting — deferring $messageId")
-                completion(false)
-                return@post
-            }
             try {
-                isPresenting = true
                 // Kept on screen across a recreation of the host's activity (a fold, a rotation).
                 InAppMessageDialog.show(
                     activity,
@@ -148,13 +292,12 @@ internal class PendingMessageListener(
                             ),
                         )
                     },
-                    onClosed = { isPresenting = false },
+                    onClosed = onClosed,
                 )
-                completion(true)
+                onShown(true)
             } catch (err: Throwable) {
-                isPresenting = false
                 Log.warning("PendingMessageListener: present failed: ${err.message}")
-                completion(false)
+                onShown(false)
             }
         }
     }
@@ -201,6 +344,17 @@ internal class PendingMessageListener(
     }
 
     internal companion object {
+        /** How many times a delivery that could not be drawn (no activity yet, at a cold launch) is retried. */
+        internal const val MAX_PRESENT_ATTEMPTS = 5
+
+        /** The ids whose deliveries the device shows: the anon id, then the user id when it is set and different. */
+        internal fun listenIds(anonId: String?, userId: String?): List<String> {
+            val ids = ArrayList<String>()
+            if (!anonId.isNullOrEmpty()) ids.add(anonId)
+            if (!userId.isNullOrEmpty() && userId !in ids) ids.add(userId)
+            return ids
+        }
+
         /**
          * The delivery document as the listener receives it → the [MessageConfig] it presents, or null when
          * the delivery is expired or carries no `content`. The one decode `handleIncoming` runs; on the

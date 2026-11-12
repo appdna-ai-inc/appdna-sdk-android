@@ -276,6 +276,12 @@ class SharedFixtureTest(
             "decode_message_cta" -> runDecodeMessageCta(action, spy)
             "decode_message_hero" -> runDecodeMessageHero(action, spy)
             "decode_pending_delivery" -> runDecodePendingDelivery(action, spy)
+            // #1731 — the ids the journey in-app message listener follows, through the REAL follow().
+            "follow_pending_messages" -> {
+                val state = ai.appdna.sdk.messages.PendingFollowRig.run(action)
+                    ?: unsupported("follow_pending_messages needs org_id, app_id and a script of known ops")
+                spy.state.putAll(state)
+            }
             "resolve_message_dismiss" -> runResolveMessageDismiss(action, spy)
             "resolve_paywall_image_alt" -> runPaywallImageAlt(action, spy)
             "resolve_onboarding_image_alt" -> runOnboardingImageAlt(action, spy)
