@@ -44,7 +44,7 @@ class AutoAdvanceIndicatorRenderTest {
             ?: error("the step did not parse")
     }
 
-    /** The step host's own arrangement: the TOP placement is a row above the content, BOTTOM is over it. */
+    /** The step host's own arrangement: the countdown is a row above (top) or below (bottom) the content. */
     private fun show(s: OnboardingStep) {
         compose.mainClock.autoAdvance = false
         compose.setContent {
@@ -53,8 +53,9 @@ class AutoAdvanceIndicatorRenderTest {
                     AutoAdvanceIndicatorOverlay(step = s, placement = "top")
                     Box(Modifier.weight(1f).fillMaxWidth()) {
                         Text("Step heading", modifier = Modifier.testTag("heading"))
-                        AutoAdvanceIndicatorOverlay(step = s, placement = "bottom")
+                        Text("Pinned button", modifier = Modifier.align(androidx.compose.ui.Alignment.BottomCenter).testTag("cta"))
                     }
+                    AutoAdvanceIndicatorOverlay(step = s, placement = "bottom")
                 }
             }
         }
@@ -125,9 +126,19 @@ class AutoAdvanceIndicatorRenderTest {
     }
 
     @Test
-    fun controlABottomCountdownLeavesTheContentWhereItWas() {
+    fun controlABottomCountdownLeavesTheHeadingAtTheTop() {
         show(step(mapOf("show" to true, "style" to "text")))
         compose.mainClock.advanceTimeBy(100)
         assertEquals(0f, compose.onNodeWithTag("heading").getBoundsInRoot().top.value, 0.5f)
+    }
+
+    /** A countdown at the BOTTOM sits below the step's pinned button, not over it (the walk saw them overlap). */
+    @Test
+    fun aBottomCountdownSitsBelowThePinnedButtonNotOverIt() {
+        show(step(mapOf("show" to true, "style" to "both")))
+        compose.mainClock.advanceTimeBy(100)
+        val cta = compose.onNodeWithTag("cta").getBoundsInRoot()
+        val indicator = compose.onNodeWithTag("auto_advance_indicator").getBoundsInRoot()
+        assertTrue("the countdown (${indicator.top}) starts above the button's bottom (${cta.bottom})", indicator.top.value >= cta.bottom.value - 0.5f)
     }
 }

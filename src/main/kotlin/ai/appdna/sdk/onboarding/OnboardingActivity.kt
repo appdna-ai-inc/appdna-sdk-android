@@ -1987,9 +1987,9 @@ internal fun OnboardingFlowHost(
                 val stepWiring = rememberStepHostDataWiring(
                     hostDataAccess, stepIdx, step.id, elementInteractionCall, hasInteractionHandler,
                 )
-                // A countdown authored at the TOP takes its own row above the content, so it never
-                // prints over the step's first block; one at the BOTTOM is drawn over the content.
-                // The step's background is painted behind this whole column by the host.
+                // The countdown takes its own row above or below the content, so it never prints over
+                // the step's first block or its pinned button. The step's background is painted behind
+                // this whole column by the host.
                 androidx.compose.foundation.layout.Column(Modifier.fillMaxSize()) {
                 AutoAdvanceIndicatorOverlay(step = step, placement = "top")
                 Box(Modifier.weight(1f).fillMaxWidth()) {
@@ -2225,8 +2225,8 @@ internal fun OnboardingFlowHost(
                     totalSteps = flow.steps.size,
                 )
                 } // LocalStepHostDataWiring
-                AutoAdvanceIndicatorOverlay(step = step, placement = "bottom")
                 }
+                AutoAdvanceIndicatorOverlay(step = step, placement = "bottom")
                 }
                 }
             }

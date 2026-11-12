@@ -95,9 +95,9 @@ object AutoAdvanceIndicator {
 /**
  * Draws one resolved moment of the countdown. Pure, so a test can render a given instant.
  *
- * `inline = true` is the TOP placement: the drawing takes only its own height, in the row the step
- * host gives it above the content, rather than being painted over the step's first block. The bottom
- * placement fills the step and aligns to its bottom edge.
+ * `inline = true` is how the step host draws it: the drawing takes only its own height, in the row
+ * the host gives it above or below the content, rather than being painted over the step's first block
+ * or its pinned button. `inline = false` fills its container and aligns to the edge.
  */
 @Composable
 internal fun AutoAdvanceIndicatorDrawing(frame: AutoAdvanceIndicator.Frame, modifier: Modifier = Modifier, inline: Boolean = false) {
@@ -105,7 +105,7 @@ internal fun AutoAdvanceIndicatorDrawing(frame: AutoAdvanceIndicator.Frame, modi
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 24.dp, vertical = if (inline) 8.dp else 12.dp)
+                .padding(horizontal = 24.dp, vertical = 8.dp)
                 .testTag("auto_advance_indicator"),
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.spacedBy(6.dp),
@@ -146,8 +146,8 @@ internal fun AutoAdvanceIndicatorDrawing(frame: AutoAdvanceIndicator.Frame, modi
 }
 
 /**
- * The live countdown for one placement. The step host draws `"top"` as a row above the content (so it
- * reserves its own space) and `"bottom"` over the content; each draws only when the author's
+ * The live countdown for one placement. The step host draws `"top"` as a row above the content and
+ * `"bottom"` as a row below it, so it reserves its own space; each draws only when the author's
  * `position` is its own. Its clock is the frame clock from the moment the step composes, which is
  * when `LaunchedEffect(currentIndex)` starts the step's timer.
  */
@@ -167,5 +167,5 @@ internal fun AutoAdvanceIndicatorOverlay(step: OnboardingStep, modifier: Modifie
     }
     val elapsed = if (start < 0) 0.0 else (now - start) / 1_000_000_000.0
     val frame = AutoAdvanceIndicator.resolve(step, elapsed) ?: return
-    AutoAdvanceIndicatorDrawing(frame, if (placement == "top") modifier else modifier.navigationBarsPadding(), inline = placement == "top")
+    AutoAdvanceIndicatorDrawing(frame, if (placement == "top") modifier else modifier.navigationBarsPadding(), inline = true)
 }
