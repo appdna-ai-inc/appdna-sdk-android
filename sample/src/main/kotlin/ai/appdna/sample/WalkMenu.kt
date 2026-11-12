@@ -66,6 +66,8 @@ internal object WalkMenu {
                 WalkLog.note("showScreen(${item.title})")
             }
             "track" -> { AppDNA.track(event = item.value); WalkLog.note("track(${item.value})") }
+            "identify" -> { AppDNA.identify(userId = item.value); WalkLog.note("identify(${item.value})") }
+            "consent" -> { val on = item.value == "true"; AppDNA.setConsent(analytics = on); WalkLog.note("setConsent(analytics: $on)") }
             "push" -> AppDNA.push.requestPermissionFuture(activity).whenComplete { granted, _ ->
                 WalkLog.note("notification permission → ${if (granted == true) "granted" else "denied"}")
             }
