@@ -6,6 +6,7 @@ package ai.appdna.sdk.onboarding
  *
  *   resolve_measurement_palette  REAL: `measurementPalette(cfg, highlight, dark)`, the rule
  *                                `MeasurementWheelBlock` draws every colour from.
+ *   resolve_measurement_linear   REAL: `measurementLinearValue`, `measurementLinearFraction`, `measurementLinearSizes`.
  *
  * The runner converts the fixture's JSON to plain maps and lists (JSON null → null) before calling.
  */
@@ -17,5 +18,23 @@ internal object PickerFixtureDrivers {
         cases.map { c ->
             val cfg = (c["field_config"] as? Map<String, Any?>) ?: emptyMap()
             measurementPalette(cfg, c["highlight_color"] as? String, c["dark"] as? Boolean ?: false).roles()
+        }
+
+    /** `action.cases[] = {op: value_at | fraction_of | sizes, ...}` → the linear slider's rules, per case. */
+    @Suppress("UNCHECKED_CAST")
+    fun linear(cases: List<Map<String, Any?>>): List<Any?> =
+        cases.map { c ->
+            val u = (c["unit"] as? Map<String, Any?>) ?: emptyMap()
+            fun num(v: Any?) = (v as? Number)?.toDouble() ?: 0.0
+            val unit = MeasurementUnit(id = "u", label = "u", min = num(u["min"]), max = num(u["max"]), step = num(u["step"]),
+                decimals = num(u["decimals"]).toInt(), factor = 1.0, offset = 0.0)
+            when (c["op"]) {
+                "value_at" -> measurementLinearValue(num(c["fraction"]), unit)
+                "fraction_of" -> measurementLinearFraction(num(c["value"]), unit)
+                "sizes" -> measurementLinearSizes((c["field_config"] as? Map<String, Any?>) ?: emptyMap()).let {
+                    linkedMapOf("height" to it.height, "track_width" to it.trackWidth, "thumb_size" to it.thumbSize)
+                }
+                else -> throw AssertionError("unknown op ${c["op"]}")
+            }
         }
 }

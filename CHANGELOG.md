@@ -14,6 +14,8 @@ the project uses [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- **A linear style for the measurement wheel picker.** `measurement_style: "linear"` draws a vertical slider on the left, filled from the bottom (the unit's `min`) to the value, with the value and its unit on the right — the simplest height picker. With one unit the unit is locked on screen. A tap or drag picks the value under it, snapped to the unit's step, and the interaction fires when the finger lifts; the slider is adjustable with VoiceOver/TalkBack. Sizes: `linear_height` (240), `track_width` (8), `thumb_size` (28); `thumb_color` defaults to `needle_color`.
+
 - **A button can depend on other elements on its screen.** `field_config.cta_dependencies` lists
   `{ block_id, condition }` entries (`answered`, `all_selected`, `min_selected` with `count`, `correct`, `equals` with
   `value`). Until every one holds the button is inactive (a tap does nothing) and draws in `cta_disabled_bg_color`, or its
@@ -26,6 +28,7 @@ the project uses [Semantic Versioning](https://semver.org/).
   the user has answered, `feedback_correct_text` (default "Correct!") in `feedback_correct_color` (default #16A34A) or
   `feedback_wrong_text` (default "Not quite.") in `feedback_wrong_color` (default #DC2626) shows under the options. A
   multi-select is judged once as many options are picked as are marked.
+
 - **Foldables, tablets and wide windows.** Onboarding steps, paywalls, full-screen messages and surveys lay out in a centred column at most 560dp wide, with the background still filling the window; nothing changes at 560dp or narrower. On a window that is wider than tall, at least 720dp wide and 600dp or more in width class, an onboarding step that opens with a visual shows it in a leading pane beside the rest of the step, a paywall shows its pitch beside its plans and call to action, and a full-screen message shows its hero beside its copy (a container at most 1040dp wide; on a foldable in book posture the panes meet on the hinge, read through Jetpack WindowManager). Modals and banners are at most 560dp wide; surveys stay one column.
 
 - **The SDK tells AppDNA when a user declines analytics.** Declined users' events never leave the device, so the

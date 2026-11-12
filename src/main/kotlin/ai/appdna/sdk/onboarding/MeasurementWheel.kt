@@ -27,6 +27,13 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.gestures.detectVerticalDragGestures
+import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.semantics.ProgressBarRangeInfo
+import androidx.compose.ui.semantics.progressBarRangeInfo
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.setProgress
+import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -197,7 +204,41 @@ data class MeasurementConfig(
     val unitFontSize: Double,
 )
 
-private val measurementValidStyles = setOf("ruler", "gauge", "dial", "wheel")
+private val measurementValidStyles = setOf("ruler", "gauge", "dial", "wheel", "linear")
+
+// MARK: - Linear style — a vertical slider, bottom = min, top = max (pinned by `resolve_measurement_linear`)
+
+/** The snapped value at `fraction` of the slider's height (0 = bottom = `min`, 1 = top = `max`), clamped last. */
+fun measurementLinearValue(fraction: Double, unit: MeasurementUnit): Double {
+    val f = if (fraction.isFinite()) fraction.coerceIn(0.0, 1.0) else 0.0
+    return measurementSnap(unit.min + f * (unit.max - unit.min), unit)
+}
+
+/** Where `value` sits on the slider, 0 (bottom, `min`) to 1 (top, `max`); 0 for a range with no width. */
+fun measurementLinearFraction(value: Double, unit: MeasurementUnit): Double {
+    val range = unit.max - unit.min
+    if (!(range > 0)) return 0.0
+    return ((value - unit.min) / range).coerceIn(0.0, 1.0)
+}
+
+/** The `linear` style's sizes (dp). */
+data class MeasurementLinearSizes(val height: Double, val trackWidth: Double, val thumbSize: Double)
+
+/**
+ * From `field_config`: `linear_height` (240, 120..480), `track_width` (8, 2..40), `thumb_size` (28, 12..64).
+ * A number written as a string is read; zero, negative or not a number is unset.
+ */
+fun measurementLinearSizes(cfg: Map<String, Any?>): MeasurementLinearSizes {
+    fun n(k: String, d: Double, lo: Double, hi: Double): Double {
+        val x = when (val v = cfg[k]) {
+            is Number -> v.toDouble()
+            is String -> v.trim().toDoubleOrNull()
+            else -> null
+        }
+        return if (x == null || !x.isFinite() || x <= 0) d else x.coerceIn(lo, hi)
+    }
+    return MeasurementLinearSizes(n("linear_height", 240.0, 120.0, 480.0), n("track_width", 8.0, 2.0, 40.0), n("thumb_size", 28.0, 12.0, 64.0))
+}
 
 /**
  * Coerce a JSON-decoded value (Number/String) to Double. `field_config` numerics MAY
@@ -306,12 +347,15 @@ data class MeasurementPalette(
     val band: String?,
     val bandText: String,
     val rowText: String,
+    /** The `linear` style's thumb. */
+    val thumb: String,
 ) {
     /** The fixture's view: role name → hex (`band` null when derived). */
     fun roles(): Map<String, Any?> = linkedMapOf(
         "value" to value, "unit" to unit, "label" to label,
         "toggle_active" to toggleActive, "toggle_active_text" to toggleActiveText, "toggle_text" to toggleText,
         "tick" to tick, "track" to track, "band" to band, "band_text" to bandText, "row_text" to rowText,
+        "thumb" to thumb,
     )
 }
 
@@ -334,6 +378,7 @@ fun measurementPalette(cfg: Map<String, Any?>, highlight: String?, dark: Boolean
         band = s("band_color"),
         bandText = s("band_text_color") ?: value,
         rowText = s("row_text_color") ?: tick,
+        thumb = s("thumb_color") ?: value,
     )
 }
 
@@ -401,6 +446,8 @@ internal fun MeasurementWheelBlock(
     val currentUnit = unitAt(unitIndex)
     // Snapped display value in the current unit (base held constant + re-clamped).
     val currentDisplay = measurementSnap(measurementFromBase(holdBase, currentUnit), currentUnit)
+    // Read at commit time (the drag has moved `holdBase` since this composition).
+    fun currentDisplayOf(): Double = unitAt(unitIndex).let { u -> measurementSnap(measurementFromBase(holdBase, u), u) }
 
     // Colors — one key per drawn part, through the shared palette rule.
     val palette = measurementPalette(block.field_config ?: emptyMap(), block.highlight_color, isDark)
@@ -475,8 +522,8 @@ internal fun MeasurementWheelBlock(
         }
 
         // Big centered value + unit — the numeric scale is LTR-locked; only the toggle
-        // row follows layout direction.
-        CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Ltr) {
+        // row follows layout direction. The `linear` style puts it to the right of its slider.
+        val valueDisplay: @Composable () -> Unit = {
             Row(verticalAlignment = Alignment.Bottom) {
                 Text(
                     text = formatMeasurement(currentDisplay, currentUnit),
@@ -491,6 +538,26 @@ internal fun MeasurementWheelBlock(
                     fontWeight = FontWeight.Medium,
                     color = StyleEngine.parseColor(palette.unit),
                 )
+            }
+        }
+        CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Ltr) {
+            if (config.style == "linear") {
+                // The slider on the left, the value and its unit on the right.
+                Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                    MeasurementLinear(
+                        currentDisplay, currentUnit, measurementLinearSizes(block.field_config ?: emptyMap()),
+                        MeasurementLinearColors(trackColor, accentColor, tickColor, StyleEngine.parseColor(palette.thumb)),
+                        onMove = { v ->
+                            hasUserInteracted = true
+                            holdBase = measurementToBase(v, unitAt(unitIndex))
+                            writeSnapshot()
+                        },
+                        onCommit = { pick(currentDisplayOf()) },
+                    )
+                    Box(Modifier.weight(1f), contentAlignment = Alignment.Center) { valueDisplay() }
+                }
+            } else {
+                valueDisplay()
             }
         }
 
@@ -525,7 +592,7 @@ internal fun MeasurementWheelBlock(
 
         // Style visual. `key(unitIndex)` resets the scroll state so the drum/ruler
         // re-centres on the equivalent value after a unit toggle.
-        key(unitIndex) {
+        if (config.style != "linear") key(unitIndex) {
             val vals = generateMeasurementValues(currentUnit)
             when (config.style) {
                 "gauge" -> MeasurementGauge(currentDisplay, currentUnit, trackColor, accentColor) { pick(it) }
@@ -719,6 +786,75 @@ private fun MeasurementDrum(
                 }
             }
         }
+    }
+}
+
+// MARK: - Linear (vertical slider; bottom = min, top = max) — render-only, wrapper persists
+
+internal data class MeasurementLinearColors(val track: Color, val fill: Color, val tick: Color, val thumb: Color)
+
+@Composable
+private fun MeasurementLinear(
+    currentDisplay: Double,
+    unit: MeasurementUnit,
+    sizes: MeasurementLinearSizes,
+    colors: MeasurementLinearColors,
+    onMove: (Double) -> Unit,
+    onCommit: () -> Unit,
+) {
+    val h = sizes.height.dp
+    val tw = sizes.trackWidth.dp
+    val ts = sizes.thumbSize.dp
+    val frac = measurementLinearFraction(currentDisplay, unit).toFloat()
+    val unitState = rememberUpdatedState(unit)
+    val move = rememberUpdatedState(onMove)
+    val commit = rememberUpdatedState(onCommit)
+    val cxDp = maxOf(tw, ts) / 2
+    val tickX = cxDp + tw / 2 + 6.dp
+    val label = "${formatMeasurement(currentDisplay, unit)} ${unit.label}"
+    Canvas(
+        modifier = Modifier
+            .width(tickX + 16.dp)
+            .height(h + ts)
+            .testTag("measurement.linear")
+            .semantics {
+                stateDescription = label
+                progressBarRangeInfo = ProgressBarRangeInfo(frac, 0f..1f)
+                setProgress { target ->
+                    move.value(measurementLinearValue(target.toDouble(), unitState.value)); commit.value(); true
+                }
+            }
+            .pointerInput(unit, sizes) {
+                val top = ts.toPx() / 2f
+                val height = h.toPx()
+                fun at(y: Float) = measurementLinearValue((1.0 - (y - top) / height), unitState.value)
+                detectTapGestures { p -> move.value(at(p.y)); commit.value() }
+            }
+            .pointerInput(unit, sizes) {
+                val top = ts.toPx() / 2f
+                val height = h.toPx()
+                fun at(y: Float) = measurementLinearValue((1.0 - (y - top) / height), unitState.value)
+                detectVerticalDragGestures(
+                    onDragStart = { p -> move.value(at(p.y)) },
+                    onDragEnd = { commit.value() },
+                ) { change, _ -> move.value(at(change.position.y)) }
+            },
+    ) {
+        val top = ts.toPx() / 2f
+        val height = h.toPx()
+        val cx = cxDp.toPx()
+        val twPx = tw.toPx()
+        val r = androidx.compose.ui.geometry.CornerRadius(twPx / 2f, twPx / 2f)
+        drawRoundRect(colors.track, Offset(cx - twPx / 2f, top), Size(twPx, height), r)
+        val filled = maxOf(twPx, height * frac)
+        drawRoundRect(colors.fill, Offset(cx - twPx / 2f, top + height - filled), Size(twPx, filled), r)
+        val tx = tickX.toPx()
+        for (i in 0..10) {
+            val y = top + height * (1f - i / 10f)
+            drawRect(colors.tick, Offset(tx, y - 1.dp.toPx()), Size((if (i % 5 == 0) 14 else 8).dp.toPx(), 2.dp.toPx()))
+        }
+        drawCircle(Color.Black.copy(alpha = 0.18f), ts.toPx() / 2f, Offset(cx, top + height * (1f - frac) + 1.dp.toPx()))
+        drawCircle(colors.thumb, ts.toPx() / 2f, Offset(cx, top + height * (1f - frac)))
     }
 }
 
