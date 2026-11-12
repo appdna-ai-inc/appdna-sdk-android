@@ -11322,6 +11322,17 @@ private fun FormInputSelectBlock(
         }
 
         SelectGridTooltip(block, displayStyle)
+
+        // Right or wrong, once the user has answered (`field_config.correct_values`). iOS parity.
+        SelectAnswerFeedback.message(block, if (isMulti) selectedValues.toList() else listOf(selectedValue))?.let { feedback ->
+            Text(
+                text = feedback.text,
+                fontSize = 15.sp,
+                fontWeight = FontWeight.SemiBold,
+                color = StyleEngine.parseColor(feedback.colorHex),
+                modifier = Modifier.fillMaxWidth().padding(top = 4.dp).testTag("select-answer-feedback"),
+            )
+        }
     }
 }
 

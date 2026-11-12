@@ -683,7 +683,12 @@ object BlockKeyTypes {
         "input_select" to mapOf(
             "categories[].icon" to "string",
             "categories[].label" to "string",
+            "correct_values" to "string_list",
             "empty_text" to "string",
+            "feedback_correct_color" to "string",
+            "feedback_correct_text" to "string",
+            "feedback_wrong_color" to "string",
+            "feedback_wrong_text" to "string",
             "hide_when_empty" to "bool",
         ),
         "map" to mapOf(

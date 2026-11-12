@@ -307,6 +307,7 @@ class SharedFixtureTest(
             "resolve_location_search" -> runLocationSearch(action, spy)
             "resolve_step_auto_advance" -> runStepAutoAdvance(action, spy)
             "resolve_select_advance_on_pick" -> runSelectAdvanceOnPick(action, spy)
+            "resolve_select_answer_feedback" -> runSelectAnswerFeedback(action, spy)
             "resolve_store_price" -> runStorePrice(action, spy)
             "resolve_plan_savings" -> runPlanSavings(action, spy)
             "parse_blocks_leniently" -> runLenientBlocks(action, spy)
@@ -3071,6 +3072,25 @@ class SharedFixtureTest(
             val step = ai.appdna.sdk.onboarding.OnboardingConfigParser.parseStepForTest(raw)
                 ?: error("a step did not parse")
             ai.appdna.sdk.onboarding.StepAutoAdvance.delaySeconds(step)
+        }
+    }
+
+    /** The right/wrong message for a selection, through the REAL block parse and the real policy. */
+    private fun runSelectAnswerFeedback(action: JSONObject, spy: Spy) {
+        val cases = action.optJSONArray("cases") ?: unsupported("resolve_select_answer_feedback without cases")
+        spy.state["results"] = (0 until cases.length()).map { i ->
+            val v = cases.getJSONObject(i).getJSONObject("value")
+            val selection = v.getJSONArray("selection").let { a -> (0 until a.length()).map { a.getString(it) } }
+            val step = ai.appdna.sdk.onboarding.OnboardingConfigParser.parseStepForTest(
+                mapOf(
+                    "id" to "fixture_step", "type" to "custom",
+                    "config" to mapOf("content_blocks" to listOf(v.getJSONObject("block").asMap())),
+                ),
+            ) ?: error("a step did not parse")
+            val block = step.config.content_blocks!!.single()
+            ai.appdna.sdk.onboarding.SelectAnswerFeedback.message(block, selection)?.let {
+                mapOf("verdict" to if (it.isCorrect) "correct" else "wrong", "text" to it.text, "color" to it.colorHex)
+            }
         }
     }
 
