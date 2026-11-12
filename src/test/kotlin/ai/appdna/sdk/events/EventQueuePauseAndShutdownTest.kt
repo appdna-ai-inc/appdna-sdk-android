@@ -53,7 +53,7 @@ class EventQueuePauseAndShutdownTest {
         // The 400 batches this test dropped went into the process-wide dropped-events counter (its
         // SharedPreferences handle outlives the test), and every later test's tracker would then emit an
         // `_sdk_events_dropped` event first. Let the last upload resolve, then put the counter back.
-        waitFor { EventUploadCoordinator.tryAcquire().also { if (it) EventUploadCoordinator.release() } }
+        waitFor { EventUploadCoordinator.tryAcquire()?.also { EventUploadCoordinator.release(it) } != null }
         Thread.sleep(200)
         DroppedEventsCounter.getAndReset()
         DroppedEventsCounter.increment(savedDropped)

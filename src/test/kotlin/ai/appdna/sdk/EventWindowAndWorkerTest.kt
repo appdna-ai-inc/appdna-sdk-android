@@ -13,6 +13,10 @@ import kotlinx.coroutines.runBlocking
 import org.json.JSONObject
 import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -88,6 +92,44 @@ class EventWindowAndWorkerTest {
                 q.awaitShutdownFlush(10_000)
             }
         }
+    }
+
+    /**
+     * #1747. In one JVM a queue an earlier test left uploading — to a server it has closed, or sleeping in
+     * a retry backoff — still holds the process-wide upload claim, and this test's worker then deferred to
+     * it: RETRY with nothing sent (the `1 ≠ 0 ingests` failure of [theWorkerEndsItsRunAfterARejectedBatch]
+     * in the full suite). The per-test `TestHttpServer.settleIoDispatcher()` takes the claim back; the late owner's release then must not
+     * free a claim taken after the reset, or two owners would upload at once.
+     * NEGATIVE CONTROLS: a reset that leaves the claim held → it is still held, and in the full suite the next test's run returns RETRY having sent nothing;
+     * a release that ignores whose claim it is → the claim is free while `next` still holds it.
+     */
+    @Test fun aClaimAnEarlierTestLeftHeldIsTakenBackAndItsLateReleaseFreesNothing() {
+        val stale = EventUploadCoordinator.tryAcquire()
+        assertNotNull("setUp left the claim free", stale)
+        // What the next test's setUp does: drain the IO pool, which takes the claim back.
+        TestHttpServer.settleIoDispatcher()
+        assertFalse("settleIoDispatcher left an earlier test's claim held", EventUploadCoordinator.isHeld())
+        val ingests = AtomicInteger(0)
+        TestHttpServer { path, _ -> if (path.contains("/ingest/events")) ingests.incrementAndGet(); 200 to "{}" }.use { server ->
+            val db = EventDatabase(ctx, 10_000, "worker_stale_claim_${System.nanoTime()}.db")
+            try {
+                ai.appdna.sdk.events.UploadPauseGate.setForTest(ctx, false)
+                db.insertEvents((0 until 3).map { event(it).toString() })
+                assertEquals(EventUploadWorker.Outcome.DONE,
+                    EventUploadWorker.uploadPending(db, "adn_test_worker", server.baseUrl, context = ctx))
+                assertEquals("the run sent nothing — it deferred to the stale claim", 1, ingests.get())
+                assertEquals(0, db.count())
+            } finally {
+                db.close()
+            }
+        }
+        val next = EventUploadCoordinator.tryAcquire()
+        assertNotNull("the worker did not release its own claim", next)
+        EventUploadCoordinator.release(stale!!)
+        assertTrue("the stale owner's late release freed the claim another owner holds", EventUploadCoordinator.isHeld())
+        assertNull(EventUploadCoordinator.tryAcquire())
+        EventUploadCoordinator.release(next!!)
+        assertFalse(EventUploadCoordinator.isHeld())
     }
 
     /**

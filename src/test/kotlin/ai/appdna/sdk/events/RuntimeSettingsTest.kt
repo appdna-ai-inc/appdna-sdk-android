@@ -50,7 +50,7 @@ class RuntimeSettingsTest {
     @After
     fun tearDown() {
         queues.forEach { it.shutdown() }
-        waitFor { EventUploadCoordinator.tryAcquire().also { if (it) EventUploadCoordinator.release() } }
+        waitFor { EventUploadCoordinator.tryAcquire()?.also { EventUploadCoordinator.release(it) } != null }
         Thread.sleep(200)
         DroppedEventsCounter.getAndReset()
         DroppedEventsCounter.increment(savedDropped)

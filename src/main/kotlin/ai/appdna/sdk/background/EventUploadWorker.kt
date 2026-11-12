@@ -98,7 +98,8 @@ internal class EventUploadWorker(
                 return Outcome.DONE
             }
             // Single upload owner — never POST the rows the in-process flush is sending.
-            if (!ai.appdna.sdk.events.EventUploadCoordinator.tryAcquire()) {
+            val claim = ai.appdna.sdk.events.EventUploadCoordinator.tryAcquire()
+            if (claim == null) {
                 Log.debug("Background upload deferred — another upload is active; retrying after backoff")
                 return Outcome.RETRY
             }
@@ -138,7 +139,7 @@ internal class EventUploadWorker(
                 // More than one run's worth: a fresh run takes the rest.
                 return if (eventDatabase.count() > 0) Outcome.RETRY else Outcome.DONE
             } finally {
-                ai.appdna.sdk.events.EventUploadCoordinator.release()
+                ai.appdna.sdk.events.EventUploadCoordinator.release(claim)
             }
         }
 
