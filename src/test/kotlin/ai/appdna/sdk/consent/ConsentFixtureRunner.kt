@@ -71,7 +71,16 @@ internal open class ConsentFixtureRunner(private val ctx: Context) {
         if (failures.isNotEmpty()) throw AssertionError(failures.joinToString("\n"))
     }
 
-    private fun runCase(case: JSONObject) {
+    /** What a case leaves behind for an SDK-target test to assert beyond `expect.requests`. */
+    class Outcome {
+        var recorded: List<Recorded> = emptyList()
+        var modelAnalytics: Boolean? = null
+        var staleArrivals = 0
+    }
+
+    /** Runs one case (built in code by an SDK-target test, or read from a fixture) and returns what it left. */
+    fun runCase(case: JSONObject): Outcome {
+        val outcome = Outcome()
         val setup = case.getJSONObject("setup")
         val epoch = setup.getLong("clock_epoch_ms")
         val script = case.getJSONArray("script")
@@ -88,6 +97,8 @@ internal open class ConsentFixtureRunner(private val ctx: Context) {
             wipeStores()
             seed(setup.toString())
 
+            val spawned = mutableListOf<Thread>()
+            val spawnErrors = Collections.synchronizedList(mutableListOf<Throwable>())
             for (i in 0 until script.length()) {
                 val op = script.getJSONObject(i)
                 when (val kind = op.getString("kind")) {
@@ -97,18 +108,105 @@ internal open class ConsentFixtureRunner(private val ctx: Context) {
                     "reset" -> reset()
                     "shutdown" -> shutdown()
                     "relaunch" -> resetSdk()
-                    "advance_clock_ms" -> advance(scheduler, epoch, op.getLong("ms"))
+                    "advance_clock_ms" -> { advance(scheduler, epoch, op.getLong("ms")); continue }
+                    // ── SDK-target timing ops (built in code by `ConsentSenderTimingTest`, never in a fixture file) ──
+                    "arm_latch" -> { AppDNA.setConsentLatchForTesting(op.getString("point"), op.getLong("hold_ms")); continue }
+                    "await_latch" -> {
+                        assertTrue("the latch never engaged at op $i", AppDNA.awaitConsentLatchEngagedForTesting(settleTimeoutMs))
+                        continue
+                    }
+                    "spawn" -> {
+                        // The ops run in order on another thread, without settling, while this thread goes on.
+                        val ops = op.getJSONArray("ops")
+                        spawned += thread(name = "consent-timing-spawn") {
+                            try {
+                                for (j in 0 until ops.length()) runOffThread(ops.getJSONObject(j))
+                            } catch (t: Throwable) { spawnErrors += t }
+                        }
+                        continue
+                    }
+                    "join" -> {
+                        spawned.forEach { it.join(settleTimeoutMs) }
+                        assertTrue("a spawned thread did not finish at op $i", spawned.none { it.isAlive })
+                        spawnErrors.firstOrNull()?.let { throw AssertionError("spawned: ${it.message}", it) }
+                    }
+                    "settle" -> Unit
+                    "await_recorded" -> {
+                        val n = op.optInt("count", 1)
+                        waitFor("the stub never received $n request(s) at op $i", scheduler) { server.recorded().size >= n }
+                        continue
+                    }
+                    "await_stale" -> {
+                        val n = op.optInt("count", 1)
+                        waitFor("$n stale arrival(s) never reached the fence at op $i", scheduler) {
+                            AppDNA.staleConsentArrivalsForTesting() >= n
+                        }
+                        outcome.staleArrivals = AppDNA.staleConsentArrivalsForTesting()
+                    }
+                    "await_ready" -> {
+                        // The warm-up: the SDK is ready (its bootstrap answered and read), and no request is open.
+                        val ready = java.util.concurrent.CountDownLatch(1)
+                        AppDNA.onReady { ready.countDown() }
+                        waitFor("the SDK never became ready at op $i", scheduler) { ready.count == 0L }
+                        waitFor("the bootstrap was not served at op $i", scheduler) { server.bootstrapsServed() >= 1 && server.openRequests() == 0 }
+                    }
+                    "assert_ack" -> {
+                        val raw = ai.appdna.sdk.storage.LocalStorage(ctx).getString(PrefsConsentSignalPersistence.ACK_KEY) ?: "{}"
+                        val rec = JSONObject(raw)
+                        val want = JSONObject().put("ack", op.get("ack"))
+                        assertEquals("op $i: ack", PrefsConsentSignalPersistence.ackFrom(want), PrefsConsentSignalPersistence.ackFrom(rec))
+                        if (op.has("dropped")) {
+                            val got = rec.optJSONObject("dropped")?.let { PrefsConsentSignalPersistence.tripleFrom(it) }
+                            val exp = op.optJSONObject("dropped")?.let { PrefsConsentSignalPersistence.tripleFrom(it) }
+                            assertEquals("op $i: dropped", exp, got)
+                        }
+                        continue
+                    }
                     else -> throw AssertionError("NO DRIVER for script op '$kind' on android")
                 }
+                // `settle: "pump"`: run what is due now without waiting for the wire, so a request can be held in flight
+                // while the next op runs.
+                if (op.optString("settle") == "pump") { pump(scheduler); continue }
                 // `settle: false`: the next op follows at once, on the same tick (a call made before configure finished).
                 if (op.optBoolean("settle", true)) settle(scheduler)
             }
+            outcome.recorded = server.recorded()
+            outcome.modelAnalytics = server.modelAnalytics()
             assertRequests(case.getJSONObject("expect").getJSONArray("requests"), server.recorded(), epoch)
         } finally {
             resetSdk()
             installClock(null, null)
             unpoint()
             server.close()
+        }
+        return outcome
+    }
+
+    /** One op on a spawned thread: an SDK call, or a wait for the latch. Never settles. */
+    private fun runOffThread(op: JSONObject) {
+        when (val k = op.getString("kind")) {
+            "await_latch" -> assertTrue("spawned: the latch never engaged", AppDNA.awaitConsentLatchEngagedForTesting(settleTimeoutMs))
+            "configure" -> configure(op.optBoolean("require_consent", false))
+            "set_consent" -> setConsent(op.getBoolean("analytics"))
+            "identify" -> identify(op.getString("userId"))
+            "reset" -> reset()
+            "shutdown" -> shutdown()
+            else -> throw AssertionError("spawned: NO DRIVER for '$k' on android")
+        }
+    }
+
+    /** Runs what is due now (the main looper, then the injected scheduler) without waiting for the wire. */
+    private fun pump(scheduler: TestCoroutineScheduler) {
+        shadowOf(Looper.getMainLooper()).idle()
+        scheduler.runCurrent()
+    }
+
+    private fun waitFor(what: String, scheduler: TestCoroutineScheduler, cond: () -> Boolean) {
+        val end = System.nanoTime() + TimeUnit.MILLISECONDS.toNanos(settleTimeoutMs)
+        while (!cond()) {
+            if (System.nanoTime() > end) throw AssertionError(what)
+            pump(scheduler)
+            Thread.sleep(2)
         }
     }
 
@@ -122,7 +220,8 @@ internal open class ConsentFixtureRunner(private val ctx: Context) {
                     if (k == "shutdown") assertTrue("shutdown while unconfigured at op $i", configured)
                     configured = false
                 }
-                "set_consent", "advance_clock_ms" -> Unit
+                "set_consent", "advance_clock_ms", "arm_latch", "await_latch", "spawn", "join", "settle",
+                "await_recorded", "await_stale", "await_ready", "assert_ack" -> Unit
                 else -> assertTrue("SDK call '$k' while unconfigured at op $i", configured)
             }
         }
@@ -205,7 +304,8 @@ internal open class ConsentFixtureRunner(private val ctx: Context) {
         if (o.has("lte")) assertTrue("$what = $v > ${o.getLong("lte")}", v <= o.getLong("lte"))
     }
 
-    data class Recorded(val atMs: Long, val body: String)
+    /** One consent POST: when (injected clock), its body, and its index on its connection (0 = the first). */
+    data class Recorded(val atMs: Long, val body: String, val connectionIndex: Int = 0)
 
     /**
      * Loopback stub. Consent POSTs are recorded and answered from the case's replies; bootstrap gets a valid answer
@@ -228,6 +328,17 @@ internal open class ConsentFixtureRunner(private val ctx: Context) {
 
         fun recorded(): List<Recorded> = synchronized(recorded) { recorded.toList() }
 
+        /**
+         * A one-row model of the server's `sdk_consent_signals`: each 2xx request is applied when it is answered, by
+         * `ts_ms` with `>=` (a later-answered request with an equal `ts_ms` wins), as the server does.
+         */
+        private var modelRow: Pair<Long, Boolean>? = null
+        fun modelAnalytics(): Boolean? = synchronized(recorded) { modelRow?.second }
+        private val bootstraps = java.util.concurrent.atomic.AtomicInteger(0)
+        private val open = java.util.concurrent.atomic.AtomicInteger(0)
+        fun bootstrapsServed() = bootstraps.get()
+        fun openRequests() = open.get()
+
         private fun reply(index: Int): JSONObject? {
             val r = replies ?: return null
             if (r.length() == 0) return null
@@ -237,8 +348,10 @@ internal open class ConsentFixtureRunner(private val ctx: Context) {
         private fun serve(s: Socket) {
             try {
                 val input = BufferedInputStream(s.getInputStream())
+                var onConnection = 0
                 while (!closed) {
                     val line = readLine(input) ?: return
+                    val index = onConnection++
                     if (line.isEmpty()) continue
                     var length = 0
                     while (true) {
@@ -247,6 +360,7 @@ internal open class ConsentFixtureRunner(private val ctx: Context) {
                         val i = h.indexOf(':')
                         if (i > 0 && h.substring(0, i).trim().equals("content-length", true)) length = h.substring(i + 1).trim().toInt()
                     }
+                    open.incrementAndGet()
                     val bytes = ByteArray(length)
                     var read = 0
                     while (read < length) { val n = input.read(bytes, read, length - read); if (n < 0) return; read += n }
@@ -257,14 +371,26 @@ internal open class ConsentFixtureRunner(private val ctx: Context) {
                     val headers = mutableMapOf<String, String>()
                     if (parts[0] == "POST" && path == "/api/v1/ingest/consent") {
                         val idx: Int
-                        synchronized(recorded) { idx = recorded.size; recorded += Recorded(clock(), String(bytes, Charsets.UTF_8)) }
+                        val text = String(bytes, Charsets.UTF_8)
+                        synchronized(recorded) { idx = recorded.size; recorded += Recorded(clock(), text, index) }
                         val r = reply(idx)
-                        if (r != null && r.optBoolean("network_failure", false)) return
+                        if (r != null && r.optBoolean("network_failure", false)) { open.decrementAndGet(); return }
                         if (r != null) {
                             status = r.getInt("status")
                             r.optJSONObject("headers")?.let { h -> h.keys().forEach { k -> headers[k] = h.getString(k) } }
+                            // A per-request delay: the request is held for `delay_ms` of real time before it is applied
+                            // and answered.
+                            r.optLong("delay_ms", 0).takeIf { it > 0 }?.let { Thread.sleep(it) }
+                        }
+                        if (status in 200..299) {
+                            val b = JSONObject(text)
+                            synchronized(recorded) {
+                                val row = modelRow
+                                if (row == null || b.getLong("ts_ms") >= row.first) modelRow = b.getLong("ts_ms") to b.getBoolean("analytics")
+                            }
                         }
                     } else if (path.startsWith("/api/v1/sdk/bootstrap")) {
+                        bootstraps.incrementAndGet()
                         status = 200
                         body = JSONObject().put("orgId", "org_consent").put("appId", "app_consent")
                             .put("firestorePath", "orgs/org_consent/apps/app_consent").put("settings", JSONObject()).toString()
@@ -278,6 +404,7 @@ internal open class ConsentFixtureRunner(private val ctx: Context) {
                     )
                     out.write(payload)
                     out.flush()
+                    open.decrementAndGet()
                 }
             } catch (_: Exception) {
             } finally {

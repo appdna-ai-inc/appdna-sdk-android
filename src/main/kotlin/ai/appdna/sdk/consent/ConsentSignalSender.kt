@@ -87,8 +87,10 @@ internal class ConsentSignalSender(
             if (event is Event.SetConsent || event is Event.UserChanged) handoff(event)
             return
         }
-        if (event is Event.Success || event is Event.Transient || event is Event.Drop) ConsentTestLatch.pass("check_act")
         val result = ConsentSyncTable.next(state, event)
+        // The test hold between a completion's check (the table has decided, from the state as it is now) and its
+        // act (the state written, the effects run).
+        if (event is Event.Success || event is Event.Transient || event is Event.Drop) ConsentTestLatch.pass("check_act")
         state = result.state
         persistence.save(state)
         for (fx in result.effects) run(fx)
