@@ -75,7 +75,8 @@ internal object WalkMenu {
 }
 
 /** The menu's visible log and the last deep link, fed by the SDK's own observers. */
-internal object WalkLog : ai.appdna.sdk.generated.AppDNALifecycleDelegate, AppDNADeepLinkDelegate {
+internal object WalkLog : ai.appdna.sdk.generated.AppDNALifecycleDelegate, AppDNADeepLinkDelegate,
+    ai.appdna.sdk.onboarding.AppDNAOnboardingDelegate {
     val lines = mutableStateListOf<String>()
     val deepLink = mutableStateOf<String?>(null)
     private val main = Handler(Looper.getMainLooper())
@@ -85,6 +86,7 @@ internal object WalkLog : ai.appdna.sdk.generated.AppDNALifecycleDelegate, AppDN
     fun install() {
         AppDNA.setLifecycleDelegate(this)
         AppDNA.deepLinks.setDelegate(this)
+        AppDNA.onboarding.setDelegate(this)
     }
 
     fun note(line: String) {
@@ -98,6 +100,29 @@ internal object WalkLog : ai.appdna.sdk.generated.AppDNALifecycleDelegate, AppDN
     override fun onEventTracked(name: String, properties: Map<String, Any?>) {
         val detail = keys.mapNotNull { k -> properties[k]?.let { "$k=$it" } }.joinToString(" ")
         note(if (detail.isEmpty()) name else "$name $detail")
+    }
+
+    // The onboarding callbacks a walk has to READ, not infer: the step on screen (a timed advance is clocked
+    // from the log), what an element handed the host (a toggle's `toggle_dark_mode` with "true"/"false"), and
+    // the responses a completed flow delivered. Observe-only: every hook returns the SDK's default.
+    override fun onOnboardingStepChanged(flowId: String, stepId: String, stepIndex: Int, totalSteps: Int) {
+        note("step ${stepIndex + 1}/$totalSteps $stepId")
+    }
+
+    override fun onOnboardingCompleted(flowId: String, responses: Map<String, Any>) {
+        note("onboarding completed responses=" + JSONObject(responses.toSortedMap()).toString())
+    }
+
+    override suspend fun onElementInteraction(
+        flowId: String,
+        stepId: String,
+        blockId: String,
+        action: String,
+        value: String?,
+        inputValues: Map<String, Any>,
+    ): ai.appdna.sdk.onboarding.ElementInteractionResult? {
+        note("element blockId=$blockId action=$action value=${value ?: "null"}")
+        return null
     }
 
     override fun onDeepLinkReceived(url: String, params: Map<String, String>) {
