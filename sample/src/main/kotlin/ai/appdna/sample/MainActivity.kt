@@ -40,6 +40,7 @@ class MainActivity : ComponentActivity() {
         // Deep-link and push-tap handoff on cold start. The intent that launched the activity may carry
         // a deep-link URI from the OS launcher, or the data of a tapped background push.
         intent?.let { handleDeepLinkIntent(it) }
+        intent?.let { consentWalkIfAsked(it) }
 
         setContent {
             MaterialTheme {
@@ -97,6 +98,27 @@ class MainActivity : ComponentActivity() {
         setIntent(intent)
         // Warm-start deep links and push taps arrive here; forward to the SDK.
         handleDeepLinkIntent(intent)
+        consentWalkIfAsked(intent)
+    }
+
+    /*
+     * A CONSENT WALK: identify and set the analytics decision the way a host app calls them, from the
+     * launching intent, then log the identity the SDK holds so a walk can find the consent signal it sent.
+     *
+     *     adb shell am start -n ai.appdna.sample/.MainActivity --es appdnaIdentify user-1 --es appdnaConsent false
+     *
+     * Either extra may be given alone. Nothing happens without them.
+     */
+    private fun consentWalkIfAsked(intent: Intent) {
+        val user = intent.getStringExtra("appdnaIdentify")
+        val consent = intent.getStringExtra("appdnaConsent")
+        if (user == null && consent == null) return
+        user?.let { AppDNA.identify(it) }
+        consent?.let { AppDNA.setConsent(it == "true") }
+        val d = AppDNA.diagnose()
+        val anon = Regex("anon_id: (\\S+)").find(d)?.groupValues?.get(1) ?: "unknown"
+        val uid = Regex("user_id: (\\S+)").find(d)?.groupValues?.get(1) ?: "unknown"
+        android.util.Log.i("AppDNA-E2E", "AppDNA-E2E consent-walk anon_id=$anon user_id=$uid consent=${consent ?: "(unchanged)"}")
     }
 
     private fun handleDeepLinkIntent(intent: Intent) {
