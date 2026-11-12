@@ -1006,8 +1006,14 @@ fun PaywallScreen(
                 .fillMaxSize()
                 // Split: the trailing pane starts below the close control, which sits over its top
                 // corner, so the first plan's badge is never under the ✕ (the pitch pane's header
-                // already reserves it). The control's footprint is the same figure the header uses.
-                .padding(top = if (paywallSplit) PaywallHeaderInset.resolve(config.dismiss).dp else 0.dp)
+                // already reserves it). The control sits below the status bar, and draws its 48dp
+                // minimum touch target, so both are counted, plus an 8dp gap.
+                .padding(
+                    top = if (paywallSplit && PaywallHeaderInset.closeControlBottom(config.dismiss) > 0) {
+                        WindowInsets.statusBars.asPaddingValues().calculateTopPadding() +
+                            PaywallHeaderInset.closeControlBottom(config.dismiss).dp + 8.dp
+                    } else 0.dp,
+                )
                 // The viewport the pinned-zone cap is measured against. It has to be
                 // measured in THIS scope: the state the cap reads lives here, and the root Box
                 // further down the file is a different composable that cannot see it.

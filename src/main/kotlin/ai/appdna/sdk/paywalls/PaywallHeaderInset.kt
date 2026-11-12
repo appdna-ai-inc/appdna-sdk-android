@@ -27,6 +27,26 @@ object PaywallHeaderInset {
         // Mirrors the control itself: `.padding(16.dp)` + `.size((glyphSize * 2).dp)`.
         return 16 + glyphSize * 2
     }
+
+    /**
+     * How far below the top of the safe area the close control ENDS, in dp, or 0 when it does not
+     * sit in a top corner. A split paywall's trailing pane starts below this, so the first plan is
+     * never under the ✕.
+     *
+     * Not [resolve]'s figure. The control is laid out as a `2 × glyph` box 16dp in from the corner,
+     * but it is a Material `IconButton`, which grows to its 48dp minimum touch target CENTRED on that
+     * box, and its circle is drawn at that size. For the default 16dp glyph the box ends at 48 and the
+     * circle at 16 + 16 + 24 = 56; the pane started at 48 (below the status bar it started at 0), so
+     * the circle covered the first plan card's corner.
+     */
+    fun closeControlBottom(dismiss: PaywallDismiss?): Double {
+        if (resolve(dismiss) == 0.0) return 0.0
+        val box = (dismiss?.size ?: 16f).toDouble() * 2
+        return 16 + box / 2 + maxOf(MIN_TOUCH_TARGET_DP, box) / 2
+    }
+
+    /** Material's minimum interactive size, which `IconButton` applies to the close control. */
+    private const val MIN_TOUCH_TARGET_DP = 48.0
 }
 
 /**
