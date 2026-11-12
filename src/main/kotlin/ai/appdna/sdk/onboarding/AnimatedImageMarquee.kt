@@ -26,6 +26,7 @@ import androidx.compose.ui.graphics.painter.Painter
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.role
@@ -99,8 +100,14 @@ internal fun AnimatedImageBlock(block: ContentBlock) {
     // Nothing to scroll draws nothing — as the image block does with no URL.
     val url = block.image_url?.takeIf { it.isNotBlank() } ?: return
     val context = LocalContext.current
+    /*
+     * 🔴 `Size.ORIGINAL`, or the image never loads. A Coil request with no size takes it from where
+     * its painter is DRAWN, and this painter is only drawn once it has loaded (the strip needs its
+     * intrinsic size to lay out the copies) — so it waited for a size that never came, and the block
+     * was blank on every device. The strip sizes the copies itself, from the natural size.
+     */
     val painter = rememberAsyncImagePainter(
-        model = ImageRequest.Builder(context).data(url).build(),
+        model = ImageRequest.Builder(context).data(url).size(coil.size.Size.ORIGINAL).build(),
         imageLoader = ai.appdna.sdk.core.AppDNAImageLoader.singleton(context),
     )
     val loaded = painter.state is AsyncImagePainter.State.Success
@@ -158,6 +165,7 @@ internal fun AnimatedImageStrip(
         val tileModifier = if (vertical) Modifier.size(maxWidth, tile.toFloat().dp) else Modifier.size(tile.toFloat().dp, maxHeight)
         Box(
             Modifier
+                .testTag("animated_image_strip")
                 .wrapContentSize(align = Alignment.TopStart, unbounded = true)
                 .graphicsLayer { if (vertical) translationY = offPx else translationX = offPx },
         ) {
