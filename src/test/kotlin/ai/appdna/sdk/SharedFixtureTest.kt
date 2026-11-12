@@ -310,6 +310,7 @@ class SharedFixtureTest(
             "resolve_select_answer_feedback" -> runSelectAnswerFeedback(action, spy)
             "resolve_select_advance_confirm" -> runSelectAdvanceConfirm(action, spy)
             "resolve_cta_dependencies" -> runCtaDependencies(action, spy)
+            "resolve_block_bleed" -> runBlockBleed(action, spy)
             "resolve_store_price" -> runStorePrice(action, spy)
             "resolve_plan_savings" -> runPlanSavings(action, spy)
             "parse_blocks_leniently" -> runLenientBlocks(action, spy)
@@ -3127,6 +3128,35 @@ class SharedFixtureTest(
             ai.appdna.sdk.onboarding.SelectAnswerFeedback.message(block, selection)?.let {
                 mapOf("verdict" to if (it.isCorrect) "correct" else "wrong", "text" to it.text, "color" to it.colorHex)
             }
+        }
+    }
+
+    /**
+     * How far a block's background reaches on each side, through the REAL block parse (Firestore
+     * hands an integral number back as a Long, a string stays a string) and the real resolver.
+     */
+    private fun runBlockBleed(action: JSONObject, spy: Spy) {
+        val cases = action.optJSONArray("cases") ?: unsupported("resolve_block_bleed without cases")
+        spy.state["results"] = (0 until cases.length()).map { i ->
+            val c = cases.getJSONObject(i)
+            val step = ai.appdna.sdk.onboarding.OnboardingConfigParser.parseStepForTest(
+                mapOf(
+                    "id" to "fixture_step", "type" to "custom",
+                    "config" to mapOf(
+                        "content_blocks" to listOf(
+                            mapOf("id" to "bleed", "type" to "multi_buttons", "field_config" to jsonToMap(c.getJSONObject("field_config"))),
+                        ),
+                    ),
+                ),
+            ) ?: error("a step did not parse")
+            val block = step.config?.content_blocks?.firstOrNull() ?: error("the block did not parse")
+            val r = ai.appdna.sdk.onboarding.BlockFullBleed.resolve(
+                block.field_config,
+                stepInset = c.getDouble("step_inset"),
+                edgeTop = c.getDouble("edge_top"),
+                edgeBottom = c.getDouble("edge_bottom"),
+            )
+            listOf(r.top, r.right, r.bottom, r.left)
         }
     }
 

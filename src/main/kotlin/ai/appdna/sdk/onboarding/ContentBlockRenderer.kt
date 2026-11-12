@@ -122,6 +122,9 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.layout
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.layout.positionInRoot
+import androidx.compose.ui.layout.findRootCoordinates
 import androidx.compose.runtime.DisposableEffect
 import ai.appdna.sdk.AppDNA
 import androidx.compose.animation.AnimatedVisibility
@@ -2165,13 +2168,42 @@ internal fun RenderBlock(
      * composable gives the ROWS the inset back, which is what leaves the buttons where they were
      * and moves only the background.
      */
-    val blockBleeds = BlockFullBleed.isOn(block.field_config?.get("background_full_bleed"))
-    val blockBleedInset = BlockFullBleed
-        .stepHorizontalInset(ai.appdna.sdk.core.surfaceColumnWidthDp().toDouble())
-        .dp
+    /*
+     * Each side reaches out on its own (`background_bleed_top/_bottom/_left/_right`, or the older
+     * two-sided `background_full_bleed`): "edge" left/right cancels the step inset; "edge" top/bottom
+     * is the measured distance from this block's SLOT to the window edge, read by
+     * `onGloballyPositioned` OUTSIDE the bleed so the measurement cannot feed on its own result.
+     */
+    val needsEdge = BlockFullBleed.needsMeasuredEdge(block.field_config)
+    var edgeDistances by remember(block.id) { mutableStateOf(Pair(0.0, 0.0)) }
+    val density = androidx.compose.ui.platform.LocalDensity.current
+    val bleed = BlockFullBleed.resolve(
+        block.field_config,
+        stepInset = BlockFullBleed.stepHorizontalInset(ai.appdna.sdk.core.surfaceColumnWidthDp().toDouble()),
+        edgeTop = edgeDistances.first,
+        edgeBottom = edgeDistances.second,
+    )
+    val blockBleeds = !bleed.isZero
     val contentModifier = with(StyleEngine) {
         Modifier
-            .then(if (blockBleeds) Modifier.fullBleedHorizontal(blockBleedInset) else Modifier)
+            .then(
+                if (needsEdge) {
+                    Modifier.onGloballyPositioned { coords ->
+                        val root = coords.findRootCoordinates()
+                        val top = coords.positionInRoot().y
+                        val bottom = root.size.height - (top + coords.size.height)
+                        val next = with(density) {
+                            Pair(maxOf(0f, top).toDp().value.toDouble(), maxOf(0f, bottom).toDp().value.toDouble())
+                        }
+                        if (kotlin.math.abs(next.first - edgeDistances.first) >= 0.5 ||
+                            kotlin.math.abs(next.second - edgeDistances.second) >= 0.5
+                        ) {
+                            edgeDistances = next
+                        }
+                    }
+                } else Modifier,
+            )
+            .then(if (blockBleeds) Modifier.fullBleed(bleed) else Modifier)
             // The container style is the OUTER layer and `block_style` the inner one, as the console preview
             // and iOS draw them: a block carrying both shows its `block_style` fill over the container fill.
             // It was applied last (Compose: the innermost), so the container fill covered `block_style`.
@@ -2202,16 +2234,27 @@ internal fun RenderBlock(
                 contentAlignment = blockAlignment,
             ) {
                 Box(modifier = contentModifier) {
-                    RenderBlockContent(block, onAction, toggleValues, inputValues, loc, currentStepIndex, totalSteps, onInteract, stepBlocks)
+                    androidx.compose.runtime.CompositionLocalProvider(LocalBlockBleed provides bleed) {
+                        RenderBlockContent(block, onAction, toggleValues, inputValues, loc, currentStepIndex, totalSteps, onInteract, stepBlocks)
+                    }
                 }
             }
         } else {
             Box(modifier = contentModifier) {
-                RenderBlockContent(block, onAction, toggleValues, inputValues, loc, currentStepIndex, totalSteps, onInteract, stepBlocks)
+                androidx.compose.runtime.CompositionLocalProvider(LocalBlockBleed provides bleed) {
+                    RenderBlockContent(block, onAction, toggleValues, inputValues, loc, currentStepIndex, totalSteps, onInteract, stepBlocks)
+                }
             }
         }
     }
 }
+
+/**
+ * How far the block being rendered reaches its background out on each side ([BlockFullBleed.resolve]).
+ * The block's own content reads it to give that space back as padding, so only the background moves.
+ * Every [RenderBlock] provides its own, so a nested child never inherits its parent's bleed.
+ */
+internal val LocalBlockBleed = androidx.compose.runtime.compositionLocalOf { BlockFullBleed.Insets.ZERO }
 
 @Composable
 private fun RenderBlockContent(
@@ -7886,6 +7929,32 @@ internal fun Modifier.fullBleedHorizontal(inset: Dp): Modifier = this.layout { m
 }
 
 /**
+ * The four-sided form of [fullBleedHorizontal]: the box paints `insets` past its slot on each side
+ * while still OCCUPYING only its slot, so the column around it does not move. Measured against
+ * widened constraints and placed back by the top-left inset — Compose rejects a negative padding at
+ * construction. An unbounded height (a block in a scrolling column) stays unbounded.
+ */
+internal fun Modifier.fullBleed(insets: BlockFullBleed.Insets): Modifier = this.layout { measurable, constraints ->
+    val l = insets.left.dp.roundToPx()
+    val r = insets.right.dp.roundToPx()
+    val t = insets.top.dp.roundToPx()
+    val b = insets.bottom.dp.roundToPx()
+    val extraW = l + r
+    val extraH = t + b
+    val widened = constraints.copy(
+        minWidth = (constraints.minWidth + extraW).coerceAtMost(constraints.maxWidth + extraW),
+        maxWidth = constraints.maxWidth + extraW,
+        minHeight = if (constraints.hasBoundedHeight) (constraints.minHeight + extraH).coerceAtMost(constraints.maxHeight + extraH) else constraints.minHeight,
+        maxHeight = if (constraints.hasBoundedHeight) constraints.maxHeight + extraH else constraints.maxHeight,
+    )
+    val placeable = measurable.measure(widened)
+    // The SLOT's size: the original width, and the measured height less what was added on top and
+    // bottom (the content gave it back as padding, so this is the height it would have had).
+    val width = if (extraW == 0) placeable.width else constraints.maxWidth
+    layout(width, (placeable.height - extraH).coerceAtLeast(0)) { placeable.place(-l, -t) }
+}
+
+/**
  * Whether a button should stretch to the width it is offered.
  *
  * A button hardcoded `fillMaxWidth()` on Android, `.frame(maxWidth: .infinity)` on iOS and
@@ -7994,15 +8063,14 @@ private fun MultiButtonsBlock(
      * rejects) and the rows get the inset back, leaving the buttons exactly where they were and
      * moving only the background behind them. The inset is shared with iOS in [BlockFullBleed].
      */
-    // The WRAPPER widens now (it owns the background); this keeps only the row inset, which
-    // is what puts the buttons back where they were.
-    val bleeds = BlockFullBleed.isOn(block.field_config?.get("background_full_bleed"))
-    val inset = BlockFullBleed
-        .stepHorizontalInset(ai.appdna.sdk.core.surfaceColumnWidthDp().toDouble())
-        .dp
+    // The WRAPPER bleeds (it owns the background, see RenderBlock); this gives every side it
+    // reached out by back to the buttons, which is what leaves them where they were.
+    val bleed = LocalBlockBleed.current
 
     Column(
-        modifier = Modifier.fillMaxWidth(),
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(top = bleed.top.dp, bottom = bleed.bottom.dp),
         verticalArrangement = Arrangement.spacedBy(gap),
     ) {
         // The row split is a pure, tested rule (multiButtonRowPlan), not an inline chunk.
@@ -8016,7 +8084,7 @@ private fun MultiButtonsBlock(
                     .fillMaxWidth()
                     // The inset the column just cancelled, given back to the BUTTONS, so
                     // only the background behind them reaches the edges.
-                    .then(if (bleeds) Modifier.padding(horizontal = inset) else Modifier),
+                    .padding(start = bleed.left.dp, end = bleed.right.dp),
                 horizontalArrangement = Arrangement.spacedBy(gap),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
