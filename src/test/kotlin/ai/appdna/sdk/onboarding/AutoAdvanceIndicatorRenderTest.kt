@@ -2,6 +2,10 @@ package ai.appdna.sdk.onboarding
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.material3.Text
+import androidx.compose.ui.platform.testTag
 import androidx.compose.foundation.layout.size
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.ui.Modifier
@@ -21,7 +25,7 @@ import org.robolectric.annotation.Config
 import org.robolectric.annotation.GraphicsMode
 
 /**
- * #1432 — the countdown on a self-advancing step, driven by the real [AutoAdvanceIndicatorOverlay] on
+ * The countdown on a self-advancing step, driven by the real [AutoAdvanceIndicatorOverlay] on
  * the Compose frame clock: the label ticks 3 → 2 → 1 and the bar shortens as the step's 3 s run out.
  *
  * THE CONTROL: the same step without `show: true` draws no indicator at all — the default every
@@ -40,11 +44,18 @@ class AutoAdvanceIndicatorRenderTest {
             ?: error("the step did not parse")
     }
 
+    /** The step host's own arrangement: the TOP placement is a row above the content, BOTTOM is over it. */
     private fun show(s: OnboardingStep) {
         compose.mainClock.autoAdvance = false
         compose.setContent {
             MaterialTheme {
-                Box(Modifier.size(400.dp, 800.dp).background(Color.White)) { AutoAdvanceIndicatorOverlay(step = s) }
+                Column(Modifier.size(400.dp, 800.dp).background(Color.White)) {
+                    AutoAdvanceIndicatorOverlay(step = s, placement = "top")
+                    Box(Modifier.weight(1f).fillMaxWidth()) {
+                        Text("Step heading", modifier = Modifier.testTag("heading"))
+                        AutoAdvanceIndicatorOverlay(step = s, placement = "bottom")
+                    }
+                }
             }
         }
         compose.mainClock.advanceTimeByFrame()
@@ -98,5 +109,25 @@ class AutoAdvanceIndicatorRenderTest {
         // At the top of the 800dp surface, not the bottom.
         val top = compose.onNodeWithTag("auto_advance_indicator").getBoundsInRoot().top.value
         assertTrue("a top indicator drew at $top", top < 100f)
+    }
+
+    /**
+     * A countdown at the TOP takes its own space: the step's first block starts BELOW it. (On iOS it was
+     * painted over the heading.) The control is the bottom placement, which leaves the heading at the top.
+     */
+    @Test
+    fun aTopCountdownSitsAboveTheContentNotOverIt() {
+        show(step(mapOf("show" to true, "style" to "text", "text" to "Next in {seconds}s", "position" to "top")))
+        compose.mainClock.advanceTimeBy(100)
+        val indicator = compose.onNodeWithTag("auto_advance_indicator").getBoundsInRoot()
+        val heading = compose.onNodeWithTag("heading").getBoundsInRoot()
+        assertTrue("the heading (${heading.top}) starts inside the countdown (${indicator.bottom})", heading.top.value >= indicator.bottom.value - 0.5f)
+    }
+
+    @Test
+    fun controlABottomCountdownLeavesTheContentWhereItWas() {
+        show(step(mapOf("show" to true, "style" to "text")))
+        compose.mainClock.advanceTimeBy(100)
+        assertEquals(0f, compose.onNodeWithTag("heading").getBoundsInRoot().top.value, 0.5f)
     }
 }

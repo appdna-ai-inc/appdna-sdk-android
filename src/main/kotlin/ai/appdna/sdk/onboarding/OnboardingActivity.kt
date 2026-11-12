@@ -1987,6 +1987,12 @@ internal fun OnboardingFlowHost(
                 val stepWiring = rememberStepHostDataWiring(
                     hostDataAccess, stepIdx, step.id, elementInteractionCall, hasInteractionHandler,
                 )
+                // A countdown authored at the TOP takes its own row above the content, so it never
+                // prints over the step's first block; one at the BOTTOM is drawn over the content.
+                // The step's background is painted behind this whole column by the host.
+                androidx.compose.foundation.layout.Column(Modifier.fillMaxSize()) {
+                AutoAdvanceIndicatorOverlay(step = step, placement = "top")
+                Box(Modifier.weight(1f).fillMaxWidth()) {
                 androidx.compose.runtime.CompositionLocalProvider(LocalStepHostDataWiring provides stepWiring) {
                 OnboardingStepView(
                     step = step,
@@ -2219,9 +2225,9 @@ internal fun OnboardingFlowHost(
                     totalSteps = flow.steps.size,
                 )
                 } // LocalStepHostDataWiring
-                // #1432 — the countdown the author turned on, drawn over THIS step while it waits to
-                // advance by itself. Its clock starts when the step composes, as the timer does.
-                AutoAdvanceIndicatorOverlay(step = step)
+                AutoAdvanceIndicatorOverlay(step = step, placement = "bottom")
+                }
+                }
                 }
             }
         }
