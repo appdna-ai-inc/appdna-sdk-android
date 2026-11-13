@@ -4479,6 +4479,10 @@ class SharedFixtureTest(
             // delivery_id, fires onPushReceived, NEVER posts a notification.
             "handleMessageData" -> {
                 installPush(p, spy)
+                // The host's display opt-in (false unless the fixture asks; it is stored, so set every time).
+                AppDNA.push.setSdkDisplaysForwardedMessages(
+                    setup.optBoolean("sdk_displays_forwarded_messages", false),
+                )
                 spy.state["returned"] = AppDNA.push.handleMessageData(data)
                 idle()
                 spy.state["notification_posted"] = notificationPosted()

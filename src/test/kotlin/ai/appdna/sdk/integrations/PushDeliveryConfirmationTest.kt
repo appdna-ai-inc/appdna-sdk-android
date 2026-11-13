@@ -53,6 +53,8 @@ class PushDeliveryConfirmationTest {
 
     @After
     fun tearDown() {
+        PushDisplayProbe.setSdkDisplaysForwardedMessages(ctx, false)
+        PushDisplayProbe.resetForTesting()
         PushDisplayProbe.resolvedServiceOverride = null
         h.close()
     }
@@ -78,6 +80,28 @@ class PushDeliveryConfirmationTest {
         assertNull(PushDisplayProbe.pushDisplay(ctx))
         PushDisplayProbe.resolvedServiceOverride = { "com.example.host.Missing" }
         assertNull(PushDisplayProbe.pushDisplay(ctx))
+    }
+
+    /**
+     * The opt-in for an app with its own messaging service that forwards every message: the registration reports
+     * `sdk`, it is stored (a process FCM starts later sees it), and turning it off reports nothing again.
+     * Red control: without the opt-in, the same host-service resolution reports nothing.
+     */
+    @Test
+    fun `a host service with the forwarded-display opt-in reports push_display sdk, and off reports nothing`() {
+        PushDisplayProbe.resolvedServiceOverride = { com.google.firebase.messaging.FirebaseMessagingService::class.java.name }
+        assertNull("control: no opt-in", PushDisplayProbe.pushDisplay(ctx))
+        ai.appdna.sdk.AppDNA.push.contextOverride = ctx
+        try {
+            ai.appdna.sdk.AppDNA.push.setSdkDisplaysForwardedMessages(true)
+            assertEquals("sdk", PushDisplayProbe.pushDisplay(ctx))
+            PushDisplayProbe.resetForTesting() // a new process: only the stored value
+            assertEquals("sdk", PushDisplayProbe.pushDisplay(ctx))
+            ai.appdna.sdk.AppDNA.push.setSdkDisplaysForwardedMessages(false)
+            assertNull(PushDisplayProbe.pushDisplay(ctx))
+        } finally {
+            ai.appdna.sdk.AppDNA.push.contextOverride = null
+        }
     }
 
     @Test

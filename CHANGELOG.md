@@ -8,6 +8,12 @@ the project uses [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- **An app with its own Firebase messaging service can let the SDK display what it forwards.**
+  `AppDNA.push.setSdkDisplaysForwardedMessages(true)` makes the token registration report `push_display: "sdk"`, so
+  AppDNA sends the device data-only messages that reach the app's service in the background too, and
+  `handleMessage` / `handleMessageData` then display each forwarded AppDNA message and confirm its delivery. Stored
+  on the device; `false` (the default) keeps notification messages FCM displays.
+
 - **Push deliveries are confirmed by the device, also in the background.** The token registration reports
   `push_display: "sdk"` when the SDK's own `AppDNAMessagingService` (or a subclass) receives FCM messages in the app.
   AppDNA then sends that device data-only messages, which reach the service in the foreground and the background, so

@@ -328,7 +328,38 @@ internal object PushDisplayProbe {
     /** Test seam: replaces the resolution (production: the package manager). */
     @Volatile internal var resolvedServiceOverride: (() -> String?)? = null
 
-    fun pushDisplay(context: Context): String? = if (sdkServiceReceivesMessages(context)) SDK else null
+    fun pushDisplay(context: Context): String? =
+        if (sdkServiceReceivesMessages(context) || sdkDisplaysForwardedMessages(context)) SDK else null
+
+    private const val PREFS = "ai.appdna.sdk.push"
+    private const val KEY_FORWARDED_DISPLAY = "sdk_displays_forwarded_messages"
+
+    /** The host's opt-in as set in this process (wins over the stored value; null = not set in this process). */
+    @Volatile private var forwardedDisplay: Boolean? = null
+
+    /**
+     * The host's opt-in (`AppDNA.push.setSdkDisplaysForwardedMessages`): it runs its own messaging service and forwards
+     * every AppDNA message to the SDK, which displays it. Stored, so a process FCM starts in the background (before the
+     * host's code runs again) and the next token registration both see it.
+     */
+    fun sdkDisplaysForwardedMessages(context: Context?): Boolean {
+        forwardedDisplay?.let { return it }
+        return try {
+            context?.getSharedPreferences(PREFS, Context.MODE_PRIVATE)?.getBoolean(KEY_FORWARDED_DISPLAY, false) ?: false
+        } catch (_: Throwable) {
+            false
+        }
+    }
+
+    fun setSdkDisplaysForwardedMessages(context: Context?, enabled: Boolean) {
+        forwardedDisplay = enabled
+        try {
+            context?.getSharedPreferences(PREFS, Context.MODE_PRIVATE)?.edit()?.putBoolean(KEY_FORWARDED_DISPLAY, enabled)?.apply()
+        } catch (_: Throwable) { /* best-effort; the in-process value still applies */ }
+    }
+
+    /** Test seam: forget the in-process value (the stored one is cleared with the test's prefs). */
+    internal fun resetForTesting() { forwardedDisplay = null }
 
     fun sdkServiceReceivesMessages(context: Context): Boolean {
         val name = resolvedServiceOverride?.invoke() ?: resolvedServiceName(context) ?: return false

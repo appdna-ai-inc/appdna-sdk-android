@@ -275,11 +275,42 @@ class PushModule internal constructor() {
 
     /**
      * Like [handleMessage] for a host that owns DISPLAY too: tracks `push_delivered` (with
-     * `delivery_id`) and fires `onPushReceived`, and NEVER posts a notification. Returns `false` and
+     * `delivery_id`) and fires `onPushReceived`, and posts no notification. Returns `false` and
      * does nothing unless the data carries the AppDNA marker.
+     *
+     * With [setSdkDisplaysForwardedMessages] on, the SDK owns display instead: an AppDNA message with a title or body is
+     * also posted, once, as the SDK's own service would.
      */
-    fun handleMessageData(data: Map<String, String>): Boolean =
-        receive(data, null, null) != ReceiveOutcome.IGNORED
+    fun handleMessageData(data: Map<String, String>): Boolean {
+        val outcome = receive(data, null, null)
+        if (outcome == ReceiveOutcome.HANDLED) {
+            val ctx = context
+            if (ctx != null && ai.appdna.sdk.integrations.PushDisplayProbe.sdkDisplaysForwardedMessages(ctx)) {
+                try {
+                    AppDNANotificationPoster.post(ctx, data, null, null)
+                } catch (e: Throwable) {
+                    Log.warning("PushModule.handleMessageData: display failed: ${e.message}")
+                }
+            }
+        }
+        return outcome != ReceiveOutcome.IGNORED
+    }
+
+    /**
+     * For an app that runs its OWN `FirebaseMessagingService` and forwards every AppDNA message to the SDK: `true` lets
+     * AppDNA send this device data-only messages, which reach your service in the foreground AND the background, so the
+     * device can confirm each delivery. The SDK then displays every AppDNA message you forward — through
+     * [handleMessage] or [handleMessageData] — so do not display AppDNA messages yourself.
+     *
+     * Only turn it on when your service forwards EVERY message, including while the app is in the background: a
+     * data-only message that is not forwarded is never shown. Stored on the device; the push token is registered again
+     * so the server learns it. `false` (the default) keeps notification messages that FCM displays itself. Has no effect
+     * when the SDK's own messaging service receives the messages (it always displays them).
+     */
+    fun setSdkDisplaysForwardedMessages(enabled: Boolean) {
+        ai.appdna.sdk.integrations.PushDisplayProbe.setSdkDisplaysForwardedMessages(context, enabled)
+        manager?.reregister()
+    }
 
     /**
      * The tap half of `AppDNA.handlePushTap(intent)` for a host that owns display: tracks
