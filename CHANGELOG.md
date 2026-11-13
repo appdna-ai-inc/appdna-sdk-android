@@ -51,7 +51,8 @@ the project uses [Semantic Versioning](https://semver.org/).
   so an outage behind a tunnel or proxy that answered 401 lost every event queued during it. Now a batch is dropped,
   and counted, only on a 400, 413 or 422 that carries the AppDNA API's JSON error body. A 401 or 403 keeps the events
   and pauses uploads until the next foreground or `AppDNA.flush()`; a 404, 409, or an answer that is not the API's own
-  (an HTML page from a tunnel, captive portal, proxy or load balancer, whatever its status) keeps them and retries.
+  (an HTML page from a tunnel, captive portal, proxy or load balancer, whatever its status) keeps them and retries. The consent signal follows the same rule: a 401 / 403 / 404 or a
+  proxy's page is retried instead of dropping the signal until the next launch.
 
 - **A journey's in-app message delivered during a background start is shown when the user opens the app.** When the process was running with no activity (started by an FCM data message or a background job), the SDK tried to show a message a journey sent for about 10 seconds, then stopped. The message stayed unshown until the app was next launched from cold. It is now shown the next time an activity resumes, unless it has expired, and it is still shown only once.
 

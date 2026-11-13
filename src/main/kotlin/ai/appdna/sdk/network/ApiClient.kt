@@ -493,8 +493,10 @@ internal class ApiClient(
     /**
      * the consent signal (`POST /api/v1/ingest/consent`), ONE network attempt. The sender owns the
      * retry policy (the consent state table), so this uses [singleAttemptClient]: OkHttp's silent re-send on a failed
-     * pooled connection would deliver a body behind the table's back. Classified by [dispositionFor], the same table
-     * the event upload uses (`permanent_4xx_dropped`). Must be called off the main thread.
+     * pooled connection would deliver a body behind the table's back. Classified by [eventUploadDispositionFor], the
+     * table the event upload uses (`permanent_4xx_dropped`): the signal is dropped only when the consent route refuses
+     * its content (400 / 413 / 422 in the route's error shape); a 401 / 403 / 404 or a page from a tunnel or proxy is
+     * transient, so the signal is retried rather than lost. Must be called off the main thread.
      */
     fun postConsentOnce(path: String, body: String): ConsentPostOutcome = try {
         val request = Request.Builder()
@@ -505,10 +507,11 @@ internal class ApiClient(
             .build()
         singleAttemptClient.newCall(request).execute().use { response ->
             val code = response.code
-            when (dispositionFor(code)) {
+            val errorBody = if (code in 200..299) null else readErrorBody(response)
+            when (eventUploadDispositionFor(code, errorBody)) {
                 EventUploadDisposition.SUCCESS -> ConsentPostOutcome.Success
                 EventUploadDisposition.DROP_PERMANENT -> {
-                    Log.warning("Consent signal rejected (HTTP $code): dropped until the next launch.")
+                    Log.warning("Consent signal refused (HTTP $code): dropped until the next launch.")
                     ConsentPostOutcome.Drop(code)
                 }
                 EventUploadDisposition.RETRY_TRANSIENT ->
@@ -597,18 +600,6 @@ internal class ApiClient(
         @JvmStatic
         fun rejectionPausesUploads(code: Int): Boolean = code == 401 || code == 403
 
-        /**
-         * The STATUS-ONLY table the consent signal ([postConsentOnce]) uses. Event uploads do not: they use
-         * [eventUploadDispositionFor], which also reads the body, because an event batch is data the device holds and
-         * dropping it on a status that is not about it loses that data for good.
-         */
-        @JvmStatic
-        fun dispositionFor(code: Int): EventUploadDisposition = when {
-            code in 200..299 -> EventUploadDisposition.SUCCESS
-            code in TRANSIENT_STATUS_CODES -> EventUploadDisposition.RETRY_TRANSIENT
-            code in 400..499 -> EventUploadDisposition.DROP_PERMANENT
-            else -> EventUploadDisposition.RETRY_TRANSIENT
-        }
 
         /**
          * The statuses with which the ingest route refuses a batch's CONTENT: 400 (the body is not valid JSON, or fails
