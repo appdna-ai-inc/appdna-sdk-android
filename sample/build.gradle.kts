@@ -102,6 +102,15 @@ android {
             (project.findProperty("appdnaPredictiveBack") as String?) ?: "false"
         manifestPlaceholders["appdnaWalkMenu"] =
             (project.findProperty("appdnaWalkMenu") as String?) ?: ""
+        /*
+         * Whether the sample's OWN FirebaseMessagingService (SampleMessagingService, which forwards to AppDNA) is
+         * enabled. `false` leaves the SDK's AppDNAMessagingService as the service FCM delivers to — the delivery
+         * walk's "SDK draws data-only messages" leg:
+         *
+         *     ./gradlew :sample:assembleDebug -PappdnaSampleOwnMessagingService=false
+         */
+        manifestPlaceholders["appdnaSampleOwnMessagingService"] =
+            (project.findProperty("appdnaSampleOwnMessagingService") as String?) ?: "true"
     }
 
     buildTypes {

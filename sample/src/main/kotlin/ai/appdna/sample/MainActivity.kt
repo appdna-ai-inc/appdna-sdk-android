@@ -40,7 +40,7 @@ class MainActivity : ComponentActivity() {
         // Deep-link and push-tap handoff on cold start. The intent that launched the activity may carry
         // a deep-link URI from the OS launcher, or the data of a tapped background push.
         intent?.let { handleDeepLinkIntent(it) }
-        intent?.let { consentWalkIfAsked(it) }
+        intent?.let { consentWalkIfAsked(it); forwardedDisplayIfAsked(it) }
 
         setContent {
             MaterialTheme {
@@ -99,6 +99,19 @@ class MainActivity : ComponentActivity() {
         // Warm-start deep links and push taps arrive here; forward to the SDK.
         handleDeepLinkIntent(intent)
         consentWalkIfAsked(intent)
+        forwardedDisplayIfAsked(intent)
+    }
+
+    /*
+     * A DELIVERY-CONFIRMATION WALK for an app that runs its own messaging service (this sample's
+     * SampleMessagingService, which forwards with AppDNA.push.handleMessage): turn the display opt-in on or off.
+     *
+     *     adb shell am start -n ai.appdna.sample/.MainActivity --es appdnaSdkDisplaysForwarded true
+     */
+    private fun forwardedDisplayIfAsked(intent: Intent) {
+        val value = intent.getStringExtra("appdnaSdkDisplaysForwarded") ?: return
+        AppDNA.push.setSdkDisplaysForwardedMessages(value == "true")
+        android.util.Log.i("AppDNA-E2E", "AppDNA-E2E sdk-displays-forwarded=${value == "true"}")
     }
 
     /*
