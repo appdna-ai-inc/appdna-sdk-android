@@ -15,8 +15,10 @@ import ai.appdna.sdk.core.TriggerOperator
 // place; activation is decoupled.
 
 import android.app.Activity
+import android.app.Application
 import android.content.Context
 import android.net.Uri
+import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
 import ai.appdna.sdk.AppDNA
@@ -52,6 +54,30 @@ import kotlinx.coroutines.launch
  * only exists so a sample app or test can subclass / replace the
  * presentation pipeline.
  */
+/**
+ * Where a config-driven in-app message is drawn. The default draws over the resumed activity; a test passes its own.
+ */
+internal interface MessageSurface {
+    /**
+     * The resumed activity to draw over, or null when there is none — a process started with no activity (an FCM data
+     * message, a WorkManager job, a background fetch).
+     */
+    fun host(): Activity?
+
+    /** Puts the message on screen over [activity]. [onClosed] runs once, when it is really gone. */
+    fun show(
+        messageId: String,
+        activity: Activity,
+        config: MessageConfig,
+        onCTATap: (Activity) -> Unit,
+        onDismiss: () -> Unit,
+        onClosed: () -> Unit,
+    )
+
+    /** Calls [block] each time an activity of the app resumes; returns what stops that. */
+    fun observeActivation(block: () -> Unit): () -> Unit
+}
+
 class MessageManager internal constructor(
     private val context: Context,
     private val configProvider: () -> Map<String, MessageConfig>,
@@ -63,6 +89,7 @@ class MessageManager internal constructor(
     // (AppDNA.configure), never by a host. The class + its public methods stay
     // public for the `AppDNA.inAppMessages` namespace.
     private val experimentManager: ai.appdna.sdk.config.ExperimentManager? = null,
+    surface: MessageSurface? = null,
 ) {
 
     /**
@@ -88,6 +115,23 @@ class MessageManager internal constructor(
     private val suppress = AtomicBoolean(false)
     private val frequencyTracker = MessageFrequencyTracker(context)
     private val mainHandler = Handler(Looper.getMainLooper())
+
+    private val surface: MessageSurface = surface ?: LiveSurface(context)
+
+    /**
+     * Messages triggered with no resumed activity to draw over, in trigger order. A message triggered while the app
+     * has no activity (a background start) is HELD — not drawn, not counted shown, its frequency not used up — and
+     * drawn when an activity next resumes in the same process, if it is still published, inside its date window and
+     * allowed by its frequency. Held once however often it triggers; drawing it takes it off the hold.
+     */
+    private class Held(val messageId: String, val triggerEvent: String)
+    private val held = ArrayList<Held>()
+    private val heldLock = Any()
+
+    private val stopActivation: () -> Unit = this.surface.observeActivation { releaseHeld() }
+
+    /** The ids of the held messages, in trigger order (tests). */
+    internal val heldMessageIds: List<String> get() = synchronized(heldLock) { held.map { it.messageId } }
 
     /**
      * Main-thread scope for awaiting the async wrapper-veto.
@@ -172,7 +216,9 @@ class MessageManager internal constructor(
      * Toggle session-wide suppression. While true, `onEvent` is a no-op.
      */
     fun suppressDisplay(suppress: Boolean) {
-        this.suppress.set(suppress)
+        val was = this.suppress.getAndSet(suppress)
+        // Turning it off draws a held message if an activity is resumed.
+        if (was && !suppress) mainHandler.post { releaseHeld() }
     }
 
     /**
@@ -200,11 +246,51 @@ class MessageManager internal constructor(
         mainHandler.removeCallbacksAndMessages(null)
         isPresenting.set(false)
         suppress.set(false)
+        stopActivation()
+        synchronized(heldLock) { held.clear() }
+    }
+
+    // MARK: - Held messages
+
+    /** No resumed activity: keep the message for the next one. Nothing is recorded — it was not seen. */
+    private fun hold(messageId: String, triggerEvent: String, atFront: Boolean = false) {
+        synchronized(heldLock) {
+            if (held.any { it.messageId == messageId }) {
+                Log.debug("[Messages] $messageId already held — not queued twice")
+                return
+            }
+            if (atFront) held.add(0, Held(messageId, triggerEvent)) else held.add(Held(messageId, triggerEvent))
+        }
+        Log.debug("[Messages] No resumed activity — holding $messageId until an activity resumes")
+    }
+
+    /**
+     * An activity resumed, or a message closed: draw the first held message that may still be shown. One at a time;
+     * the next is drawn when that one closes. Each is re-read from the current config, so a message unpublished, out of
+     * its date window, or used up by its frequency while it waited is dropped. Runs on the main thread.
+     */
+    internal fun releaseHeld() {
+        if (isPresenting.get() || suppress.get() || surface.host() == null) return
+        val active = try { configProvider() } catch (e: Throwable) { return }
+        while (true) {
+            val h = synchronized(heldLock) { if (held.isEmpty()) null else held.removeAt(0) } ?: return
+            val config = active[h.messageId]
+            if (config == null ||
+                !frequencyTracker.canShow(h.messageId, config.trigger_rules.frequency, config.trigger_rules.max_displays) ||
+                !checkDateRange(config)
+            ) {
+                Log.debug("[Messages] Held ${h.messageId} is no longer showable — dropped")
+                continue
+            }
+            Log.debug("[Messages] Activity resumed — presenting held ${h.messageId}")
+            present(h.messageId, config, h.triggerEvent, fromHold = true)
+            return
+        }
     }
 
     // MARK: - Presentation
 
-    private fun present(messageId: String, activeConfig: MessageConfig, triggerEvent: String) {
+    private fun present(messageId: String, activeConfig: MessageConfig, triggerEvent: String, fromHold: Boolean = false) {
         // Pause new in-app message presentation while the SDK is
         // backend-locked (per-key suspended day 20+ OR org cancelled).
         // Messages already shown stay visible. No analytics event emitted.
@@ -225,6 +311,8 @@ class MessageManager internal constructor(
         // previous async dispatch flipped it.
         if (!isPresenting.compareAndSet(false, true)) {
             Log.debug("[Messages] $messageId skipped — another message presenting")
+            // A held message that lost the race to another: back on the hold, first.
+            if (fromHold) hold(messageId, triggerEvent, atFront = true)
             return
         }
 
@@ -235,6 +323,15 @@ class MessageManager internal constructor(
         if (host != null && !host.shouldShowMessage(messageId)) {
             Log.debug("[Messages] $messageId vetoed by host shouldShowMessage")
             isPresenting.set(false)
+            return
+        }
+
+        // No resumed activity (a background start): held AFTER the gates above, so a message the host vetoes is
+        // dropped as before, and BEFORE the async veto and the experiment resolution (which records an exposure). All
+        // the gates are asked again when it is drawn.
+        if (surface.host() == null) {
+            isPresenting.set(false)
+            hold(messageId, triggerEvent, atFront = fromHold)
             return
         }
 
@@ -256,12 +353,12 @@ class MessageManager internal constructor(
                     isPresenting.set(false)
                     return@launch
                 }
-                presentBody(messageId, activeConfig, triggerEvent)
+                presentBody(messageId, activeConfig, triggerEvent, fromHold)
             }
             return
         }
 
-        presentBody(messageId, activeConfig, triggerEvent)
+        presentBody(messageId, activeConfig, triggerEvent, fromHold)
     }
 
     /**
@@ -270,13 +367,17 @@ class MessageManager internal constructor(
      * experiment-resolved config computed by [present]. The [isPresenting] gate
      * has already been claimed by the caller.
      */
-    private fun presentBody(messageId: String, activeConfig: MessageConfig, triggerEvent: String) {
-        val activity = currentActivity()
+    private fun presentBody(messageId: String, activeConfig: MessageConfig, triggerEvent: String, fromHold: Boolean = false) {
+        val activity = surface.host()
         if (activity == null) {
-            Log.warning("[Messages] No foreground activity for $messageId")
+            // The activity went away while the veto was answered: held, not dropped.
+            Log.debug("[Messages] No resumed activity for $messageId")
             isPresenting.set(false)
+            hold(messageId, triggerEvent, atFront = fromHold)
             return
         }
+        // Drawn now: a held copy of the same message is this one, so it is not drawn again when an activity resumes.
+        synchronized(heldLock) { held.removeAll { it.messageId == messageId } }
 
         // Experiment-aware presentation. A running in-app-message experiment
         // targeting this message + a treatment bucket renders the treatment payload; control /
@@ -312,7 +413,8 @@ class MessageManager internal constructor(
         try {
             // `show` keeps the message on screen across a recreation of the host's activity (a fold,
             // an unfold, a rotation), and runs onClosed once, when it is really gone.
-            InAppMessageDialog.show(
+            surface.show(
+                messageId,
                 activity,
                 config,
                 onCTATap = { onActivity ->
@@ -336,6 +438,8 @@ class MessageManager internal constructor(
                 onClosed = {
                     isPresenting.set(false)
                     mainHandler.post { delegate?.onMessageDismissed(messageId) }
+                    // The next held message, if one is waiting.
+                    mainHandler.post { releaseHeld() }
                 },
             )
         } catch (e: Throwable) {
@@ -393,9 +497,46 @@ class MessageManager internal constructor(
         return true
     }
 
-    // MARK: - Activity lookup (reflection — mirrors PendingMessageListener)
+    // MARK: - The live surface
 
-    private fun currentActivity(): Activity? {
+    private class LiveSurface(private val context: Context) : MessageSurface {
+        override fun host(): Activity? = currentActivity()
+
+        override fun show(
+            messageId: String,
+            activity: Activity,
+            config: MessageConfig,
+            onCTATap: (Activity) -> Unit,
+            onDismiss: () -> Unit,
+            onClosed: () -> Unit,
+        ) {
+            // `show` keeps the message on screen across a recreation of the host's activity (a fold,
+            // an unfold, a rotation), and runs onClosed once, when it is really gone.
+            InAppMessageDialog.show(activity, config, onCTATap, onDismiss, onClosed)
+        }
+
+        override fun observeActivation(block: () -> Unit): () -> Unit {
+            val app = context.applicationContext as? Application ?: return {}
+            val main = Handler(Looper.getMainLooper())
+            val callbacks = object : Application.ActivityLifecycleCallbacks {
+                // Posted, so the activity has finished resuming when the surface looks for it.
+                override fun onActivityResumed(activity: Activity) { main.post { block() } }
+                override fun onActivityCreated(activity: Activity, savedInstanceState: Bundle?) {}
+                override fun onActivityStarted(activity: Activity) {}
+                override fun onActivityPaused(activity: Activity) {}
+                override fun onActivityStopped(activity: Activity) {}
+                override fun onActivitySaveInstanceState(activity: Activity, outState: Bundle) {}
+                override fun onActivityDestroyed(activity: Activity) {}
+            }
+            app.registerActivityLifecycleCallbacks(callbacks)
+            return { app.unregisterActivityLifecycleCallbacks(callbacks) }
+        }
+    }
+}
+
+// MARK: - Activity lookup (reflection — mirrors PendingMessageListener)
+
+private fun currentActivity(): Activity? {
         return try {
             val activityThread = Class.forName("android.app.ActivityThread")
             val currentMethod = activityThread.getMethod("currentActivityThread")
@@ -417,7 +558,6 @@ class MessageManager internal constructor(
             Log.warning("[Messages] currentActivity reflection failed: ${e.message}")
             null
         }
-    }
 }
 
 /**

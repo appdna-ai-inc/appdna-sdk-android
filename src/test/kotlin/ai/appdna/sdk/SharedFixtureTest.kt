@@ -287,6 +287,16 @@ class SharedFixtureTest(
                     ?: unsupported("follow_pending_messages needs org_id, app_id and a script of known ops")
                 spy.state.putAll(state)
             }
+            // A config-driven message triggered with no resumed activity, through the REAL MessageManager.
+            "hold_config_messages" -> {
+                val p = pipeline ?: Pipeline(fixtureName).also { pipeline = it }
+                AppDNA.installEventTrackerForTest(p.tracker)
+                val state = ai.appdna.sdk.messages.ConfigMessageHoldRig.run(ctx, action)
+                    ?: unsupported("hold_config_messages needs messages and a script of known ops")
+                AppDNA.installEventTrackerForTest(null)
+                spy.state.putAll(state)
+                spy.events += p.envelopes().map { it.toEventPair() }
+            }
             "resolve_message_dismiss" -> runResolveMessageDismiss(action, spy)
             "resolve_paywall_image_alt" -> runPaywallImageAlt(action, spy)
             "resolve_onboarding_image_alt" -> runOnboardingImageAlt(action, spy)
