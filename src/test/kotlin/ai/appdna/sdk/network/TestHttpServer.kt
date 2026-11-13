@@ -146,6 +146,13 @@ internal class TestHttpServer(
         const val CLOSE = -1
 
         /**
+         * The body the ingest route answers when it refuses a batch's content (a 400 schema error, `withErrorHandler`'s
+         * shape). An event upload is dropped only on 400 / 413 / 422 WITH this shape; a bare `{}` is retried.
+         */
+        const val INGEST_REFUSAL_BODY =
+            "{\"error\":{\"code\":\"VALIDATION_ERROR\",\"message\":\"Invalid request body\",\"errors\":{\"batch.0.event_id\":[\"Required\"]}}}"
+
+        /**
          * Wait until `Dispatchers.IO` is responsive again. The Robolectric test JVM is shared by up to
          * 250 tests (`forkEvery`), and earlier classes can leave work on the IO pool. (The worst case —
          * every worker inside Robolectric's native SQLite forever — was `EventQueue`'s auto-flush

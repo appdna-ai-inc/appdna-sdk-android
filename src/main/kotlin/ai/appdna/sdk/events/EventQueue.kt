@@ -331,11 +331,11 @@ internal class EventQueue(
                     return
                 }
                 is EventUploadResult.ClientError -> {
-                    // 4xx (except 429): payload/auth is broken — don't retry, drop the batch
-                    // so the queue doesn't loop forever.
-                    Log.error("Dropping batch of ${batch.size} events after HTTP ${result.statusCode} (4xx — retry won't help)")
-                    // The WHOLE dropped batch is a loss (a 401 drops valid events; a
-                    // 400 drops malformed ones) — count EVERY normal event (+1) AND re-add any
+                    // The ingest route refused THIS batch's content (400 / 413 / 422 in its own error shape) — it would
+                    // be refused the same way forever, so drop it rather than loop on it. A 401 / 403 / 404 or a page
+                    // from a tunnel or proxy never lands here: those keep the batch (the TransientFailure arm).
+                    Log.error("Dropping batch of ${batch.size} events after HTTP ${result.statusCode} (the server refused its content — retry won't help)")
+                    // The WHOLE dropped batch is a loss — count EVERY normal event (+1) AND re-add any
                     // _sdk_events_dropped meta's carried N, so NOTHING is silently lost. A fresh meta
                     // (new event_id) re-emits the total when uploads resume; bumpFailureCounter pauses,
                     // bounding any retry.
@@ -349,17 +349,21 @@ internal class EventQueue(
                     queue.removeAll(batch.toSet())
                     eventDatabase.removeByEventIds(batchEventIds)
                     EventUploadCoordinator.markResolved(batchEventIds)
-                    // 4xx is a permanent failure, not a transient one — count toward pause. A 401 / 403
-                    // ([ApiClient.rejectionPausesUploads]) is about the key, not the batch: every later batch would
-                    // be rejected and dropped the same way, so uploads pause now (the WorkManager uploader too,
-                    // through the gate) until the next foreground or `AppDNA.flush()`. iOS `EventQueue`, same rule.
-                    if (ApiClient.rejectionPausesUploads(result.statusCode)) {
-                        consecutiveFailures = maxOf(consecutiveFailures, MAX_CONSECUTIVE_FAILURES - 1)
-                    }
+                    // A refused batch counts toward the pause; a lone one self-heals on the next accepted flush.
                     bumpFailureCounter()
                     return
                 }
                 is EventUploadResult.TransientFailure -> {
+                    // A 401 / 403 ([ApiClient.rejectionPausesUploads]) is about the key — or a tunnel or proxy in the
+                    // way — not the batch: every batch would be refused alike, so retrying on a timer only drains the
+                    // battery. The batch is KEPT (memory and SQLite), and uploads pause now (the WorkManager uploader
+                    // too, through the gate) until the next foreground or `AppDNA.flush()`. iOS `EventQueue`, same rule.
+                    if (result.statusCode != null && ApiClient.rejectionPausesUploads(result.statusCode)) {
+                        Log.warning("Event upload refused (HTTP ${result.statusCode}): ${batch.size} events kept; uploads paused until the next foreground / AppDNA.flush().")
+                        consecutiveFailures = maxOf(consecutiveFailures, MAX_CONSECUTIVE_FAILURES - 1)
+                        bumpFailureCounter()
+                        return
+                    }
                     attempt++
                     if (attempt > maxRetries) {
                         Log.warning("Flush exhausted $maxRetries retries; will try again on next flush cycle.")

@@ -194,16 +194,19 @@ internal class EventUploadWorker(
                     .build()
                 client.newCall(request).execute().use { response ->
                     val code = response.code
-                    // The one classifier the in-process queue and iOS use (408 / 429 / 5xx transient, any other
-                    // 4xx permanent). This run had its own: a 408 was dropped as permanent here.
-                    val disposition = ApiClient.dispositionFor(code)
+                    // The one classifier the in-process queue and iOS use: a batch is dropped only when the ingest
+                    // route refused its content (400 / 413 / 422 in the route's own error shape); anything else keeps it.
+                    val errorBody = if (code in 200..299) null else runCatching {
+                        response.peekBody(ApiClient.MAX_ERROR_BODY_BYTES).string()
+                    }.getOrNull()
+                    val disposition = ApiClient.eventUploadDispositionFor(code, errorBody)
                     if (disposition == ai.appdna.sdk.network.EventUploadDisposition.SUCCESS) {
                         eventDatabase.removeByIds(batch.map { it.first })
                         ai.appdna.sdk.events.EventUploadCoordinator.markResolved(eventIds)
                         Log.info("Background upload successful: ${batch.size} events")
                         null
                     } else if (disposition == ai.appdna.sdk.network.EventUploadDisposition.DROP_PERMANENT) {
-                        Log.error("Background upload rejected (HTTP $code) — dropping batch (retry won't help)")
+                        Log.error("Background upload refused (HTTP $code): the server refused this batch's content — dropping it (retry won't help)")
                         // The WHOLE dropped batch is a loss — count EVERY normal event (+1)
                         // AND re-add any _sdk_events_dropped meta's carried N, so nothing is silently lost on a
                         // background 4xx drop. A FRESH meta re-emits the total later. Mirrors EventQueue.
@@ -219,22 +222,18 @@ internal class EventUploadWorker(
                         if (loss > 0) ai.appdna.sdk.events.DroppedEventsCounter.increment(loss)
                         eventDatabase.removeByIds(batch.map { it.first })
                         ai.appdna.sdk.events.EventUploadCoordinator.markResolved(eventIds)
-                        // The run ends here, as iOS `BackgroundUploader`'s does. A 401 / 403
-                        // ([ApiClient.rejectionPausesUploads]) rejects every batch the same way: uploads pause — the
-                        // in-process queue's rule — until the next foreground or `AppDNA.flush()`, and nothing is
-                        // retried. Any other rejection was about this batch: a fresh run (after WorkManager's backoff)
-                        // sends the events behind it. It used to go on at once with up to 50 batches, with no pause.
-                        if (ApiClient.rejectionPausesUploads(code)) {
-                            ai.appdna.sdk.events.UploadPauseGate.pauseFromBackgroundUpload(context)
-                            Log.error("Background upload: the API key was rejected — uploads paused until the next foreground / AppDNA.flush()")
-                            Outcome.DONE
-                        } else if (eventDatabase.count() > 0) {
-                            Outcome.RETRY
-                        } else {
-                            Outcome.DONE
-                        }
+                        // The run ends here, as iOS `BackgroundUploader`'s does. The refusal was about this batch: a
+                        // fresh run (after WorkManager's backoff) sends the events behind it.
+                        if (eventDatabase.count() > 0) Outcome.RETRY else Outcome.DONE
+                    } else if (ApiClient.rejectionPausesUploads(code)) {
+                        // A 401 / 403 refuses every batch the same way (a key problem, or a tunnel or proxy in the
+                        // way): the batch is KEPT, uploads pause — the in-process queue's rule — until the next
+                        // foreground or `AppDNA.flush()`, and no run is scheduled.
+                        ai.appdna.sdk.events.UploadPauseGate.pauseFromBackgroundUpload(context)
+                        Log.error("Background upload refused (HTTP $code): events kept; uploads paused until the next foreground / AppDNA.flush()")
+                        Outcome.DONE
                     } else {
-                        Log.warning("Background upload transient failure (HTTP $code) — will retry")
+                        Log.warning("Background upload failed (HTTP $code) — events kept, will retry")
                         Outcome.RETRY
                     }
                 }

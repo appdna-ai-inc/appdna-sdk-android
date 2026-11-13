@@ -416,8 +416,12 @@ internal class ApiClient(
      * makes ONE network attempt (OkHttp's silent re-send is off, see [singleAttemptClient]) and returns an [EventUploadResult] so the caller
      * (EventQueue) can apply the retry policy:
      *   - 2xx → Success
-     *   - 4xx (except 429) → ClientError (drop the batch — retrying won't help)
-     *   - 5xx + 429 + network error → TransientFailure (retry with backoff)
+     *   - 400 / 413 / 422 answered in the ingest route's own error shape → ClientError (the server judged THIS
+     *     batch's content: drop it, counted — retrying won't help)
+     *   - everything else — 401, 403, 404, 408, 409, 429, 5xx, any status whose body is not the ingest route's
+     *     (a tunnel, proxy or load-balancer page), and a network error → TransientFailure (keep the batch, retry)
+     *
+     * The classification is [eventUploadDispositionFor].
      *
      * Mirrors the differentiation in iOS `APIClient.sendEvents` (Network/APIClient.swift:159).
      */
@@ -443,24 +447,18 @@ internal class ApiClient(
                     // live only in the branches of this `when` — reachable exclusively through a real
                     // OkHttp round trip, so no test could ask whether a 429 drops a batch. On iOS the
                     // equivalent code said "yes" for months and nothing caught it.
-                    when (dispositionFor(code)) {
+                    // The body decides as much as the status: a 401 from a tunnel or a 404 page from a proxy says
+                    // nothing about the batch, and deleting the batch for it lost every event queued during an outage.
+                    val errorBody = if (code in 200..299) null else readErrorBody(response)
+                    when (eventUploadDispositionFor(code, errorBody)) {
                         EventUploadDisposition.SUCCESS -> EventUploadResult.Success
 
                         EventUploadDisposition.DROP_PERMANENT -> {
                             val (errCode, errMsg) = decodeErrorBody(response)
-                            if (code == 401) {
-                                // Surface invalid API key explicitly
-                                // so EventQueue can drop the batch (retrying won't help).
-                                Log.error(
-                                    "Event upload auth failed (HTTP 401): Invalid API key or SDK suspended. " +
-                                        "code=${errCode ?: "n/a"} msg=${errMsg ?: "n/a"}"
-                                )
-                            } else {
-                                Log.error(
-                                    "Event upload rejected (HTTP $code): dropping batch — retrying won't help. " +
-                                        "code=${errCode ?: "n/a"} msg=${errMsg ?: "n/a"}"
-                                )
-                            }
+                            Log.error(
+                                "Event upload rejected (HTTP $code): the server refused this batch's content — dropping it, " +
+                                    "retrying won't help. code=${errCode ?: "n/a"} msg=${errMsg ?: "n/a"}"
+                            )
                             EventUploadResult.ClientError(code)
                         }
 
@@ -472,6 +470,12 @@ internal class ApiClient(
                             val hint = retryAfter?.let { " Retry-After: ${it}s." } ?: ""
                             if (code in TRANSIENT_STATUS_CODES) {
                                 Log.warning("Event upload throttled (HTTP $code):$hint retrying.")
+                            } else if (code == 401 || code == 403) {
+                                val (errCode, _) = decodeErrorBody(response)
+                                Log.error(
+                                    "Event upload refused (HTTP $code, code=${errCode ?: "n/a"}): check the API key, or a " +
+                                        "proxy in the way. The events are kept and sent once uploads are accepted again."
+                                )
                             } else {
                                 Log.warning("Event upload failed (HTTP $code):$hint retrying.")
                             }
@@ -543,6 +547,13 @@ internal class ApiClient(
         }
     }
 
+    /** An error response's body, up to [MAX_ERROR_BODY_BYTES], for [eventUploadDispositionFor]. Never throws. */
+    private fun readErrorBody(response: Response): String? = try {
+        response.peekBody(MAX_ERROR_BODY_BYTES).string()
+    } catch (_: Throwable) {
+        null
+    }
+
     private fun decodeErrorBody(response: Response): Pair<String?, String?> {
         return try {
             val raw = response.peekBody(8 * 1024).string()
@@ -576,27 +587,75 @@ internal class ApiClient(
         val TRANSIENT_STATUS_CODES: Set<Int> = setOf(408, 429)
 
         /**
-         * The pure classifier the shared `permanent_4xx_dropped` fixture asserts.
-         * Mirrors iOS `APIClient.disposition(for:)` exactly, which is the point: the two SDKs
-         * disagreed on 429 in production, and nothing could see it because the decision only existed
-         * inside a `when` over a live OkHttp `Response`.
-         */
-        /**
-         * Whether a permanent rejection with this status pauses every upload path until the next foreground or
-         * `AppDNA.flush()`: 401 / 403 — the API key is wrong or revoked, so every later batch would be rejected
-         * (and dropped as a loss) the same way. Any other permanent 4xx (400, 404, 413 …) is about the batch: it is
-         * dropped and uploads go on. The in-process queue and the WorkManager uploader both apply it; iOS
-         * `APIClient.rejectionPausesUploads`, same table (fixture `permanent_4xx_dropped`, `rejection_pauses`).
+         * Whether a refused event upload with this status pauses every upload path until the next foreground or
+         * `AppDNA.flush()`: 401 / 403 — the API key is wrong or revoked (or a tunnel or proxy refuses the device), so
+         * every later batch would be refused the same way, and retrying on a timer only drains the battery. The batch
+         * is KEPT ([eventUploadDispositionFor] retries a 401 / 403) and sent once uploads resume. The in-process
+         * queue and the WorkManager uploader both apply it; iOS `APIClient.rejectionPausesUploads`, same table
+         * (fixture `permanent_4xx_dropped`, `rejection_runs`).
          */
         @JvmStatic
         fun rejectionPausesUploads(code: Int): Boolean = code == 401 || code == 403
 
+        /**
+         * The STATUS-ONLY table the consent signal ([postConsentOnce]) uses. Event uploads do not: they use
+         * [eventUploadDispositionFor], which also reads the body, because an event batch is data the device holds and
+         * dropping it on a status that is not about it loses that data for good.
+         */
         @JvmStatic
         fun dispositionFor(code: Int): EventUploadDisposition = when {
             code in 200..299 -> EventUploadDisposition.SUCCESS
             code in TRANSIENT_STATUS_CODES -> EventUploadDisposition.RETRY_TRANSIENT
             code in 400..499 -> EventUploadDisposition.DROP_PERMANENT
             else -> EventUploadDisposition.RETRY_TRANSIENT
+        }
+
+        /**
+         * The statuses with which the ingest route refuses a batch's CONTENT: 400 (the body is not valid JSON, or fails
+         * the batch schema), 413 (too large, or a compressed body that does not decode) and 422 (reserved for a
+         * content refusal; the route does not answer it today). A batch is dropped only on one of these, and only
+         * when the body is the route's own error ([isIngestErrorBody]).
+         */
+        @JvmStatic
+        val BATCH_REJECTION_STATUS_CODES: Set<Int> = setOf(400, 413, 422)
+
+        /** How much of an error body is read to classify it. The route's largest (a schema error per event) fits. */
+        const val MAX_ERROR_BODY_BYTES = 256L * 1024
+
+        /**
+         * What an event-upload response means. The pure classifier the shared `permanent_4xx_dropped` fixture asserts
+         * on both platforms; iOS `APIClient.eventUploadDisposition(for:body:)`, same table.
+         *
+         *   - 2xx → SUCCESS.
+         *   - 400 / 413 / 422 whose body is the ingest route's error → DROP_PERMANENT: the server judged this batch,
+         *     and sending it again would be refused the same way.
+         *   - anything else → RETRY_TRANSIENT, the batch kept: 401 / 403 (a key problem — every batch would be
+         *     refused alike, so uploads pause, see [rejectionPausesUploads]), 404 (a wrong route or base URL), 408,
+         *     409, 429, 5xx, and every status whose body is not the route's — a tunnel, captive portal, proxy or
+         *     load-balancer page. None of those says anything about the batch, and each used to delete it.
+         */
+        @JvmStatic
+        fun eventUploadDispositionFor(code: Int, body: String?): EventUploadDisposition = when {
+            code in 200..299 -> EventUploadDisposition.SUCCESS
+            code in BATCH_REJECTION_STATUS_CODES && isIngestErrorBody(body) -> EventUploadDisposition.DROP_PERMANENT
+            else -> EventUploadDisposition.RETRY_TRANSIENT
+        }
+
+        /**
+         * Whether a body is the error the ingest route answers with (`withErrorHandler`):
+         * `{"error":{"code":"<non-empty string>","message":"<string>", …}}`. An HTML page, an empty body, `{}`, a
+         * string `error`, or JSON of any other shape is not.
+         */
+        @JvmStatic
+        fun isIngestErrorBody(body: String?): Boolean {
+            if (body.isNullOrBlank()) return false
+            return try {
+                val error = JSONObject(body).optJSONObject("error") ?: return false
+                val code = error.opt("code")
+                code is String && code.isNotEmpty() && error.opt("message") is String
+            } catch (_: Throwable) {
+                false
+            }
         }
 
         /**
@@ -643,12 +702,13 @@ internal sealed class EventUploadResult {
     /** 2xx response — batch is delivered, drop from disk + memory. */
     object Success : EventUploadResult()
     /**
-     * 4xx response (excluding 408 and 429) — payload or auth is malformed.
-     * Retrying won't help; drop the batch immediately.
+     * 400 / 413 / 422 in the ingest route's own error shape — the server refused this batch's content.
+     * Retrying won't help; drop the batch (counted) immediately.
      */
     data class ClientError(val statusCode: Int) : EventUploadResult()
     /**
-     * 5xx, 429, 408, or network error — server may recover.
+     * Anything that is not about the batch — 401, 403, 404, 408, 409, 429, 5xx, a page from a tunnel or proxy,
+     * or a network error. The batch is kept.
      * Retry with exponential backoff up to maxRetries.
      *
      * [retryAfterSeconds] is a server-supplied `Retry-After` hint (already parsed
@@ -677,9 +737,8 @@ internal enum class EventUploadDisposition {
     RETRY_TRANSIENT,
 
     /**
-     * A genuine permanent 4xx (400/401/403/404 …). Drop the batch: retrying a bad API key forever
-     * would only drain the battery. iOS additionally LATCHES `eventUploadPermanentlyFailed` here;
-     * Android pauses via `bumpFailureCounter()`.
+     * The server refused this batch's content (400 / 413 / 422 in the ingest route's error shape). Drop it,
+     * counted. iOS additionally LATCHES `eventUploadPermanentlyFailed` here; Android counts a failed cycle.
      */
     DROP_PERMANENT,
 }

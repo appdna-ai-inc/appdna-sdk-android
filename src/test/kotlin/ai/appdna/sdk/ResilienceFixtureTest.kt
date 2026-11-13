@@ -117,10 +117,11 @@ class ResilienceFixtureTest {
                             // `when` to Any and quietly un-types the comparison below.
                             else -> error("[$id] unknown disposition '${c.getString("disposition")}'")
                         }
+                        val body = c.optString("body", "")
                         assertEquals(
-                            "[$id] HTTP $status disposition",
+                            "[$id] HTTP $status ${body.take(40)} disposition",
                             expected,
-                            ApiClient.dispositionFor(status),
+                            ApiClient.eventUploadDispositionFor(status, body),
                         )
                     }
 
@@ -130,7 +131,7 @@ class ResilienceFixtureTest {
                     for (i in 0 until (latch as org.json.JSONArray).length()) {
                         val step = latch.getJSONObject(i)
                         val status = step.getInt("status")
-                        latched = when (ApiClient.dispositionFor(status)) {
+                        latched = when (ApiClient.eventUploadDispositionFor(status, step.optString("body", ""))) {
                             EventUploadDisposition.SUCCESS -> false
                             EventUploadDisposition.DROP_PERMANENT -> true
                             // 🔴 W1. The transient branch must leave the latch EXACTLY as it found it.
@@ -483,9 +484,12 @@ class ResilienceFixtureTest {
             for (i in 0 until rows.length()) {
                 val row = rows.getJSONObject(i)
                 val status = row.getInt("status")
+                val body = row.getString("body")
                 val pauses = row.getBoolean("pauses_uploads")
+                val dropped = row.getInt("dropped")
+                val label = "HTTP $status ${body.take(30)}"
                 assertEquals("[$id] does HTTP $status pause uploads?", pauses, ApiClient.rejectionPausesUploads(status))
-                ai.appdna.sdk.network.TestHttpServer { path, _ -> if (path.contains("/ingest/events")) status to "{}" else 200 to "{}" }.use { server ->
+                ai.appdna.sdk.network.TestHttpServer { path, _ -> if (path.contains("/ingest/events")) status to body else 200 to "{}" }.use { server ->
                     fun ingests() = synchronized(server.rawBodies) { server.rawBodies.count { it.first.contains("/ingest/events") } }
 
                     // The WorkManager run.
@@ -494,13 +498,16 @@ class ResilienceFixtureTest {
                     val db = EventDatabase(ctx, 10_000, "reject_run_${System.nanoTime()}.db")
                     try {
                         db.insertEvents(events("bg"))
+                        ai.appdna.sdk.events.DroppedEventsCounter.getAndReset()
                         val outcome = ai.appdna.sdk.background.EventUploadWorker.uploadPending(
                             db, "adn_test_reject", server.baseUrl, batchSizeCap = batch, context = ctx)
-                        assertEquals("[$id] HTTP $status: event uploads in one background run", row.getInt("background_requests"), ingests())
-                        assertEquals("[$id] HTTP $status: events left after the run", row.getInt("pending_after"), db.count())
-                        assertEquals("[$id] HTTP $status: another run scheduled?", row.getBoolean("background_reschedules"),
+                        assertEquals("[$id] $label: event uploads in one background run", row.getInt("background_requests"), ingests())
+                        assertEquals("[$id] $label: events left after the run", row.getInt("pending_after"), db.count())
+                        assertEquals("[$id] $label: events the background run counted as dropped", dropped,
+                            ai.appdna.sdk.events.DroppedEventsCounter.peek())
+                        assertEquals("[$id] $label: another run scheduled?", row.getBoolean("background_reschedules"),
                             outcome == ai.appdna.sdk.background.EventUploadWorker.Outcome.RETRY)
-                        assertEquals("[$id] HTTP $status: background run paused uploads?", pauses,
+                        assertEquals("[$id] $label: background run paused uploads?", pauses,
                             ai.appdna.sdk.events.UploadPauseGate.isPaused(ctx))
                     } finally {
                         db.clearAll(); db.close()
@@ -512,12 +519,15 @@ class ResilienceFixtureTest {
                     val q = EventQueue(ApiClient("adn_test_reject", server.baseUrl), qdb, null, batch, Long.MAX_VALUE, ctx, null)
                     try {
                         assertTrue("[$id] a new queue starts unpaused", !ai.appdna.sdk.events.UploadPauseGate.isPaused(ctx))
+                        ai.appdna.sdk.events.DroppedEventsCounter.getAndReset()
                         kotlinx.coroutines.runBlocking { q.flushCycleForTest() }
-                        assertEquals("[$id] HTTP $status: the queue's flush resolves one batch", backlog - batch, qdb.count())
-                        assertEquals("[$id] HTTP $status: failed cycles counted (5 = paused)",
+                        assertEquals("[$id] $label: events left after the queue's flush", row.getInt("queue_pending_after"), qdb.count())
+                        assertEquals("[$id] $label: events the queue counted as dropped", dropped,
+                            ai.appdna.sdk.events.DroppedEventsCounter.peek())
+                        assertEquals("[$id] $label: failed cycles counted (5 = paused)",
                             if (pauses) EventQueue.MAX_CONSECUTIVE_FAILURES else if (status in 200..299) 0 else 1,
                             q.consecutiveFailuresForTest)
-                        assertEquals("[$id] HTTP $status: queue paused uploads?", pauses,
+                        assertEquals("[$id] $label: queue paused uploads?", pauses,
                             ai.appdna.sdk.events.UploadPauseGate.isPaused(ctx))
                     } finally {
                         q.shutdown()

@@ -82,7 +82,7 @@ class EventQueuePauseAndShutdownTest {
         return condition()
     }
 
-    /** Five threshold flushes, each one 400 (a dropped batch counts toward the pause; a 401 / 403 would pause at once): paused. */
+    /** Five threshold flushes, each one refused 400 (a dropped batch counts toward the pause; a 401 / 403 would pause at once): paused. */
     private fun pauseAfterFiveFailures(q: EventQueue, server: TestHttpServer) {
         for (i in 1..5) {
             q.enqueue(event(i))
@@ -99,7 +99,7 @@ class EventQueuePauseAndShutdownTest {
 
     @Test
     fun aThresholdFlushKeepsThePauseAndTheHostsFlushClearsIt() {
-        TestHttpServer { _, _ -> 400 to "{}" }.use { server ->
+        TestHttpServer { _, _ -> 400 to TestHttpServer.INGEST_REFUSAL_BODY }.use { server ->
             val q = queue(server, batchSize = 1)
             pauseAfterFiveFailures(q, server)
             assertAThresholdFlushKeepsThePause(q, server)
@@ -111,7 +111,7 @@ class EventQueuePauseAndShutdownTest {
 
     @Test
     fun backgroundKeepsThePauseAndForegroundClearsIt() {
-        TestHttpServer { _, _ -> 400 to "{}" }.use { server ->
+        TestHttpServer { _, _ -> 400 to TestHttpServer.INGEST_REFUSAL_BODY }.use { server ->
             val q = queue(server, batchSize = 1)
             pauseAfterFiveFailures(q, server)
             assertAThresholdFlushKeepsThePause(q, server)

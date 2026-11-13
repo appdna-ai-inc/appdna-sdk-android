@@ -41,6 +41,13 @@ the project uses [Semantic Versioning](https://semver.org/).
 
 ### Fixed
 
+- **A queued event batch is deleted only when the server refuses its content.** An event upload answered 401, 403,
+  404 or with any other 4xx (except 408 and 429) used to delete its batch from memory and disk and count it as dropped,
+  so an outage behind a tunnel or proxy that answered 401 lost every event queued during it. Now a batch is dropped,
+  and counted, only on a 400, 413 or 422 that carries the AppDNA API's JSON error body. A 401 or 403 keeps the events
+  and pauses uploads until the next foreground or `AppDNA.flush()`; a 404, 409, or an answer that is not the API's own
+  (an HTML page from a tunnel, captive portal, proxy or load balancer, whatever its status) keeps them and retries.
+
 - **A journey's in-app message delivered during a background start is shown when the user opens the app.** When the process was running with no activity (started by an FCM data message or a background job), the SDK tried to show a message a journey sent for about 10 seconds, then stopped. The message stayed unshown until the app was next launched from cold. It is now shown the next time an activity resumes, unless it has expired, and it is still shown only once.
 
 - **A journey's in-app messages reach users who have not signed in.** The SDK listened for messages a journey sends only after `identify`, so a journey's "Send in-app message" step to an anonymous user was counted as sent and never shown. The SDK now listens from `configure` on the device's anonymous ID; after `identify` on the anonymous ID and the user ID (a journey that started before sign-in keeps sending to the anonymous ID); after `reset()` on the anonymous ID again. A message that arrives while another is on screen is shown when that one closes, a message that cannot be drawn yet (no foreground activity at a cold launch) is retried, and a message is never shown twice.

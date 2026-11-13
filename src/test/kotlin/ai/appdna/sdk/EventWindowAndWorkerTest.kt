@@ -173,12 +173,12 @@ class EventWindowAndWorkerTest {
 
     /**
      * A permanently rejected batch is dropped and counted, and the run ends there (as iOS `BackgroundUploader`'s does):
-     * a fresh run sends the rest. A 401 / 403 also pauses uploads, and nothing is retried.
+     * a fresh run sends the rest. (A 401 / 403 keeps the batch and pauses uploads: `aRejectedKeyPausesUploadsFromTheWorker`.)
      */
     @Test fun theWorkerEndsItsRunAfterARejectedBatch() {
         val ingests = AtomicInteger(0)
         TestHttpServer { path, _ ->
-            if (path.contains("/ingest/events") && ingests.getAndIncrement() == 0) 400 to "{}" else 200 to "{}"
+            if (path.contains("/ingest/events") && ingests.getAndIncrement() == 0) 400 to TestHttpServer.INGEST_REFUSAL_BODY else 200 to "{}"
         }.use { server ->
             val db = EventDatabase(ctx, 10_000, "worker_reject_${System.nanoTime()}.db")
             try {
@@ -200,24 +200,76 @@ class EventWindowAndWorkerTest {
         }
     }
 
-    /** A 401 drops the batch, pauses uploads (the gate the queue honours) and retries nothing. */
+    /** A 401 KEEPS the batch, pauses uploads (the gate the queue honours) and retries nothing. */
     @Test fun aRejectedKeyPausesUploadsFromTheWorker() {
-        TestHttpServer { _, _ -> 401 to "{}" }.use { server ->
+        TestHttpServer { _, _ -> 401 to "{\"error\":{\"code\":\"UNAUTHORIZED\",\"message\":\"Invalid API key\"}}" }.use { server ->
             val db = EventDatabase(ctx, 10_000, "worker_401_${System.nanoTime()}.db")
             try {
                 ai.appdna.sdk.events.UploadPauseGate.setForTest(ctx, false)
                 db.insertEvents((0 until 150).map { event(it).toString() })
                 assertEquals(EventUploadWorker.Outcome.DONE,
                     EventUploadWorker.uploadPending(db, "adn_test_worker", server.baseUrl, context = ctx))
-                assertEquals(50, db.count())
+                assertEquals("a 401 deleted events", 150, db.count())
+                assertEquals("a 401 counted a loss", 0, DroppedEventsCounter.peek())
                 assertEquals(true, ai.appdna.sdk.events.UploadPauseGate.isPaused(ctx))
                 // The paused gate holds for the next run.
                 assertEquals(EventUploadWorker.Outcome.DONE, EventUploadWorker.uploadPending(db, "adn_test_worker",
                     server.baseUrl, paused = ai.appdna.sdk.events.UploadPauseGate.isPaused(ctx), context = ctx))
-                assertEquals("a paused run sent a batch", 50, db.count())
+                assertEquals("a paused run sent a batch", 150, db.count())
             } finally {
                 ai.appdna.sdk.events.UploadPauseGate.setForTest(ctx, false)
                 db.close()
+            }
+        }
+    }
+
+    /**
+     * The outage the SDK used to lose events in: a tunnel in front of the API answers 401 with its own HTML page while
+     * the server is down. Every event is kept and nothing is counted as dropped; once the server is back, the host's
+     * `AppDNA.flush()` (it clears the pause) sends all of them, each once.
+     */
+    @Test fun aTunnel401KeepsEveryEventAndTheyAreSentWhenTheServerIsBack() {
+        val serverUp = java.util.concurrent.atomic.AtomicBoolean(false)
+        val tunnelPage = "<!DOCTYPE html><html><head><title>401 Unauthorized</title></head><body><h1>Unauthorized</h1></body></html>"
+        TestHttpServer { path, _ ->
+            if (!path.contains("/ingest/events")) 200 to "{}"
+            else if (serverUp.get()) 202 to "{\"accepted\":1,\"rejected\":0}"
+            else 401 to tunnelPage
+        }.use { server ->
+            val db = EventDatabase(ctx, 10_000, "tunnel_401_${System.nanoTime()}.db")
+            val events = (0 until 150).map { event(it) }
+            db.insertEvents(events.map { it.toString() })
+            ai.appdna.sdk.events.UploadPauseGate.setForTest(ctx, false)
+            val q = EventQueue(ApiClient("adn_test_tunnel", server.baseUrl), db, null, 100, Long.MAX_VALUE, ctx, null)
+            try {
+                // The outage: the queue's flush and a background run, both answered by the tunnel.
+                runBlocking { q.flushCycleForTest() }
+                assertEquals("the in-process queue deleted events on a tunnel 401", 150, db.count())
+                assertEquals(true, ai.appdna.sdk.events.UploadPauseGate.isPaused(ctx))
+                ai.appdna.sdk.events.UploadPauseGate.setForTest(ctx, false)
+                assertEquals(EventUploadWorker.Outcome.DONE,
+                    EventUploadWorker.uploadPending(db, "adn_test_tunnel", server.baseUrl, context = ctx))
+                assertEquals("the background run deleted events on a tunnel 401", 150, db.count())
+                assertEquals("a tunnel 401 was counted as a loss", 0, DroppedEventsCounter.peek())
+
+                // The server is back: the host's flush clears the pause and sends everything.
+                serverUp.set(true)
+                val deadline = System.currentTimeMillis() + 20_000
+                while (db.count() > 0 && System.currentTimeMillis() < deadline) {
+                    q.flush()
+                    Thread.sleep(300)
+                }
+                assertEquals("events left after the server came back", 0, db.count())
+                val delivered = synchronized(server.rawBodies) {
+                    server.rawBodies.filter { it.first.contains("/ingest/events") }.map { it.second }
+                }.drop(2).flatMap { ids(it) } // the first two uploads were the tunnel's
+                assertEquals("an event was missed or sent twice", events.map { it.getString("event_id") }.sorted(), delivered.sorted())
+                assertEquals(0, DroppedEventsCounter.peek())
+            } finally {
+                q.shutdown()
+                q.awaitShutdownFlush(10_000)
+                ai.appdna.sdk.events.UploadPauseGate.setForTest(ctx, false)
+                db.clearAll(); db.close()
             }
         }
     }
