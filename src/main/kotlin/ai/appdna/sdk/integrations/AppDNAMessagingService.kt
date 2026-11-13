@@ -173,7 +173,7 @@ internal object AppDNANotificationPoster {
             // Resolve icon via Configuration.notificationIcon →
             // manifest <meta-data> → app icon. setSmallIcon throws when given a
             // 0/missing res id, so we always have a valid fallback.
-            .setSmallIcon(NotificationIconResolver.resolve(context.applicationContext ?: context))
+            .setSmallIcon(NotificationIconResolver.resolve(context.applicationContext ?: context, data["icon"]))
             .setAutoCancel(true)
             .setPriority(
                 if (data["priority"] == "high") NotificationCompat.PRIORITY_HIGH
@@ -209,12 +209,13 @@ internal object AppDNANotificationPoster {
 
         if (soundChannel != null) PushSoundChannels.soundUri(context, data["sound"])?.let { builder.setSound(it) }
 
-        // Custom color
-        data["color"]?.let { color ->
-            try {
-                builder.setColor(android.graphics.Color.parseColor(color))
-            } catch (_: Exception) {}
+        // Custom color; without one, the app's `default_notification_color` meta-data, the colour FCM's own
+        // display uses — so a push the SDK draws (#1786: every push, data-only, on a device the SDK's service
+        // receives messages for) looks as it did when FCM drew it in the background.
+        val customColor = data["color"]?.let { color ->
+            try { android.graphics.Color.parseColor(color) } catch (_: Exception) { null }
         }
+        (customColor ?: NotificationIconResolver.defaultColor(context.applicationContext ?: context))?.let { builder.setColor(it) }
 
         // Tap intent with push_id for tracking + iOS-canonical action fields
         // (action_type, action_value, screen_id, deep_link).
@@ -361,7 +362,16 @@ internal class PushDismissReceiver : BroadcastReceiver() {
  * [RichPushHandler] use identical icon-resolution logic.
  */
 internal object NotificationIconResolver {
-    fun resolve(context: Context): Int {
+    fun resolve(context: Context, authored: String? = null): Int {
+        // 0. #1786 — the small icon the campaign names (`data.icon`, a drawable resource name). A data-only push
+        // carries it there; FCM's own display used `android.notification.icon` the same way, ahead of the default.
+        authored?.trim()?.takeIf { it.isNotEmpty() }?.let { name ->
+            val res = context.resources
+            val id = res.getIdentifier(name, "drawable", context.packageName)
+                .takeIf { it != 0 } ?: res.getIdentifier(name, "mipmap", context.packageName)
+            if (id != 0) return id
+        }
+
         // 1. Configuration override (set by host via AppDNA.notificationIcon).
         val override = AppDNA.notificationIcon
         if (override != 0) return override
@@ -378,6 +388,16 @@ internal object NotificationIconResolver {
         // 3. Last resort — application icon (NotificationCompat will reject 0).
         val fallback = context.applicationInfo.icon
         return if (fallback != 0) fallback else android.R.drawable.ic_dialog_info
+    }
+
+    /** The app's `com.google.firebase.messaging.default_notification_color` (a colour resource), or null. */
+    fun defaultColor(context: Context): Int? = try {
+        val ai = context.packageManager
+            .getApplicationInfo(context.packageName, android.content.pm.PackageManager.GET_META_DATA)
+        val resId = ai.metaData?.getInt("com.google.firebase.messaging.default_notification_color", 0) ?: 0
+        if (resId != 0) androidx.core.content.ContextCompat.getColor(context, resId) else null
+    } catch (_: Throwable) {
+        null
     }
 
     /**

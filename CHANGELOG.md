@@ -8,6 +8,14 @@ the project uses [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- **Push deliveries are confirmed by the device, also in the background (#1786).** The token registration reports
+  `push_display: "sdk"` when the SDK's own `AppDNAMessagingService` (or a subclass) receives FCM messages in the app.
+  AppDNA then sends that device data-only messages, which reach the service in the foreground and the background, so
+  the SDK draws every AppDNA push (with its buttons) and tracks `push_delivered`. A data-only push uses the campaign's
+  small icon (`data.icon`, a drawable name) and, without a campaign colour, the app's
+  `default_notification_color`. A host with its own messaging service reports nothing and keeps notification messages.
+
+
 - **A step that advances by itself can show a countdown.** `auto_advance_indicator` on the step (beside `auto_advance_seconds`): `show` (default false), `style` (`text`, `bar`, `both`), `text` (`{seconds}` = whole seconds left), `text_color`, `font_size`, `bar_color`, `track_color`, `bar_height`, `position` (`top`, `bottom`). Off by default, so published flows are unchanged.
 
 - **An onboarding button can add the app's widget to the home screen.** A button with the `add_widget` action asks the launcher to pin the app's own home-screen widget (`AppWidgetManager.requestPinAppWidget`, Android 8 and later); the SDK ships no widget, it pins the one the app declares. With no code in the app, the SDK finds the app's widget provider; an app with several names one in the button's `action_value` (the class name, fully qualified or simple), otherwise the first by class name is used. Where the launcher cannot or will not show a pin dialog (Android 7, a launcher without pinning, a refused request, or no dialog within a short wait), the button's `howto_blocks_android` sheet is shown instead: its Done button ends the attempt, and closing it any other way (swipe, back, a tap outside, a `dismiss` button) returns to the step. The step then advances once with `widget_status` in its answers, `added`, `not_added` or `unavailable` (the app has no widget), so next-step rules can branch on it. A widget counts as added when the launcher confirms it or a new widget id of that provider appears. A widget with a configuration activity is pinned without that activity being shown, so it must draw a sensible default. Events: `widget_add_tapped`, `widget_pin_requested`, `widget_pin_unavailable`, `widget_howto_shown`, `widget_howto_dismissed`, `widget_added`, `widget_not_added` and `widget_add_unavailable`, each with `flow_id` and `step_id`. The library manifest declares one non-exported receiver for the launcher's success callback.

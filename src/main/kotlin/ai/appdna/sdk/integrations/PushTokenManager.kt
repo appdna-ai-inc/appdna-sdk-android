@@ -261,6 +261,7 @@ internal class PushTokenManager(
                     osVersion = ai.appdna.sdk.events.EventSchema.normalizeOsVersion(Build.VERSION.RELEASE),
                     anonId = anonId,
                     userId = userId,
+                    pushDisplay = PushDisplayProbe.pushDisplay(context),
                 )
                 apiClient?.post("/api/v1/push/token", body.toString())
                 Log.info("Push token registered with backend")
@@ -296,6 +297,7 @@ internal object PushTokenRegistration {
     fun body(
         token: String, platform: String, deviceId: String, appVersion: String,
         sdkVersion: String, osVersion: String, anonId: String?, userId: String?,
+        pushDisplay: String? = null,
     ): JSONObject = JSONObject().apply {
         put("token", token)
         put("platform", platform)
@@ -305,5 +307,42 @@ internal object PushTokenRegistration {
         put("os_version", osVersion)
         if (!anonId.isNullOrEmpty()) put("anon_id", anonId)
         if (!userId.isNullOrEmpty()) put("user_id", userId)
+        // #1786 — `sdk` when the SDK's own service receives FCM messages here, so the server may send data-only
+        // messages that the SDK draws and confirms delivery for (also in the background). Absent otherwise.
+        if (!pushDisplay.isNullOrEmpty()) put("push_display", pushDisplay)
+    }
+}
+
+/**
+ * #1786 — whether the SDK's [AppDNAMessagingService] (or a host subclass of it) is the service FCM delivers messages
+ * to in this app. Firebase hands `com.google.firebase.MESSAGING_EVENT` to the ONE enabled service that resolves for
+ * the package; when it is the SDK's, a data-only AppDNA push reaches the SDK in the foreground and the background, and
+ * the SDK draws it and reports `push_delivered`. When the host runs its own service (and disabled the SDK's), the
+ * server keeps sending notification messages FCM draws itself, because a data-only message would depend on the host
+ * displaying it.
+ */
+internal object PushDisplayProbe {
+    const val MESSAGING_EVENT = "com.google.firebase.MESSAGING_EVENT"
+    const val SDK = "sdk"
+
+    /** Test seam: replaces the resolution (production: the package manager). */
+    @Volatile internal var resolvedServiceOverride: (() -> String?)? = null
+
+    fun pushDisplay(context: Context): String? = if (sdkServiceReceivesMessages(context)) SDK else null
+
+    fun sdkServiceReceivesMessages(context: Context): Boolean {
+        val name = resolvedServiceOverride?.invoke() ?: resolvedServiceName(context) ?: return false
+        return try {
+            AppDNAMessagingService::class.java.isAssignableFrom(Class.forName(name, false, context.classLoader))
+        } catch (_: Throwable) {
+            false
+        }
+    }
+
+    private fun resolvedServiceName(context: Context): String? = try {
+        val intent = android.content.Intent(MESSAGING_EVENT).setPackage(context.packageName)
+        context.packageManager.resolveService(intent, 0)?.serviceInfo?.name
+    } catch (_: Throwable) {
+        null
     }
 }

@@ -4453,6 +4453,26 @@ class SharedFixtureTest(
                 idle()
                 spy.state["notification_posted"] = notificationPosted()
             }
+            // #1786 — the SDK's OWN service, as FCM hands it a data-only message (foreground or background: a
+            // data-only message always reaches the service). The REAL AppDNAMessagingService.onMessageReceived.
+            "service" -> {
+                installPush(p, spy)
+                val launcher = android.content.ComponentName(ctx.packageName, "${ctx.packageName}.FixtureLauncher")
+                shadowOf(ctx.packageManager).addActivityIfNotPresent(launcher)
+                shadowOf(ctx.packageManager).addIntentFilterForActivity(
+                    launcher,
+                    android.content.IntentFilter(android.content.Intent.ACTION_MAIN).apply { addCategory(android.content.Intent.CATEGORY_LAUNCHER) },
+                )
+                val service = org.robolectric.Robolectric.setupService(ai.appdna.sdk.integrations.AppDNAMessagingService::class.java)
+                service.onMessageReceived(com.google.firebase.messaging.RemoteMessage.Builder("fixture@fcm").setData(data).build())
+                idle()
+                spy.state["notification_posted"] = notificationPosted()
+                val nm = ctx.getSystemService(android.app.NotificationManager::class.java)
+                shadowOf(nm).allNotifications.lastOrNull()?.let { n ->
+                    spy.state["posted_title"] = n.extras.getCharSequence(android.app.Notification.EXTRA_TITLE)?.toString()
+                    spy.state["posted_body"] = n.extras.getCharSequence(android.app.Notification.EXTRA_TEXT)?.toString()
+                }
+            }
             null -> {
                 // No `via`: the fixture pins only the PARSER (the raw FCM RemoteMessage through the
                 // service is not drivable on the JVM), so it needs no marker.
