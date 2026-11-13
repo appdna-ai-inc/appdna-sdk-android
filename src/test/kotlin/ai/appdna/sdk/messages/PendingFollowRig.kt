@@ -21,7 +21,7 @@ internal class PendingFollowRig {
     val presented = ArrayList<String>()
     private var onScreen: (() -> Unit)? = null
     private val retries = ArrayList<() -> Unit>()
-    /** What the listener runs when an activity resumes (#1783). */
+    /** What the listener runs when an activity resumes. */
     private var onActive: (() -> Unit)? = null
 
     private fun delivery(d: Doc) = PendingMessageListener.Delivery(d.id, d.data) { d.consumed = true }

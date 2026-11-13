@@ -86,7 +86,7 @@ internal class PendingMessageListener(
     private val presented = HashSet<String>()
     private val attempts = HashMap<String, Int>()
     /**
-     * #1783 — deliveries still undrawn when their retries ran out (a process started with no activity: an FCM data
+     * Deliveries still undrawn when their retries ran out (a process started with no activity: an FCM data
      * message, a background job), in arrival order. Drawn when an activity next resumes; without this they waited for
      * the process to die, because the listener hands a document over once.
      */
@@ -252,7 +252,7 @@ internal class PendingMessageListener(
                 if (n < MAX_PRESENT_ATTEMPTS) {
                     scheduleFn.after(n.toDouble()) { retry(p) }
                 } else {
-                    // #1783 — no activity for the whole retry window: drawn when an activity next resumes. The
+                    // No activity for the whole retry window: drawn when an activity next resumes. The
                     // document stays unconsumed meanwhile, so a cold launch still draws it too.
                     synchronized(lock) { if (parked.none { it.key == p.key }) parked.add(p) }
                     Log.debug("PendingMessageListener: no activity after $n attempts — ${p.delivery.id} waits for one")
