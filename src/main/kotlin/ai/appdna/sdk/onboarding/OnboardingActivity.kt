@@ -4281,6 +4281,17 @@ private fun BlockBasedStepView(
              * package name and ignores it.
              */
             "rate_app" -> ai.appdna.sdk.feedback.ReviewPromptManager.openStoreListing(activityCtx)
+            /*
+             * `share` (#1797) opens the share sheet AT THE TAP (`ButtonBlock`), the one place that holds
+             * the block's `share_text` / `share_url` — this method only ever receives the action name
+             * and an `action_value`. The arm exists so a `share` that reaches here by any other route
+             * STAYS: falling to `else` below would advance the step, and a share must never move the
+             * user on. No event and no onNext, as at the tap.
+             */
+            // A string literal, not `ShareAction.ACTION_NAME`: `check:docs-parity` reads these arms.
+            "share" -> Log.debug(
+                "Onboarding: a share action reached the step dispatcher; the sheet is opened by the button itself — staying on the step",
+            )
             else -> {
                 /*
                  * 🔴 COLLECT, DO NOT DISCARD. This was `onNext(null)`, which advanced the

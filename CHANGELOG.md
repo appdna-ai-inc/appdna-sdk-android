@@ -15,6 +15,12 @@ the project uses [Semantic Versioning](https://semver.org/).
   small icon (`data.icon`, a drawable name) and, without a campaign colour, the app's
   `default_notification_color`. A host with its own messaging service reports nothing and keeps notification messages.
 
+- **A Share button action.** A button can now open the phone's share sheet (iOS `UIActivityViewController`, Android an
+  `ACTION_SEND` chooser) with text and an optional link set in the console: on an onboarding button or a
+  Multi-buttons child (`action: "share"`, `share_text`, `share_url`; the step stays), on an in-app message CTA
+  (`cta_action: { type: "share", text, url }`; the message closes, then the sheet opens) and on a paywall extra
+  button (`action: "share"`, `share_text`, `url`; the paywall stays). Text and link are trimmed; with neither,
+  nothing opens. No event is tracked, because Android cannot report whether a share was completed.
 
 - **A step that advances by itself can show a countdown.** `auto_advance_indicator` on the step (beside `auto_advance_seconds`): `show` (default false), `style` (`text`, `bar`, `both`), `text` (`{seconds}` = whole seconds left), `text_color`, `font_size`, `bar_color`, `track_color`, `bar_height`, `position` (`top`, `bottom`). Off by default, so published flows are unchanged.
 

@@ -2140,6 +2140,10 @@ internal object OnboardingConfigParser {
                 // through `ContentBlock.howto_blocks_android` / `howto_blocks_ios`.
                 val howtoIos = parseChildBlocks(bm["howto_blocks_ios"], "$path.howto_blocks_ios")
                 val howtoAndroid = parseChildBlocks(bm["howto_blocks_android"], "$path.howto_blocks_android")
+                // `action: "share"` (#1797) — authored top-level as on iOS; folded here for the same
+                // 255-arg reason. Read by `ContentBlock.shareText` / `shareUrl`.
+                val shareText = bm.str(SURFACE, path, "share_text")
+                val shareUrl = bm.str(SURFACE, path, "share_url")
                 if (labelFormat == null && customLabel == null && videoControls == null &&
                     particleColor == null && particleOpacity == null && particleSpeed == null &&
                     timerVariant == null && labelPlacement == null && loadingTextAlign == null &&
@@ -2147,7 +2151,8 @@ internal object OnboardingConfigParser {
                     audioUrl == null && buttonTextAlign == null && dividerPosition == null &&
                     dotShape == null && galleryAutoscroll == null && galleryAutoscrollSpeed == null &&
                     galleryFill == null && particleMulticolor == null && timeFormat == null &&
-                    timeTextSize == null && howtoIos == null && howtoAndroid == null) {
+                    timeTextSize == null && howtoIos == null && howtoAndroid == null &&
+                    shareText == null && shareUrl == null) {
                     base
                 } else {
                     val merged = base ?: mutableMapOf()
@@ -2174,6 +2179,8 @@ internal object OnboardingConfigParser {
                     if (timeTextSize != null) merged.putIfAbsent("time_text_size", timeTextSize)
                     if (howtoIos != null) merged[HOWTO_BLOCKS_IOS] = howtoIos
                     if (howtoAndroid != null) merged[HOWTO_BLOCKS_ANDROID] = howtoAndroid
+                    if (shareText != null) merged.putIfAbsent("share_text", shareText)
+                    if (shareUrl != null) merged.putIfAbsent("share_url", shareUrl)
                     merged
                 }
             },

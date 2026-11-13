@@ -55,6 +55,9 @@ import ai.appdna.sdk.onboarding.resolveTemplateString
 import ai.appdna.sdk.core.AudienceRuleEvaluator
 import ai.appdna.sdk.core.AudienceRuleSet
 import ai.appdna.sdk.core.StyleEngine
+import ai.appdna.sdk.core.ShareAction
+import ai.appdna.sdk.onboarding.shareText
+import ai.appdna.sdk.onboarding.shareUrl
 import ai.appdna.sdk.core.TemplateContext
 import ai.appdna.sdk.core.TemplateEngine
 import kotlin.math.roundToInt
@@ -756,6 +759,33 @@ class SharedFixtureTest(
                 applyAdvance(flow, currentIndex, routeResponses, StepAdvanceResult.Proceed, spy,
                     p.tracker, hookRan = false)
                 spy.state["pending_completion_route"] = PendingCompletionRoute.take()
+            }
+
+            // Opens the share sheet and STAYS (#1797). The payload comes from the SDK's own
+            // `ShareAction.payload` — the rule the button calls at the tap — applied to the tapped
+            // block AS THE REAL PARSER DECODED IT, so a dropped `share_text` / `share_url` in the decoder
+            // fails here as surely as a broken trim. The fixtures carry surrounding whitespace on
+            // purpose: passing the raw fields through would not match.
+            //
+            // No advance: the tap never reaches handleAction (ButtonBlock opens the sheet itself), so
+            // the step is the one the user tapped on. No event and no onAction, which the fixture's
+            // empty `events` / `delegate_calls` assert against everything this runner records.
+            ShareAction.ACTION_NAME -> {
+                val buttonId = action.optString("button_id", "")
+                fun find(blocks: List<ai.appdna.sdk.onboarding.ContentBlock>?): ai.appdna.sdk.onboarding.ContentBlock? {
+                    for (b in blocks.orEmpty()) {
+                        if (b.id == buttonId) return b
+                        find(b.children)?.let { return it }
+                        find(b.stack_children)?.let { return it }
+                    }
+                    return null
+                }
+                val block = find(step.config.content_blocks)
+                    ?: unsupported("share: button '$buttonId' is not a content block of step '${step.id}'")
+                val payload = ShareAction.payload(block.shareText, block.shareUrl)
+                spy.state["share_sheet"] = payload?.let { mapOf("text" to it.text, "url" to it.url) }
+                spy.state["current_step_id"] = step.id
+                spy.state["current_step_index"] = currentIndex
             }
 
             "permission" -> unsupported(

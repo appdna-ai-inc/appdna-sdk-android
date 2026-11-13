@@ -5,7 +5,6 @@ import android.app.Application
 import android.os.Bundle
 import android.content.Context
 import android.net.Uri
-import android.content.Intent
 import android.os.Handler
 import android.os.Looper
 import ai.appdna.sdk.AppDNA
@@ -368,17 +367,10 @@ internal class PendingMessageListener(
         }
     }
 
-    private fun handleCTAAction(activity: Activity, action: CTAAction?) {
-        // dismiss / unknown / a link type with no link: nothing extra (the dialog dismisses).
-        val url = action?.linkToOpen ?: return
-        // Config-driven URL — scheme-checked before the OS sees it.
-        val uri = ai.appdna.sdk.core.URLSafety.sanitized(url, activity) ?: return
-        try {
-            activity.startActivity(Intent(Intent.ACTION_VIEW, uri))
-        } catch (err: Throwable) {
-            Log.warning("PendingMessageListener: open URL failed: ${err.message}")
-        }
-    }
+    // dismiss / unknown / a link type with no link: nothing extra (the dialog dismisses). `share`
+    // opens the share sheet (#1797). One implementation with MessageManager.
+    private fun handleCTAAction(activity: Activity, action: CTAAction?) =
+        MessageCTADispatch.perform(activity, action, "PendingMessageListener:")
 
     /**
      * Reflection-based foreground-activity lookup. Mirrors the iOS path

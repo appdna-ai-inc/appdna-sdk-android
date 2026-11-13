@@ -1983,6 +1983,12 @@ private fun PaywallExtraButtons(
                     button.url?.let { ai.appdna.sdk.core.URLSafety.open(context, it) }
                 }
                 "dismiss" -> onDismiss()
+                // The share sheet over the paywall (#1797), with the button's `share_text` and its
+                // `url` as the optional link. The paywall STAYS: the user comes back to the plans
+                // whether they shared or not. No host action and no event — Android cannot report
+                // whether a share completed, so neither platform tracks one.
+                ai.appdna.sdk.core.ShareAction.ACTION_NAME ->
+                    ai.appdna.sdk.core.ShareAction.open(context, button.share_text, button.url, surface = "paywall button")
                 else -> {
                     // An authored action this SDK does not know. It still dismisses, which
                     // is what the unauthored default has always done, but the host is told: that

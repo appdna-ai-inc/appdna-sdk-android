@@ -793,13 +793,16 @@ data class PaywallCTA(
 
 /**
  * An extra button in the CTA section, beyond the CTA and the restore link.
- * `action` is purchase | restore | dismiss | link; `dismiss` LEAVES the paywall, which returns the
+ * `action` is purchase | restore | dismiss | link | share; `dismiss` LEAVES the paywall, which returns the
  * user to the previous screen, so there is deliberately no separate `back`.
  */
 data class PaywallExtraButton(
     val text: String? = null,
     val action: String? = null,
+    /** `link`: the page to open. `share`: the optional link the share sheet carries. */
     val url: String? = null,
+    /** `share` only (#1797): the text the share sheet carries. */
+    val share_text: String? = null,
     val bg_color: String? = null,
     val text_color: String? = null,
     val font_size: Float? = null,
@@ -1688,6 +1691,7 @@ internal object PaywallConfigParser {
                         text = m.str(SURFACE, "$path.extra_buttons", "text"),
                         action = m.str(SURFACE, "$path.extra_buttons", "action"),
                         url = m.str(SURFACE, "$path.extra_buttons", "url"),
+                        share_text = m.str(SURFACE, "$path.extra_buttons", "share_text"),
                         bg_color = m.str(SURFACE, "$path.extra_buttons", "bg_color"),
                         text_color = m.str(SURFACE, "$path.extra_buttons", "text_color"),
                         font_size = (m.num(SURFACE, "$path.extra_buttons", "font_size"))?.toFloat(),

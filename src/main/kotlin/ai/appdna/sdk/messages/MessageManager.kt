@@ -16,7 +16,6 @@ import ai.appdna.sdk.core.TriggerOperator
 
 import android.app.Activity
 import android.content.Context
-import android.content.Intent
 import android.net.Uri
 import android.os.Handler
 import android.os.Looper
@@ -345,17 +344,10 @@ class MessageManager internal constructor(
         }
     }
 
-    private fun handleCTAAction(activity: Activity, action: CTAAction?) {
-        // dismiss / unknown / a link type with no link: nothing extra (the dialog dismisses).
-        val url = action?.linkToOpen ?: return
-        // Config-driven URL — scheme-checked before the OS sees it.
-        val uri = ai.appdna.sdk.core.URLSafety.sanitized(url, activity) ?: return
-        try {
-            activity.startActivity(Intent(Intent.ACTION_VIEW, uri))
-        } catch (e: Throwable) {
-            Log.warning("[Messages] open URL failed: ${e.message}")
-        }
-    }
+    // dismiss / unknown / a link type with no link: nothing extra (the dialog dismisses). `share`
+    // opens the share sheet (#1797). One implementation with PendingMessageListener.
+    private fun handleCTAAction(activity: Activity, action: CTAAction?) =
+        MessageCTADispatch.perform(activity, action, "[Messages]")
 
     // MARK: - Condition evaluation (mirrors MessageManager.swift:196-233)
 

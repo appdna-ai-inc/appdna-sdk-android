@@ -212,12 +212,54 @@ data class MessageContentDark(
 
 @Immutable
 data class CTAAction(
-    val type: String, // "dismiss", "deep_link", "open_url", "unknown" — see MessageConfigParser.parseCTAAction
+    val type: String, // "dismiss", "deep_link", "open_url", "share", "unknown" — see MessageConfigParser.parseCTAAction
     val url: String? = null,
+    /** `share` only (#1797): the text the share sheet carries; [url] is its optional link. */
+    val text: String? = null,
 ) {
     /** The link a tap opens: a `deep_link` / `open_url` with a link, else null (the tap only dismisses). */
     val linkToOpen: String?
         get() = if (type == "deep_link" || type == "open_url") url else null
+
+    /**
+     * What a `share` CTA shares: [text] and [url], trimmed, through the SDK's one share rule. Null for
+     * any other type, and for a share with nothing in it — which then only dismisses, like `dismiss`.
+     */
+    internal val sharePayload: ai.appdna.sdk.core.ShareAction.SharePayload?
+        get() = if (type == ai.appdna.sdk.core.ShareAction.ACTION_NAME) ai.appdna.sdk.core.ShareAction.payload(text, url) else null
+}
+
+/**
+ * What a message CTA does after the tap is tracked, ONE implementation for both presenters
+ * ([MessageManager] and [PendingMessageListener]). The dialog closes itself after the CTA callback.
+ *
+ *  - `share` → the share sheet, started from [activity] (the message is closing over it; the sheet
+ *    comes up on the host). Nothing to share → nothing opened: the tap only dismisses.
+ *  - `deep_link` / `open_url` with a link → that link, scheme-checked.
+ *  - anything else (`dismiss`, `unknown`, a link type with no link) → nothing extra.
+ */
+internal object MessageCTADispatch {
+    fun perform(activity: android.app.Activity, action: CTAAction?, logTag: String) {
+        if (action?.type == ai.appdna.sdk.core.ShareAction.ACTION_NAME) {
+            val payload = action.sharePayload
+            if (payload == null) {
+                ai.appdna.sdk.Log.warning(
+                    "$logTag a message CTA is configured to share but has neither text nor a link; it only dismisses.",
+                )
+                return
+            }
+            ai.appdna.sdk.core.ShareAction.open(activity, payload)
+            return
+        }
+        val url = action?.linkToOpen ?: return
+        // Config-driven URL — scheme-checked before the OS sees it.
+        val uri = ai.appdna.sdk.core.URLSafety.sanitized(url, activity) ?: return
+        try {
+            activity.startActivity(android.content.Intent(android.content.Intent.ACTION_VIEW, uri))
+        } catch (e: Throwable) {
+            ai.appdna.sdk.Log.warning("$logTag open URL failed: ${e.message}")
+        }
+    }
 }
 
 // @Stable, not @Immutable: TriggerCondition.value is `Any?`
@@ -292,7 +334,7 @@ internal object MessageConfigParser {
     internal fun parseCTAAction(raw: Any?): CTAAction? {
         fun normType(t: String): String = when (val s = t.trim()) {
             "url" -> "open_url"
-            "dismiss", "deep_link", "open_url" -> s
+            "dismiss", "deep_link", "open_url", ai.appdna.sdk.core.ShareAction.ACTION_NAME -> s
             else -> "unknown"
         }
         fun link(v: Any?): String? = (v as? String)?.trim()?.takeIf { it.isNotEmpty() }
@@ -305,6 +347,8 @@ internal object MessageConfigParser {
             is Map<*, *> -> CTAAction(
                 type = (raw["type"] as? String)?.let(::normType) ?: "dismiss",
                 url = link(raw["url"]) ?: link(raw["value"]),
+                // `share`'s text (#1797). Kept raw: the share rule trims it, and a blank one is absent.
+                text = raw["text"] as? String,
             )
             else -> null
         }

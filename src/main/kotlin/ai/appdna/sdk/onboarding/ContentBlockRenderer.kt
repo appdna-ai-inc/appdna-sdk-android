@@ -3026,6 +3026,16 @@ private fun ImageBlock(block: ContentBlock) {
     )
 }
 
+/*
+ * `action: "share"` (#1797): the text and optional link the share sheet carries. Authored TOP-LEVEL
+ * (`share_text`, `share_url`) as on iOS, and folded into `field_config` by the decoder: ContentBlock is
+ * at the JVM 255-constructor-arg ceiling, and two more top-level fields made the class fail to load
+ * with a bare ClassFormatError (measured: every test that decoded a block died on it). Both are trimmed
+ * by `ai.appdna.sdk.core.ShareAction.payload`, and a button with neither opens nothing.
+ */
+internal val ContentBlock.shareText: String? get() = field_config?.get("share_text") as? String
+internal val ContentBlock.shareUrl: String? get() = field_config?.get("share_url") as? String
+
 @Composable
 private fun ButtonBlock(
     block: ContentBlock,
@@ -3155,6 +3165,22 @@ private fun ButtonBlock(
                     }
                 }
                 // No auto-advance — mirrors iOS InAppBrowser.present semantics.
+            }
+            // Open the share sheet with the button's own text and link, and STAY (#1797). Opened HERE,
+            // at the tap, because this is the only place that holds the block: `onAction` is
+            // `(String) -> Unit` and handleAction never sees `share_text` / `share_url`. Every button —
+            // top-level or a Multi-buttons / Row / stack child — is drawn by this composable, so this
+            // one branch covers them all. Not forwarded to `onAction`: handleAction's unknown-action
+            // `else` ADVANCES, and a share must never move the user on. No event, no host onAction —
+            // Android cannot tell whether a share completed. `record` above keeps nothing for it
+            // (`advances("share")` is false), so a later advance cannot route on this press.
+            //
+            // The text goes through `loc` exactly as the label does — the same translation lookup and
+            // `{{…}}` interpolation — under its own key, `block.<id>.share_text`. iOS parity.
+            ai.appdna.sdk.core.ShareAction.ACTION_NAME -> {
+                val rawShareText = block.shareText ?: ""
+                val shareText = loc?.invoke("block.${block.id}.share_text", rawShareText) ?: rawShareText
+                ai.appdna.sdk.core.ShareAction.open(context, shareText, block.shareUrl, surface = "button")
             }
             // Was `onAction("next")` which rewrote the
             // action before reaching the canonical handleAction switch.
