@@ -761,7 +761,7 @@ class SharedFixtureTest(
                 spy.state["pending_completion_route"] = PendingCompletionRoute.take()
             }
 
-            // Opens the share sheet and STAYS (#1797). The payload comes from the SDK's own
+            // Opens the share sheet and STAYS. The payload comes from the SDK's own
             // `ShareAction.payload` — the rule the button calls at the tap — applied to the tapped
             // block AS THE REAL PARSER DECODED IT, so a dropped `share_text` / `share_url` in the decoder
             // fails here as surely as a broken trim. The fixtures carry surrounding whitespace on

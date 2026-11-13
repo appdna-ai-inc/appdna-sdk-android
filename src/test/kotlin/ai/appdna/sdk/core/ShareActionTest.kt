@@ -17,7 +17,7 @@ import org.robolectric.Shadows.shadowOf
 import org.robolectric.annotation.Config
 
 /**
- * The one share rule every surface calls (#1797): what counts as something to share, and the exact
+ * The one share rule every surface calls: what counts as something to share, and the exact
  * intent the share sheet is started with. The surface tests (onboarding button, Multi-buttons child,
  * paywall extra button, message CTA) prove each surface reaches THIS; this proves what it does.
  */

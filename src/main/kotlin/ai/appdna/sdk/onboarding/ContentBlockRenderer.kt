@@ -3027,7 +3027,7 @@ private fun ImageBlock(block: ContentBlock) {
 }
 
 /*
- * `action: "share"` (#1797): the text and optional link the share sheet carries. Authored TOP-LEVEL
+ * `action: "share"`: the text and optional link the share sheet carries. Authored TOP-LEVEL
  * (`share_text`, `share_url`) as on iOS, and folded into `field_config` by the decoder: ContentBlock is
  * at the JVM 255-constructor-arg ceiling, and two more top-level fields made the class fail to load
  * with a bare ClassFormatError (measured: every test that decoded a block died on it). Both are trimmed
@@ -3166,7 +3166,7 @@ private fun ButtonBlock(
                 }
                 // No auto-advance — mirrors iOS InAppBrowser.present semantics.
             }
-            // Open the share sheet with the button's own text and link, and STAY (#1797). Opened HERE,
+            // Open the share sheet with the button's own text and link, and STAY. Opened HERE,
             // at the tap, because this is the only place that holds the block: `onAction` is
             // `(String) -> Unit` and handleAction never sees `share_text` / `share_url`. Every button —
             // top-level or a Multi-buttons / Row / stack child — is drawn by this composable, so this

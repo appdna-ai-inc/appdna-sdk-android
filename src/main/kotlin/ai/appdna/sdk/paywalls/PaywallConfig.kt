@@ -801,7 +801,7 @@ data class PaywallExtraButton(
     val action: String? = null,
     /** `link`: the page to open. `share`: the optional link the share sheet carries. */
     val url: String? = null,
-    /** `share` only (#1797): the text the share sheet carries. */
+    /** `share` only: the text the share sheet carries. */
     val share_text: String? = null,
     val bg_color: String? = null,
     val text_color: String? = null,

@@ -368,7 +368,7 @@ internal class PendingMessageListener(
     }
 
     // dismiss / unknown / a link type with no link: nothing extra (the dialog dismisses). `share`
-    // opens the share sheet (#1797). One implementation with MessageManager.
+    // opens the share sheet. One implementation with MessageManager.
     private fun handleCTAAction(activity: Activity, action: CTAAction?) =
         MessageCTADispatch.perform(activity, action, "PendingMessageListener:")
 

@@ -22,7 +22,7 @@ import org.robolectric.annotation.Config
 import org.robolectric.shadows.ShadowDialog
 
 /**
- * An in-app message whose CTA is `{type: "share", text, url}` (#1797).
+ * An in-app message whose CTA is `{type: "share", text, url}`.
  *
  * Parsing is asserted on the REAL `MessageConfigParser`; the tap is driven through the REAL
  * `MessageManager` — an event presents the message on the foreground activity, the CTA is clicked

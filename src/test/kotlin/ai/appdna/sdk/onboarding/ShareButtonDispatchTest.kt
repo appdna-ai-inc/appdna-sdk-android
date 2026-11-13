@@ -18,7 +18,7 @@ import org.robolectric.Shadows.shadowOf
 import org.robolectric.annotation.Config
 
 /**
- * A `share` button (#1797), CLICKED in the real flow host: it starts the share sheet with the
+ * A `share` button, CLICKED in the real flow host: it starts the share sheet with the
  * button's own text and link, and the user stays on the step.
  *
  * Driven through `OnboardingFlowHost` rather than the block renderer alone, because "stays" is a

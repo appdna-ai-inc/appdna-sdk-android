@@ -15,7 +15,7 @@ import org.robolectric.Shadows.shadowOf
 import org.robolectric.annotation.Config
 
 /**
- * A paywall extra button authored `action: "share"` (#1797), CLICKED on the real `PaywallScreen`:
+ * A paywall extra button authored `action: "share"`, CLICKED on the real `PaywallScreen`:
  * the share sheet opens with the button's `share_text` and its `url` as the link, and the paywall
  * stays — no dismiss, no purchase, no host action.
  *

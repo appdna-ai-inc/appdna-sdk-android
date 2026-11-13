@@ -214,7 +214,7 @@ data class MessageContentDark(
 data class CTAAction(
     val type: String, // "dismiss", "deep_link", "open_url", "share", "unknown" — see MessageConfigParser.parseCTAAction
     val url: String? = null,
-    /** `share` only (#1797): the text the share sheet carries; [url] is its optional link. */
+    /** `share` only: the text the share sheet carries; [url] is its optional link. */
     val text: String? = null,
 ) {
     /** The link a tap opens: a `deep_link` / `open_url` with a link, else null (the tap only dismisses). */
@@ -347,7 +347,7 @@ internal object MessageConfigParser {
             is Map<*, *> -> CTAAction(
                 type = (raw["type"] as? String)?.let(::normType) ?: "dismiss",
                 url = link(raw["url"]) ?: link(raw["value"]),
-                // `share`'s text (#1797). Kept raw: the share rule trims it, and a blank one is absent.
+                // `share`'s text. Kept raw: the share rule trims it, and a blank one is absent.
                 text = raw["text"] as? String,
             )
             else -> null

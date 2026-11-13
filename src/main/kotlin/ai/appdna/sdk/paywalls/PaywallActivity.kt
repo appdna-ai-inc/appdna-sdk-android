@@ -1983,7 +1983,7 @@ private fun PaywallExtraButtons(
                     button.url?.let { ai.appdna.sdk.core.URLSafety.open(context, it) }
                 }
                 "dismiss" -> onDismiss()
-                // The share sheet over the paywall (#1797), with the button's `share_text` and its
+                // The share sheet over the paywall, with the button's `share_text` and its
                 // `url` as the optional link. The paywall STAYS: the user comes back to the plans
                 // whether they shared or not. No host action and no event — Android cannot report
                 // whether a share completed, so neither platform tracks one.

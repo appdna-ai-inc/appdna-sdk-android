@@ -2140,7 +2140,7 @@ internal object OnboardingConfigParser {
                 // through `ContentBlock.howto_blocks_android` / `howto_blocks_ios`.
                 val howtoIos = parseChildBlocks(bm["howto_blocks_ios"], "$path.howto_blocks_ios")
                 val howtoAndroid = parseChildBlocks(bm["howto_blocks_android"], "$path.howto_blocks_android")
-                // `action: "share"` (#1797) — authored top-level as on iOS; folded here for the same
+                // `action: "share"` — authored top-level as on iOS; folded here for the same
                 // 255-arg reason. Read by `ContentBlock.shareText` / `shareUrl`.
                 val shareText = bm.str(SURFACE, path, "share_text")
                 val shareUrl = bm.str(SURFACE, path, "share_url")

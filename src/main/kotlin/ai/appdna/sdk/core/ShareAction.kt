@@ -8,7 +8,7 @@ import android.content.Intent
 import ai.appdna.sdk.Log
 
 /**
- * The `share` action (#1797): open the platform share sheet with authored text and an optional link.
+ * The `share` action: open the platform share sheet with authored text and an optional link.
  *
  * ONE helper for every surface that offers it — an onboarding button (top-level or a child of
  * Multi-buttons / Row / a stack layer), an in-app message CTA and a paywall extra button — so the

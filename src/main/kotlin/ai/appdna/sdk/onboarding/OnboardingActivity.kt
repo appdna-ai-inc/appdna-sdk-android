@@ -4282,7 +4282,7 @@ private fun BlockBasedStepView(
              */
             "rate_app" -> ai.appdna.sdk.feedback.ReviewPromptManager.openStoreListing(activityCtx)
             /*
-             * `share` (#1797) opens the share sheet AT THE TAP (`ButtonBlock`), the one place that holds
+             * `share` opens the share sheet AT THE TAP (`ButtonBlock`), the one place that holds
              * the block's `share_text` / `share_url` — this method only ever receives the action name
              * and an `action_value`. The arm exists so a `share` that reaches here by any other route
              * STAYS: falling to `else` below would advance the step, and a share must never move the
