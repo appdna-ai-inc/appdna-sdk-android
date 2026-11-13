@@ -41,6 +41,11 @@ the project uses [Semantic Versioning](https://semver.org/).
 
 ### Fixed
 
+- **A paywall presented by placement reports its placement.** `presentPaywallByPlacement(activity, "after_workout")`
+  sent `paywall_view` with `placement: "unknown"`, so per-placement paywall analytics counted every Android
+  presentation as unknown. It now sends the placement it was asked for, as iOS does; a `PaywallContext` you pass keeps
+  its experiment, variant and custom data.
+
 - **A queued event batch is deleted only when the server refuses its content.** An event upload answered 401, 403,
   404 or with any other 4xx (except 408 and 429) used to delete its batch from memory and disk and count it as dropped,
   so an outage behind a tunnel or proxy that answered 401 lost every event queued during it. Now a batch is dropped,

@@ -163,8 +163,16 @@ internal class PaywallManager(
             Log.warning("No paywall found for placement: $placement")
             return
         }
-        present(activity = activity, id = match.id, context = context, listener = listener)
+        present(activity = activity, id = match.id, context = placementContext(placement, context), listener = listener)
     }
+
+    /**
+     * The context a placement presentation sends: the REQUESTED placement, with the host's experiment, variant
+     * and custom data kept. Forwarding the host's context unchanged reported `placement=unknown` on `paywall_view` for
+     * every placement-presented paywall. Mirrors iOS `PlacementPaywallContext.make`.
+     */
+    internal fun placementContext(placement: String, context: PaywallContext?): PaywallContext =
+        context?.copy(placement = placement) ?: PaywallContext(placement = placement)
 
     /**
      * Present a paywall. Must be called with a valid Activity.
