@@ -21,6 +21,8 @@ internal class PendingFollowRig {
     val presented = ArrayList<String>()
     private var onScreen: (() -> Unit)? = null
     private val retries = ArrayList<() -> Unit>()
+    /** What the listener runs when an activity resumes (#1783). */
+    private var onActive: (() -> Unit)? = null
 
     private fun delivery(d: Doc) = PendingMessageListener.Delivery(d.id, d.data) { d.consumed = true }
 
@@ -45,6 +47,7 @@ internal class PendingFollowRig {
             }
         },
         schedule = { _, block -> retries.add(block) },
+        observeActivation = { block -> onActive = block; ({ onActive = null }) },
     )
 
     fun deliver(to: String, id: String, title: String) {
@@ -73,6 +76,9 @@ internal class PendingFollowRig {
         r.forEach { it() }
     }
 
+    /** An activity of the app resumes. */
+    fun appActive() { onActive?.invoke() }
+
     val unconsumed: List<String> get() = docs.filter { !it.consumed }.map { "${it.owner}/${it.id}" }.sorted()
 
     companion object {
@@ -99,6 +105,7 @@ internal class PendingFollowRig {
                     }
                     "close" -> rig.close()
                     "run_retries" -> rig.runRetries()
+                    "app_active" -> rig.appActive()
                     else -> return null
                 }
             }

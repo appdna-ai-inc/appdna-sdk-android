@@ -1,6 +1,8 @@
 package ai.appdna.sdk.messages
 
 import android.app.Activity
+import android.app.Application
+import android.os.Bundle
 import android.content.Context
 import android.net.Uri
 import android.content.Intent
@@ -36,6 +38,7 @@ internal class PendingMessageListener(
     subscribe: Subscribe? = null,
     present: Present? = null,
     schedule: Schedule? = null,
+    observeActivation: ObserveActivation? = null,
 ) {
     /** One delivery document as a subscription hands it over. */
     internal class Delivery(val id: String, val data: Map<String, Any?>, val markConsumed: () -> Unit)
@@ -53,6 +56,14 @@ internal class PendingMessageListener(
     /** Runs `block` after `seconds` — the retry of a delivery that could not be drawn yet. */
     internal fun interface Schedule {
         fun after(seconds: Double, block: () -> Unit)
+    }
+
+    /**
+     * Calls `block` each time an activity of the app resumes; returns what stops that. The default registers
+     * `Application.ActivityLifecycleCallbacks` on [appContext] (none without one).
+     */
+    internal fun interface ObserveActivation {
+        fun observe(block: () -> Unit): () -> Unit
     }
 
     private class Pending(val key: String, val ownerKey: String, val delivery: Delivery, val config: MessageConfig)
@@ -74,6 +85,50 @@ internal class PendingMessageListener(
     /** Deliveries drawn by this process — a re-delivered document is never drawn twice. */
     private val presented = HashSet<String>()
     private val attempts = HashMap<String, Int>()
+    /**
+     * #1783 — deliveries still undrawn when their retries ran out (a process started with no activity: an FCM data
+     * message, a background job), in arrival order. Drawn when an activity next resumes; without this they waited for
+     * the process to die, because the listener hands a document over once.
+     */
+    private val parked = ArrayList<Pending>()
+    private val stopActivation: () -> Unit =
+        (observeActivation ?: ObserveActivation(::observeActivityResumes)).observe { presentParked() }
+
+    private fun observeActivityResumes(block: () -> Unit): () -> Unit {
+        val app = appContext?.applicationContext as? Application ?: return {}
+        val main = Handler(Looper.getMainLooper())
+        val callbacks = object : Application.ActivityLifecycleCallbacks {
+            // Posted, so the activity has finished resuming when the presenter looks for it.
+            override fun onActivityResumed(activity: Activity) { main.post { block() } }
+            override fun onActivityCreated(activity: Activity, savedInstanceState: Bundle?) {}
+            override fun onActivityStarted(activity: Activity) {}
+            override fun onActivityPaused(activity: Activity) {}
+            override fun onActivityStopped(activity: Activity) {}
+            override fun onActivitySaveInstanceState(activity: Activity, outState: Bundle) {}
+            override fun onActivityDestroyed(activity: Activity) {}
+        }
+        app.registerActivityLifecycleCallbacks(callbacks)
+        return { app.unregisterActivityLifecycleCallbacks(callbacks) }
+    }
+
+    /** An activity resumed: every parked delivery still listened on and not expired gets a fresh round of attempts. */
+    private fun presentParked() {
+        val now = System.currentTimeMillis()
+        val due = synchronized(lock) {
+            val d = parked.filter { it.ownerKey in subscriptions && it.key !in presented }
+            parked.clear()
+            d.forEach { attempts[it.key] = 0 }
+            d
+        }
+        for (p in due) {
+            if (decodeDelivery(p.delivery.data, now) == null) {
+                Log.debug("PendingMessageListener: ${p.delivery.id} expired while waiting for an activity — dropped")
+                continue
+            }
+            Log.debug("PendingMessageListener: activity resumed — presenting ${p.delivery.id}, parked with no activity")
+            retry(p)
+        }
+    }
 
     /**
      * Listen on exactly [listenIds] under this org and app: a listener still wanted is kept as it is, one no longer
@@ -90,6 +145,7 @@ internal class PendingMessageListener(
             val gone = subscriptions.keys.filter { it !in wantedKeys }
             removed = gone.mapNotNull { subscriptions.remove(it)?.remove }
             waiting.removeAll { it.ownerKey !in wantedKeys }
+            parked.removeAll { it.ownerKey !in wantedKeys }
             toOpen = wanted.filter { it.second !in subscriptions }
             // Registered before the listener opens: its first snapshot (the deliveries already waiting) may arrive at once.
             for ((_, key) in toOpen) {
@@ -125,9 +181,11 @@ internal class PendingMessageListener(
             val l = subscriptions.values.mapNotNull { it.remove }
             subscriptions.clear()
             waiting.clear()
+            parked.clear()
             l
         }
         all.forEach { it() }
+        stopActivation()
     }
 
     private fun handleIncoming(ownerKey: String, delivery: Delivery, now: Long) {
@@ -191,7 +249,14 @@ internal class PendingMessageListener(
                     attempts[p.key] = n
                     n
                 }
-                if (n < MAX_PRESENT_ATTEMPTS) scheduleFn.after(n.toDouble()) { retry(p) }
+                if (n < MAX_PRESENT_ATTEMPTS) {
+                    scheduleFn.after(n.toDouble()) { retry(p) }
+                } else {
+                    // #1783 — no activity for the whole retry window: drawn when an activity next resumes. The
+                    // document stays unconsumed meanwhile, so a cold launch still draws it too.
+                    synchronized(lock) { if (parked.none { it.key == p.key }) parked.add(p) }
+                    Log.debug("PendingMessageListener: no activity after $n attempts — ${p.delivery.id} waits for one")
+                }
                 presentNext()
             }
         }, {
@@ -202,7 +267,8 @@ internal class PendingMessageListener(
 
     private fun retry(p: Pending) {
         val live = synchronized(lock) {
-            p.ownerKey in subscriptions && p.key !in presented && presentingKey != p.key && waiting.none { it.key == p.key }
+            p.ownerKey in subscriptions && p.key !in presented && presentingKey != p.key &&
+                waiting.none { it.key == p.key } && parked.none { it.key == p.key }
         }
         if (live) enqueue(p)
     }
