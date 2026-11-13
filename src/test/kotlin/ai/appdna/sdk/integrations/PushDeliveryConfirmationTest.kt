@@ -24,7 +24,7 @@ import org.robolectric.Shadows.shadowOf
 import org.robolectric.annotation.Config
 
 /**
- * #1786 — delivered is device-confirmed only (owner decision 147). On Android the device can confirm a push only when
+ * delivered is device-confirmed only. On Android the device can confirm a push only when
  * the SDK's code runs as it arrives, so:
  *  - the token registration says whether the SDK's own service receives FCM messages (`push_display: "sdk"`), and the
  *    server then sends data-only messages;

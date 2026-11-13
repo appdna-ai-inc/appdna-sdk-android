@@ -307,14 +307,14 @@ internal object PushTokenRegistration {
         put("os_version", osVersion)
         if (!anonId.isNullOrEmpty()) put("anon_id", anonId)
         if (!userId.isNullOrEmpty()) put("user_id", userId)
-        // #1786 — `sdk` when the SDK's own service receives FCM messages here, so the server may send data-only
+        // `sdk` when the SDK's own service receives FCM messages here, so the server may send data-only
         // messages that the SDK draws and confirms delivery for (also in the background). Absent otherwise.
         if (!pushDisplay.isNullOrEmpty()) put("push_display", pushDisplay)
     }
 }
 
 /**
- * #1786 — whether the SDK's [AppDNAMessagingService] (or a host subclass of it) is the service FCM delivers messages
+ * whether the SDK's [AppDNAMessagingService] (or a host subclass of it) is the service FCM delivers messages
  * to in this app. Firebase hands `com.google.firebase.MESSAGING_EVENT` to the ONE enabled service that resolves for
  * the package; when it is the SDK's, a data-only AppDNA push reaches the SDK in the foreground and the background, and
  * the SDK draws it and reports `push_delivered`. When the host runs its own service (and disabled the SDK's), the

@@ -8,7 +8,7 @@ the project uses [Semantic Versioning](https://semver.org/).
 
 ### Added
 
-- **Push deliveries are confirmed by the device, also in the background (#1786).** The token registration reports
+- **Push deliveries are confirmed by the device, also in the background.** The token registration reports
   `push_display: "sdk"` when the SDK's own `AppDNAMessagingService` (or a subclass) receives FCM messages in the app.
   AppDNA then sends that device data-only messages, which reach the service in the foreground and the background, so
   the SDK draws every AppDNA push (with its buttons) and tracks `push_delivered`. A data-only push uses the campaign's

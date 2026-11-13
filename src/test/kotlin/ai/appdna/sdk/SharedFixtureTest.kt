@@ -4453,7 +4453,7 @@ class SharedFixtureTest(
                 idle()
                 spy.state["notification_posted"] = notificationPosted()
             }
-            // #1786 — the SDK's OWN service, as FCM hands it a data-only message (foreground or background: a
+            // the SDK's OWN service, as FCM hands it a data-only message (foreground or background: a
             // data-only message always reaches the service). The REAL AppDNAMessagingService.onMessageReceived.
             "service" -> {
                 installPush(p, spy)

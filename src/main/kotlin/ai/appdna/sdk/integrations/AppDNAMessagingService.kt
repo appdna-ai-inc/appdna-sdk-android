@@ -210,7 +210,7 @@ internal object AppDNANotificationPoster {
         if (soundChannel != null) PushSoundChannels.soundUri(context, data["sound"])?.let { builder.setSound(it) }
 
         // Custom color; without one, the app's `default_notification_color` meta-data, the colour FCM's own
-        // display uses — so a push the SDK draws (#1786: every push, data-only, on a device the SDK's service
+        // display uses — so a push the SDK draws (every push, data-only, on a device the SDK's service
         // receives messages for) looks as it did when FCM drew it in the background.
         val customColor = data["color"]?.let { color ->
             try { android.graphics.Color.parseColor(color) } catch (_: Exception) { null }
@@ -363,7 +363,7 @@ internal class PushDismissReceiver : BroadcastReceiver() {
  */
 internal object NotificationIconResolver {
     fun resolve(context: Context, authored: String? = null): Int {
-        // 0. #1786 — the small icon the campaign names (`data.icon`, a drawable resource name). A data-only push
+        // 0. the small icon the campaign names (`data.icon`, a drawable resource name). A data-only push
         // carries it there; FCM's own display used `android.notification.icon` the same way, ahead of the default.
         authored?.trim()?.takeIf { it.isNotEmpty() }?.let { name ->
             val res = context.resources
