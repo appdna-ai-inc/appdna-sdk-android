@@ -239,6 +239,10 @@ data class CTAAction(
  *  - anything else (`dismiss`, `unknown`, a link type with no link) → nothing extra.
  */
 internal object MessageCTADispatch {
+    /** Whether [perform] opens the share chooser for this CTA (a `share` with something to share). */
+    fun opensShare(action: CTAAction?): Boolean =
+        action?.type == ai.appdna.sdk.core.ShareAction.ACTION_NAME && action.sharePayload != null
+
     fun perform(activity: android.app.Activity, action: CTAAction?, logTag: String) {
         if (action?.type == ai.appdna.sdk.core.ShareAction.ACTION_NAME) {
             val payload = action.sharePayload

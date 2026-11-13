@@ -413,6 +413,7 @@ class MessageManager internal constructor(
         try {
             // `show` keeps the message on screen across a recreation of the host's activity (a fold,
             // an unfold, a rotation), and runs onClosed once, when it is really gone.
+            var openedShare = false
             surface.show(
                 messageId,
                 activity,
@@ -427,6 +428,10 @@ class MessageManager internal constructor(
                     val ctaData: Map<String, Any>? = config.content.cta_action?.url?.let { mapOf("url" to it) }
                     mainHandler.post { delegate?.onMessageAction(messageId, ctaActionType, ctaData) }
 
+                    // A share opens the system chooser over the host: the close that follows must not draw a held
+                    // message behind it. It waits for the next activity resume — the user coming back from the
+                    // chooser — as on iOS.
+                    if (MessageCTADispatch.opensShare(config.content.cta_action)) openedShare = true
                     handleCTAAction(onActivity, config.content.cta_action)
                 },
                 onDismiss = {
@@ -438,8 +443,8 @@ class MessageManager internal constructor(
                 onClosed = {
                     isPresenting.set(false)
                     mainHandler.post { delegate?.onMessageDismissed(messageId) }
-                    // The next held message, if one is waiting.
-                    mainHandler.post { releaseHeld() }
+                    // The next held message, if one is waiting — not behind a share chooser just opened.
+                    if (!openedShare) mainHandler.post { releaseHeld() }
                 },
             )
         } catch (e: Throwable) {

@@ -64,6 +64,39 @@ class ConfigMessageBackgroundLaunchTest {
         assertEquals(emptyList<String>(), state["held"])
     }
 
+    /**
+     * A Share CTA on the message on screen opens the system chooser over the host. The close that follows must not draw
+     * the next held message behind the chooser: it waits for the next activity resume (the user coming back), as iOS
+     * waits for the next activation. A plain dismiss still draws it at once.
+     */
+    @Test
+    fun aShareCtaCloseLeavesTheNextHeldMessageForTheNextResume() {
+        val messages = JSONObject("""{
+          "fx_share": {"message_type": "modal", "content": {"title": "Share it", "body": "b", "cta_text": "Share",
+                       "cta_action": {"type": "share", "text": "Synthetic share text", "url": "https://example.com/s"}},
+                       "trigger_rules": {"event": "evt_share", "frequency": "every_time"}},
+          "fx_next":  {"message_type": "modal", "content": {"title": "Next", "body": "b", "cta_text": "OK"},
+                       "trigger_rules": {"event": "evt_next", "frequency": "every_time"}}
+        }""")
+        fun script(vararg ops: String) = JSONObject().put("messages", messages).put("script", org.json.JSONArray().apply {
+            ops.forEach { put(JSONObject(it)) }
+        })
+        val setup = arrayOf("""{"op":"window","available":false}""", """{"op":"track","event":"evt_share"}""",
+            """{"op":"track","event":"evt_next"}""", """{"op":"window","available":true}""", """{"op":"app_active"}""")
+
+        val afterShare = ConfigMessageHoldRig.run(ctx, script(*setup, """{"op":"tap_cta"}"""))!!
+        assertEquals("the chooser is up: nothing drawn behind it", listOf("fx_share"), afterShare["presented"])
+        assertEquals(listOf("fx_next"), afterShare["held"])
+
+        val back = ConfigMessageHoldRig.run(ctx, script(*setup, """{"op":"tap_cta"}""", """{"op":"app_active"}"""))!!
+        assertEquals("back from the chooser: drawn on the resume", listOf("fx_share", "fx_next"), back["presented"])
+        assertEquals(emptyList<String>(), back["held"])
+
+        // A dismiss (no share) still draws the next one when the first closes.
+        val dismissed = ConfigMessageHoldRig.run(ctx, script(*setup, """{"op":"close"}"""))!!
+        assertEquals(listOf("fx_share", "fx_next"), dismissed["presented"])
+    }
+
     /** The PRODUCTION activity lookup with no activity in the process: held, not drawn, its `once` not used up. */
     @Test
     fun liveActivityLookupHoldsWithNoActivity() {

@@ -24,6 +24,7 @@ internal class ConfigMessageHoldRig(context: Context, messagesJson: JSONObject, 
     val presented = ArrayList<String>()
     private var onActive: (() -> Unit)? = null
     private var onScreen: Pair<() -> Unit, () -> Unit>? = null
+    private var onScreenCta: ((Activity) -> Unit)? = null
     private val activity: Activity = Robolectric.buildActivity(Activity::class.java).setup().get()
     private var messages: Map<String, MessageConfig> = MessageConfigParser.parseMessages(toMap(messagesJson))
 
@@ -42,6 +43,7 @@ internal class ConfigMessageHoldRig(context: Context, messagesJson: JSONObject, 
             ) {
                 presented.add(messageId)
                 onScreen = onDismiss to onClosed
+                onScreenCta = onCTATap
             }
             override fun observeActivation(block: () -> Unit): () -> Unit {
                 onActive = if (noActivation) null else block
@@ -63,6 +65,17 @@ internal class ConfigMessageHoldRig(context: Context, messagesJson: JSONObject, 
         val s = onScreen ?: return
         onScreen = null
         s.first()
+        s.second()
+        idle()
+    }
+
+    /** The user taps the message's CTA: its action runs, then the message closes (as the dialog does). */
+    fun tapCta() {
+        val cta = onScreenCta ?: return
+        val s = onScreen ?: return
+        onScreen = null
+        onScreenCta = null
+        cta(activity)
         s.second()
         idle()
     }
@@ -95,6 +108,7 @@ internal class ConfigMessageHoldRig(context: Context, messagesJson: JSONObject, 
                     "track" -> rig.track(o.getString("event"))
                     "app_active" -> rig.appActive()
                     "close" -> rig.close()
+                    "tap_cta" -> rig.tapCta()
                     "unpublish" -> rig.unpublish(o.getString("id"))
                     else -> return null
                 }
