@@ -131,6 +131,9 @@ internal object AppDNANotificationPoster {
      */
     fun notificationId(data: Map<String, String>): Int = deliveryKey(data).hashCode()
 
+    /** The notification's own group: one per delivery, so Android never auto-groups SDK pushes. */
+    fun groupKey(deliveryKey: String): String = "appdna_push:$deliveryKey"
+
     fun isDisplayable(data: Map<String, String>, notifTitle: String? = null, notifBody: String? = null): Boolean =
         !((data["title"] ?: notifTitle).isNullOrBlank() && (data["body"] ?: notifBody).isNullOrBlank())
 
@@ -175,6 +178,12 @@ internal object AppDNANotificationPoster {
             // 0/missing res id, so we always have a valid fallback.
             .setSmallIcon(NotificationIconResolver.resolve(context.applicationContext ?: context, data["icon"]))
             .setAutoCancel(true)
+            // Its own group per delivery. Android auto-groups an app's UNGROUPED notifications
+            // once there are 4 of them, and a tap on the collapsed group opens the system-built summary,
+            // whose intent is the bare launch intent: no extras, so no push_tapped and no routing. The
+            // auto-grouper skips a notification with an app group, and a group with no summary is shown
+            // as its own row, so every SDK notification keeps its own tap intent.
+            .setGroup(groupKey(key))
             .setPriority(
                 if (data["priority"] == "high") NotificationCompat.PRIORITY_HIGH
                 else NotificationCompat.PRIORITY_DEFAULT

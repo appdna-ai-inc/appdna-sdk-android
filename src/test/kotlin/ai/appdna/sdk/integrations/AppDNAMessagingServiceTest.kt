@@ -157,6 +157,60 @@ class AppDNAMessagingServiceTest {
         }
     }
 
+    /*
+     * Android auto-groups an app's notifications that have NO group once there are 4, and a tap
+     * on the collapsed group opens the system's summary intent — the bare launch intent, with no extras —
+     * so a cold-start tap tracked nothing and routed nothing. Each SDK notification carries its own
+     * group, which the auto-grouper skips, and its own content intent with its own delivery's extras.
+     */
+    @Test
+    fun `each SDK notification has its own group and keeps its own tap extras - never auto-grouped`() {
+        val ids = listOf("d1", "d2", "d3", "d4", "d5")
+        ids.forEach { d ->
+            service.onMessageReceived(
+                msg(mapOf("appdna" to "1", "push_id" to "camp", "delivery_id" to d, "title" to "T $d", "deep_link" to "x://$d")),
+            )
+        }
+        idle()
+        val posted = notifications()
+        assertEquals(5, posted.size)
+        val groups = posted.map { it.group }
+        groups.forEach { assertTrue("every SDK notification has an app group, got $it", !it.isNullOrBlank()) }
+        assertEquals("one group per delivery", 5, groups.toSet().size)
+        posted.forEach { assertTrue("no SDK-built summary", it.flags and Notification.FLAG_GROUP_SUMMARY == 0) }
+        val byDelivery = posted.associate { n ->
+            val i = shadowOf(n.contentIntent).savedIntent
+            assertEquals("1", i.getStringExtra("appdna"))
+            assertEquals("camp", i.getStringExtra("push_id"))
+            i.getStringExtra("delivery_id") to i.getStringExtra("deep_link")
+        }
+        assertEquals(ids.associateWith { "x://$it" }, byDelivery)
+    }
+
+    /** The same for a message a host forwards with the SDK-display opt-in on: the SDK draws it, in its own group. */
+    @Test
+    fun `a forwarded message the SDK displays under the opt-in has its own group and tap extras`() {
+        val push = ai.appdna.sdk.AppDNA.push
+        push.contextOverride = ctx
+        try {
+            push.setSdkDisplaysForwardedMessages(true)
+            listOf("f1", "f2", "f3", "f4").forEach { d ->
+                push.handleMessageData(mapOf("appdna" to "1", "push_id" to "camp", "delivery_id" to d, "title" to "T $d"))
+            }
+            idle()
+            val posted = notifications()
+            assertEquals(4, posted.size)
+            assertEquals(setOf("f1", "f2", "f3", "f4").map { AppDNANotificationPoster.groupKey(it) }.toSet(), posted.map { it.group }.toSet())
+            assertEquals(
+                setOf("f1", "f2", "f3", "f4"),
+                posted.map { shadowOf(it.contentIntent).savedIntent.getStringExtra("delivery_id") }.toSet(),
+            )
+        } finally {
+            push.setSdkDisplaysForwardedMessages(false)
+            push.contextOverride = null
+        }
+    }
+
     @Test
     fun `two deliveries of one campaign are two notifications`() {
         val base = mapOf("appdna" to "1", "push_id" to "camp", "title" to "T")
