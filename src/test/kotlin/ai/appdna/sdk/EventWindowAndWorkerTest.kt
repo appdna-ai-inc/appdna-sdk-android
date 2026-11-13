@@ -95,6 +95,45 @@ class EventWindowAndWorkerTest {
     }
 
     /**
+     * A queue an earlier test built and never shut down keeps flushing, and taking its claim back once is
+     * not enough: its NEXT flush, started after the reset, took the claim again and held it while it waited
+     * on a server, so this test's flush deferred and sent nothing. That is the full-suite-only failure the
+     * pause and runtime-settings tests showed, with the failing test moving with timing. Manufactured here: the stale
+     * queue's flush hangs on a server that never answers, started after the reset, while a queue built after
+     * the reset uploads.
+     * NEGATIVE CONTROL: `tryAcquire` ignoring the generation → fails at "a queue built before the reset took
+     * the upload claim again" (the stale flush holds it while its request hangs).
+     */
+    @Test fun aQueueBuiltBeforeTheResetCannotTakeTheClaimAgain() {
+        val silent = TestHttpServer { _, _ -> null }   // accepts, reads, never answers
+        val ok = AtomicInteger(0)
+        val live = TestHttpServer { path, _ -> if (path.contains("/ingest/events")) ok.incrementAndGet(); 200 to "{}" }
+        val staleDb = EventDatabase(ctx, 10_000, "stale_gen_${System.nanoTime()}.db")
+        val liveDb = EventDatabase(ctx, 10_000, "live_gen_${System.nanoTime()}.db")
+        val stale = EventQueue(ApiClient("adn_test_stale_gen", silent.baseUrl), staleDb, null, 100, Long.MAX_VALUE, ctx, null)
+        val staleFlush = Thread { runCatching { runBlocking { stale.flushCycleForTest() } } }
+        var current: EventQueue? = null
+        try {
+            stale.enqueue(event(0))
+            // What the next test's setUp does.
+            TestHttpServer.settleIoDispatcher()
+            staleFlush.start()
+            Thread.sleep(500)
+            assertFalse("a queue built before the reset took the upload claim again", EventUploadCoordinator.isHeld())
+
+            current = EventQueue(ApiClient("adn_test_live_gen", live.baseUrl), liveDb, null, 100, Long.MAX_VALUE, ctx, null)
+            current.enqueue(event(1))
+            runBlocking { current.flushCycleForTest() }
+            assertEquals("the current queue's upload deferred to a queue from before the reset", 1, ok.get())
+        } finally {
+            silent.close(); live.close()
+            staleFlush.join(15_000)
+            stale.shutdown(); current?.shutdown()
+            stale.awaitShutdownFlush(10_000); current?.awaitShutdownFlush(10_000)
+        }
+    }
+
+    /**
      * In one JVM a queue an earlier test left uploading — to a server it has closed, or sleeping in
      * a retry backoff — still holds the process-wide upload claim, and this test's worker then deferred to
      * it: RETRY with nothing sent (the `1 ≠ 0 ingests` failure of [theWorkerEndsItsRunAfterARejectedBatch]

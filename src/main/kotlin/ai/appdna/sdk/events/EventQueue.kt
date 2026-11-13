@@ -57,6 +57,13 @@ internal class EventQueue(
     /** This queue's token for [UploadPauseGate] (see [UploadPauseGate.claim]). */
     private val pauseOwner: Long
 
+    /**
+     * The upload-claim generation this queue was built in. Always 0 in an app; a test's reset starts a new
+     * one, and a queue an earlier test left running can then no longer take the claim (see
+     * [EventUploadCoordinator.resetForTest]).
+     */
+    private val claimGeneration: Long = EventUploadCoordinator.currentGeneration()
+
     /** Lifecycle observer registered on ProcessLifecycleOwner.get(). */
     private var lifecycleObserver: DefaultLifecycleObserver? = null
 
@@ -275,7 +282,7 @@ internal class EventQueue(
 
         // Single upload owner — skip if the background Worker holds the claim, so
         // the same rows are never POSTed by both paths concurrently. Released in the finally below.
-        val claim = EventUploadCoordinator.tryAcquire()
+        val claim = EventUploadCoordinator.tryAcquire(claimGeneration)
         if (claim == null) {
             Log.debug("Flush deferred — background uploader is active")
             return
@@ -611,8 +618,17 @@ internal object EventUploadCoordinator {
 
     private val owner = java.util.concurrent.atomic.AtomicReference<Claim?>(null)
 
-    /** Takes the claim; the [Claim] releases it. Null when another owner holds it. */
-    fun tryAcquire(): Claim? {
+    /** Bumped only by [resetForTest]; an app stays at 0 for its whole life. */
+    @Volatile private var generation = 0L
+
+    internal fun currentGeneration(): Long = generation
+
+    /**
+     * Takes the claim; the [Claim] releases it. Null when another owner holds it — or when [generation] is
+     * older than the current one: an owner from before a [resetForTest] never takes the claim again.
+     */
+    fun tryAcquire(generation: Long = this.generation): Claim? {
+        if (generation != this.generation) return null
         val claim = Claim(Thread.currentThread().name, System.nanoTime())
         return if (owner.compareAndSet(null, claim)) claim else null
     }
@@ -664,6 +680,11 @@ internal object EventUploadCoordinator {
     @Synchronized
     internal fun resetForTest(): String? {
         resolved.clear()
+        // Taking the claim back is not enough on its own. A queue an earlier test never shut down keeps
+        // flushing — on its timer, or on its next threshold — and its NEXT flush took the claim again, after
+        // the reset, and held it through a retry backoff of up to 7 s while this test's flush deferred. Which
+        // test failed moved with timing. A new generation shuts every queue built before it out of the claim.
+        generation += 1
         val held = owner.getAndSet(null) ?: return null
         val ms = (System.nanoTime() - held.atNanos) / 1_000_000
         return "took back an upload claim held for $ms ms by ${held.thread}"
