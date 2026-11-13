@@ -3,7 +3,7 @@
 // A walk needs a dozen surfaces, and this sample has one button per surface type with ids baked into
 // the code. A walk build instead carries its menu in the merged manifest (`-PappdnaWalkMenu=<base64>`,
 // see build.gradle.kts): base64 of {"title", "items": [{"title", "kind", "value"}]}, where kind is one
-// of flow, placement, paywall, survey, screen, track, identify, reset, push. Empty by default, so a stock build opens
+// of flow, default_flow, placement, paywall, survey, survey_placement, screen, track, identify, reset, push. Empty by default, so a stock build opens
 // on the demo screen exactly as before. 🔴 This module is mirrored to the PUBLIC SDK repo: no key, id or
 // URL is committed here — the values are supplied by whoever builds the walk.
 package ai.appdna.sample
@@ -55,12 +55,21 @@ internal object WalkMenu {
                 val shown = AppDNA.presentOnboarding(activity = activity, flowId = item.value)
                 WalkLog.note("presentOnboarding(${item.title}) → ${if (shown) "presented" else "NOT presented (flow not found)"}")
             }
+            // The flow the app shows when it names none (the console's pinned default), as a host's first launch asks.
+            "default_flow" -> {
+                val shown = AppDNA.presentOnboarding(activity = activity)
+                WalkLog.note("presentOnboarding() → ${if (shown) "presented" else "NOT presented (no default flow)"}")
+            }
             "placement" -> {
                 val shown = AppDNA.presentPaywallByPlacement(activity = activity, placement = item.value)
                 WalkLog.note("presentPaywall(placement=${item.value}) → ${if (shown) "presented" else "NOT presented (no paywall)"}")
             }
             "paywall" -> { AppDNA.showPaywall(id = item.value); WalkLog.note("showPaywall(${item.title})") }
             "survey" -> { AppDNA.showSurvey(id = item.value); WalkLog.note("showSurvey(${item.title})") }
+            "survey_placement" -> {
+                val shown = AppDNA.surveys.presentByPlacement(item.value)
+                WalkLog.note("surveys.presentByPlacement(${item.value}) → ${if (shown) "presented" else "NOT presented (no survey)"}")
+            }
             "screen" -> {
                 AppDNA.showScreen(screenId = item.value) { r -> WalkLog.note("screen ${item.title} → $r") }
                 WalkLog.note("showScreen(${item.title})")
