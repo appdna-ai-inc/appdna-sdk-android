@@ -41,6 +41,11 @@ the project uses [Semantic Versioning](https://semver.org/).
 
 ### Fixed
 
+- **A tapped row of the date wheel moves into the band.** Tapping a row that was not in the band (or double-tapping
+  it with TalkBack) stored that value while the wheel stayed where it was, so the band showed one date and the answer
+  held another. The tapped row now glides into the band, as on iOS. The hour and minute columns are now announced
+  with their value in the band, as the date columns are.
+
 - **A survey's Next and Submit labels use `button_text_color`.** They were always white, so a light button colour
   made them hard to read. They now use the theme's `button_text_color` (white when it is not set), as on iOS.
 

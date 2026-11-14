@@ -7609,12 +7609,18 @@ internal fun DateWheelPickerBlock(
             selectedYear = years[yearCentered]; emit()
         }
     }
-    // A clamp (a shorter month, a bound) moves the selection, so the drums follow it.
-    LaunchedEffect(selectedYear, selectedMonth, selectedDay, dayCount, clamps) {
-        if (!hasUserInteracted || dayListState.isScrollInProgress || monthListState.isScrollInProgress || yearListState.isScrollInProgress) return@LaunchedEffect
+    // A clamp (a shorter month, a bound) moves the selection, so the drums follow it — and so does a TAPPED row (#1656).
+    // A row's click (a finger, or TalkBack's double-tap on the row it focused) stored that row while its drum stayed put,
+    // so the band showed one date and the answer held another. Each click now counts as interaction, and the drum glides
+    // the tapped row into the band, as iOS's `tapRow` does.
+    LaunchedEffect(selectedYear, selectedMonth, selectedDay, selectedHour, selectedMinute, dayCount, clamps) {
+        if (!hasUserInteracted || dayListState.isScrollInProgress || monthListState.isScrollInProgress || yearListState.isScrollInProgress ||
+            hourListState.isScrollInProgress || minuteListState.isScrollInProgress) return@LaunchedEffect
         if (dayCentered != selectedDay - 1) dayListState.animateScrollToItem(selectedDay - 1)
         if (monthCentered != selectedMonth - 1) monthListState.animateScrollToItem(selectedMonth - 1)
         years.indexOf(selectedYear).takeIf { it >= 0 && it != yearCentered }?.let { yearListState.animateScrollToItem(it) }
+        if (showTime && hourCentered != selectedHour) hourListState.animateScrollToItem(selectedHour.coerceIn(0, 23))
+        if (showTime && minuteCentered != selectedMinute) minuteListState.animateScrollToItem(selectedMinute.coerceIn(0, 59))
     }
     LaunchedEffect(hourCentered, hourListState.isScrollInProgress) {
         if (hourListState.isScrollInProgress) hasUserInteracted = true
@@ -7724,6 +7730,7 @@ internal fun DateWheelPickerBlock(
                             .fillMaxWidth()
                             .padding(vertical = 8.dp)
                             .clickable {
+                                hasUserInteracted = true
                                 selectedMonth = index + 1
                                 emit()
                                 // SELECTION haptic mirrors iOS
@@ -7764,6 +7771,7 @@ internal fun DateWheelPickerBlock(
                             .fillMaxWidth()
                             .padding(vertical = 8.dp)
                             .clickable {
+                                hasUserInteracted = true
                                 selectedDay = day
                                 emit()
                                 // SELECTION haptic mirrors iOS
@@ -7801,6 +7809,7 @@ internal fun DateWheelPickerBlock(
                             .fillMaxWidth()
                             .padding(vertical = 8.dp)
                             .clickable {
+                                hasUserInteracted = true
                                 selectedYear = year
                                 emit()
                                 // SELECTION haptic mirrors iOS
@@ -7824,8 +7833,8 @@ internal fun DateWheelPickerBlock(
 
         // Hour + minute columns for picker_mode datetime/time (was day/month/year only).
         if (showTime) {
-            // Hour column (00–23)
-            Box(modifier = Modifier.weight(1f)) {
+            // Hour column (00–23). Tagged and described like the date columns, so TalkBack reads the value in the band.
+            Box(modifier = Modifier.weight(1f).testTag("date_wheel.hour").semantics { stateDescription = String.format(java.util.Locale.US, "%02d", hourCentered) }) {
                 LazyColumn(
                     state = hourListState,
                     modifier = Modifier.fillMaxSize(),
@@ -7844,6 +7853,7 @@ internal fun DateWheelPickerBlock(
                                 .fillMaxWidth()
                                 .padding(vertical = 8.dp)
                                 .clickable {
+                                    hasUserInteracted = true
                                     selectedHour = index
                                     emit()
                                     fireHaptic()  // gated by haptic_on_scroll
@@ -7854,7 +7864,7 @@ internal fun DateWheelPickerBlock(
                 }
             }
             // Minute column (00–59)
-            Box(modifier = Modifier.weight(1f)) {
+            Box(modifier = Modifier.weight(1f).testTag("date_wheel.minute").semantics { stateDescription = String.format(java.util.Locale.US, "%02d", minuteCentered) }) {
                 LazyColumn(
                     state = minuteListState,
                     modifier = Modifier.fillMaxSize(),
@@ -7873,6 +7883,7 @@ internal fun DateWheelPickerBlock(
                                 .fillMaxWidth()
                                 .padding(vertical = 8.dp)
                                 .clickable {
+                                    hasUserInteracted = true
                                     selectedMinute = index
                                     emit()
                                     fireHaptic()  // gated by haptic_on_scroll

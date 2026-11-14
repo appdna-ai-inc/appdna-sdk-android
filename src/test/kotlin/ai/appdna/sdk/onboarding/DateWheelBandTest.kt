@@ -6,7 +6,9 @@ import androidx.compose.ui.test.hasAnyAncestor
 import androidx.compose.ui.test.hasScrollAction
 import androidx.compose.ui.test.hasTestTag
 import androidx.compose.ui.test.junit4.createComposeRule
+import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.onNodeWithTag
+import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performTouchInput
 import androidx.compose.ui.test.swipeDown
 import org.junit.Assert.assertEquals
@@ -63,6 +65,36 @@ class DateWheelBandTest {
         show(mode = "year")
         assertEquals("2003", band("year"))
         assertEquals("2003", inputs["born"])
+    }
+
+    /**
+     * #1656 — a TAPPED row (a finger, or TalkBack's double-tap on the row it focused, which is a click) is stored AND
+     * glides into the band. It used to be stored while its drum stayed put: tapping "Nov" on a wheel at Dec 31 stored
+     * 2025-11-30 under a band reading Dec 30, so a TalkBack user heard one date and saved another.
+     */
+    @Test fun aTappedRowMovesIntoTheBandAndIsStored() {
+        show(default = "2025-12-31", min = "2000-03-15", max = "2025-12-31")
+        compose.onNode(hasText("Nov") and hasAnyAncestor(hasTestTag("date_wheel.month"))).performClick()
+        compose.mainClock.advanceTimeBy(3000)
+        compose.waitForIdle()
+        assertEquals("2025-11-30", inputs["born"])
+        assertEquals(listOf("2025", "Nov", "30"), bandDate())
+        compose.onNode(hasText("2024") and hasAnyAncestor(hasTestTag("date_wheel.year"))).performClick()
+        compose.mainClock.advanceTimeBy(3000)
+        compose.waitForIdle()
+        assertEquals("2024-11-30", inputs["born"])
+        assertEquals(listOf("2024", "Nov", "30"), bandDate())
+    }
+
+    @Test fun aTappedTimeRowMovesIntoTheBand() {
+        show(mode = "datetime", default = "2025-06-15T10:00:00Z")
+        val hour = compose.onNodeWithTag("date_wheel.hour")
+        val before = hour.fetchSemanticsNode().config[SemanticsProperties.StateDescription]
+        val next = ((before.toInt() + 1) % 24).toString().padStart(2, '0')
+        compose.onNode(hasText(next) and hasAnyAncestor(hasTestTag("date_wheel.hour"))).performClick()
+        compose.mainClock.advanceTimeBy(3000)
+        compose.waitForIdle()
+        assertEquals(next, hour.fetchSemanticsNode().config[SemanticsProperties.StateDescription])
     }
 
     @Test fun theControlASeededDateIsShownAsSeeded() {
