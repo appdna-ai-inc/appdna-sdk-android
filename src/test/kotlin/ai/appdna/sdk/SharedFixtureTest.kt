@@ -1367,6 +1367,33 @@ class SharedFixtureTest(
     // ---------------------------------------------------------------------------------------------
 
     private fun runInterpolateTemplate(action: JSONObject, spy: Spy) {
+        // `relaunch`: the answers and the flow's options go through the REAL stores, both are reloaded from their
+        // persisted copies as a cold start loads them (picks are in memory and do not survive), and the context is the
+        // engine's own `buildContext` — what a paywall or message drawn on a later launch reads. iOS: the same.
+        if (action.optBoolean("relaunch")) {
+            ai.appdna.sdk.core.SessionDataStore.initialize(ctx)
+            val store = ai.appdna.sdk.core.SessionDataStore.instance!!
+            try {
+                SelectedOptionStore.resetForTesting()
+                store.setOnboardingResponses(storedResponses())
+                SelectedOptionStore.seedFlowOptionsForTesting(sessionMap("flow_options") ?: emptyMap())
+                for ((fieldId, payload) in sessionMap("selected") ?: emptyMap()) {
+                    if (payload != null) SelectedOptionStore.seedForTesting(fieldId, payload)
+                }
+                store.reloadFromDisk()
+                SelectedOptionStore.dropPicksForTesting()
+                val surface = when (val s = action.optStringOrNull("surface")) {
+                    null, "other" -> ai.appdna.sdk.core.TemplateSurface.OTHER
+                    "onboarding" -> ai.appdna.sdk.core.TemplateSurface.ONBOARDING
+                    else -> unsupported("interpolate_template surface '$s'")
+                }
+                spy.state["interpolated"] = TemplateEngine.interpolate(action.getString("template"), TemplateEngine.buildContext(surface))
+            } finally {
+                store.clearAll()
+                SelectedOptionStore.resetForTesting()
+            }
+            return
+        }
         val device = (sessionData.optJSONObject("device") ?: JSONObject()).asMap()
             .mapValues { it.value?.toString() ?: "" }
         val input = (sessionData.optJSONObject("current_step_input") ?: JSONObject()).asMap()

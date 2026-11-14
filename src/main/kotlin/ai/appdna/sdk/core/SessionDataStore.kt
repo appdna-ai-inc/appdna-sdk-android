@@ -18,6 +18,7 @@ class SessionDataStore private constructor(private val prefs: SharedPreferences)
         private const val KEY_ONBOARDING = "onboarding_responses"
         private const val KEY_COMPUTED = "computed_data"
         private const val KEY_SESSION = "session_data"
+        private const val KEY_FLOW_OPTIONS = "flow_option_records"
 
         // Cap to prevent unbounded growth
         private const val MAX_STORAGE_BYTES = 100 * 1024 // 100KB
@@ -46,6 +47,22 @@ class SessionDataStore private constructor(private val prefs: SharedPreferences)
     private var _onboardingResponses: Map<String, Map<String, Any>> = emptyMap()
     private var _computedData: Map<String, Any> = emptyMap()
     private var _sessionData: Map<String, Any> = emptyMap()
+    private var _flowOptionRecords: Map<String, Any> = emptyMap()
+
+    /**
+     * The last presented flow's option labels (`SelectedOptionStore.optionRecords`), kept beside the answers they
+     * label: an answer persisted here outlives the process, and a paywall or message drawing it on a later launch
+     * needs the label too, or it draws the stored option id. iOS `SessionDataStore.flowOptionRecords`.
+     */
+    val flowOptionRecords: Map<String, Any>
+        get() = synchronized(this) { _flowOptionRecords }
+
+    fun setFlowOptionRecords(records: Map<String, Any>) {
+        synchronized(this) {
+            _flowOptionRecords = records
+            persistMap(KEY_FLOW_OPTIONS) { flatMapToJson(records, it) }
+        }
+    }
 
     val onboardingResponses: Map<String, Map<String, Any>>
         get() = synchronized(this) { _onboardingResponses }
@@ -61,6 +78,7 @@ class SessionDataStore private constructor(private val prefs: SharedPreferences)
         _onboardingResponses = loadNestedMap(KEY_ONBOARDING)
         _computedData = loadMap(KEY_COMPUTED)
         _sessionData = loadMap(KEY_SESSION)
+        _flowOptionRecords = loadMap(KEY_FLOW_OPTIONS)
     }
 
     // MARK: - Onboarding Responses
@@ -139,6 +157,7 @@ class SessionDataStore private constructor(private val prefs: SharedPreferences)
             _onboardingResponses = loadNestedMap(KEY_ONBOARDING)
             _computedData = loadMap(KEY_COMPUTED)
             _sessionData = loadMap(KEY_SESSION)
+            _flowOptionRecords = loadMap(KEY_FLOW_OPTIONS)
         }
     }
 
@@ -147,10 +166,12 @@ class SessionDataStore private constructor(private val prefs: SharedPreferences)
             _onboardingResponses = emptyMap()
             _computedData = emptyMap()
             _sessionData = emptyMap()
+            _flowOptionRecords = emptyMap()
             prefs.edit()
                 .remove(KEY_ONBOARDING)
                 .remove(KEY_COMPUTED)
                 .remove(KEY_SESSION)
+                .remove(KEY_FLOW_OPTIONS)
                 .apply()
         }
     }

@@ -45,14 +45,22 @@ internal object SelectedOptionStore {
     /**
      * The presented flow's own options as `{ value, label }` records, by field id and by `<step id>/<field id>`
      * ([scopedKey]). An answer with no recorded pick (a resumed flow, a default, a host patch) still draws its label
-     * from these.
+     * from these. Kept in [SessionDataStore], beside the answers they label, so a later launch can draw them too; in
+     * memory only while the store is not initialised.
      */
-    private var flowOptionRecords: Map<String, Any> = emptyMap()
+    private var memoryFlowOptions: Map<String, Any> = emptyMap()
+    private val flowOptionRecords: Map<String, Any>
+        get() = ai.appdna.sdk.core.SessionDataStore.instance?.flowOptionRecords ?: memoryFlowOptions
+
+    private fun storeFlowOptions(records: Map<String, Any>) {
+        val store = ai.appdna.sdk.core.SessionDataStore.instance
+        if (store != null) store.setFlowOptionRecords(records) else memoryFlowOptions = records
+    }
 
     /** Keep this flow's option list. Replaces the previous flow's: only the flow on screen has answers to draw. */
     @Synchronized
     fun setFlowOptions(flow: OnboardingFlowConfig) {
-        flowOptionRecords = optionRecords(flow)
+        storeFlowOptions(optionRecords(flow))
         revision.intValue++
     }
 
@@ -155,14 +163,21 @@ internal object SelectedOptionStore {
     @Synchronized
     fun resetForTesting() {
         storage.clear()
-        flowOptionRecords = emptyMap()
+        memoryFlowOptions = emptyMap()
+        storeFlowOptions(emptyMap())
+    }
+
+    /** Test seam: what a relaunch leaves of this store. Picks are in memory and go with the process. */
+    @Synchronized
+    fun dropPicksForTesting() {
+        storage.clear()
     }
 
     /** Test seam: the flow's option list in its stored shape, without building a whole flow. */
     @Suppress("UNCHECKED_CAST")
     @Synchronized
     fun seedFlowOptionsForTesting(records: Map<String, Any?>) {
-        flowOptionRecords = records.filterValues { it != null } as Map<String, Any>
+        storeFlowOptions(records.filterValues { it != null } as Map<String, Any>)
     }
 
     /**

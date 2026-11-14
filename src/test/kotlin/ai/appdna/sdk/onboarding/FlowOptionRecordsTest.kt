@@ -100,4 +100,20 @@ class FlowOptionRecordsTest {
         assertEquals("Alpha first", SelectedOptionStore.drawnAnswerAt("responses.q1.pick", "a", selected))
         assertEquals("Alpha second", SelectedOptionStore.drawnAnswerAt("responses.q2.pick", "a", selected))
     }
+
+    @Test
+    fun `the flow's option records survive a relaunch`() {
+        ai.appdna.sdk.core.SessionDataStore.initialize(org.robolectric.RuntimeEnvironment.getApplication())
+        val store = ai.appdna.sdk.core.SessionDataStore.instance!!
+        try {
+            SelectedOptionStore.resetForTesting()
+            SelectedOptionStore.setFlowOptions(flow())
+            store.reloadFromDisk()
+            SelectedOptionStore.dropPicksForTesting()
+            assertEquals("Lose weight", SelectedOptionStore.drawnAnswer("goal", "lose_weight", SelectedOptionStore.drawingRecords()))
+        } finally {
+            store.clearAll()
+            SelectedOptionStore.resetForTesting()
+        }
+    }
 }
