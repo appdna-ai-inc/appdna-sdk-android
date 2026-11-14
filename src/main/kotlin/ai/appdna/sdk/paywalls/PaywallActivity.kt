@@ -4981,19 +4981,8 @@ internal fun PaywallSectionView(
         }
         // Lottie section
         "lottie" -> {
-            section.data?.lottie_url?.let { url ->
-                LottieBlockView(
-                    block = LottieBlock(
-                        lottie_url = url,
-                        loop = section.data.lottie_loop ?: true,
-                        speed = section.data.lottie_speed ?: 1.0f,
-                        // Prefer the
-                        // type-specific lottie_height over the generic
-                        // height (mirrors iOS PaywallConfig.swift:133).
-                        height = section.data.lottie_height ?: section.data.height ?: 200f,
-                    )
-                )
-            }
+            // The block comes from PaywallMediaSection (shared fixture paywall_media_section_playback).
+            PaywallMediaSection.lottieBlock(section.data)?.let { LottieBlockView(block = it) }
         }
         // Rive section
         "rive" -> {
@@ -5012,21 +5001,8 @@ internal fun PaywallSectionView(
         // sections render. iOS PaywallRenderer.swift:549 dispatches both
         // strings to the same renderer.
         "video", "video_background" -> {
-            section.data?.video_url?.let { url ->
-                CoreVideoBlockView(
-                    block = CoreVideoBlock(
-                        video_url = url,
-                        video_thumbnail_url = section.data.video_thumbnail_url ?: section.data.image_url,
-                        // Prefer the
-                        // type-specific video_height over the generic
-                        // height (mirrors iOS PaywallConfig.swift:136).
-                        video_height = section.data.video_height ?: section.data.height ?: 200f,
-                        video_corner_radius = section.data.corner_radius,
-                        autoplay = section.data.video_autoplay,
-                        loop = section.data.video_loop,
-                    )
-                )
-            }
+            // The block, its autoplay, loop and controls come from PaywallMediaSection.
+            PaywallMediaSection.videoBlock(section.data)?.let { CoreVideoBlockView(block = it) }
         }
         "testimonial" -> {
             // \u2014 honor `data.layout` (quote / card /

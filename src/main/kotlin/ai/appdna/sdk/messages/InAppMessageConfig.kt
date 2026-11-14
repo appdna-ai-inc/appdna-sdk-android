@@ -480,3 +480,21 @@ internal object MessageConfigParser {
         )
     }
 }
+
+/**
+ * The hero an in-app message draws, in the order every view ranks them: a Lottie, then a Rive, then a video,
+ * then the image. A blank URL is no hero (a brief not yet filled), so the next one draws. One reading for the modal and
+ * full-screen views and the shared fixture `message_hero_media` (iOS `MessageHeroMedia`).
+ */
+data class MessageHeroMedia(val kind: String, val url: String) {
+    companion object {
+        fun of(content: MessageContent): MessageHeroMedia? {
+            fun set(v: String?): String? = v?.trim()?.takeIf { it.isNotEmpty() }
+            set(content.lottie_url)?.let { return MessageHeroMedia("lottie", it) }
+            set(content.rive_url)?.let { return MessageHeroMedia("rive", it) }
+            set(content.video_url)?.let { return MessageHeroMedia("video", it) }
+            set(content.image_url)?.let { return MessageHeroMedia("image", it) }
+            return null
+        }
+    }
+}

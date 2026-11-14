@@ -430,50 +430,55 @@ private fun ModalMessageView(
                     }
                 }
 
-                // Lottie/Rive hero (preferred over static image)
-                if (content.lottie_url != null) {
-                    LottieBlockView(
-                        block = LottieBlock(
-                            lottie_url = content.lottie_url,
-                            autoplay = true,
-                            loop = true,
-                            height = 160f,
+                // Hero: a Lottie, then a Rive, then a video, then the image (MessageHeroMedia); a blank URL is no hero.
+                val modalHero = MessageHeroMedia.of(content)
+                if (modalHero != null) when (modalHero.kind) {
+                    "lottie" -> {
+                        LottieBlockView(
+                            block = LottieBlock(
+                                lottie_url = modalHero.url,
+                                autoplay = true,
+                                loop = true,
+                                height = 160f,
+                            )
                         )
-                    )
-                    Spacer(modifier = Modifier.height(16.dp))
-                } else if (content.rive_url != null) {
-                    RiveBlockView(
-                        block = RiveBlock(
-                            rive_url = content.rive_url,
-                            height = 160f,
+                        Spacer(modifier = Modifier.height(16.dp))
+                    }
+                    "rive" -> {
+                        RiveBlockView(
+                            block = RiveBlock(
+                                rive_url = modalHero.url,
+                                height = 160f,
+                            )
                         )
-                    )
-                    Spacer(modifier = Modifier.height(16.dp))
-                } else if (content.video_url != null) {
-                    // Video hero
-                    CoreVideoBlockView(
-                        block = CoreVideoBlock(
-                            video_url = content.video_url,
-                            video_thumbnail_url = content.video_thumbnail_url ?: content.image_url,
-                            video_height = 160f,
-                            video_corner_radius = 8f,
-                            autoplay = true,
-                            muted = true,
+                        Spacer(modifier = Modifier.height(16.dp))
+                    }
+                    "video" -> {
+                        // Muted and looping with no controls, as iOS draws it.
+                        CoreVideoBlockView(
+                            block = CoreVideoBlock(
+                                video_url = modalHero.url,
+                                video_thumbnail_url = content.video_thumbnail_url ?: content.image_url,
+                                video_height = 160f,
+                                video_corner_radius = 8f,
+                                autoplay = true,
+                                loop = true,
+                                muted = true,
+                                controls = false,
+                            )
                         )
-                    )
-                    Spacer(modifier = Modifier.height(16.dp))
-                } else {
-                    // Fallback: Optional static image
-                    content.image_url?.let { imageUrl ->
+                        Spacer(modifier = Modifier.height(16.dp))
+                    }
+                    "image" -> {
                         NetworkImage(
-                            url = imageUrl,
+                            url = modalHero.url,
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .height(160.dp)
                                 .clip(RoundedCornerShape(8.dp))
                                 // No description can be authored for this image, so it is decorative: TalkBack skips it (AuthoredImageAccessibility).
                                 .authoredImageSemantics(null),
-                            // Mirror iOS ModalView.swift:66 `.scaledToFit()` so
+                            // Mirror iOS ModalView.swift `.scaledToFit()` so
                             // portrait posters render fully (Crop was cutting
                             // top/bottom on tall images).
                             contentScale = ContentScale.Fit,
@@ -596,42 +601,48 @@ private fun ModalMessageView(
  */
 @Composable
 private fun ColumnScope.FullscreenMessageHero(content: MessageContent) {
-            // Lottie/Rive/Video hero (preferred over static image)
-            if (content.lottie_url != null) {
-                LottieBlockView(
-                    block = LottieBlock(
-                        lottie_url = content.lottie_url,
-                        autoplay = true,
-                        loop = true,
-                        height = 280f,
+            // A Lottie, then a Rive, then a video, then the image (MessageHeroMedia); a blank URL is no hero.
+            val hero = MessageHeroMedia.of(content)
+            if (hero != null) when (hero.kind) {
+                "lottie" -> {
+                    LottieBlockView(
+                        block = LottieBlock(
+                            lottie_url = hero.url,
+                            autoplay = true,
+                            loop = true,
+                            height = 280f,
+                        )
                     )
-                )
-                Spacer(modifier = Modifier.height(24.dp))
-            } else if (content.rive_url != null) {
-                RiveBlockView(
-                    block = RiveBlock(
-                        rive_url = content.rive_url,
-                        height = 280f,
+                    Spacer(modifier = Modifier.height(24.dp))
+                }
+                "rive" -> {
+                    RiveBlockView(
+                        block = RiveBlock(
+                            rive_url = hero.url,
+                            height = 280f,
+                        )
                     )
-                )
-                Spacer(modifier = Modifier.height(24.dp))
-            } else if (content.video_url != null) {
-                CoreVideoBlockView(
-                    block = CoreVideoBlock(
-                        video_url = content.video_url,
-                        video_thumbnail_url = content.video_thumbnail_url ?: content.image_url,
-                        video_height = 280f,
-                        video_corner_radius = 16f,
-                        autoplay = true,
-                        muted = true,
+                    Spacer(modifier = Modifier.height(24.dp))
+                }
+                "video" -> {
+                    CoreVideoBlockView(
+                        block = CoreVideoBlock(
+                            video_url = hero.url,
+                            video_thumbnail_url = content.video_thumbnail_url ?: content.image_url,
+                            video_height = 280f,
+                            video_corner_radius = 16f,
+                            autoplay = true,
+                            // It loops with no controls, as iOS draws it.
+                            loop = true,
+                            muted = true,
+                            controls = false,
+                        )
                     )
-                )
-                Spacer(modifier = Modifier.height(24.dp))
-            } else {
-                // Fallback: Optional static image
-                content.image_url?.let { imageUrl ->
+                    Spacer(modifier = Modifier.height(24.dp))
+                }
+                "image" -> {
                     NetworkImage(
-                        url = imageUrl,
+                        url = hero.url,
                         modifier = Modifier
                             .size(300.dp)
                             .clip(RoundedCornerShape(16.dp))
@@ -681,8 +692,7 @@ private fun FullscreenMessageView(
          * the hero in a leading pane, the title, body and buttons in the trailing one. The rule is
          * shared with iOS and the console (`surface_layout` fixture).
          */
-        val hasHero = content.lottie_url != null || content.rive_url != null ||
-            content.video_url != null || content.image_url != null
+        val hasHero = MessageHeroMedia.of(content) != null
         val hasCopy = content.title != null || content.body != null || content.cta_text != null
         ai.appdna.sdk.core.SurfaceMeasure(modifier = Modifier.fillMaxSize()) { _ ->
         ai.appdna.sdk.core.SurfacePanes(

@@ -299,6 +299,9 @@ class SharedFixtureTest(
             }
             "resolve_message_dismiss" -> runResolveMessageDismiss(action, spy)
             "resolve_paywall_image_alt" -> runPaywallImageAlt(action, spy)
+            // A paywall media section's playback and a message's animation / video hero.
+            "resolve_paywall_media_section" -> runPaywallMediaSection(action, spy)
+            "resolve_message_hero_media" -> runMessageHeroMedia(action, spy)
             "resolve_onboarding_image_alt" -> runOnboardingImageAlt(action, spy)
             "resolve_screen_image_alt" -> runScreenImageAlt(action, spy)
             "resolve_option_label_markdown" -> runOptionLabelMarkdown(action, spy)
@@ -3734,6 +3737,59 @@ class SharedFixtureTest(
             val section = paywall.sections.firstOrNull { it.type == "image" }
                 ?: throw AssertionError("[resolve_paywall_image_alt] case $name: the image section was dropped")
             ai.appdna.sdk.paywalls.PaywallImageAccessibility.label(section.data)
+        }
+    }
+
+    /**
+     * What a paywall animation or video section plays, through the REAL `PaywallConfigParser.parseSinglePaywall`
+     * and the REAL `PaywallMediaSection.lottieBlock` / `videoBlock`, the block `PaywallActivity` draws.
+     */
+    private fun runPaywallMediaSection(action: JSONObject, spy: Spy) {
+        val cases = action.optJSONArray("cases") ?: unsupported("resolve_paywall_media_section without cases")
+        spy.state["results"] = (0 until cases.length()).map { i ->
+            val c = cases.getJSONObject(i)
+            val name = c.optString("name", "?")
+            val type = c.optString("type")
+            @Suppress("UNCHECKED_CAST")
+            val config = (c.optJSONObject("config") ?: unsupported("resolve_paywall_media_section case without config"))
+                .asMap().filterValues { it != null } as Map<String, Any>
+            val paywall = ai.appdna.sdk.paywalls.PaywallConfigParser.parseSinglePaywall(
+                "pw_media_$name",
+                mapOf("id" to "pw_media_$name", "layout" to mapOf("type" to "stack", "sections" to listOf(mapOf("id" to "s1", "type" to type, "config" to config)))),
+            ) ?: throw AssertionError("[resolve_paywall_media_section] case $name: the paywall did not parse")
+            val section = paywall.sections.firstOrNull { it.type == type }
+                ?: throw AssertionError("[resolve_paywall_media_section] case $name: the section was dropped")
+            if (type == "lottie") {
+                ai.appdna.sdk.paywalls.PaywallMediaSection.lottieBlock(section.data)?.let { b ->
+                    mapOf("url" to b.lottie_url, "loop" to b.loop, "speed" to b.speed.toDouble(), "height" to b.height.toDouble())
+                }
+            } else {
+                ai.appdna.sdk.paywalls.PaywallMediaSection.videoBlock(section.data)?.let { b ->
+                    mapOf(
+                        "url" to b.video_url, "autoplay" to (b.autoplay ?: false), "loop" to (b.loop ?: false), "muted" to (b.muted ?: true),
+                        "controls" to (b.controls ?: true), "height" to b.video_height.toDouble(), "thumbnail" to b.video_thumbnail_url,
+                    )
+                }
+            }
+        }
+    }
+
+    /**
+     * Which hero a message draws, through the REAL `MessageConfigParser.parseSingleMessage`, the light-mode
+     * `resolved`, and the REAL `MessageHeroMedia.of` the modal and full-screen views rank it with.
+     */
+    private fun runMessageHeroMedia(action: JSONObject, spy: Spy) {
+        val cases = action.optJSONArray("cases") ?: unsupported("resolve_message_hero_media without cases")
+        spy.state["results"] = (0 until cases.length()).map { i ->
+            val c = cases.getJSONObject(i)
+            val name = c.optString("name", "?")
+            @Suppress("UNCHECKED_CAST")
+            val content = (c.optJSONObject("content") ?: unsupported("resolve_message_hero_media case without content"))
+                .asMap().filterValues { it != null } as Map<String, Any>
+            val msg = ai.appdna.sdk.messages.MessageConfigParser.parseSingleMessage(
+                mapOf("name" to name, "message_type" to "modal", "content" to content, "trigger_rules" to mapOf("event" to "e")),
+            ) ?: throw AssertionError("[resolve_message_hero_media] case $name: the message did not parse")
+            ai.appdna.sdk.messages.MessageHeroMedia.of(msg.content.resolved(isDark = false))?.let { mapOf("kind" to it.kind, "url" to it.url) }
         }
     }
 

@@ -46,6 +46,13 @@ the project uses [Semantic Versioning](https://semver.org/).
 
 ### Fixed
 
+- **A generated message's or paywall's animation and video play on both platforms.** An in-app modal or
+  full-screen video hero loops with no controls, as on iOS (it played once, with controls). A paywall section that
+  autoplays its video shows no player controls, as on iOS, and an animation section with no height is 180 high, as on
+  iOS and in the docs (it was 200). A blank `lottie_url`, `rive_url` or `video_url` on a message hero, or a blank URL
+  on a paywall animation or video section, is no media: the next hero draws, or the section draws nothing. Shared
+  fixtures `dto_parsing/message_hero_media` and `paywall_media_section_playback`.
+
 - **When several served experiments name one paywall, flow, message or survey, the same one decides on every launch,
   and on both platforms.** The surface resolver walked the served experiments in map order, so with a served
   config that had diverged from the rows (an experiment whose removal never landed, still listed as running) the arm a

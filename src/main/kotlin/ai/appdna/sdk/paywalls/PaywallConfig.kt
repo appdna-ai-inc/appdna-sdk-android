@@ -1945,3 +1945,38 @@ internal object PaywallConfigParser {
 object PaywallImageAccessibility {
     fun label(data: PaywallSectionData?): String? = ai.appdna.sdk.core.AuthoredImageAccessibility.label(data?.alt)
 }
+
+/**
+ * What a paywall's animation (`lottie`) and video (`video`, `video_background`) sections play, from the
+ * section's data. One reading for the renderer and the shared fixture `paywall_media_section_playback` (iOS
+ * `PaywallMediaSection`). A blank URL is no section: it draws nothing (the publisher also leaves such a section out).
+ */
+object PaywallMediaSection {
+    fun lottieBlock(data: PaywallSectionData?): ai.appdna.sdk.core.LottieBlock? {
+        val url = data?.lottie_url?.trim()?.takeIf { it.isNotEmpty() } ?: return null
+        return ai.appdna.sdk.core.LottieBlock(
+            lottie_url = url,
+            loop = data.lottie_loop ?: true,
+            speed = data.lottie_speed ?: 1.0f,
+            // The type-specific lottie_height over the generic height, then 180 as on iOS and in the docs (it was 200
+            // here, so the same paywall drew a taller animation on Android).
+            height = data.lottie_height ?: data.height ?: 180f,
+        )
+    }
+
+    fun videoBlock(data: PaywallSectionData?): ai.appdna.sdk.core.VideoBlock? {
+        val url = data?.video_url?.trim()?.takeIf { it.isNotEmpty() } ?: return null
+        val autoplay = data.video_autoplay ?: false
+        return ai.appdna.sdk.core.VideoBlock(
+            video_url = url,
+            video_thumbnail_url = data.video_thumbnail_url ?: data.image_url,
+            video_height = data.video_height ?: data.height ?: 200f,
+            video_corner_radius = data.corner_radius,
+            autoplay = autoplay,
+            loop = data.video_loop ?: false,
+            muted = true,
+            // An autoplaying section is a moving picture, not a player: no controls, as on iOS.
+            controls = !autoplay,
+        )
+    }
+}
