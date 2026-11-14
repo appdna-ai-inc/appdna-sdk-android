@@ -4448,7 +4448,12 @@ private fun ListBlock(block: ContentBlock, loc: ((String, String) -> String)? = 
     val markerInk = if (onDark) UnstyledInk.DARK_TEXT.copy(alpha = 0.6f) else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
     val bulletInk = if (onDark) UnstyledInk.DARK_TEXT.copy(alpha = 0.5f) else MaterialTheme.colorScheme.onBackground.copy(alpha = 0.5f)
     val itemInk = UnstyledInk.text()
-    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+    // A list with a width fills it, so the card `block_style` paints around it covers that width. The wrapper
+    // that paints the card hugs its content, so a hugging Column drew a card only as wide as its longest row.
+    Column(
+        modifier = if (listFillsWidth(block.element_width)) Modifier.fillMaxWidth() else Modifier,
+        verticalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
         block.items?.forEachIndexed { index, item ->
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                 when (block.list_style) {
@@ -8052,6 +8057,16 @@ internal fun Modifier.fullBleed(insets: BlockFullBleed.Insets): Modifier = this.
  * `buttonFillsWidth`.
  */
 internal fun buttonFillsWidth(elementWidth: String?): Boolean = elementWidth != "auto"
+
+/**
+ * Whether a `list` fills its row: any authored width except `auto`. Unset keeps the list hugging its rows; a width
+ * means the author sized the list, and its card has to cover that size. Mirrors iOS `listFillsWidth`.
+ */
+internal fun listFillsWidth(elementWidth: String?): Boolean {
+    val w = elementWidth?.trim()?.lowercase()
+    if (w.isNullOrEmpty() || w == "auto") return false
+    return w == "fill" || w.endsWith("%") || w.endsWith("px") || w.toDoubleOrNull() != null
+}
 
 /**
  * The width of a button's AUTHORED border, in dp.
