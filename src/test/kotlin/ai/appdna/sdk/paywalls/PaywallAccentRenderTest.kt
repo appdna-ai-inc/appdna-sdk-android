@@ -93,4 +93,31 @@ class PaywallAccentRenderTest {
         println("[paywall-accent] magenta=$n")
         assertTrue("the badge text is drawn in the CTA's colour: $n", n > 100)
     }
+
+    /** An unselected plan's trial line is drawn in the paywall's accent, as on iOS (the selected plan takes the tile ink). */
+    @Test
+    fun `an unselected plan's trial line takes the paywall's accent`() {
+        val config = PaywallConfigParser.parseSinglePaywall(
+            "pw_trial",
+            mapOf(
+                "id" to "pw_trial", "name" to "Trial",
+                "background" to mapOf("type" to "color", "value" to "#FFFFFF"),
+                "sections" to listOf(mapOf(
+                    "id" to "sec_plans", "type" to "plans",
+                    "data" to mapOf(
+                        "plan_display_style" to "vertical_stack",
+                        "plans" to listOf(
+                            mapOf("id" to "a", "product_id" to "app.synthetic.annual", "label" to "Annual", "price_display" to "\$1", "is_default" to true),
+                            mapOf("id" to "m", "product_id" to "app.synthetic.monthly", "label" to "Monthly", "price_display" to "\$2", "is_default" to false,
+                                "trial" to mapOf("duration_days" to 7, "label" to "WWWWWWWW WWWWWWWW")),
+                        ),
+                    ),
+                )),
+                "cta" to mapOf("text" to "Continue", "style" to mapOf("bg_color" to "#FF00FF", "text_color" to "#FFFFFF")),
+            ),
+        ) ?: error("paywall did not parse")
+        val n = countUpper(config, "trial-line", magenta).single()
+        println("[paywall-accent] unselected trial line magenta=$n")
+        assertTrue("the unselected plan's trial line is not in the CTA's colour: $n", n > 100)
+    }
 }

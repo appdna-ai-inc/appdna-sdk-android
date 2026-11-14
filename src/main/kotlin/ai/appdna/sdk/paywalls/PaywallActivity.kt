@@ -4029,7 +4029,10 @@ internal fun PaywallSectionView(
                                             // subtitle/description text color falls back to a
                                             // muted grey (iOS PlanCard.swift secondary); accent for trial.
                                             val subtitleColor = planTextColor.takeIf { it != Color.Unspecified } ?: Color.Gray
-                                            val trialColor = planTextColor.takeIf { it != Color.Unspecified } ?: paywallAccent(config)
+                                            // The trial line: the tile ink when selected, the paywall's accent otherwise — iOS
+                                            // PlanCard's rule. The unselected tile ink is always set (the tile is composited
+                                            // over the page), so falling back to the accent after it never reached the accent.
+                                            val trialColor = if (isSelected) (planTextColor.takeIf { it != Color.Unspecified } ?: paywallAccent(config)) else paywallAccent(config)
                                             Text(
                                                 text = loc("plan.$planIdx.name", plan.displayName),
                                                 style = planNameStyle,
