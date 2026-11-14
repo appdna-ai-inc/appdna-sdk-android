@@ -412,7 +412,7 @@ internal class PaywallManager(
                 productId = plan.product_id,
             )
             handlePostPurchaseFailure(
-                config = PostPurchaseFailureConfig.effective(config.post_purchase?.on_failure, "providerNotAvailable"),
+                config = PostPurchaseFailureConfig.effective(config.post_purchase?.on_failure, "unknown"), // the not-configured tap reports `unknown`, as iOS
                 paywallId = paywallId,
                 listener = listener,
             )

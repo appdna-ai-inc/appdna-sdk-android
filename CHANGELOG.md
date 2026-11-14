@@ -46,6 +46,14 @@ the project uses [Semantic Versioning](https://semver.org/).
 
 ### Fixed
 
+- **A hand-off to your own billing provider shows no "Payment failed" banner.** Under a provider that owns purchases
+  (Adapty, or RevenueCat when its SDK is not linked) a paywall tap reports `providerNotAvailable` so your app can buy
+  with the provider. With no `post_purchase.on_failure` authored, the paywall now shows nothing for it, as for a
+  cancel; an authored `on_failure` still runs. Every other failed purchase still shows the default banner. Shared
+  fixtures `billing/paywall_failure_default_by_error_type` and `billing/paywall_failure_provider_handoff_is_silent`.
+  A paywall tap before billing is ready now routes as the `unknown` failure it reports (it routed as a hand-off), so
+  it shows the banner, as on iOS.
+
 - **Every card plan layout shows which plan is selected with a circle.** `grid`, `horizontal_scroll` / `carousel`,
   `mini_cards`, `carousel_cards` and `single_hero` drew no selection circle; they now draw a filled check on the
   selected card and an empty ring on the others, at the card's top trailing corner, as the vertical stack and iOS do.

@@ -300,6 +300,7 @@ class SharedFixtureTest(
             "resolve_message_dismiss" -> runResolveMessageDismiss(action, spy)
             "resolve_paywall_image_alt" -> runPaywallImageAlt(action, spy)
             "resolve_paywall_trial_badge_color" -> runPaywallTrialBadgeColor(action, spy)
+            "resolve_post_purchase_failure" -> runPostPurchaseFailure(action, spy)
             // A paywall media section's playback and a message's animation / video hero.
             "resolve_paywall_media_section" -> runPaywallMediaSection(action, spy)
             "resolve_message_hero_media" -> runMessageHeroMedia(action, spy)
@@ -3741,6 +3742,22 @@ class SharedFixtureTest(
         }
     }
 
+    /** What a failed paywall purchase shows, by error type, through the REAL `PostPurchaseFailureConfig.effective`. */
+    private fun runPostPurchaseFailure(action: JSONObject, spy: Spy) {
+        val cases = action.optJSONArray("cases") ?: unsupported("resolve_post_purchase_failure without cases")
+        spy.state["results"] = (0 until cases.length()).map { i ->
+            val c = cases.getJSONObject(i)
+            val authored = c.optJSONObject("authored")?.let { a ->
+                ai.appdna.sdk.paywalls.PostPurchaseFailureConfig(
+                    action = a.optString("action"),
+                    message = a.optString("message").takeIf { a.has("message") },
+                    retry_text = a.optString("retry_text").takeIf { a.has("retry_text") },
+                )
+            }
+            ai.appdna.sdk.paywalls.PostPurchaseFailureConfig.effective(authored, c.optString("error_type"))?.action
+        }
+    }
+
     /**
      * The trial badge's colour and the paywall's accent, through the REAL `PaywallConfigParser.parseSinglePaywall`
      * and the REAL `PaywallAccent.trialBadgeHex` / `PaywallAccent.ctaHex` — the colours `PaywallActivity` draws.
@@ -4886,6 +4903,7 @@ class SharedFixtureTest(
         manager.handlePurchase(activity, paywallId, plan, paywall, emptyMap(), RecordingPaywallDelegate(spy))
         repeat(10) { idle() }
         // What the authored `on_failure` route hands the renderer: the banner's text.
+        spy.state["failure_banner_shown"] = ai.appdna.sdk.paywalls.PaywallActivity.postPurchaseOverlay != null
         ai.appdna.sdk.paywalls.PaywallActivity.postPurchaseOverlay?.let { overlay ->
             spy.state["failure_banner_message"] = overlay.message
             spy.state["failure_banner_retry_text"] = overlay.retryText

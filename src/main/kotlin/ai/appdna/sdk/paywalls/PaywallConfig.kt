@@ -927,11 +927,14 @@ data class PostPurchaseFailureConfig(
     companion object {
         /**
          * What a failed purchase does: the authored action, else the error banner, so a failure is never silent.
-         * A cancel and a pending purchase are not failures, and stay as authored. iOS `PostPurchaseFailureConfig.effective`.
+         * A cancel and a pending purchase are not failures, and stay as authored. Nor is a provider hand-off
+         * (`providerNotAvailable`: the host's provider owns purchases and buys from `onPaywallPurchaseFailed`), so it
+         * shows nothing unless `on_failure` is authored. iOS `PostPurchaseFailureConfig.effective`; shared fixture
+         * `billing/paywall_failure_default_by_error_type`.
          */
         fun effective(authored: PostPurchaseFailureConfig?, errorType: String): PostPurchaseFailureConfig? {
             if (authored != null) return authored
-            if (errorType == "userCancelled" || errorType == "pending") return null
+            if (errorType == "userCancelled" || errorType == "pending" || errorType == "providerNotAvailable") return null
             return PostPurchaseFailureConfig(action = "show_error")
         }
     }
