@@ -41,6 +41,9 @@ the project uses [Semantic Versioning](https://semver.org/).
 
 ### Fixed
 
+- **A survey's Next and Submit labels use `button_text_color`.** They were always white, so a light button colour
+  made them hard to read. They now use the theme's `button_text_color` (white when it is not set), as on iOS.
+
 - **A paywall presented by placement reports its placement.** `presentPaywallByPlacement(activity, "after_workout")`
   sent `paywall_view` with `placement: "unknown"`, so per-placement paywall analytics counted every Android
   presentation as unknown. It now sends the placement it was asked for, as iOS does; a `PaywallContext` you pass keeps

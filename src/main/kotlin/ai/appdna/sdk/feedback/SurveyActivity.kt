@@ -618,7 +618,7 @@ fun SurveyScreen(
                             .padding(horizontal = 24.dp, vertical = 10.dp)
                             .semantics { contentDescription = nextCd },
                         contentAlignment = Alignment.Center,
-                    ) { Text("Next", color = Color.White, fontWeight = FontWeight.SemiBold) }
+                    ) { Text("Next", color = buttonTextColor, fontWeight = FontWeight.SemiBold) }
                 } else {
                     Button(
                         onClick = {
@@ -627,7 +627,9 @@ fun SurveyScreen(
                             currentIndex++
                         },
                         enabled = canAdvance,
-                        colors = ButtonDefaults.buttonColors(containerColor = buttonColor),
+                        // `button_text_color` is the label, as on iOS (`.foregroundColor(buttonTextColor)`); Material's
+                        // default onPrimary drew white whatever the theme said (#1823).
+                        colors = ButtonDefaults.buttonColors(containerColor = buttonColor, contentColor = buttonTextColor),
                         modifier = Modifier.semantics { contentDescription = nextCd },
                     ) { Text("Next") }
                 }
@@ -682,12 +684,12 @@ fun SurveyScreen(
                             .padding(horizontal = 24.dp, vertical = 10.dp)
                             .semantics { contentDescription = submitCd },
                         contentAlignment = Alignment.Center,
-                    ) { Text("Submit", color = Color.White, fontWeight = FontWeight.SemiBold) }
+                    ) { Text("Submit", color = buttonTextColor, fontWeight = FontWeight.SemiBold) }
                 } else {
                 Button(
                     onClick = submitOnClick,
                     enabled = canAdvance,
-                    colors = ButtonDefaults.buttonColors(containerColor = buttonColor),
+                    colors = ButtonDefaults.buttonColors(containerColor = buttonColor, contentColor = buttonTextColor),
                     modifier = Modifier.semantics { contentDescription = submitCd },
                 ) { Text("Submit") }
                 }
