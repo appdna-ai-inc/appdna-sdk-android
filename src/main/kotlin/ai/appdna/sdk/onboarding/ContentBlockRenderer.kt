@@ -7476,10 +7476,12 @@ internal fun DateWheelPickerBlock(
     }
     // With nothing to restore and no default the wheel opens on today brought inside the bounds, as iOS does, and stores
     // nothing until it is moved. It opened on 1 January 2000, which could sit below the minimum.
+    // Nothing saved and nothing authored: noon today in the wheel's zone, as iOS opens (it opened at 00:00).
+    val unsetOpening = remember(wheelZone) { DateWheelModel.unsetOpening(System.currentTimeMillis(), wheelZone) }
     val openOn = remember(seedCal, block.min_date, block.max_date, block.allow_past, block.allow_future) {
         seedCal?.let { DateWheelModel.Ymd(it.get(java.util.Calendar.YEAR), it.get(java.util.Calendar.MONTH) + 1, it.get(java.util.Calendar.DAY_OF_MONTH)) }
             ?: DateWheelModel.clamp(
-                DateWheelModel.bound(null, untilToday = true)!!,
+                DateWheelModel.bound(unsetOpening, untilToday = true)!!,
                 DateWheelModel.bound(parseDateWheelSeed(null, block.min_date), block.allow_past == false),
                 DateWheelModel.bound(parseDateWheelSeed(null, block.max_date), block.allow_future == false),
             )
@@ -7487,8 +7489,8 @@ internal fun DateWheelPickerBlock(
     val seedYear = openOn.year.coerceIn(minYear, maxYear)
     val seedMonth = openOn.month
     val seedDay = openOn.day
-    val seedHour = seedCal?.get(java.util.Calendar.HOUR_OF_DAY) ?: 0
-    val seedMinute = seedCal?.get(java.util.Calendar.MINUTE) ?: 0
+    val seedHour = (seedCal ?: unsetOpening).get(java.util.Calendar.HOUR_OF_DAY)
+    val seedMinute = (seedCal ?: unsetOpening).get(java.util.Calendar.MINUTE)
 
     var selectedDay by remember { mutableIntStateOf(seedDay) }
     var selectedMonth by remember { mutableIntStateOf(seedMonth) }

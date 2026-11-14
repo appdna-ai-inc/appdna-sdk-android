@@ -35,6 +35,17 @@ internal object DateWheelModel {
         return Ymd(c.get(Calendar.YEAR), c.get(Calendar.MONTH) + 1, c.get(Calendar.DAY_OF_MONTH))
     }
 
+    /**
+     * Where a wheel with no saved answer and no `default_date_value` opens: today in [zone] at 12:00, as iOS opens
+     * (`DateWheelPickerBlockView.unsetOpening`). It opened at 00:00 here and at noon on iOS. Nothing is stored until the
+     * wheel is moved.
+     */
+    fun unsetOpening(nowMs: Long, zone: java.util.TimeZone): Calendar =
+        Calendar.getInstance(zone).apply {
+            timeInMillis = nowMs
+            set(Calendar.HOUR_OF_DAY, 12); set(Calendar.MINUTE, 0); set(Calendar.SECOND, 0); set(Calendar.MILLISECOND, 0)
+        }
+
     /** Whether [mode] has a time column: its wheel works in the app's zone ([AnswerTime.zone]). */
     fun hasTime(mode: String) = mode == "datetime" || mode == "date_time" || mode == "time"
 

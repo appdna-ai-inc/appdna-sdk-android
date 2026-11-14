@@ -4299,6 +4299,11 @@ class SharedFixtureTest(
                     String.format(java.util.Locale.US, "%04d-%02d-%02d %02d:%02d", it.get(java.util.Calendar.YEAR), it.get(java.util.Calendar.MONTH) + 1,
                         it.get(java.util.Calendar.DAY_OF_MONTH), it.get(java.util.Calendar.HOUR_OF_DAY), it.get(java.util.Calendar.MINUTE))
                 }
+                // Where an unset wheel opens, through the model the renderer seeds its drums from.
+                "unset_opening" -> m.unsetOpening(ai.appdna.sdk.core.IsoInstant.parseEpochMs(c.getString("now"))!!, java.util.TimeZone.getTimeZone(c.getString("zone"))).let {
+                    String.format(java.util.Locale.US, "%04d-%02d-%02d %02d:%02d", it.get(java.util.Calendar.YEAR), it.get(java.util.Calendar.MONTH) + 1,
+                        it.get(java.util.Calendar.DAY_OF_MONTH), it.get(java.util.Calendar.HOUR_OF_DAY), it.get(java.util.Calendar.MINUTE))
+                }
                 "read" -> m.readAnswer(c.getString("saved"), java.util.TimeZone.getTimeZone(c.getString("zone")))?.let {
                     String.format(java.util.Locale.US, "%04d-%02d-%02d", it.get(java.util.Calendar.YEAR), it.get(java.util.Calendar.MONTH) + 1, it.get(java.util.Calendar.DAY_OF_MONTH))
                 }
