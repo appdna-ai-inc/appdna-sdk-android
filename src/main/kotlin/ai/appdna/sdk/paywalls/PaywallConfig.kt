@@ -284,6 +284,8 @@ data class PaywallSectionData(
     val on_expire_action: String? = null,    // hide | show_expired_text | auto_advance
     val expired_text: String? = null,
     val accent_color: String? = null,
+    /** social_proof `trial_badge`: the badge's colour (console "Badge Color"). Unset: the paywall's accent. */
+    val badge_color: String? = null,
     val background_color: String? = null,
     val font_size: Float? = null,
     val alignment: String? = null,
@@ -896,6 +898,26 @@ data class PostPurchaseSuccessConfig(
     val lottie_url: String? = null,
 )
 
+/**
+ * The colour of the paywall elements that have no colour field of their own (a plan's trial line and feature
+ * checks), and of the trial badge: the paywall's own accent, which is its CTA's authored colour. Null means
+ * nothing is authored, and the brand accent applies. ONE rule; iOS `PaywallAccent` is the same, and
+ * `packages/sdk-shared-fixtures/dto_parsing/paywall_trial_badge_color.fixture.json` pins both.
+ */
+internal object PaywallAccent {
+    /**
+     * The CTA's authored colour, as its button resolves it: `cta.style.bg_color`, then `cta.bg_color`. The parser
+     * folds them the other way round into `cta.bg_color`, so the raw style is read first here.
+     */
+    fun ctaHex(config: PaywallConfig): String? =
+        ((config.cta?.style as? Map<*, *>)?.get("bg_color") as? String)?.takeIf { it.isNotEmpty() }
+            ?: config.cta?.bg_color?.takeIf { it.isNotEmpty() }
+
+    /** The social-proof trial badge: its own `badge_color` (console "Badge Color"), else the paywall's accent. */
+    fun trialBadgeHex(data: PaywallSectionData?, config: PaywallConfig): String? =
+        data?.badge_color?.takeIf { it.isNotEmpty() } ?: ctaHex(config)
+}
+
 data class PostPurchaseFailureConfig(
     val action: String,            // "show_error" | "retry" | "dismiss"
     val message: String? = null,
@@ -1452,6 +1474,7 @@ internal object PaywallConfigParser {
                 on_expire_action = d.str(SURFACE, path, "on_expire_action"),
                 expired_text = d.str(SURFACE, path, "expired_text"),
                 accent_color = d.str(SURFACE, path, "accent_color"),
+                badge_color = d.str(SURFACE, path, "badge_color"),
                 background_color = d.str(SURFACE, path, "background_color"),
                 font_size = d.num(SURFACE, path, "font_size")?.toFloat(),
                 alignment = d.str(SURFACE, path, "alignment"),

@@ -692,10 +692,10 @@ fun resolveWeight(w: String?, fallback: FontWeight): FontWeight = when (w?.lower
 
 fun resolveCtaWeight(w: String?): FontWeight = resolveWeight(w, FontWeight.SemiBold)
 
-/** The paywall's own accent: its CTA's colour when authored, else the brand accent. */
+/** The paywall's own accent: its CTA's authored colour ([PaywallAccent.ctaHex]), else the brand accent. */
 @Composable
 private fun paywallAccent(config: PaywallConfig): Color =
-    config.cta?.bg_color?.takeIf { it.isNotEmpty() }?.let { parseHexColor(it) } ?: ai.appdna.sdk.AppDNA.brandAccentColor()
+    PaywallAccent.ctaHex(config)?.let { parseHexColor(it) } ?: ai.appdna.sdk.AppDNA.brandAccentColor()
 
 @Composable
 fun PaywallScreen(
@@ -4706,8 +4706,10 @@ internal fun PaywallSectionView(
                         )
                     }
                     "trial_badge" -> {
+                        // The authored badge colour, else the paywall's accent. iOS `trial_badge` is the same chain.
+                        val badgeTint = PaywallAccent.trialBadgeHex(section.data, config)?.let { parseHexColor(it) } ?: ai.appdna.sdk.AppDNA.brandAccentColor()
                         val trialBadgeStyle = StyleEngine.applyTextStyle(
-                            TextStyle(fontSize = 12.sp, fontWeight = FontWeight.SemiBold, color = paywallAccent(config)),
+                            TextStyle(fontSize = 12.sp, fontWeight = FontWeight.SemiBold, color = badgeTint),
                             section.style?.elements?.get("value")?.text_style
                         )
                         Text(
@@ -4715,7 +4717,7 @@ internal fun PaywallSectionView(
                             style = trialBadgeStyle,
                             modifier = Modifier
                                 .background(
-                                    paywallAccent(config).copy(alpha = 0.15f),
+                                    badgeTint.copy(alpha = 0.15f),
                                     RoundedCornerShape(999.dp),
                                 )
                                 .padding(horizontal = 16.dp, vertical = 8.dp),

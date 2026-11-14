@@ -299,6 +299,7 @@ class SharedFixtureTest(
             }
             "resolve_message_dismiss" -> runResolveMessageDismiss(action, spy)
             "resolve_paywall_image_alt" -> runPaywallImageAlt(action, spy)
+            "resolve_paywall_trial_badge_color" -> runPaywallTrialBadgeColor(action, spy)
             // A paywall media section's playback and a message's animation / video hero.
             "resolve_paywall_media_section" -> runPaywallMediaSection(action, spy)
             "resolve_message_hero_media" -> runMessageHeroMedia(action, spy)
@@ -3737,6 +3738,36 @@ class SharedFixtureTest(
             val section = paywall.sections.firstOrNull { it.type == "image" }
                 ?: throw AssertionError("[resolve_paywall_image_alt] case $name: the image section was dropped")
             ai.appdna.sdk.paywalls.PaywallImageAccessibility.label(section.data)
+        }
+    }
+
+    /**
+     * The trial badge's colour and the paywall's accent, through the REAL `PaywallConfigParser.parseSinglePaywall`
+     * and the REAL `PaywallAccent.trialBadgeHex` / `PaywallAccent.ctaHex` — the colours `PaywallActivity` draws.
+     */
+    private fun runPaywallTrialBadgeColor(action: JSONObject, spy: Spy) {
+        val cases = action.optJSONArray("cases") ?: unsupported("resolve_paywall_trial_badge_color without cases")
+        spy.state["results"] = (0 until cases.length()).map { i ->
+            val c = cases.getJSONObject(i)
+            val name = c.optString("name", "?")
+            @Suppress("UNCHECKED_CAST")
+            val section = (c.optJSONObject("section") ?: unsupported("resolve_paywall_trial_badge_color case without section"))
+                .asMap().filterValues { it != null } as Map<String, Any>
+            @Suppress("UNCHECKED_CAST")
+            val cta = (c.optJSONObject("cta") ?: unsupported("resolve_paywall_trial_badge_color case without cta"))
+                .asMap().filterValues { it != null } as Map<String, Any>
+            val paywall = ai.appdna.sdk.paywalls.PaywallConfigParser.parseSinglePaywall(
+                "pw_badge_$name",
+                mapOf(
+                    "id" to "pw_badge_$name", "cta" to cta,
+                    "layout" to mapOf("type" to "stack", "sections" to listOf(mapOf("id" to "s1", "type" to "social_proof", "config" to section))),
+                ),
+            ) ?: throw AssertionError("[resolve_paywall_trial_badge_color] case $name: the paywall did not parse")
+            val proof = paywall.sections.firstOrNull { it.type == "social_proof" }
+            mapOf(
+                "badge" to ai.appdna.sdk.paywalls.PaywallAccent.trialBadgeHex(proof?.data, paywall),
+                "accent" to ai.appdna.sdk.paywalls.PaywallAccent.ctaHex(paywall),
+            )
         }
     }
 
