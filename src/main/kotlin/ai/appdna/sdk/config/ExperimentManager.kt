@@ -112,7 +112,9 @@ internal class ExperimentManager(
     fun resolveSurfacePresentation(surfaceType: String, entityId: String): SurfaceResolution {
         val allExperiments = remoteConfigManager.getAllExperiments()
 
-        for ((experimentId, config) in allExperiments) {
+        // A fixed order, the same on iOS: when several served experiments name this entity (a served doc that
+        // diverged from the rows), the first eligible one in [servingOrder] decides, not the map's iteration order.
+        for ((experimentId, config) in servingOrder(allExperiments)) {
             if (config.status != "running") continue
             if (config.type != surfaceType) continue
             if (!config.platforms.contains("android")) continue
@@ -164,6 +166,20 @@ internal class ExperimentManager(
         }
 
         return SurfaceResolution.RenderActive
+    }
+
+    companion object {
+        /**
+         * The order [resolveSurfacePresentation] tries the served experiments in, identical on iOS and Android:
+         * the most recently started first (`started_at_ms` descending; one without it sorts last), ties by experiment
+         * id ascending (`String.compareTo`, UTF-16 code units — iOS compares `utf16` the same way). The server lets only
+         * one experiment run per entity, so when the served doc holds several, the newest start is the one still running
+         * and the older entries are removals that never reached the device's copy.
+         */
+        internal fun servingOrder(all: Map<String, ExperimentConfig>): List<Pair<String, ExperimentConfig>> =
+            all.entries
+                .sortedWith(compareByDescending<Map.Entry<String, ExperimentConfig>> { it.value.startedAtMs ?: Long.MIN_VALUE }.thenBy { it.key })
+                .map { it.key to it.value }
     }
 
     /**

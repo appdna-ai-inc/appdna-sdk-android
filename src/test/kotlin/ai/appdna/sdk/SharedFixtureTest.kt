@@ -4596,23 +4596,29 @@ class SharedFixtureTest(
     private fun runPresentSurfaceUnderExperiment(action: JSONObject, spy: Spy) {
         val p = Pipeline(fixtureName).also { pipeline = it }
         val cfg = config ?: unsupported("present_surface_under_experiment without setup.config")
-        val expJson = cfg.optJSONObject("experiment")
-            ?: unsupported("present_surface_under_experiment without setup.config.experiment")
-        val expId = expJson.optString("id")
+        // `setup.config.experiment` (one) or `setup.config.experiments` (several in one served doc).
+        val expJsons: List<JSONObject> = cfg.optJSONArray("experiments")?.let { arr -> (0 until arr.length()).map { arr.getJSONObject(it) } }
+            ?: listOf(cfg.optJSONObject("experiment") ?: unsupported("present_surface_under_experiment without setup.config.experiment(s)"))
+        val expId = expJsons.first().optString("id")
 
         // Bucketing is deterministic on (experimentId, salt, anonId); the anon id is random per run,
         // so pin the bucket by weight instead — the hasher has its own tests (MurmurHash3Test).
-        val forced = setup.optJSONObject("experiment_assignments")?.optStringOrNull(expId)
-        val expMap = expJson.asMap().toMutableMap()
-        if (forced != null) {
-            val variants = (expMap["variants"] as? List<*>).orEmpty().map { v ->
-                (v as Map<*, *>).toMutableMap().also { it["weight"] = if (it["id"] == forced) 1.0 else 0.0 }
+        val served = LinkedHashMap<String, Map<String, Any?>>()
+        for (expJson in expJsons) {
+            val id = expJson.optString("id")
+            val forced = setup.optJSONObject("experiment_assignments")?.optStringOrNull(id)
+            val expMap = expJson.asMap().toMutableMap()
+            if (forced != null) {
+                val variants = (expMap["variants"] as? List<*>).orEmpty().map { v ->
+                    (v as Map<*, *>).toMutableMap().also { it["weight"] = if (it["id"] == forced) 1.0 else 0.0 }
+                }
+                expMap["variants"] = variants
             }
-            expMap["variants"] = variants
+            served[id] = expMap.filterValues { it != null }
         }
 
         val rcm = RemoteConfigManager(null, p.storage, 3600L)
-        rcm.loadBundledConfig(mapOf("experiments" to mapOf(expId to expMap.filterValues { it != null })))
+        rcm.loadBundledConfig(mapOf("experiments" to served))
 
         // decode_only: assert the REAL parser decoded the served doc's field-map.
         if (action.optString("mode", "present") == "decode_only") {
@@ -4655,7 +4661,7 @@ class SharedFixtureTest(
             is ExperimentManager.SurfaceResolution.RenderActive -> {
                 // "control" vs "active" is the distinction the fixtures draw: an exposure was
                 // recorded iff the user was actually bucketed into this experiment.
-                spy.state["resolution"] = if (em.getExposures().any { it.experimentId == expId }) "control" else "active"
+                spy.state["resolution"] = if (em.getExposures().isNotEmpty()) "control" else "active"
                 spy.state["presented_config_id"] = activeEntityId
             }
         }

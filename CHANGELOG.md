@@ -46,6 +46,13 @@ the project uses [Semantic Versioning](https://semver.org/).
 
 ### Fixed
 
+- **When several served experiments name one paywall, flow, message or survey, the same one decides on every launch,
+  and on both platforms.** The surface resolver walked the served experiments in map order, so with a served
+  config that had diverged from the rows (an experiment whose removal never landed, still listed as running) the arm a
+  user saw could change between launches, and iOS and Android could draw different experiments. They are now tried
+  most recently started first (`started_at_ms`), ties by experiment id; the first one the user is in decides. Shared
+  fixtures `experiment_serving/several_experiments_on_one_entity_*`.
+
 - **A tapped row of the date wheel moves into the band.** Tapping a row that was not in the band (or double-tapping
   it with TalkBack) stored that value while the wheel stayed where it was, so the band showed one date and the answer
   held another. The tapped row now glides into the band, as on iOS. The hour and minute columns are now announced
