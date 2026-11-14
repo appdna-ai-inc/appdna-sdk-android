@@ -11,7 +11,7 @@ import org.robolectric.annotation.Config
 import org.robolectric.annotation.GraphicsMode
 
 /**
- * #1823 — RENDERED: a survey's Next and Submit labels draw in `theme.button_text_color`, as on iOS
+ * RENDERED: a survey's Next and Submit labels draw in `theme.button_text_color`, as on iOS
  * (`SurveyRenderer` `.foregroundColor(buttonTextColor)`). Android hard-coded white, so a generated survey whose brand
  * button is light (dark label chosen for contrast) drew white-on-coral at 3.6:1.
  *

@@ -68,7 +68,7 @@ class DateWheelBandTest {
     }
 
     /**
-     * #1656 — a TAPPED row (a finger, or TalkBack's double-tap on the row it focused, which is a click) is stored AND
+     * A TAPPED row (a finger, or TalkBack's double-tap on the row it focused, which is a click) is stored AND
      * glides into the band. It used to be stored while its drum stayed put: tapping "Nov" on a wheel at Dec 31 stored
      * 2025-11-30 under a band reading Dec 30, so a TalkBack user heard one date and saved another.
      */

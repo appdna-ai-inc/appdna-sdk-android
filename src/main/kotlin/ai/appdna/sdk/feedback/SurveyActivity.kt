@@ -628,7 +628,7 @@ fun SurveyScreen(
                         },
                         enabled = canAdvance,
                         // `button_text_color` is the label, as on iOS (`.foregroundColor(buttonTextColor)`); Material's
-                        // default onPrimary drew white whatever the theme said (#1823).
+                        // default onPrimary drew white whatever the theme said.
                         colors = ButtonDefaults.buttonColors(containerColor = buttonColor, contentColor = buttonTextColor),
                         modifier = Modifier.semantics { contentDescription = nextCd },
                     ) { Text("Next") }

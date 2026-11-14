@@ -7609,7 +7609,7 @@ internal fun DateWheelPickerBlock(
             selectedYear = years[yearCentered]; emit()
         }
     }
-    // A clamp (a shorter month, a bound) moves the selection, so the drums follow it — and so does a TAPPED row (#1656).
+    // A clamp (a shorter month, a bound) moves the selection, so the drums follow it — and so does a TAPPED row.
     // A row's click (a finger, or TalkBack's double-tap on the row it focused) stored that row while its drum stayed put,
     // so the band showed one date and the answer held another. Each click now counts as interaction, and the drum glides
     // the tapped row into the band, as iOS's `tapRow` does.
