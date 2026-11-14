@@ -146,10 +146,10 @@ object TemplateEngine {
                     val remaining = path.removePrefix("onboarding.")
                     val subParts = remaining.split(".", limit = 2)
                     if (subParts.size < 2) return null
-                    context.onboardingResponses[subParts[0]]?.get(subParts[1])?.let { answerText(it, context, subParts[1]) }
+                    context.onboardingResponses[subParts[0]]?.get(subParts[1])?.let { answerText(it, context, subParts[1], subParts[0]) }
                 } else {
                     val step = context.onboardingResponses[parts[1]] ?: return null
-                    step[parts[2]]?.let { return answerText(it, context, parts[2]) }
+                    step[parts[2]]?.let { return answerText(it, context, parts[2], parts[1]) }
                     // `{{onboarding.<step>.<field>.city}}`: the path is split at most three ways, so a key
                     // inside a structured answer (a location selection) arrives as `field.city`. Walk it.
                     val keys = parts[2].split(".")
@@ -210,8 +210,10 @@ object TemplateEngine {
      * before it is stringified — so the whole-answer token never prints Google content either. A select
      * answer drawn here shows what the user picked; [field] is the answer's field id.
      */
-    private fun answerText(value: Any, context: TemplateContext, field: String): String? {
-        ai.appdna.sdk.onboarding.SelectedOptionStore.drawnAnswer(field, value, context.selected)?.let { return it }
+    private fun answerText(value: Any, context: TemplateContext, field: String, step: String? = null): String? {
+        // The answer's own step's options first: two steps can answer one field id with different labels.
+        val keys = if (step != null) listOf(ai.appdna.sdk.onboarding.SelectedOptionStore.scopedKey(step, field), field) else listOf(field)
+        ai.appdna.sdk.onboarding.SelectedOptionStore.drawnAnswer(keys, value, context.selected)?.let { return it }
         // A drawn time or date-and-time answer, in the app's zone; sent or stored, it stays as stored.
         if (context.surface != TemplateSurface.OTHER) {
             (value as? String)?.let { s -> ai.appdna.sdk.onboarding.AnswerTime.display(s, ai.appdna.sdk.onboarding.AnswerTime.zone) }?.let { return it }

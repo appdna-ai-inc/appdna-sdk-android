@@ -403,7 +403,7 @@ internal object HostDataResolver {
     private fun multiSelectText(path: String, value: Any?, scope: Scope): String? {
         if (!path.startsWith("responses.") && !path.startsWith("step.")) return null
         if (value !is List<*>) return null
-        return SelectedOptionStore.drawnAnswer(path.substringAfterLast('.'), value, drawingRoot(scope))
+        return SelectedOptionStore.drawnAnswer(SelectedOptionStore.recordKeys(path), value, drawingRoot(scope))
     }
 
     /**

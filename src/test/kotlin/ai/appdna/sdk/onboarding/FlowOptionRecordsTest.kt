@@ -73,4 +73,31 @@ class FlowOptionRecordsTest {
         assertEquals("Lose it", SelectedOptionStore.drawnAnswer("goal", "lose_weight", SelectedOptionStore.drawingRecords()))
         SelectedOptionStore.resetForTesting()
     }
+
+    private fun quiz(): OnboardingFlowConfig = OnboardingConfigParser.parseFlowForTest(
+        "q",
+        mapOf(
+            "id" to "q", "name" to "q", "version" to 1, "settings" to emptyMap<String, Any>(),
+            "steps" to listOf("first" to "Alpha first", "second" to "Alpha second").mapIndexed { i, (step, label) ->
+                mapOf(
+                    "id" to "q${i + 1}", "type" to "form", "name" to step,
+                    "content_blocks" to listOf(
+                        mapOf("id" to "b$i", "type" to "input_select", "field_id" to "pick",
+                            "field_options" to listOf(mapOf("id" to "a", "label" to label))),
+                    ),
+                )
+            },
+        ),
+    )
+
+    @Test
+    fun `each step's options are kept under its own key and an answer reads its own step's label`() {
+        val records = SelectedOptionStore.optionRecords(quiz())
+        assertEquals(listOf(mapOf("value" to "a", "label" to "Alpha first")), records["q1/pick"])
+        assertEquals(listOf(mapOf("value" to "a", "label" to "Alpha second")), records["q2/pick"])
+        // The latest tap was on q2; q1's answer still draws q1's label.
+        val selected = SelectedOptionStore.drawingRecords(mapOf("pick" to mapOf("value" to "a", "label" to "Alpha second")), records)
+        assertEquals("Alpha first", SelectedOptionStore.drawnAnswerAt("responses.q1.pick", "a", selected))
+        assertEquals("Alpha second", SelectedOptionStore.drawnAnswerAt("responses.q2.pick", "a", selected))
+    }
 }

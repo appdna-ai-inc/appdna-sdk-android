@@ -43,10 +43,11 @@ internal object SelectedOptionStore {
     }
 
     /**
-     * The presented flow's own options, by field id, as `{ value, label }` records. An answer with no
-     * recorded pick (a resumed flow, a default, a host patch) still draws its label from these.
+     * The presented flow's own options as `{ value, label }` records, by field id and by `<step id>/<field id>`
+     * ([scopedKey]). An answer with no recorded pick (a resumed flow, a default, a host patch) still draws its label
+     * from these.
      */
-    private var flowOptionRecords: Map<String, List<Map<String, Any>>> = emptyMap()
+    private var flowOptionRecords: Map<String, Any> = emptyMap()
 
     /** Keep this flow's option list. Replaces the previous flow's: only the flow on screen has answers to draw. */
     @Synchronized
@@ -62,6 +63,19 @@ internal object SelectedOptionStore {
     /** What a drawn answer looks up: each field's picked records, then the flow's own options. */
     @Synchronized
     fun drawingRecords(): Map<String, Any?> = drawingRecords(storage, flowOptionRecords)
+
+    /** The key a step's own option list is kept under: two steps may answer one field id with different labels. */
+    internal fun scopedKey(step: String, field: String): String = "$step/$field"
+
+    /**
+     * The record keys an answer at [path] is labelled from, most specific first: `responses.<step>.<field>` reads its
+     * step's own options before the field's picks and options; any other answer path reads the field's. iOS `recordKeys`.
+     */
+    internal fun recordKeys(path: String): List<String> {
+        val parts = path.split('.')
+        val field = parts.last()
+        return if (parts.size == 3 && parts[0] == "responses") listOf(scopedKey(parts[1], field), field) else listOf(field)
+    }
 
     /** Picks first, so a recorded pick wins over the flow's list. */
     internal fun drawingRecords(selected: Map<String, Any?>, flowOptions: Map<String, Any?>): Map<String, Any?> {
@@ -84,19 +98,24 @@ internal object SelectedOptionStore {
             if (label.isNullOrBlank() || label.contains("{{")) return
             out.getOrPut(field) { mutableListOf() }.add(mapOf("value" to value, "label" to label))
         }
-        fun walk(blocks: List<ContentBlock>?) {
-            for (block in blocks.orEmpty()) {
-                if (block.type.startsWith("input_")) {
-                    for (option in block.field_options.orEmpty()) add(block.field_id, option.value ?: option.id, option.label)
-                }
-                walk(block.children)
-                walk(block.stack_children)
-            }
-        }
         for (step in flow.steps) {
+            // Each record twice: under the field (any step's answer to it) and under this step's own key.
+            fun both(field: String?, value: String?, label: String?) {
+                add(field, value, label)
+                if (!field.isNullOrEmpty()) add(scopedKey(step.id, field), value, label)
+            }
+            fun walk(blocks: List<ContentBlock>?) {
+                for (block in blocks.orEmpty()) {
+                    if (block.type.startsWith("input_")) {
+                        for (option in block.field_options.orEmpty()) both(block.field_id, option.value ?: option.id, option.label)
+                    }
+                    walk(block.children)
+                    walk(block.stack_children)
+                }
+            }
             walk(step.config.content_blocks)
             for (field in step.config.fields.orEmpty()) {
-                for (option in field.options.orEmpty()) add(field.id, HostDataResolver.stringifyTemplateValue(option.value) ?: option.id, option.label)
+                for (option in field.options.orEmpty()) both(field.id, HostDataResolver.stringifyTemplateValue(option.value) ?: option.id, option.label)
             }
         }
         return out
@@ -143,7 +162,7 @@ internal object SelectedOptionStore {
     @Suppress("UNCHECKED_CAST")
     @Synchronized
     fun seedFlowOptionsForTesting(records: Map<String, Any?>) {
-        flowOptionRecords = records as Map<String, List<Map<String, Any>>>
+        flowOptionRecords = records.filterValues { it != null } as Map<String, Any>
     }
 
     /**
@@ -188,8 +207,12 @@ internal object SelectedOptionStore {
      * value: no record for this value anywhere. A multi pick keeps the stored value of any item with no label.
      * Never for a value that leaves the screen: an option's `value`, a URL, a hook's headers.
      */
-    internal fun drawnAnswer(field: String, answer: Any?, selected: Map<String, Any?>): String? {
-        val records = when (val r = selected[field]) { is List<*> -> r; null -> emptyList<Any?>(); else -> listOf(r) }
+    internal fun drawnAnswer(field: String, answer: Any?, selected: Map<String, Any?>): String? =
+        drawnAnswer(listOf(field), answer, selected)
+
+    /** [drawnAnswer] reading the records under each of [keys] in turn: the first record holding the stored value wins. */
+    internal fun drawnAnswer(keys: List<String>, answer: Any?, selected: Map<String, Any?>): String? {
+        val records = keys.flatMap { key -> when (val r = selected[key]) { is List<*> -> r; null -> emptyList<Any?>(); else -> listOf(r) } }
         fun labelFor(text: String): String? = records.firstNotNullOfOrNull { r ->
             val v = HostDataResolver.stringifyTemplateValue((r as? Map<*, *>)?.get("value"))
             if (v == text) drawnLabel(r) else null
@@ -204,7 +227,7 @@ internal object SelectedOptionStore {
 
     /** [drawnAnswer] for a `responses.` or `step.` path, the only roots that name an answer. */
     internal fun drawnAnswerAt(path: String, answer: Any?, selected: Map<String, Any?>): String? =
-        if (path.startsWith("responses.") || path.startsWith("step.")) drawnAnswer(path.substringAfterLast('.'), answer, selected) else null
+        if (path.startsWith("responses.") || path.startsWith("step.")) drawnAnswer(recordKeys(path), answer, selected) else null
 
     /** The recorded option's keys whose text is a Google answer's content. */
     fun googleKeys(record: Any?): List<String> =
