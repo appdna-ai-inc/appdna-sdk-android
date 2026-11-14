@@ -206,3 +206,8 @@ dependencies {
     // The test activity host: an app module takes it from the debug manifest, not the test classpath.
     debugImplementation(libs.compose.ui.test.manifest)
 }
+
+// The Compose test rule needs `ComponentActivity` in the merged manifest, and `ui-test-manifest` is a debug-only
+// dependency (it must never ship in a release APK). So the sample's JVM tests run on the debug variant only;
+// `testReleaseUnitTest` could only ever fail with "Unable to resolve activity … ComponentActivity".
+tasks.matching { it.name == "testReleaseUnitTest" }.configureEach { enabled = false }
