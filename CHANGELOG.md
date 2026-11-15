@@ -46,6 +46,11 @@ the project uses [Semantic Versioning](https://semver.org/).
 
 ### Fixed
 
+- **`survey_question_answered` is sent once per question, not once per keystroke.** A typed answer is sent when the user
+  moves on with Next or Submit, with the full text (not if it is blank); a tap answer (NPS, choice, rating, …) is sent
+  when it is picked, as before, and an answer the same as the one already sent is not sent again. A typed answer sent
+  one event per character, so per-question analytics counted partial strings as answers.
+
 - **A survey stays above the keyboard while an answer is typed.** A bottom-sheet or modal survey now moves up when the
   keyboard opens for a free-text question, so the field and Submit (or Next) stay visible and tappable. The keyboard
   covered them, and a tap where Submit had been typed a letter into the answer instead.
