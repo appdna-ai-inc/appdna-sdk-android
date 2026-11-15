@@ -46,6 +46,10 @@ the project uses [Semantic Versioning](https://semver.org/).
 
 ### Fixed
 
+- **A legacy step's button label is white on its accent, on every step.** On a dark step the Welcome, Question,
+  Value-prop, Custom and Form buttons drew their label in the step theme's dark `onPrimary` — dark purple on the
+  indigo accent. They draw white, as on iOS.
+
 - **A paywall's status-bar and navigation-bar icons contrast with the paywall.** They followed the phone's theme, so
   a white paywall in dark mode drew white icons on white. They now follow the paywall's own background: dark icons on
   a light one, light icons on a dark one, a gradient, an image or a video.

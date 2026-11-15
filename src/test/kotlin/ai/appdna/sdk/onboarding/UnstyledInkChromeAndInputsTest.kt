@@ -174,8 +174,8 @@ class UnstyledInkChromeAndInputsTest {
         assertTrue("light ink on the gradient, per element: $counts", counts.values.all { it > ink })
     }
 
-    /** A legacy (welcome) step with Skip: the frame of its Skip link. */
-    private fun skipFrame(background: Map<String, Any>, name: String): Frame {
+    /** A legacy (welcome) step with Skip: the frame of its Skip link, or of another text on it (its CTA label). */
+    private fun skipFrame(background: Map<String, Any>, name: String, text: String = "Skip"): Frame {
         LocalStorage(ctx).setString(
             "cache_onboarding",
             JSONObject(mapOf("active_flow_id" to FLOW, "flows" to mapOf(FLOW to mapOf(
@@ -195,7 +195,7 @@ class UnstyledInkChromeAndInputsTest {
         val c = Robolectric.buildActivity(OnboardingActivity::class.java).setup().also { controllers += it }
         idle()
         compose.waitForIdle()
-        val bounds = compose.onNode(hasText("Skip"), useUnmergedTree = true).fetchSemanticsNode().boundsInRoot
+        val bounds = compose.onNode(hasText(text), useUnmergedTree = true).fetchSemanticsNode().boundsInRoot
         val path = "build/tmp/unstyled-ink-chrome/$name.png"
         File(path).parentFile?.mkdirs()
         compose.onRoot().captureRoboImage(path, roborazziOptions = RoborazziOptions(taskType = RoborazziTaskType.Record))
@@ -222,6 +222,19 @@ class UnstyledInkChromeAndInputsTest {
         assertTrue("Skip on navy (${navySkip.lightInk()} light pixels)", navySkip.lightInk() > ink)
         val whiteSkip = skipFrame(white, "skip-white")
         assertTrue("Skip on white (${whiteSkip.darkInk()} dark pixels)", whiteSkip.darkInk() > ink)
+    }
+
+    /**
+     * The legacy CTA's label is white on the accent fill, as on iOS (`.foregroundColor(.white)`), whatever the step's own
+     * theme: on a dark step the theme's `onPrimary` is a dark purple, and the label drew dark on indigo.
+     * RED CONTROL: drop `contentColor = Color.White` from `WelcomeStep`'s button — the navy case finds no light ink.
+     */
+    @Test
+    fun `a legacy step's CTA label is white on its accent on a dark step and on a white one`() {
+        for ((bg, name) in listOf(navy to "cta-navy", white to "cta-white")) {
+            val label = skipFrame(bg, name, text = "Get Started")
+            assertTrue("$name: the CTA label is light on the accent (${label.lightInk()} light pixels)", label.lightInk() > ink)
+        }
     }
 
     @Test

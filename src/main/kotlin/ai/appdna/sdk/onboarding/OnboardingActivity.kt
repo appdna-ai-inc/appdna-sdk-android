@@ -4814,7 +4814,7 @@ private fun WelcomeStep(config: StepConfig, onNext: (Map<String, Any>?) -> Unit)
             // indigo `#6366F1` so the same flow renders the same CTA
             // color on both natives, regardless of host's Material theme
             // primary override.
-            colors = ButtonDefaults.buttonColors(containerColor = ai.appdna.sdk.AppDNA.brandAccentColor())
+            colors = ButtonDefaults.buttonColors(containerColor = ai.appdna.sdk.AppDNA.brandAccentColor(), contentColor = androidx.compose.ui.graphics.Color.White)
         ) {
             Text(text = (config.cta_text ?: "Get Started").interpolated(), fontWeight = FontWeight.SemiBold, fontSize = 17.sp)
         }
@@ -5041,6 +5041,8 @@ private fun QuestionStep(
             // Was hardcoded #6366F1 — brand-themed flows lost their CTA color.
             colors = ButtonDefaults.buttonColors(
                 containerColor = accentColor,
+                // White label on the accent, as iOS `.foregroundColor(.white)`: the step's own theme must not pick it.
+                contentColor = androidx.compose.ui.graphics.Color.White,
                 // Match iOS QuestionStepView
                 // .swift:97 `selectedIds.isEmpty ? Color.gray : accentColor`.
                 // R59 wrongly applied FormStepView's accent×0.4 pattern here;
@@ -5148,7 +5150,7 @@ private fun ValuePropStep(config: StepConfig, onNext: (Map<String, Any>?) -> Uni
             // Match iOS ValuePropStepView.swift:51 fixed
             // indigo `#6366F1` so flows render the same CTA color on both
             // natives regardless of host's MaterialTheme primary override.
-            colors = ButtonDefaults.buttonColors(containerColor = ai.appdna.sdk.AppDNA.brandAccentColor())
+            colors = ButtonDefaults.buttonColors(containerColor = ai.appdna.sdk.AppDNA.brandAccentColor(), contentColor = androidx.compose.ui.graphics.Color.White)
         ) {
             Text(text = (config.cta_text ?: "Continue").interpolated(), fontWeight = FontWeight.SemiBold, fontSize = 17.sp)
         }
@@ -5235,7 +5237,7 @@ private fun CustomStep(config: StepConfig, onNext: (Map<String, Any>?) -> Unit) 
             shape = RoundedCornerShape(14.dp),
             // Match iOS CustomStepView.swift:51 fixed
             // indigo `#6366F1`. Affects custom/info/permission steps.
-            colors = ButtonDefaults.buttonColors(containerColor = ai.appdna.sdk.AppDNA.brandAccentColor())
+            colors = ButtonDefaults.buttonColors(containerColor = ai.appdna.sdk.AppDNA.brandAccentColor(), contentColor = androidx.compose.ui.graphics.Color.White)
         ) {
             Text(text = (config.cta_text ?: "Continue").interpolated(), fontWeight = FontWeight.SemiBold, fontSize = 17.sp)
         }

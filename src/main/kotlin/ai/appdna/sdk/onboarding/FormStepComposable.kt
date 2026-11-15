@@ -323,6 +323,7 @@ fun FormStep(
             // Compute containerColor manually instead.
             colors = ButtonDefaults.buttonColors(
                 containerColor = if (canSubmit) ctaBgColor else ctaBgColor.copy(alpha = 0.4f),
+                contentColor = androidx.compose.ui.graphics.Color.White,
             ),
         ) {
             Text(
