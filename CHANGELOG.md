@@ -20,6 +20,11 @@ the project uses [Semantic Versioning](https://semver.org/).
   fills every line but the last edge to edge. On iOS a justified block is drawn through UIKit, keeping its bold,
   italic, colour runs and links (which still open in the in-app browser).
 
+- **One Agreement element can hold up to five consents.** With `field_config.consents`, each consent has its own
+  text, colours and `required`, drawn one under another. Each answer is stored as its own boolean under
+  `<field_id>.<consent_id>`, so rules and `{{responses.*}}` read a consent like any other answer, and each required
+  consent gates the CTA until it is checked. An Agreement without `consents` is unchanged.
+
 - **An app with its own Firebase messaging service can let the SDK display what it forwards.**
   `AppDNA.push.setSdkDisplaysForwardedMessages(true)` makes the token registration report `push_display: "sdk"`, so
   AppDNA sends the device data-only messages that reach the app's service in the background too, and

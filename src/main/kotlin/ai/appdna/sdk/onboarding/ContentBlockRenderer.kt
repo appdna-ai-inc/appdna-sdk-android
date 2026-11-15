@@ -1862,9 +1862,23 @@ object RequiredFieldGate {
             if (count < minimum) return false to (block.field_label ?: block.label ?: fieldId)
         }
 
+        // An Agreement holding several consents: each REQUIRED consent must be checked, under its own flat key
+        // (`<field_id>.<consent_id>`). Its block-level `field_required` belongs to the single-consent shape, so the
+        // loop below skips such a block. Mirrors iOS `RequiredFieldGate`.
+        for (block in blocks) {
+            if (block.type != "agreement") continue
+            val consents = ai.appdna.sdk.core.AgreementConsents.parse(block.field_config?.get("consents"))
+            if (consents.isEmpty()) continue
+            ai.appdna.sdk.core.AgreementConsents.firstMissing(block.field_id ?: block.id, consents, inputValues)
+                ?.let { return false to it }
+        }
+
         for (block in blocks) {
             if (block.type == "summary_screen") continue // see above — per-stat, never block-level
             if (block.field_required != true) continue
+            if (block.type == "agreement" &&
+                ai.appdna.sdk.core.AgreementConsents.parse(block.field_config?.get("consents")).isNotEmpty()
+            ) continue
             // Required, in scope, and 0 options to pick from: satisfied.
             if (resolveState(block, rawResolvedIds) == "empty_in_scope") continue
             val fieldId = block.field_id ?: block.id
@@ -12864,6 +12878,82 @@ private fun FormInputToggleBlock(
  */
 @Composable
 private fun AgreementBlock(
+    block: ContentBlock,
+    inputValues: MutableMap<String, Any>,
+) {
+    val consents = ai.appdna.sdk.core.AgreementConsents.parse(block.field_config?.get("consents"))
+    if (consents.isNotEmpty()) {
+        // Up to five consents, one under another, each its own checkbox, copy, colours and Required.
+        androidx.compose.foundation.layout.Column(
+            modifier = Modifier.fillMaxWidth(),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            consents.forEach { ConsentRow(block, it, inputValues) }
+        }
+        return
+    }
+    SingleConsentAgreement(block, inputValues)
+}
+
+/**
+ * One consent of an Agreement that holds several: its own checkbox, copy and colours (each falling back to the
+ * block's), its answer stored as a Boolean under `<field_id>.<consent_id>`. Mirrors iOS `ConsentRow`.
+ */
+@Composable
+private fun ConsentRow(
+    block: ContentBlock,
+    consent: ai.appdna.sdk.core.AgreementConsents.Consent,
+    inputValues: MutableMap<String, Any>,
+) {
+    val key = ai.appdna.sdk.core.AgreementConsents.key(block.field_id ?: block.id, consent.id)
+    fun cfg(k: String) = block.field_config?.get(k) as? String
+    val checkboxColor = StyleEngine.parseColor(consent.checkboxColor ?: cfg("checkbox_color") ?: (ai.appdna.sdk.AppDNA.brandAccentHex ?: "#6366F1"))
+    val borderColor = StyleEngine.parseColor(consent.checkboxBorderColor ?: cfg("checkbox_border_color") ?: "#C7C7CC")
+    val checkmarkColor = StyleEngine.parseColor(cfg("checkmark_color") ?: "#FFFFFF")
+    val textColor = StyleEngine.parseColor(consent.textColor ?: cfg("text_color") ?: "#8E8E93")
+    val linkColor = StyleEngine.parseColor(consent.linkColor ?: cfg("link_color") ?: (ai.appdna.sdk.AppDNA.brandAccentHex ?: "#6366F1"))
+    val context = LocalContext.current
+    var checked by remember(key) { mutableStateOf((inputValues[key] as? Boolean) ?: consent.defaultChecked) }
+    androidx.compose.runtime.LaunchedEffect(key) { if (inputValues[key] !is Boolean) inputValues[key] = checked }
+    val baseTextStyle = TextStyle(fontSize = 13.sp, color = textColor)
+    val annotated = parseMarkdownToAnnotatedString(consent.text, baseTextStyle, linkColor, underlineMarkers = false)
+    androidx.compose.foundation.layout.Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.Top) {
+        androidx.compose.foundation.layout.Box(
+            modifier = Modifier
+                .padding(top = 1.dp, end = 10.dp)
+                .size(22.dp)
+                .clip(RoundedCornerShape(6.dp))
+                .background(if (checked) checkboxColor else Color.Transparent)
+                .border(1.5.dp, if (checked) checkboxColor else borderColor, RoundedCornerShape(6.dp))
+                .testTag("agreement.consent.${consent.id}")
+                .toggleable(
+                    value = checked,
+                    role = androidx.compose.ui.semantics.Role.Checkbox,
+                    onValueChange = { checked = it; inputValues[key] = it },
+                ),
+            contentAlignment = Alignment.Center,
+        ) {
+            if (checked) {
+                androidx.compose.material3.Icon(imageVector = Icons.Filled.Check, contentDescription = null, tint = checkmarkColor, modifier = Modifier.size(15.dp))
+            }
+        }
+        ClickableText(
+            text = annotated,
+            style = baseTextStyle,
+            modifier = Modifier.weight(1f),
+            onClick = { offset ->
+                annotated.getStringAnnotations(tag = "URL", start = offset, end = offset).firstOrNull()?.let { a ->
+                    ai.appdna.sdk.core.URLSafety.sanitized(a.item, context)?.let { uri ->
+                        try { context.startActivity(Intent(Intent.ACTION_VIEW, uri)) } catch (_: Exception) {}
+                    }
+                }
+            },
+        )
+    }
+}
+
+@Composable
+private fun SingleConsentAgreement(
     block: ContentBlock,
     inputValues: MutableMap<String, Any>,
 ) {

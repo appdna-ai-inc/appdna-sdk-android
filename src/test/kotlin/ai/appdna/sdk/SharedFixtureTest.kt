@@ -356,6 +356,24 @@ class SharedFixtureTest(
             "resolve_google_mark_chip" -> runGoogleMarkChip(action, spy)
             "resolve_deferred_link_pasteboard" -> runDeferredLinkPasteboard(action, spy)
             "resolve_facebook_mark_variant" -> runFacebookMarkVariant(action, spy)
+            "resolve_agreement_consents" -> {
+                val cases = action.optJSONArray("cases") ?: unsupported("resolve_agreement_consents without cases")
+                fun plain(x: Any?): Any? = when (x) {
+                    is org.json.JSONArray -> (0 until x.length()).map { plain(x.get(it)) }
+                    is org.json.JSONObject -> x.keys().asSequence().associateWith { plain(x.get(it)) }
+                    org.json.JSONObject.NULL -> null
+                    else -> x
+                }
+                spy.state["results"] = (0 until cases.length()).map { i ->
+                    val v = cases.getJSONObject(i).optJSONObject("value") ?: JSONObject()
+                    val fieldId = v.optString("field_id", "agree")
+                    val consents = ai.appdna.sdk.core.AgreementConsents.parse(plain(v.opt("consents")))
+                    @Suppress("UNCHECKED_CAST")
+                    val values = (plain(v.opt("values")) as? Map<String, Any?>) ?: emptyMap()
+                    val missing = ai.appdna.sdk.core.AgreementConsents.firstMissing(fieldId, consents, values)
+                    consents.joinToString(",") { it.id } + "|" + (missing?.let { "blocked:$it" } ?: "advance")
+                }
+            }
             "resolve_heading_color_runs" -> {
                 val cases = action.optJSONArray("cases") ?: unsupported("resolve_heading_color_runs without cases")
                 spy.state["results"] = (0 until cases.length()).map { i ->
