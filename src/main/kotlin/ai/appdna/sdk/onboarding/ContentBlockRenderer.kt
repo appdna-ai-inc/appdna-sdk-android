@@ -2410,11 +2410,23 @@ private fun HeadingBlock(block: ContentBlock, loc: ((String, String) -> String)?
     val styleWithAlign = horizontalTextAlign(alignSource)
         ?.let { effectiveStyle.copy(textAlign = it) } ?: effectiveStyle
     val resolved = loc?.invoke("block.${block.id}.text", text) ?: text
+    // Apply `style.text_transform` (uppercase/lowercase).
+    // iOS does this via `.textCase` in StyleEngine.swift:194-198. Compose
+    // has no equivalent TextStyle modifier so we transform the string.
+    val shown = block.style.applyTransform(resolved)
+    /*
+     * PART OF A HEADING IN ITS OWN COLOUR: `[word](color:HEX)`, the run syntax rich text already draws
+     * Only a heading that CONTAINS a valid colour run goes through the markdown parser, so
+     * every existing heading draws exactly as before. Mirrors iOS `HeadingColorRuns`.
+     */
+    val annotated = if (ai.appdna.sdk.core.HeadingColorRuns.has(shown)) {
+        val linkColor = StyleEngine.parseColor(block.link_color ?: (ai.appdna.sdk.AppDNA.brandAccentHex ?: "#6366F1"))
+        parseMarkdownToAnnotatedString(shown, styleWithAlign, linkColor)
+    } else {
+        androidx.compose.ui.text.AnnotatedString(shown)
+    }
     Text(
-        // Apply `style.text_transform` (uppercase/lowercase).
-        // iOS does this via `.textCase` in StyleEngine.swift:194-198. Compose
-        // has no equivalent TextStyle modifier so we transform the string.
-        text = block.style.applyTransform(resolved),
+        text = annotated,
         style = styleWithAlign,
         // SPEC — honor max_lines on headings (iOS added .lineLimit here too); nil
         // → no limit (unchanged). Ellipsis is a no-op when unbounded.

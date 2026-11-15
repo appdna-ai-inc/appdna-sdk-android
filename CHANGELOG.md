@@ -14,6 +14,12 @@ the project uses [Semantic Versioning](https://semver.org/).
   `monochrome_dark` the blue one, because Meta allows the logo only in Facebook Blue or white. It is drawn at 20 points
   with half a logo's width of clear space to the label. Provenance is in NOTICE.md.
 
+- **Part of a heading in its own colour, and Justify for headings and rich text.** A `heading` whose text carries a
+  `[word](color:EE6885)` run draws that word in that colour, as `rich_text` already did; a heading with no such run
+  draws exactly as before. `style.alignment` (heading) and `base_style.alignment` (rich text) accept `justify`, which
+  fills every line but the last edge to edge. On iOS a justified block is drawn through UIKit, keeping its bold,
+  italic, colour runs and links (which still open in the in-app browser).
+
 - **An app with its own Firebase messaging service can let the SDK display what it forwards.**
   `AppDNA.push.setSdkDisplaysForwardedMessages(true)` makes the token registration report `push_display: "sdk"`, so
   AppDNA sends the device data-only messages that reach the app's service in the background too, and

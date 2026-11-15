@@ -356,6 +356,12 @@ class SharedFixtureTest(
             "resolve_google_mark_chip" -> runGoogleMarkChip(action, spy)
             "resolve_deferred_link_pasteboard" -> runDeferredLinkPasteboard(action, spy)
             "resolve_facebook_mark_variant" -> runFacebookMarkVariant(action, spy)
+            "resolve_heading_color_runs" -> {
+                val cases = action.optJSONArray("cases") ?: unsupported("resolve_heading_color_runs without cases")
+                spy.state["results"] = (0 until cases.length()).map { i ->
+                    ai.appdna.sdk.core.HeadingColorRuns.has(cases.getJSONObject(i).optJSONObject("value")?.optString("text") ?: "")
+                }
+            }
             "resolve_survey_sentiment" -> runSurveySentiment(action, spy)
             "resolve_likert_bounds" -> runLikertBounds(action, spy)
             "resolve_compact_picker_height" -> runCompactPickerHeight(action, spy)
