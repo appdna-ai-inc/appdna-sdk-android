@@ -46,6 +46,10 @@ the project uses [Semantic Versioning](https://semver.org/).
 
 ### Fixed
 
+- **A survey stays above the keyboard while an answer is typed.** A bottom-sheet or modal survey now moves up when the
+  keyboard opens for a free-text question, so the field and Submit (or Next) stay visible and tappable. The keyboard
+  covered them, and a tap where Submit had been typed a letter into the answer instead.
+
 - **A screen's or survey's unstyled text follows its own background, not the phone's theme.** A screen with a white
   background drew its unstyled text in the phone's theme (white on white in dark mode), and a section with its own
   fill did not change ink for it; a white survey drew its Yes and No labels white in dark mode. Default text now
