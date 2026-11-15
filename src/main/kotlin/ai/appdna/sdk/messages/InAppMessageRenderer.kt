@@ -105,7 +105,13 @@ fun InAppMessageView(
         onSurface = content.text_color?.let { StyleEngine.parseColor(it) } ?: baseScheme.onSurface,
         onBackground = content.text_color?.let { StyleEngine.parseColor(it) } ?: baseScheme.onBackground,
         onPrimary = content.button_text_color?.let { StyleEngine.parseColor(it) } ?: baseScheme.onPrimary,
-    )
+    ).let {
+        // No tonal-elevation tint: a Material card whose colour is `surface` is overlaid with `surfaceTint` by its
+        // elevation, which drew an authored white banner or tooltip grey-purple. Tinting the surface with itself
+        // leaves it unchanged (a transparent tint would not: `copy(alpha)` turns it into black), so a message's fill
+        // is exactly its `background_color`, as on iOS and in the console preview; the elevation stays a shadow.
+        it.copy(surfaceTint = it.surface)
+    }
 
     // whether the user may dismiss right now: starts from the policy, flips once `dismiss_delay`
     // has passed, never flips when `dismiss_allowed` is false. Gates the ✕, `dismiss_text`, the backdrop

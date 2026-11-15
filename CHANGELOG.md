@@ -79,6 +79,11 @@ the project uses [Semantic Versioning](https://semver.org/).
 
 ### Fixed
 
+- **An in-app banner or tooltip is filled with exactly its `background_color`.** Material tinted a message card by its
+  elevation whenever the card's colour was the theme's surface, which the message's own background always is, so an
+  authored white banner or tooltip drew grey-purple and every other colour drew darker. The card keeps its shadow and
+  now draws the authored colour, as on iOS and in the console preview.
+
 - **An in-app banner or tooltip no longer dims the app behind it, and a modal is dimmed once.** The window a message is
   shown in kept Android's default dialog dim, so every banner and tooltip drew over a darkened app like a blocking
   modal, and a modal was darkened twice: by the window and by its own scrim. The window no longer dims. A modal draws
