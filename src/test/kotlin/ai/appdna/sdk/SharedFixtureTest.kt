@@ -311,6 +311,7 @@ class SharedFixtureTest(
             "resolve_container_children" -> runContainerChildren(action, spy)
             "resolve_rating_answer" -> runRatingAnswer(action, spy)
             "resolve_loading_variant" -> runLoadingVariant(action, spy)
+            "resolve_loading_spinner_colour" -> runLoadingSpinnerColour(action, spy)
             "resolve_custom_view_fallback" -> runCustomViewFallback(action, spy)
             "resolve_warning_banner_ink" -> runWarningBannerInk(action, spy)
             "resolve_button_label_ink" -> runButtonLabelInk(action, spy)
@@ -3657,6 +3658,19 @@ class SharedFixtureTest(
                 val border = st.borderWidth?.let { "${it.toInt()}@${st.borderHex}" } ?: "none"
                 "fill=${st.fillHex ?: "none"} opacity=${String.format(java.util.Locale.US, "%.1f", st.opacity)} blur=${st.blur} border=$border radius=${st.cornerRadius.toInt()}"
             }
+        }
+    }
+
+    private fun runLoadingSpinnerColour(action: JSONObject, spy: Spy) {
+        val cases = action.optJSONArray("cases") ?: unsupported("resolve_loading_spinner_colour without cases")
+        spy.state["results"] = (0 until cases.length()).map { i ->
+            val c = cases.getJSONObject(i)
+            @Suppress("UNCHECKED_CAST")
+            val raw = (c.optJSONObject("block") ?: unsupported("resolve_loading_spinner_colour case without block")).asMap().filterValues { it != null } as Map<String, Any>
+            val step = mapOf("id" to "fixture_step", "type" to "custom", "content_blocks" to listOf(raw))
+            val block = ai.appdna.sdk.onboarding.OnboardingConfigParser.parseStepForTest(step)?.config?.content_blocks?.firstOrNull()
+                ?: throw AssertionError("[resolve_loading_spinner_colour] the block did not parse")
+            ai.appdna.sdk.onboarding.AnimatedLoadingVariant.spinnerHex(block)
         }
     }
 

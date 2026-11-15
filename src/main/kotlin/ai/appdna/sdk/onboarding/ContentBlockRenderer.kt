@@ -6693,7 +6693,7 @@ private fun AnimatedLoadingBlock(block: ContentBlock, onAction: (String) -> Unit
                             } else if (isCurrent) {
                                 CircularProgressIndicator(
                                     modifier = Modifier.size(20.dp),
-                                    color = progressColor,
+                                    color = StyleEngine.parseColor(AnimatedLoadingVariant.spinnerHex(block)),
                                     strokeWidth = 2.dp,
                                 )
                             } else {
@@ -14635,4 +14635,11 @@ internal object RatingAnswer {
  */
 internal object AnimatedLoadingVariant {
     fun resolve(block: ContentBlock): String = block.loading_variant ?: block.variant ?: "checklist"
+
+    /**
+     * The checklist's active-item spinner: the authored progress colour, else the accent colour, else the brand accent,
+     * else indigo. iOS `AnimatedLoadingVariant.spinnerHex`; fixture `dto_parsing/animated_loading_spinner_colour`.
+     */
+    fun spinnerHex(block: ContentBlock): String =
+        block.progress_color ?: block.accent_color ?: (ai.appdna.sdk.AppDNA.brandAccentHex ?: "#6366F1")
 }
