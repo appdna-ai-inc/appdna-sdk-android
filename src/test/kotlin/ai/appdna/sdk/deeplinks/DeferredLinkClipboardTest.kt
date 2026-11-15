@@ -95,4 +95,21 @@ class DeferredLinkClipboardTest {
             sys.isProbableWebUrl(),
         )
     }
+
+    /**
+     * Android 11 and below: no "pasted" toast exists and the system classifies nothing, so the gate lets the read
+     * happen, as it always did, and only our own marker is used. 🔴 The test above, on 34, is this test's control:
+     * the same unclassified text is refused there.
+     */
+    @Test @Config(manifest = Config.NONE, sdk = [30])
+    fun `before Android 12 the system clipboard reads as before`() {
+        val sys = SystemClipboard(ctx)
+        val manager = ctx.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+        manager.setPrimaryClip(ClipData.newPlainText("", "appdna:visitor:v_legacy"))
+        assertTrue(sys.hasText())
+        assertTrue("no classification before 12: the read is allowed", sys.isProbableWebUrl())
+        assertEquals("v_legacy", DeferredLinkPasteboard.visitorId(sys.readText()))
+        sys.clear()
+        assertFalse("our marker is cleared", sys.hasText())
+    }
 }
