@@ -213,7 +213,7 @@ fun LocationFieldComposable(
                     imeAction = ImeAction.Search,
                 ),
                 keyboardActions = searchKey,
-                modifier = Modifier.fillMaxWidth().then(focusModifier),
+                modifier = Modifier.fieldName(fieldAccessibilityName(field.label, placeholder)).fillMaxWidth().then(focusModifier),
                 singleLine = true,
                 isError = errors.containsKey(field.id),
             )

@@ -360,7 +360,7 @@ private fun FormFieldControl(
                     values[field.id] = truncated
                     errors.remove(field.id)
                 },
-                modifier = Modifier.fillMaxWidth(),
+                modifier = Modifier.fieldName(fieldAccessibilityName(field.label.interpolated(), field.placeholder?.interpolated())).fillMaxWidth(),
                 placeholder = field.placeholder?.let { { Text(it.interpolated()) } },
                 // `imeAction = Done` so the soft keyboard
                 // shows a "Done" key that dismisses the IME. Mirrors iOS
@@ -393,7 +393,7 @@ private fun FormFieldControl(
                     values[field.id] = truncated
                     errors.remove(field.id)
                 },
-                modifier = Modifier
+                modifier = Modifier.fieldName(fieldAccessibilityName(field.label.interpolated(), field.placeholder?.interpolated()))
                     .fillMaxWidth()
                     // Cap height at 150dp to match iOS
                     // FormStepView.swift:274 so long input doesn't push the
@@ -421,7 +421,7 @@ private fun FormFieldControl(
                         values[field.id] = it.toDoubleOrNull() ?: it
                         errors.remove(field.id)
                     },
-                    modifier = Modifier.weight(1f),
+                    modifier = Modifier.fieldName(fieldAccessibilityName(field.label.interpolated(), field.placeholder?.interpolated())).weight(1f),
                     placeholder = field.placeholder?.let { { Text(it.interpolated()) } },
                     // Number keyboard + Done IME action.
                     keyboardOptions = KeyboardOptions(

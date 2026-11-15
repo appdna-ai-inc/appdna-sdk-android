@@ -10207,7 +10207,7 @@ private fun FormInputTextBlock(
                 shape = RoundedCornerShape(cornerRadius),
                 // Size AND weight from the authored field style.
                 textStyle = TextStyle(fontSize = inputFontSize, fontWeight = fieldInputFontWeight(block)),
-                modifier = if (fieldHeightDp != null) Modifier.fillMaxWidth().heightIn(min = fieldHeightDp.dp) else Modifier.fillMaxWidth(),
+                modifier = if (fieldHeightDp != null) Modifier.fieldName(fieldAccessibilityName(block.field_label, block.field_placeholder)).fillMaxWidth().heightIn(min = fieldHeightDp.dp) else Modifier.fieldName(fieldAccessibilityName(block.field_label, block.field_placeholder)).fillMaxWidth(),
                 singleLine = true,
                 interactionSource = interactionSource,
                 colors = androidx.compose.material3.OutlinedTextFieldDefaults.colors(
@@ -10295,7 +10295,7 @@ private fun FormInputTextAreaBlock(
                     )
                 },
                 shape = RoundedCornerShape(cornerRadius),
-                modifier = Modifier.fillMaxWidth().let { if (taFieldHeightDp != null) it.heightIn(min = taFieldHeightDp.dp) else it },
+                modifier = Modifier.fieldName(fieldAccessibilityName(block.field_label, block.field_placeholder)).fillMaxWidth().let { if (taFieldHeightDp != null) it.heightIn(min = taFieldHeightDp.dp) else it },
                 singleLine = false,
                 minLines = minLines,
                 interactionSource = interactionSource,
@@ -10459,7 +10459,7 @@ private fun FormInputPasswordBlock(
             // Size AND weight from the authored field style.
             textStyle = androidx.compose.ui.text.TextStyle(fontSize = pwFontSize, fontWeight = fieldInputFontWeight(block)),
             // \u2014 Password Autofill keyboard + Done return key.
-            modifier = Modifier.fillMaxWidth().let { if (pwFieldHeightDp != null) it.heightIn(min = pwFieldHeightDp.dp) else it },
+            modifier = Modifier.fieldName(fieldAccessibilityName(block.field_label, block.field_placeholder)).fillMaxWidth().let { if (pwFieldHeightDp != null) it.heightIn(min = pwFieldHeightDp.dp) else it },
             singleLine = true,
             keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(
                 keyboardType = androidx.compose.ui.text.input.KeyboardType.Password,
@@ -13755,7 +13755,7 @@ private fun FormInputLocationPlaceholder(
                     }
                 },
                 // Honor field_config.field_height on the location search box (iOS sibling already does).
-                modifier = Modifier.fillMaxWidth().let { m -> (block.field_config?.get("field_height") as? Number)?.toFloat()?.let { m.heightIn(min = it.dp) } ?: m }
+                modifier = Modifier.fieldName(fieldAccessibilityName(block.field_label, block.field_placeholder)).fillMaxWidth().let { m -> (block.field_config?.get("field_height") as? Number)?.toFloat()?.let { m.heightIn(min = it.dp) } ?: m }
                     .then(focusModifier),
                 singleLine = true,
                 // The Search key leaves the field, as return does on iOS (`returnKeyType: .search`): the

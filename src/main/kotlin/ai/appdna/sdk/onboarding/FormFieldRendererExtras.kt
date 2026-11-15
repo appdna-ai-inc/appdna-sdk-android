@@ -92,7 +92,7 @@ internal fun PasswordField(
             values[field.id] = truncated
             errors.remove(field.id)
         },
-        modifier = Modifier.fillMaxWidth(),
+        modifier = Modifier.fieldName(fieldAccessibilityName(field.label.interpolated(), field.placeholder?.interpolated())).fillMaxWidth(),
         placeholder = field.placeholder?.let { { Text(it.interpolated()) } },
         singleLine = true,
         visualTransformation = if (visible) VisualTransformation.None else PasswordVisualTransformation(),
@@ -133,7 +133,7 @@ internal fun UrlField(
             values[field.id] = truncated
             errors.remove(field.id)
         },
-        modifier = Modifier.fillMaxWidth(),
+        modifier = Modifier.fieldName(fieldAccessibilityName(field.label.interpolated(), field.placeholder?.interpolated())).fillMaxWidth(),
         placeholder = field.placeholder?.let { { Text(it.interpolated()) } },
         singleLine = true,
         keyboardOptions = KeyboardOptions(
