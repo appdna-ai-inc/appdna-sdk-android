@@ -385,6 +385,7 @@ class SharedFixtureTest(
             "resolve_compact_picker_height" -> runCompactPickerHeight(action, spy)
             "resolve_flow_background" -> runFlowBackground(action, spy)
             "resolve_guarantee_icon" -> runGuaranteeIcon(action, spy)
+            "resolve_icon_name" -> runIconName(action, spy)
             "resolve_warning_banner_chrome" -> runWarningBannerChrome(action, spy)
             "resolve_toggle_settings" -> runToggleSettings(action, spy)
             "resolve_in_step_visibility" -> runVisibilityInStepScope(action, spy)
@@ -4097,6 +4098,16 @@ class SharedFixtureTest(
     }
 
     /** The paywall guarantee badge's symbol through the REAL `GuaranteeIcon`, and whether this platform draws it. */
+    /** Each `{library, name}` through the REAL `iconVector` that `IconView` draws with: `library:name|drawn`, else `|?`. */
+    private fun runIconName(action: JSONObject, spy: Spy) {
+        val cases = action.optJSONArray("cases") ?: unsupported("resolve_icon_name without cases")
+        spy.state["results"] = (0 until cases.length()).map { i ->
+            val c = cases.getJSONObject(i)
+            val ref = ai.appdna.sdk.core.IconReference(library = c.getString("library"), name = c.getString("name"))
+            "${ref.library}:${ref.name}|${if (ai.appdna.sdk.core.iconVector(ref) != null) "drawn" else "?"}"
+        }
+    }
+
     private fun runGuaranteeIcon(action: JSONObject, spy: Spy) {
         val cases = action.optJSONArray("cases") ?: unsupported("resolve_guarantee_icon without cases")
         spy.state["results"] = (0 until cases.length()).map { i ->

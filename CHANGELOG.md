@@ -79,6 +79,13 @@ the project uses [Semantic Versioning](https://semver.org/).
 
 ### Fixed
 
+- **Icons the console offers draw an icon instead of a "?".** The SF Symbol table had 35 names, so most SF Symbols an
+  author picked (`bolt.fill`, `gift.fill`, `trophy.fill`, `sparkles`, `crown.fill`, `paintpalette.fill`, `info.circle`,
+  …) drew a "?". Every SF Symbol, Lucide and Material name the console's icon picker offers now maps to a Material
+  icon, as do every Lucide and Material name iOS maps. A Lucide component name (`CheckCircle`) is read as
+  `check-circle`. A paywall `icon_grid` item's icon is read as an SF Symbol name, as on iOS; a Material name still
+  draws.
+
 - **Text inputs are named for VoiceOver and TalkBack.** A text, number, email, phone, URL, password, textarea or
   location input, as a content block or a form step's field, now carries its label (else its placeholder) as its
   accessibility name. The label was drawn as a separate text above the field, so a screen reader landed on an unnamed

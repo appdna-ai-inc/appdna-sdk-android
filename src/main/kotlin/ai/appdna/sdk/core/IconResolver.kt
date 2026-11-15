@@ -28,6 +28,11 @@ fun IconView(
     val iconSize = (ref.size ?: defaultSize).dp
     val iconColor = ref.color?.let { StyleEngine.parseColor(it) } ?: Color.Unspecified
 
+    // The vector, when any table reaches one (`iconVector`, the one ladder tests read); else each library's fallback.
+    iconVector(ref)?.let { vector ->
+        Icon(imageVector = vector, contentDescription = null, modifier = modifier.size(iconSize), tint = iconColor)
+        return
+    }
     when (ref.library) {
         "material" -> {
             val vector = MaterialIconMapping.resolve(ref.name)
@@ -65,7 +70,7 @@ fun IconView(
                 }
             }
             // Fallback to emoji
-            val emoji = LucideIconMapping.toEmoji[ref.name]
+            val emoji = LucideIconMapping.toEmoji[lucideKey(ref.name)]
             Text(
                 text = emoji ?: "?",
                 fontSize = (ref.size ?: defaultSize).sp,
@@ -111,6 +116,31 @@ fun IconView(
             )
         }
     }
+}
+
+/**
+ * The vector [IconView] draws for [ref], or null when it falls back to an emoji or a "?":
+ *  - `material`: the name in the Material table;
+ *  - `lucide`: the name (a component name such as `CheckCircle` read as `check-circle`) through the Lucide table;
+ *  - `sf-symbols`: the name through the SF Symbol table, else the name itself as a Material name.
+ * Shared fixture `icon_name_resolution` holds every name the console offers or writes; iOS draws each of them too.
+ */
+internal fun iconVector(ref: IconReference): ImageVector? = when (ref.library) {
+    "material" -> MaterialIconMapping.resolve(ref.name)
+    "lucide" -> LucideIconMapping.toMaterial[lucideKey(ref.name)]?.let { MaterialIconMapping.resolve(it) }
+    "sf-symbols" -> MaterialIconMapping.resolve(SFSymbolMapping.toMaterial[ref.name] ?: ref.name)
+    else -> null
+}
+
+/** A Lucide name as the tables key it: `check-circle` stays; the component name `CheckCircle` becomes `check-circle`. */
+internal fun lucideKey(name: String): String {
+    if (name.none { it.isUpperCase() }) return name
+    val out = StringBuilder()
+    name.forEachIndexed { i, ch ->
+        if (ch.isUpperCase() && i > 0) out.append('-')
+        out.append(ch.lowercaseChar())
+    }
+    return out.toString()
 }
 
 /**
@@ -203,6 +233,62 @@ object MaterialIconMapping {
         // The paywall guarantee badge's shields (its default is `checkmark.shield.fill`).
         "verified_user" to Icons.Filled.VerifiedUser,
         "shield" to Icons.Filled.Shield,
+        // Every Material name the SF Symbol, Lucide and Material tables below can reach, so each one draws (the
+        // shared fixture `icon_name_resolution` holds every name the console offers or writes).
+        "all_inclusive" to Icons.Filled.AllInclusive,
+        "arrow_downward" to Icons.Filled.ArrowDownward,
+        "arrow_upward" to Icons.Filled.ArrowUpward,
+        "auto_awesome" to Icons.Filled.AutoAwesome,
+        "bar_chart" to Icons.Filled.BarChart,
+        "battery_full" to Icons.Filled.BatteryFull,
+        "bolt" to Icons.Filled.Bolt,
+        "bookmark" to Icons.Filled.Bookmark,
+        "card_giftcard" to Icons.Filled.CardGiftcard,
+        "check_circle_outline" to Icons.Filled.CheckCircleOutline,
+        "chevron_left" to Icons.Filled.ChevronLeft,
+        "chevron_right" to Icons.Filled.ChevronRight,
+        "cloud" to Icons.Filled.Cloud,
+        "content_copy" to Icons.Filled.ContentCopy,
+        "dark_mode" to Icons.Filled.DarkMode,
+        "description" to Icons.Filled.Description,
+        "download" to Icons.Filled.Download,
+        "emoji_events" to Icons.Filled.EmojiEvents,
+        "expand_less" to Icons.Filled.ExpandLess,
+        "expand_more" to Icons.Filled.ExpandMore,
+        "filter_list" to Icons.Filled.FilterList,
+        "flag" to Icons.Filled.Flag,
+        "folder" to Icons.Filled.Folder,
+        "grid_view" to Icons.Filled.GridView,
+        "group" to Icons.Filled.Group,
+        "help" to Icons.Filled.Help,
+        "info_outline" to Icons.Filled.Info,
+        "inventory_2" to Icons.Filled.Inventory2,
+        "layers" to Icons.Filled.Layers,
+        "link" to Icons.Filled.Link,
+        "list" to Icons.Filled.List,
+        "local_fire_department" to Icons.Filled.LocalFireDepartment,
+        "lock_open" to Icons.Filled.LockOpen,
+        "memory" to Icons.Filled.Memory,
+        "monetization_on" to Icons.Filled.MonetizationOn,
+        "monitor_heart" to Icons.Filled.MonitorHeart,
+        "music_note" to Icons.Filled.MusicNote,
+        "near_me" to Icons.Filled.NearMe,
+        "open_in_new" to Icons.Filled.OpenInNew,
+        "palette" to Icons.Filled.Palette,
+        "pie_chart" to Icons.Filled.PieChart,
+        "sell" to Icons.Filled.Sell,
+        "sentiment_dissatisfied" to Icons.Filled.SentimentDissatisfied,
+        "sentiment_satisfied" to Icons.Filled.SentimentSatisfied,
+        "storage" to Icons.Filled.Storage,
+        "terminal" to Icons.Filled.Terminal,
+        "thumb_down" to Icons.Filled.ThumbDown,
+        "trending_up" to Icons.Filled.TrendingUp,
+        "tune" to Icons.Filled.Tune,
+        "upload" to Icons.Filled.Upload,
+        "videocam" to Icons.Filled.Videocam,
+        "wb_sunny" to Icons.Filled.WbSunny,
+        "wifi" to Icons.Filled.Wifi,
+        "workspace_premium" to Icons.Filled.WorkspacePremium,
     )
 
     val toEmoji: Map<String, String> = mapOf(
@@ -265,6 +351,60 @@ object LucideIconMapping {
         "refresh-cw" to "refresh",
         "menu" to "menu",
         "more-vertical" to "more_vert",
+        // Every Lucide name iOS draws (`SFSymbolTables.lucide`), through the SF Symbol it draws there.
+        "activity" to "monitor_heart",
+        "arrow-down" to "arrow_downward",
+        "arrow-up" to "arrow_upward",
+        "bar-chart" to "bar_chart",
+        "battery" to "battery_full",
+        "bookmark" to "bookmark",
+        "chevron-down" to "expand_more",
+        "chevron-left" to "chevron_left",
+        "chevron-right" to "chevron_right",
+        "chevron-up" to "expand_less",
+        "cloud" to "cloud",
+        "copy" to "content_copy",
+        "cpu" to "memory",
+        "crown" to "workspace_premium",
+        "dollar-sign" to "monetization_on",
+        "download" to "download",
+        "external-link" to "open_in_new",
+        "file" to "description",
+        "filter" to "filter_list",
+        "flag" to "flag",
+        "folder" to "folder",
+        "frown" to "sentiment_dissatisfied",
+        "gift" to "card_giftcard",
+        "grid" to "grid_view",
+        "hard-drive" to "storage",
+        "help-circle" to "help",
+        "layers" to "layers",
+        "link" to "link",
+        "list" to "list",
+        "moon" to "dark_mode",
+        "music" to "music_note",
+        "navigation" to "near_me",
+        "package" to "inventory_2",
+        "palette" to "palette",
+        "pie-chart" to "pie_chart",
+        "rocket" to "local_fire_department",
+        "shield" to "shield",
+        "sliders" to "tune",
+        "smile" to "sentiment_satisfied",
+        "sparkles" to "auto_awesome",
+        "sun" to "wb_sunny",
+        "tag" to "sell",
+        "terminal" to "terminal",
+        "thumbs-down" to "thumb_down",
+        "trending-up" to "trending_up",
+        "trophy" to "emoji_events",
+        "unlock" to "lock_open",
+        "upload" to "upload",
+        "users" to "group",
+        "video" to "videocam",
+        "wifi" to "wifi",
+        "x-circle" to "cancel",
+        "zap" to "bolt",
     )
 
     val toEmoji: Map<String, String> = mapOf(
@@ -338,6 +478,76 @@ object SFSymbolMapping {
         "lock.shield.fill" to "verified_user",
         "shield.fill" to "shield",
         "shield" to "shield",
+        // Every SF Symbol iOS's Lucide and Material tables draw, the console's SF picker offers, and the SDKs or the
+        // console write as a default, so none of them draws "?" here.
+        "arrow.clockwise" to "refresh",
+        "arrow.down" to "arrow_downward",
+        "arrow.down.circle.fill" to "download",
+        "arrow.left" to "arrow_back",
+        "arrow.right" to "arrow_forward",
+        "arrow.up" to "arrow_upward",
+        "arrow.up.circle.fill" to "upload",
+        "arrow.up.right.square" to "open_in_new",
+        "battery.100" to "battery_full",
+        "bolt.fill" to "bolt",
+        "bookmark.fill" to "bookmark",
+        "cart.fill" to "shopping_cart",
+        "chart.bar.fill" to "bar_chart",
+        "chart.line.uptrend.xyaxis" to "trending_up",
+        "chart.pie.fill" to "pie_chart",
+        "checkmark" to "done",
+        "checkmark.circle" to "check_circle_outline",
+        "chevron.down" to "expand_more",
+        "chevron.left" to "chevron_left",
+        "chevron.left.forwardslash.chevron.right" to "code",
+        "chevron.right" to "chevron_right",
+        "chevron.up" to "expand_less",
+        "cloud.fill" to "cloud",
+        "cpu" to "memory",
+        "creditcard.fill" to "credit_card",
+        "crown.fill" to "workspace_premium",
+        "doc.fill" to "description",
+        "doc.on.doc" to "content_copy",
+        "dollarsign.circle.fill" to "monetization_on",
+        "exclamationmark.triangle.fill" to "warning",
+        "face.dashed" to "sentiment_dissatisfied",
+        "face.smiling" to "sentiment_satisfied",
+        "flag.fill" to "flag",
+        "flame.fill" to "local_fire_department",
+        "folder.fill" to "folder",
+        "gift.fill" to "card_giftcard",
+        "hand.thumbsdown.fill" to "thumb_down",
+        "heart" to "favorite",
+        "heart.circle.fill" to "favorite",
+        "house" to "home",
+        "infinity" to "all_inclusive",
+        "info.circle" to "info_outline",
+        "internaldrive" to "storage",
+        "line.3.horizontal.decrease" to "filter_list",
+        "link" to "link",
+        "list.bullet" to "list",
+        "location.fill" to "near_me",
+        "lock.open.fill" to "lock_open",
+        "moon.fill" to "dark_mode",
+        "music.note" to "music_note",
+        "paintpalette.fill" to "palette",
+        "person.2.fill" to "group",
+        "person.crop.circle.fill" to "account_circle",
+        "questionmark.circle.fill" to "help",
+        "shippingbox.fill" to "inventory_2",
+        "slider.horizontal.3" to "tune",
+        "sparkles" to "auto_awesome",
+        "square.3.layers.3d" to "layers",
+        "square.grid.2x2.fill" to "grid_view",
+        "star" to "star",
+        "sun.max.fill" to "wb_sunny",
+        "tag.fill" to "sell",
+        "terminal.fill" to "terminal",
+        "trophy.fill" to "emoji_events",
+        "video.fill" to "videocam",
+        "waveform.path.ecg" to "monitor_heart",
+        "wifi" to "wifi",
+        "xmark" to "clear",
     )
 
     val toEmoji: Map<String, String> = mapOf(

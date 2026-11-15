@@ -37,6 +37,31 @@ class GuaranteeBadgeRenderTest {
 
     @Test fun `the old default spelling draws an icon`() = assertEquals(0, questionMarks("shield.checkmark.fill"))
 
+    /** Every SF Symbol the console's picker offers, one guarantee badge each on one paywall: none draws a "?". */
+    // A tall window, so the lazy paywall composes every badge (the count below proves it did).
+    @Config(qualifiers = "w390dp-h3200dp-xhdpi")
+    @Test fun `every picker SF Symbol draws an icon`() {
+        val names = listOf(
+            "bolt.fill", "gift.fill", "trophy.fill", "flag.fill", "bookmark.fill", "tag.fill", "sparkles",
+            "flame.fill", "crown.fill", "paintpalette.fill", "info.circle", "heart.circle.fill",
+        )
+        val config = PaywallConfigParser.parseSinglePaywall(
+            "pw_many",
+            mapOf(
+                "id" to "pw_many", "name" to "many",
+                "background" to mapOf("type" to "color", "value" to "#FFFFFF"),
+                "sections" to names.mapIndexed { i, n ->
+                    mapOf("id" to "g$i", "type" to "guarantee", "data" to mapOf("guarantee_text" to "Badge $i", "icon" to n))
+                },
+                "cta" to mapOf("text" to "Continue"),
+            ),
+        ) ?: error("paywall did not parse")
+        compose.setContent { PaywallScreen(config = config, onPlanSelected = { _, _ -> }, onRestore = {}, onDismiss = {}) }
+        compose.waitForIdle()
+        assertEquals(names.size, compose.onAllNodes(hasText("Badge ", substring = true)).fetchSemanticsNodes().size)
+        assertEquals(0, compose.onAllNodes(hasText("?")).fetchSemanticsNodes().size)
+    }
+
     /** Proves this harness can see the fallback at all: a symbol nobody maps. */
     @Test fun `the control - an unmapped symbol does draw the fallback`() = assertEquals(1, questionMarks("nosuch.symbol.name"))
 }

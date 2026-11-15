@@ -5783,8 +5783,14 @@ private fun PaywallIconGridSection(
                             if (icon.any { it.code > 127 }) {
                                 Text(text = icon, fontSize = iconSz.sp)
                             } else {
+                                // An SF Symbol name, as iOS draws it (`Image(systemName:)`); a Material name still draws,
+                                // because the SF Symbol path tries the name as a Material name too.
                                 IconView(
-                                    ref = IconReference(library = "material", name = icon, size = iconSz, color = null),
+                                    // Tinted as iOS tints it: the section's icon_color, else the brand accent, else #6366F1.
+                                    ref = IconReference(
+                                        library = "sf-symbols", name = icon, size = iconSz,
+                                        color = section.data.icon_color ?: ai.appdna.sdk.AppDNA.brandAccentHex ?: "#6366F1",
+                                    ),
                                     modifier = Modifier.size(iconSz.dp),
                                 )
                             }
