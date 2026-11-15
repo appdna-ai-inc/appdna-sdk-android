@@ -61,6 +61,9 @@ import ai.appdna.sdk.onboarding.shareUrl
 import ai.appdna.sdk.core.TemplateContext
 import ai.appdna.sdk.core.TemplateEngine
 import kotlin.math.roundToInt
+import androidx.compose.foundation.layout.width
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.platform.testTag
 import ai.appdna.sdk.events.ClientSeqCounter
 import ai.appdna.sdk.events.DroppedEventsCounter
 import ai.appdna.sdk.events.EventQueue
@@ -324,6 +327,7 @@ class SharedFixtureTest(
             "resolve_gallery_title_ink" -> runGalleryTitleInk(action, spy)
             "build_push_token_body" -> runPushTokenBody(action, spy)
             "resolve_block_container_style" -> runBlockContainerStyle(action, spy)
+            "measure_badge_placement" -> runBadgePlacement(action, spy)
             "parse_colour" -> runParseColour(action, spy)
             "unfold_blockquotes" -> runUnfoldBlockquotes(action, spy)
             "normalise_markdown" -> runUnfoldBlockquotes(action, spy)
@@ -3700,6 +3704,52 @@ class SharedFixtureTest(
                 if (c.isNull("user_id")) null else c.optString("user_id"),
             )
             listOf(if (body.has("anon_id")) body.getString("anon_id") else null, if (body.has("user_id")) body.getString("user_id") else null)
+        }
+    }
+
+    /**
+     * Where a top-level badge lands across its column: the REAL step parser → the REAL `ContentBlockRendererView`,
+     * composed in a column `column_width` dp wide, with every entrance animation run to rest on the compose clock.
+     * The badge is measured by its node's bounds (its text, padding and fill are one node). The control in every case:
+     * the badge node IS found and has a width, so a "leading" can never come from a harness that drew nothing.
+     */
+    @OptIn(androidx.compose.ui.test.ExperimentalTestApi::class)
+    private fun runBadgePlacement(action: JSONObject, spy: Spy) {
+        val cases = action.optJSONArray("cases") ?: unsupported("measure_badge_placement without cases")
+        val columnDp = action.optDouble("column_width", 393.0).toFloat()
+        spy.state["results"] = (0 until cases.length()).map { i ->
+            val c = cases.getJSONObject(i)
+            val name = c.optString("name", "?")
+            val rawBlocks = c.optJSONArray("content_blocks") ?: unsupported("measure_badge_placement case without content_blocks")
+            @Suppress("UNCHECKED_CAST")
+            val list = (0 until rawBlocks.length()).map { rawBlocks.getJSONObject(it).asMap().filterValues { v -> v != null } as Map<String, Any> }
+            val step = mapOf("id" to "fixture_step", "type" to "custom", "content_blocks" to list)
+            val blocks = ai.appdna.sdk.onboarding.OnboardingConfigParser.parseStepForTest(step)?.config?.content_blocks
+                ?: throw AssertionError("[measure_badge_placement] case $name: the blocks did not parse")
+            val badgeText = blocks.firstOrNull { it.type == "badge" }?.badge_text
+                ?: throw AssertionError("[measure_badge_placement] case $name: no badge with text")
+            var result = ""
+            androidx.compose.ui.test.runComposeUiTest {
+                setContent {
+                    androidx.compose.foundation.layout.Box(androidx.compose.ui.Modifier.width(columnDp.dp).testTag("badge_column")) {
+                        ai.appdna.sdk.onboarding.ContentBlockRendererView(
+                            blocks = blocks, onAction = {}, toggleValues = mutableMapOf(),
+                        )
+                    }
+                }
+                mainClock.advanceTimeBy(2_000)
+                waitForIdle()
+                val bounds = onNode(androidx.compose.ui.test.hasText(badgeText), useUnmergedTree = true).fetchSemanticsNode().boundsInRoot
+                // The column as laid out: the test window may be narrower than column_width, and the gaps are measured
+                // against the width the renderer actually had.
+                val col = onNode(androidx.compose.ui.test.hasTestTag("badge_column")).fetchSemanticsNode().boundsInRoot
+                assertTrue("[measure_badge_placement] case $name: control — the badge node has a width ($bounds)", bounds.width > 0f)
+                val left = with(density) { (bounds.left - col.left).toDp().value }
+                val right = with(density) { (col.right - bounds.right).toDp().value }
+                println("[badge-placement] $name column=${with(density) { col.width.toDp().value }} left=$left right=$right")
+                result = if (kotlin.math.abs(left - right) <= 4f) "center" else if (left < right) "leading" else "trailing"
+            }
+            result
         }
     }
 
