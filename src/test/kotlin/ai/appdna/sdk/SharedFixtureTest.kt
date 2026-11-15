@@ -306,6 +306,7 @@ class SharedFixtureTest(
             "resolve_message_hero_media" -> runMessageHeroMedia(action, spy)
             "resolve_onboarding_image_alt" -> runOnboardingImageAlt(action, spy)
             "resolve_screen_image_alt" -> runScreenImageAlt(action, spy)
+            "resolve_screen_surface_ink" -> runScreenSurfaceInk(action, spy)
             "resolve_option_label_markdown" -> runOptionLabelMarkdown(action, spy)
             "resolve_date_wheel" -> runDateWheel(action, spy)
             "resolve_container_children" -> runContainerChildren(action, spy)
@@ -3898,6 +3899,27 @@ class SharedFixtureTest(
             val section = screen.sections.firstOrNull { it.type == "image_section" }
                 ?: throw AssertionError("[resolve_screen_image_alt] case $name: the image section was dropped")
             ai.appdna.sdk.screens.sections.ScreenImageAccessibility.label(section)
+        }
+    }
+
+    /**
+     * A screen's default ink, through the REAL `ScreenConfig.fromMap`, `GoogleMapsAttribution.backdrop(ofScreen)` /
+     * `backdrop(ofSection, behind)` and `needsLightInk`, the call `SurfaceTheme` makes for the screen and each section.
+     */
+    private fun runScreenSurfaceInk(action: JSONObject, spy: Spy) {
+        val cases = action.optJSONArray("cases") ?: unsupported("resolve_screen_surface_ink without cases")
+        spy.state["results"] = (0 until cases.length()).map { i ->
+            val c = cases.getJSONObject(i)
+            val section = mutableMapOf<String, Any?>("id" to "s1", "type" to "text_section", "data" to mapOf("text" to "x"))
+            c.optJSONObject("section_style")?.let { section["style"] = jsonToMap(it) }
+            val screen = mutableMapOf<String, Any?>("id" to "scr_ink", "sections" to listOf(section))
+            c.optJSONObject("background")?.let { screen["background"] = jsonToMap(it) }
+            val config = ai.appdna.sdk.screens.ScreenConfig.fromMap(screen)
+            val backdrop = ai.appdna.sdk.onboarding.GoogleMapsAttribution.backdrop(
+                ofSection = config.sections.firstOrNull()?.style,
+                behind = ai.appdna.sdk.onboarding.GoogleMapsAttribution.backdrop(ofScreen = config.background),
+            )
+            if (ai.appdna.sdk.onboarding.GoogleMapsAttribution.needsLightInk(backdrop, c.optBoolean("dark_appearance"))) "light_ink" else "dark_ink"
         }
     }
 

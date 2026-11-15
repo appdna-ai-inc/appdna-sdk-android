@@ -150,10 +150,11 @@ class ScreenHostActivity : ComponentActivity() {
 
         setContent {
             val isDark = isSystemInDarkTheme()
-            MaterialTheme {
-              androidx.compose.runtime.CompositionLocalProvider(
-                ai.appdna.sdk.onboarding.LocalGoogleAttributionBackdrop provides
-                    ai.appdna.sdk.onboarding.GoogleMapsAttribution.backdrop(ofScreen = config.background),
+            // The phone's appearance as the base (it was always the light default); SurfaceTheme then follows the screen.
+            MaterialTheme(colorScheme = if (isDark) androidx.compose.material3.darkColorScheme() else androidx.compose.material3.lightColorScheme()) {
+              // Default colours resolve against the screen's authored background, not the phone's appearance.
+              ai.appdna.sdk.onboarding.SurfaceTheme(
+                behind = ai.appdna.sdk.onboarding.GoogleMapsAttribution.backdrop(ofScreen = config.background),
               ) {
                 ScreenHostBody(
                     config = config,
@@ -197,16 +198,16 @@ class ScreenHostActivity : ComponentActivity() {
 
         setContent {
             val isDark = isSystemInDarkTheme()
-            MaterialTheme {
+            // The phone's appearance as the base (it was always the light default); SurfaceTheme then follows the screen.
+            MaterialTheme(colorScheme = if (isDark) androidx.compose.material3.darkColorScheme() else androidx.compose.material3.lightColorScheme()) {
                 val index = manager.currentScreenIndex.collectAsState().value
                 val config = androidx.compose.runtime.remember(index) { manager.currentScreen }
                 if (config == null) {
                     // The start screen's config was never cached — the flow cannot render.
                     androidx.compose.runtime.LaunchedEffect(Unit) { manager.dismissFlow() }
                 } else {
-                  androidx.compose.runtime.CompositionLocalProvider(
-                    ai.appdna.sdk.onboarding.LocalGoogleAttributionBackdrop provides
-                        ai.appdna.sdk.onboarding.GoogleMapsAttribution.backdrop(ofScreen = config.background),
+                  ai.appdna.sdk.onboarding.SurfaceTheme(
+                    behind = ai.appdna.sdk.onboarding.GoogleMapsAttribution.backdrop(ofScreen = config.background),
                   ) {
                     ScreenHostBody(
                         config = config,

@@ -29,9 +29,8 @@ internal object SectionRegistry {
                 .fillMaxWidth()
                 .applySectionStyle(section.style),
         ) {
-            androidx.compose.runtime.CompositionLocalProvider(
-                ai.appdna.sdk.onboarding.LocalGoogleAttributionBackdrop provides backdrop,
-            ) {
+            // Default colours resolve against the section's own fill, else what is behind it (iOS `ScreenSectionSurface`).
+            ai.appdna.sdk.onboarding.SurfaceTheme(behind = backdrop) {
                 RenderUnstyled(section, context)
             }
         }

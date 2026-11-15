@@ -46,6 +46,12 @@ the project uses [Semantic Versioning](https://semver.org/).
 
 ### Fixed
 
+- **A screen's or survey's unstyled text follows its own background, not the phone's theme.** A screen with a white
+  background drew its unstyled text in the phone's theme (white on white in dark mode), and a section with its own
+  fill did not change ink for it; a white survey drew its Yes and No labels white in dark mode. Default text now
+  resolves against the authored background — dark ink on a light one, light ink on a dark, gradient or image one —
+  and follows the phone only when no background is authored. Authored colours still win.
+
 - **A legacy step's button label is white on its accent, on every step.** On a dark step the Welcome, Question,
   Value-prop, Custom and Form buttons drew their label in the step theme's dark `onPrimary` — dark purple on the
   indigo accent. They draw white, as on iOS.

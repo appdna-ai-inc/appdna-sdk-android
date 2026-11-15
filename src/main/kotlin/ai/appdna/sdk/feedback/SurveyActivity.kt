@@ -312,8 +312,12 @@ fun SurveyScreen(
     // looks correct in dark mode (matches iOS defaults #1a1a1a / #FFFFFF).
     val bgColor = theme?.backgroundColor?.let { parseColor(it) }
         ?: if (isDark) Color(0xFF1A1A1A) else Color.White
+    // Unstyled text takes its ink from the survey's authored background (a gradient counts as busy), and follows the
+    // phone only when none is authored — the shared surface-ink rule (`dto_parsing/screen_surface_ink`), as on iOS.
+    val inkBackdrop = if ((theme?.gradient?.stops?.size ?: 0) >= 2) ai.appdna.sdk.onboarding.GoogleMapsAttribution.Backdrop.Busy
+        else ai.appdna.sdk.onboarding.GoogleMapsAttribution.Backdrop.Plain(theme?.backgroundColor)
     val textColor = theme?.textColor?.let { parseColor(it) }
-        ?: if (isDark) Color.White else Color(0xFF1A1A1A)
+        ?: if (ai.appdna.sdk.onboarding.GoogleMapsAttribution.needsLightInk(inkBackdrop, isDark)) Color.White else Color(0xFF1A1A1A)
     val accentColor = theme?.accentColor?.let { parseColor(it) } ?: Color(0xFF6366F1)
     val buttonColor = theme?.buttonColor?.let { parseColor(it) } ?: Color(0xFF6366F1)
     // Resolved button_text_color, used as the contrasting label on the accent-filled

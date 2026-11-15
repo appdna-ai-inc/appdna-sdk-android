@@ -197,8 +197,21 @@ internal object GoogleMapsAttribution {
     /** The onboarding host's default behind an `interactive_chat` step. */
     const val INTERACTIVE_CHAT_BACKGROUND = "#0F172A"
 
-    /** What a Screen draws behind its sections: its background colour, else the theme's. */
-    fun backdrop(ofScreen: ai.appdna.sdk.screens.BackgroundConfig?): Backdrop = Backdrop.Plain(ofScreen?.color)
+    /**
+     * What a Screen draws behind its sections, as iOS `backdrop(ofScreen:)`: a gradient, an image or a see-through
+     * colour is busy; a solid colour is itself; nothing authored is the theme's.
+     */
+    fun backdrop(ofScreen: ai.appdna.sdk.screens.BackgroundConfig?): Backdrop {
+        val bg = ofScreen ?: return Backdrop.Plain(null)
+        return when (bg.type) {
+            "gradient" -> if (bg.gradient?.start != null && bg.gradient.end != null) Backdrop.Busy else Backdrop.Plain(null)
+            "image" -> if (bg.imageUrl != null) Backdrop.Busy else Backdrop.Plain(null)
+            else -> {
+                val color = bg.color ?: return Backdrop.Plain(null)
+                if ((bg.opacity ?: 1.0) < 1.0) Backdrop.Busy else Backdrop.Plain(color)
+            }
+        }
+    }
 
     /** What a Screen section draws behind its content: its own fill, else what is behind it. */
     fun backdrop(ofSection: ai.appdna.sdk.screens.SectionStyle?, behind: Backdrop): Backdrop {

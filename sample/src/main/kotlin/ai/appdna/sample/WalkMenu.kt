@@ -74,6 +74,12 @@ internal object WalkMenu {
                 AppDNA.showScreen(screenId = item.value) { r -> WalkLog.note("screen ${item.title} → $r") }
                 WalkLog.note("showScreen(${item.title})")
             }
+            // The screen document as published (its JSON), shown through the SDK's preview entry: the same renderer and
+            // host `showScreen` uses, for a walk while `showScreen` cannot load a published screen by id.
+            "screen_json" -> {
+                val shown = AppDNA.previewScreen(json = item.value)
+                WalkLog.note("previewScreen(${item.title}) → ${if (shown) "presented" else "NOT presented (invalid)"}")
+            }
             "track" -> { AppDNA.track(event = item.value); WalkLog.note("track(${item.value})") }
             "identify" -> { AppDNA.identify(userId = item.value); WalkLog.note("identify(${item.value})") }
             "reset" -> { AppDNA.reset(); WalkLog.note("reset()") }
