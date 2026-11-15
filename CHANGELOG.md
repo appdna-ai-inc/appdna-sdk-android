@@ -8,6 +8,12 @@ the project uses [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- **Social Login draws Meta's official Facebook mark.** The `facebook` provider drew a bold letter "f". It now draws the
+  Facebook logo from Meta's brand asset pack, unmodified: the blue mark on a light, outlined or minimal button, and the
+  white mark on a dark fill (the default Facebook fill is dark). `icon_style: monochrome_light` gives the white mark and
+  `monochrome_dark` the blue one, because Meta allows the logo only in Facebook Blue or white. It is drawn at 20 points
+  with half a logo's width of clear space to the label. Provenance is in NOTICE.md.
+
 - **An app with its own Firebase messaging service can let the SDK display what it forwards.**
   `AppDNA.push.setSdkDisplaysForwardedMessages(true)` makes the token registration report `push_display: "sdk"`, so
   AppDNA sends the device data-only messages that reach the app's service in the background too, and
