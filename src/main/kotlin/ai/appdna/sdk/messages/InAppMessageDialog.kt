@@ -55,6 +55,14 @@ internal object InAppMessageDialog {
                 WindowManager.LayoutParams.MATCH_PARENT,
                 WindowManager.LayoutParams.MATCH_PARENT,
             )
+            // No window dim. A Dialog dims everything behind it by default (FLAG_DIM_BEHIND at the
+            // theme's backgroundDimAmount), which made a banner and a tooltip look like blocking modals
+            // and darkened a modal twice: once here and once by its own scrim. Each message view draws
+            // the only backdrop it has (a modal: black at 0.4, or 0.3 under a blur; a banner and a
+            // tooltip: none), as on iOS, where the controller is presented over the app with a clear
+            // background.
+            clearFlags(WindowManager.LayoutParams.FLAG_DIM_BEHIND)
+            setDimAmount(0f)
         }
         return dialog
     }

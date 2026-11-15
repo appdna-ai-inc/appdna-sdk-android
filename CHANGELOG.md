@@ -79,6 +79,12 @@ the project uses [Semantic Versioning](https://semver.org/).
 
 ### Fixed
 
+- **An in-app banner or tooltip no longer dims the app behind it, and a modal is dimmed once.** The window a message is
+  shown in kept Android's default dialog dim, so every banner and tooltip drew over a darkened app like a blocking
+  modal, and a modal was darkened twice: by the window and by its own scrim. The window no longer dims. A modal draws
+  its own backdrop only (black at 40%, or black at 30% under a blur with `blur_backdrop`), and a banner, a tooltip and
+  a fullscreen message draw none, as on iOS and in the console preview.
+
 - **A pale gradient step has no dark band at the top.** The status-bar scrim was drawn on every gradient step, so a step
   whose gradient is light all the way down showed a dark band over its top, which iOS does not draw. A gradient whose
   every stop is light now takes no scrim, the same call that gives its unstyled text dark ink.
