@@ -715,6 +715,9 @@ fun PaywallScreen(
     val config = remember(config, systemPage) {
         config.withSystemPage(String.format("#%06X", systemPage.toArgb() and 0xFFFFFF))
     }
+    // The status and navigation bar icons contrast with the page the paywall draws, not the phone's theme (the onboarding
+    // rule, `systemBarsUseDarkIcons`): a light paywall in a dark phone keeps dark icons, and the reverse.
+    PaywallSystemBarIcons(config)
     // Out-of-band, because one more PARAMETER on this composable made ART reject it
     // (see LocalPaywallAction).
     val onAction = LocalPaywallAction.current
@@ -6745,4 +6748,27 @@ private fun formatCompactCount(count: Int): String {
 internal object PlanTextInk {
     fun resolve(isSelected: Boolean, selectedTextColor: androidx.compose.ui.graphics.Color?, styleColor: androidx.compose.ui.graphics.Color?, tileInk: androidx.compose.ui.graphics.Color): androidx.compose.ui.graphics.Color =
         (if (isSelected) selectedTextColor else null) ?: styleColor ?: tileInk
+}
+
+/** What the paywall draws behind the status bar: its colour, a gradient or image (busy), or the system page. */
+internal fun PaywallConfig.systemBarBackdrop(): ai.appdna.sdk.onboarding.GoogleMapsAttribution.Backdrop {
+    val bg = layout.background
+    return when (bg?.type) {
+        "gradient", "image", "video" -> ai.appdna.sdk.onboarding.GoogleMapsAttribution.Backdrop.Busy
+        else -> ai.appdna.sdk.onboarding.GoogleMapsAttribution.Backdrop.Plain(pageBackgroundHex())
+    }
+}
+
+@Composable
+private fun PaywallSystemBarIcons(config: PaywallConfig) {
+    val darkIcons = ai.appdna.sdk.onboarding.systemBarsUseDarkIcons(
+        config.systemBarBackdrop(), ai.appdna.sdk.onboarding.googleAttributionThemeIsDark(),
+    )
+    val view = androidx.compose.ui.platform.LocalView.current
+    androidx.compose.runtime.SideEffect {
+        val window = (view.context as? android.app.Activity)?.window ?: return@SideEffect
+        val controller = androidx.core.view.WindowInsetsControllerCompat(window, view)
+        controller.isAppearanceLightStatusBars = darkIcons
+        controller.isAppearanceLightNavigationBars = darkIcons
+    }
 }

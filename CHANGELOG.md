@@ -46,6 +46,10 @@ the project uses [Semantic Versioning](https://semver.org/).
 
 ### Fixed
 
+- **A paywall's status-bar and navigation-bar icons contrast with the paywall.** They followed the phone's theme, so
+  a white paywall in dark mode drew white icons on white. They now follow the paywall's own background: dark icons on
+  a light one, light icons on a dark one, a gradient, an image or a video.
+
 - **The `animated_loading` spinner takes the block's colour.** The checklist's current-row spinner now uses
   `progress_color`, then `accent_color`, then the app's brand accent, as on iOS.
 
