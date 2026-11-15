@@ -5114,6 +5114,33 @@ private fun SocialLoginBlock(
                             contentScale = androidx.compose.ui.layout.ContentScale.Fit,
                             modifier = Modifier.padding(end = 8.dp).size(20.dp),
                         )
+                    } else if (provider.type == "facebook" &&
+                        ai.appdna.sdk.core.FacebookMarkBitmap.load(
+                            androidx.compose.ui.platform.LocalContext.current,
+                            ai.appdna.sdk.core.FacebookMark.variant(buttonStyle, bgHex, provider.icon_style),
+                        ) != null
+                    ) {
+                        /*
+                         * META'S OFFICIAL MARK, not a letter. This drew a bold "f", and Meta's brand
+                         * guidelines say "don't use just the 'f' from our logo". The SDK ships Meta's
+                         * logo pack files UNMODIFIED (provenance in NOTICE.md); [FacebookMark] picks
+                         * the primary (blue) or secondary (white) expression for the button's
+                         * surface, because Meta allows no other colour. 20dp is above Meta's 16px
+                         * digital minimum, and 10dp to the label is the half-logo clear space Meta
+                         * asks for. The letter stays as the fallback below if the drawable is missing.
+                         */
+                        val variant = ai.appdna.sdk.core.FacebookMark.variant(buttonStyle, bgHex, provider.icon_style)
+                        val mark = ai.appdna.sdk.core.FacebookMarkBitmap.load(
+                            androidx.compose.ui.platform.LocalContext.current, variant,
+                        )!!
+                        androidx.compose.foundation.Image(
+                            bitmap = mark,
+                            contentDescription = null,
+                            modifier = Modifier
+                                .size(ai.appdna.sdk.core.FacebookMark.SIZE_DP.dp)
+                                .testTag("social_login_facebook_mark_${variant.key}"),
+                        )
+                        Spacer(Modifier.width(ai.appdna.sdk.core.FacebookMark.SPACING_DP.dp))
                     } else if (provider.type == "google" && monoIconColor == null) {
                         /*
                          * THE OFFICIAL MARK, not a letter.

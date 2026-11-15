@@ -355,6 +355,7 @@ class SharedFixtureTest(
             "resolve_celebration_palette" -> runCelebrationPalette(action, spy)
             "resolve_google_mark_chip" -> runGoogleMarkChip(action, spy)
             "resolve_deferred_link_pasteboard" -> runDeferredLinkPasteboard(action, spy)
+            "resolve_facebook_mark_variant" -> runFacebookMarkVariant(action, spy)
             "resolve_survey_sentiment" -> runSurveySentiment(action, spy)
             "resolve_likert_bounds" -> runLikertBounds(action, spy)
             "resolve_compact_picker_height" -> runCompactPickerHeight(action, spy)
@@ -2579,6 +2580,19 @@ class SharedFixtureTest(
             } else {
                 gate.visitorId(v.optStringOrNull("text")) ?: "none"
             }
+        }
+    }
+
+    /** WHICH of Meta's two official marks the facebook provider draws, through the REAL [FacebookMark]. */
+    private fun runFacebookMarkVariant(action: JSONObject, spy: Spy) {
+        val cases = action.optJSONArray("cases") ?: unsupported("resolve_facebook_mark_variant without cases")
+        spy.state["results"] = (0 until cases.length()).map { i ->
+            val v = cases.getJSONObject(i).optJSONObject("value") ?: JSONObject()
+            ai.appdna.sdk.core.FacebookMark.variant(
+                buttonStyle = v.optStringOrNull("style"),
+                backgroundHex = v.optStringOrNull("bg"),
+                iconStyle = v.optStringOrNull("icon_style"),
+            ).key
         }
     }
 
