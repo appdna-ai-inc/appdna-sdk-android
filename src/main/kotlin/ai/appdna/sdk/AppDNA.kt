@@ -1093,8 +1093,8 @@ object AppDNA {
             (appContext as? android.app.Application)?.registerActivityLifecycleCallbacks(navCallbacks)
 
             // Initialise the
-            // SectionRegistry. Mirrors iOS `SectionRegistry.shared.registerBuiltInSections()`
-            // call at AppDNA.configure(). Without this every SDUI screen renders
+            // SectionRegistry. iOS fills `SectionRegistry.shared` when it is first touched
+            // (`makeFilled`). Without this every SDUI screen renders
             // NOTHING because AppDNAScreenSlot dispatches through an empty
             // registry. Module wrappers (paywall/onboarding/survey/messages)
             // are registered via the registerModuleSections() extension.
