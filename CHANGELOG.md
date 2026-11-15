@@ -79,6 +79,10 @@ the project uses [Semantic Versioning](https://semver.org/).
 
 ### Fixed
 
+- **A pale gradient step has no dark band at the top.** The status-bar scrim was drawn on every gradient step, so a step
+  whose gradient is light all the way down showed a dark band over its top, which iOS does not draw. A gradient whose
+  every stop is light now takes no scrim, the same call that gives its unstyled text dark ink.
+
 - **Icons the console offers draw an icon instead of a "?".** The SF Symbol table had 35 names, so most SF Symbols an
   author picked (`bolt.fill`, `gift.fill`, `trophy.fill`, `sparkles`, `crown.fill`, `paintpalette.fill`, `info.circle`,
   …) drew a "?". Every SF Symbol, Lucide and Material name the console's icon picker offers now maps to a Material

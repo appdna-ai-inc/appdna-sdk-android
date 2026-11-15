@@ -1538,7 +1538,10 @@ internal fun OnboardingFlowHost(
         fun lumaOf(c: Color) = 0.2126 * c.red + 0.7152 * c.green + 0.0722 * c.blue
         val stepBg = currentStep?.config?.background
         val showTopScrim = when (stepBg?.type) {
-            "gradient", "image" -> true
+            // A gradient whose every stop is light takes no scrim, as it takes dark ink: the scrim drew a dark band over
+            // the top of a pale gradient (shared fixture unstyled_ink_on_gradient decides "light" the same way).
+            "gradient" -> !GoogleMapsAttribution.gradientIsLight(stepBg.gradient)
+            "image" -> true
             "color" -> stepBg.color?.let { lumaOf(ai.appdna.sdk.core.StyleEngine.parseColor(it)) < 0.5 } ?: false
             null -> {
                 val base = currentStep?.config?.chat_config?.style?.background_color
