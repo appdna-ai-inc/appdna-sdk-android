@@ -7322,16 +7322,21 @@ private fun CircularGaugeBlock(block: ContentBlock) {
  * to spin the wheel. Mirrors iOS restoreDate() + parseDate()
  * (ContentBlockStandaloneViews.swift).
  */
-private fun parseDateWheelSeed(saved: String?, default: String?, zone: java.util.TimeZone = java.util.TimeZone.getDefault()): java.util.Calendar? {
-    fun fromIso(s: String?): java.util.Calendar? = DateWheelModel.readSaved(s)
+internal fun parseDateWheelSeed(
+    saved: String?,
+    default: String?,
+    zone: java.util.TimeZone = AnswerTime.zone,
+    nowMs: Long = System.currentTimeMillis(),
+): java.util.Calendar? {
+    fun fromIso(s: String?): java.util.Calendar? = DateWheelModel.readSaved(s, zone)
     fun fromDefault(s: String?): java.util.Calendar? {
         val t = s?.trim()?.lowercase()?.takeIf { it.isNotEmpty() } ?: return null
-        if (t == "today" || t == "now") return java.util.Calendar.getInstance(zone)
+        if (t == "today" || t == "now") return java.util.Calendar.getInstance(zone).apply { timeInMillis = nowMs }
         val last = t.last()
         if (last in "dmy") {
             val amt = t.dropLast(1).toIntOrNull()
             if (amt != null) {
-                val c = java.util.Calendar.getInstance(zone)
+                val c = java.util.Calendar.getInstance(zone).apply { timeInMillis = nowMs }
                 when (last) {
                     'd' -> c.add(java.util.Calendar.DAY_OF_YEAR, amt)
                     'm' -> c.add(java.util.Calendar.MONTH, amt)
@@ -7391,9 +7396,9 @@ internal fun DateWheelPickerBlock(
     val mode = (modeOverride ?: block.picker_mode ?: "date").lowercase()
     val showTime = mode == "datetime" || mode == "date_time" || mode == "time"
     val showDate = mode != "time"
-    // A time or date-and-time wheel shows and takes the wall time in the app's zone (UTC when the app has none), so the
-    // time a later step shows is the time picked; a date or a year is the phone's calendar date. iOS `wheelZone`.
-    val wheelZone = if (DateWheelModel.hasTime(mode)) AnswerTime.zone else java.util.TimeZone.getDefault()
+    // Every wheel shows and takes the day and the wall time in the app's zone (UTC when the app has none), so the value a
+    // later step shows is the value picked, and "today" is the app's today. iOS `wheelZone`.
+    val wheelZone = DateWheelModel.wheelZone(mode)
     // Honor wheel_height (was hardcoded 150dp), wheel_bg_color, date_validation_message,
     // and the block-level `text` label (none were rendered before).
     val wheelHeightDp = (block.wheel_height ?: 200.0).dp
@@ -7422,7 +7427,7 @@ internal fun DateWheelPickerBlock(
 
     // Year range from min_date/max_date + allow_future/allow_past (was hardcoded
     // 1950..2030, ignoring the authored constraints). Mirrors iOS dateRange (-150y..+50y default).
-    val currentYear = java.util.Calendar.getInstance().get(java.util.Calendar.YEAR)
+    val currentYear = java.util.Calendar.getInstance(wheelZone).get(java.util.Calendar.YEAR)
     // Parse relative-date strings ("today"/"now", "-18y", "+1y",
     // "-30d", "-6m") the editor promotes (StepContentEditor min/max placeholders)
     // in addition to ISO "yyyy-MM-dd". Mirrors iOS parseDate()
@@ -7436,7 +7441,7 @@ internal fun DateWheelPickerBlock(
         if (lastChar in "dmy") {
             val amount = trimmed.dropLast(1).toIntOrNull()
             if (amount != null) {
-                val c = java.util.Calendar.getInstance()
+                val c = java.util.Calendar.getInstance(wheelZone)
                 when (lastChar) {
                     'd' -> c.add(java.util.Calendar.DAY_OF_YEAR, amount)
                     'm' -> c.add(java.util.Calendar.MONTH, amount)
@@ -7469,8 +7474,8 @@ internal fun DateWheelPickerBlock(
         // `min(max(seeded, lower), upper)`), so an authored default before min_date
         // (or after max_date) doesn't open + emit an out-of-range value. min/max
         // parse the same relative/ISO grammar as the default.
-        val minB = parseDateWheelSeed(null, block.min_date)
-        val maxB = parseDateWheelSeed(null, block.max_date)
+        val minB = parseDateWheelSeed(null, block.min_date, wheelZone)
+        val maxB = parseDateWheelSeed(null, block.max_date, wheelZone)
         raw?.let { s ->
             when {
                 minB != null && s.before(minB) -> minB
@@ -7485,11 +7490,9 @@ internal fun DateWheelPickerBlock(
     val unsetOpening = remember(wheelZone) { DateWheelModel.unsetOpening(System.currentTimeMillis(), wheelZone) }
     val openOn = remember(seedCal, block.min_date, block.max_date, block.allow_past, block.allow_future) {
         seedCal?.let { DateWheelModel.Ymd(it.get(java.util.Calendar.YEAR), it.get(java.util.Calendar.MONTH) + 1, it.get(java.util.Calendar.DAY_OF_MONTH)) }
-            ?: DateWheelModel.clamp(
-                DateWheelModel.bound(unsetOpening, untilToday = true)!!,
-                DateWheelModel.bound(parseDateWheelSeed(null, block.min_date), block.allow_past == false),
-                DateWheelModel.bound(parseDateWheelSeed(null, block.max_date), block.allow_future == false),
-            )
+            ?: DateWheelModel.bounds(block.min_date, block.max_date, block.allow_past, block.allow_future, wheelZone, System.currentTimeMillis()).let { (lo, hi) ->
+                DateWheelModel.clamp(DateWheelModel.bound(unsetOpening, untilToday = true, zone = wheelZone)!!, lo, hi)
+            }
     }
     val seedYear = openOn.year.coerceIn(minYear, maxYear)
     val seedMonth = openOn.month
@@ -7506,11 +7509,11 @@ internal fun DateWheelPickerBlock(
     var clamps by remember { mutableIntStateOf(0) }
 
     // The authored bounds, whole dates: a year alone let a day past the limit through.
-    val minBound = remember(block.min_date, block.allow_past) {
-        DateWheelModel.bound(parseDateWheelSeed(null, block.min_date), block.allow_past == false)
+    val minBound = remember(block.min_date, block.allow_past, wheelZone) {
+        DateWheelModel.bound(parseDateWheelSeed(null, block.min_date, wheelZone), block.allow_past == false, wheelZone)
     }
-    val maxBound = remember(block.max_date, block.allow_future) {
-        DateWheelModel.bound(parseDateWheelSeed(null, block.max_date), block.allow_future == false)
+    val maxBound = remember(block.max_date, block.allow_future, wheelZone) {
+        DateWheelModel.bound(parseDateWheelSeed(null, block.max_date, wheelZone), block.allow_future == false, wheelZone)
     }
     val dayCount = DateWheelModel.daysInMonth(selectedYear, selectedMonth)
 
@@ -10572,10 +10575,11 @@ internal fun FormInputDateBlock(
     // nothing on Android. Date-only mode only — datetime/time skip.
     fun persistAgeIfDate(epochMillis: Long) {
         if (mode != "date" && mode.isNotEmpty() && mode != "input_date") return
-        val cal = java.util.Calendar.getInstance().apply { timeInMillis = epochMillis }
-        val now = java.util.Calendar.getInstance()
-        var years = now.get(java.util.Calendar.YEAR) - cal.get(java.util.Calendar.YEAR)
-        if (now.get(java.util.Calendar.DAY_OF_YEAR) < cal.get(java.util.Calendar.DAY_OF_YEAR)) years--
+        // The picker's selection is the picked day's UTC midnight; the age is counted on the app's calendar to today there.
+        val born = DateWheelModel.pickedYmd(epochMillis)
+        val today = DateWheelModel.bound(null, untilToday = true, zone = AnswerTime.zone)!!
+        var years = today.year - born.year
+        if (today.month < born.month || (today.month == born.month && today.day < born.day)) years--
         if (years < 0) return
         inputValues["${fieldId}_age"] = years
     }
@@ -10586,7 +10590,7 @@ internal fun FormInputDateBlock(
     // A time or date-and-time is picked, stored and shown in the app's zone (UTC unless set in the console); a date is
     // a calendar date. The same shapes the date wheel stores ([DateWheelModel.answer]), as iOS stores them.
     val answerMode = block.picker_mode ?: mode
-    val answerZone = if (DateWheelModel.hasTime(answerMode)) AnswerTime.zone else java.util.TimeZone.getDefault()
+    val answerZone = DateWheelModel.wheelZone(answerMode)
     val displayFormatter = remember(mode, timeFmt, answerZone) {
         val timePattern = if (timeFmt == "24h") "HH:mm" else "h:mm a"
         when (mode) {
@@ -10623,30 +10627,29 @@ internal fun FormInputDateBlock(
     // matching the iOS gap. Reuse parseDateWheelSeed (the same helper the wheel
     // uses for its min/max clamp) and normalize min→start-of-day, max→end-of-day
     // so a pick landing exactly on the boundary day isn't rejected by time-of-day.
-    val minDateMillis = parseDateWheelSeed(block.min_date, null)?.apply {
-        set(java.util.Calendar.HOUR_OF_DAY, 0); set(java.util.Calendar.MINUTE, 0)
-        set(java.util.Calendar.SECOND, 0); set(java.util.Calendar.MILLISECOND, 0)
-    }?.timeInMillis
-    val maxDateMillis = parseDateWheelSeed(block.max_date, null)?.apply {
-        set(java.util.Calendar.HOUR_OF_DAY, 23); set(java.util.Calendar.MINUTE, 59)
-        set(java.util.Calendar.SECOND, 59); set(java.util.Calendar.MILLISECOND, 999)
-    }?.timeInMillis
+    /**
+     * Whether a day picked on the calendar ([millis], the picker's UTC midnight of that day) is allowed: compared as days
+     * of the app's calendar ([answerZone]) with today there and with the authored bounds, so today is allowed either way.
+     * It compared that UTC midnight with the current moment, which refused today east of UTC under `allow_future: false`.
+     */
     fun validateDate(millis: Long): Boolean {
-        val now = System.currentTimeMillis()
         val msg = block.date_validation_message
-        if (block.allow_future == false && millis > now) {
+        val picked = DateWheelModel.pickedYmd(millis)
+        val today = DateWheelModel.bound(null, untilToday = true, zone = answerZone)!!
+        val (minDay, maxDay) = DateWheelModel.bounds(block.min_date, block.max_date, null, null, answerZone, System.currentTimeMillis())
+        if (block.allow_future == false && picked > today) {
             dateError = msg ?: "Future dates are not allowed"
             return false
         }
-        if (block.allow_past == false && millis < now) {
+        if (block.allow_past == false && picked < today) {
             dateError = msg ?: "Past dates are not allowed"
             return false
         }
-        if (minDateMillis != null && millis < minDateMillis) {
+        if (minDay != null && picked < minDay) {
             dateError = msg ?: "Date is before the earliest allowed date"
             return false
         }
-        if (maxDateMillis != null && millis > maxDateMillis) {
+        if (maxDay != null && picked > maxDay) {
             dateError = msg ?: "Date is after the latest allowed date"
             return false
         }
@@ -10888,7 +10891,17 @@ internal fun FormInputDateBlock(
         // wheel and the display text).
         val is24 = (block.field_config?.get("time_format") as? String)?.lowercase()?.let { it == "24h" }
             ?: android.text.format.DateFormat.is24HourFormat(LocalContext.current)
-        val timePickerState = rememberTimePickerState(is24Hour = is24)
+        // The clock opens on the answer already given, else on the current wall time in the app's zone, as iOS opens it.
+        // It opened on 00:00 whatever was saved.
+        val opening = remember(savedRaw, answerZone) {
+            savedRaw.takeIf { effectiveMode != "date" }?.let { DateWheelModel.readFormAnswer(it, answerMode, answerZone) }
+                ?: java.util.Calendar.getInstance(answerZone)
+        }
+        val timePickerState = rememberTimePickerState(
+            initialHour = opening.get(java.util.Calendar.HOUR_OF_DAY),
+            initialMinute = opening.get(java.util.Calendar.MINUTE),
+            is24Hour = is24,
+        )
         ForcedPickerScheme(forcePickerDark) {
         androidx.compose.material3.AlertDialog(
             onDismissRequest = { showTimePicker = false },

@@ -726,7 +726,8 @@ private fun DateField(
 
     OutlinedButton(
         onClick = {
-            val cal = Calendar.getInstance()
+            // The dialog opens on the saved day, else on today in the app's zone (the zone every date answer uses).
+            val opening = formStepOpeningDay(dateStr, AnswerTime.zone, System.currentTimeMillis())
             val dialog = DatePickerDialog(
                 context,
                 { _, year, month, day ->
@@ -740,12 +741,12 @@ private fun DateField(
                         "%04d-%02d-%02d",
                         year, month + 1, day,
                     )
-                    values[field.id] = formatted
+                    values[field.id] = formStepDateAnswer(field.type, formatted, values["${field.id}_time"]?.toString(), AnswerTime.zone, System.currentTimeMillis())
                     errors.remove(field.id)
                 },
-                cal.get(Calendar.YEAR),
-                cal.get(Calendar.MONTH),
-                cal.get(Calendar.DAY_OF_MONTH)
+                opening.year,
+                opening.month - 1,
+                opening.day
             )
             // Enforce min_date/max_date config, read as iOS reads them (formDateBounds).
             val (minMs, maxMs) = formDateBounds(field.config?.min_date, field.config?.max_date)
@@ -787,6 +788,38 @@ internal fun formDateBounds(
     return lower to upper
 }
 
+/**
+ * What a form step stores for its date, time and date-and-time fields, the shapes every date answer uses (the date
+ * wheel's and the input_date / input_time / input_datetime blocks'), in [zone], the app's:
+ * - date: `yyyy-MM-dd`;
+ * - time: the wall time picked with the zone's offset on today there, `23:03:00+09:00` (UTC as `Z`);
+ * - date-and-time: `2026-11-10T23:03:00+09:00`; with only the day picked yet, `yyyy-MM-dd`; with only the time, nothing.
+ * [date] is any text starting `yyyy-MM-dd`; [time] is the picker's `HH:mm`. iOS `FormStepView.formStepAnswer`.
+ * It stored `HH:mm` and `yyyy-MM-ddTHH:mm:00`, which carry no zone and differed from every other date answer.
+ */
+internal fun formStepDateAnswer(type: FormFieldType, date: String?, time: String?, zone: java.util.TimeZone, nowMs: Long): String? {
+    val d = date?.let { Regex("""^(\d{4})-(\d{2})-(\d{2})""").find(it) }?.destructured?.let { (y, mo, dd) -> DateWheelModel.Ymd(y.toInt(), mo.toInt(), dd.toInt()) }
+    val t = time?.let { Regex("""^(\d{2}):(\d{2})""").find(it) }?.destructured?.let { (h, mi) -> h.toInt() to mi.toInt() }
+    fun day(y: DateWheelModel.Ymd) = String.format(Locale.US, "%04d-%02d-%02d", y.year, y.month, y.day)
+    return when (type) {
+        FormFieldType.DATE -> d?.let(::day)
+        FormFieldType.TIME -> t?.let { (h, mi) ->
+            val today = DateWheelModel.bound(null, untilToday = true, zone = zone, nowMs = nowMs)!!
+            AnswerTime.timeString(today.year, today.month, today.day, h, mi, zone)
+        }
+        else -> when {
+            d != null && t != null -> AnswerTime.dateTimeString(d.year, d.month, d.day, t.first, t.second, zone)
+            d != null -> day(d)
+            else -> null
+        }
+    }
+}
+
+/** The day a form step's date dialog opens on: the saved day, else today in [zone], the app's. */
+internal fun formStepOpeningDay(saved: String?, zone: java.util.TimeZone, nowMs: Long): DateWheelModel.Ymd =
+    saved?.let { Regex("""^(\d{4})-(\d{2})-(\d{2})""").find(it) }?.destructured?.let { (y, mo, d) -> DateWheelModel.Ymd(y.toInt(), mo.toInt(), d.toInt()) }
+        ?: DateWheelModel.bound(null, untilToday = true, zone = zone, nowMs = nowMs)!!
+
 @Composable
 private fun TimeField(
     field: FormField,
@@ -805,7 +838,8 @@ private fun TimeField(
             // seeding with current wall-clock — re-opening after picking
             // 09:30 displayed "now" instead of the saved choice. Misleading
             // UX during edit/cancel flows.
-            val cal = Calendar.getInstance()
+            // The current wall time in the app's zone (the zone the time is stored in), as iOS opens its picker.
+            val cal = Calendar.getInstance(AnswerTime.zone)
             val savedTime = timeStr.takeIf { it.matches(Regex("\\d{2}:\\d{2}")) }
             if (savedTime != null) {
                 cal.set(Calendar.HOUR_OF_DAY, savedTime.substringBefore(':').toInt())
@@ -826,15 +860,10 @@ private fun TimeField(
                     //   time     → "HH:mm"                  (bare, no anchor date)
                     // The old code emitted "yyyy-MM-ddTHH:mm" (no seconds) for datetime and a
                     // 1970-01-01 UTC anchor for time-only — neither matched iOS.
+                    // Stored in the shapes every date answer uses, in the app's zone ([formStepDateAnswer]). A
+                    // date-and-time whose day is not picked yet stores nothing until it is: the day picker combines them.
                     val dateStr = values[field.id]?.toString() ?: ""
-                    if (field.type == FormFieldType.DATETIME) {
-                        // The DateField already wrote "yyyy-MM-dd" into the same key. If the date hasn't
-                        // been picked yet, store just the time; it's combined once the date is chosen.
-                        val datePart = dateStr.substringBefore('T').takeIf { it.isNotEmpty() }
-                        values[field.id] = if (datePart != null) "${datePart}T$formatted:00" else formatted
-                    } else {
-                        values[field.id] = formatted
-                    }
+                    formStepDateAnswer(field.type, dateStr, formatted, AnswerTime.zone, System.currentTimeMillis())?.let { values[field.id] = it }
                     errors.remove(field.id)
                 },
                 cal.get(Calendar.HOUR_OF_DAY),

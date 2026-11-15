@@ -51,8 +51,9 @@ object AppDNA {
         internal set
 
     /**
-     * The app's time zone (an IANA id), set in the console's app settings: time and date-and-time answers are picked,
-     * stored and drawn in it. Null until the brand config loads and for an app that has none: UTC is used then.
+     * The app's time zone (an IANA id), set in the console's app settings: every date, time and date-and-time answer is
+     * picked, stored and drawn in it, and a date picker's "today" is its today. Null until the brand config loads and
+     * for an app that has none: UTC is used then.
      */
     @Volatile
     internal var appTimeZoneId: String? = null

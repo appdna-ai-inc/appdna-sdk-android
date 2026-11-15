@@ -4435,6 +4435,20 @@ class SharedFixtureTest(
             .googleAttributionBackdrop(cases.asList().map { it as Map<String, Any?> })
     }
 
+    /** Runs [body] with the phone in the case's `device_zone` and the app in its `app_zone`, then puts both back. */
+    private fun <T> withZones(c: JSONObject, body: (Long) -> T): T {
+        val savedDefault = java.util.TimeZone.getDefault()
+        val savedApp = ai.appdna.sdk.AppDNA.appTimeZoneId
+        try {
+            java.util.TimeZone.setDefault(java.util.TimeZone.getTimeZone(c.getString("device_zone")))
+            ai.appdna.sdk.AppDNA.appTimeZoneId = c.getString("app_zone")
+            return body(ai.appdna.sdk.core.IsoInstant.parseEpochMs(c.getString("now"))!!)
+        } finally {
+            java.util.TimeZone.setDefault(savedDefault)
+            ai.appdna.sdk.AppDNA.appTimeZoneId = savedApp
+        }
+    }
+
     /** The themed wheel's date rules, through the REAL model. */
     private fun runDateWheel(action: JSONObject, spy: Spy) {
         val m = ai.appdna.sdk.onboarding.DateWheelModel
@@ -4473,6 +4487,24 @@ class SharedFixtureTest(
                 }
                 "read" -> m.readAnswer(c.getString("saved"), java.util.TimeZone.getTimeZone(c.getString("zone")))?.let {
                     String.format(java.util.Locale.US, "%04d-%02d-%02d", it.get(java.util.Calendar.YEAR), it.get(java.util.Calendar.MONTH) + 1, it.get(java.util.Calendar.DAY_OF_MONTH))
+                }
+                // The phone in one zone and the app in another: the zone each date rule picks, through the REAL functions.
+                "zone_unset_opening", "zone_today_bounds", "zone_default_seed", "form_step_answer" -> withZones(c) { nowMs ->
+                    fun day(y: ai.appdna.sdk.onboarding.DateWheelModel.Ymd?) = y?.let { String.format(java.util.Locale.US, "%04d-%02d-%02d", it.year, it.month, it.day) }
+                    fun dayOf(cal: java.util.Calendar) = String.format(java.util.Locale.US, "%04d-%02d-%02d", cal.get(java.util.Calendar.YEAR), cal.get(java.util.Calendar.MONTH) + 1, cal.get(java.util.Calendar.DAY_OF_MONTH))
+                    when (c.getString("op")) {
+                        "zone_unset_opening" -> m.unsetOpening(nowMs, m.wheelZone(c.getString("mode"))).let {
+                            dayOf(it) + String.format(java.util.Locale.US, " %02d:%02d", it.get(java.util.Calendar.HOUR_OF_DAY), it.get(java.util.Calendar.MINUTE))
+                        }
+                        "zone_today_bounds" -> m.bounds(null, null, c.optBoolean("allow_past", true), c.optBoolean("allow_future", true), m.wheelZone(c.getString("mode")), nowMs)
+                            .let { (lo, hi) -> listOf(day(lo), day(hi)) }
+                        "zone_default_seed" -> ai.appdna.sdk.onboarding.parseDateWheelSeed(null, c.getString("value"), m.wheelZone(c.getString("mode")), nowMs)?.let(::dayOf)
+                        else -> {
+                            val (date, time) = c.getString("wall").split(" ")
+                            val type = ai.appdna.sdk.onboarding.FormFieldType.valueOf(c.getString("type").uppercase())
+                            ai.appdna.sdk.onboarding.formStepDateAnswer(type, date, time, ai.appdna.sdk.onboarding.AnswerTime.zone, nowMs)
+                        }
+                    }
                 }
                 else -> unsupported("resolve_date_wheel op")
             }

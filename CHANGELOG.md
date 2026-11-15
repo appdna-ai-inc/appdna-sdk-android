@@ -34,6 +34,15 @@ the project uses [Semantic Versioning](https://semver.org/).
 
 ### Changed
 
+- **Every date picker works in the app's time zone, a date-only one too.** A `date_wheel_picker` or `input_date` in
+  `date` mode, its calendar, and a form step's `date` field number their days in the time zone set for the app in the
+  console (UTC unless changed), as the time and date-and-time pickers already did. So the day a picker opens on,
+  `today` and offsets such as `-18y` in `default_date_value` / `min_date` / `max_date`, and the "today" that
+  `allow_past: false` / `allow_future: false` compare against are the app's, not the phone's; near midnight they named
+  different days. A form step's `time` and `datetime` fields now store the shapes every other time answer stores, the
+  wall time in the app's zone with its offset (`23:03:00+09:00`, `2026-11-15T23:03:00+09:00`); they stored `HH:mm` and
+  `yyyy-MM-ddTHH:mm:00` with no zone. A time picker with nothing picked yet opens on the current time in the app's zone.
+
 - **A date-and-time or time wheel with no default opens at 12:00 on both platforms.** With nothing saved and no
   `default_date_value`, the wheel opens on today at noon in the app's time zone. iOS meant noon but took it in the
   phone's zone and drew it in the app's, so it could open on another hour (20:00 for a phone in California with

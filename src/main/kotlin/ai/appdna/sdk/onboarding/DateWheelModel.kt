@@ -29,11 +29,30 @@ internal object DateWheelModel {
     fun daysInMonth(year: Int, month: Int): Int =
         GregorianCalendar(year, month - 1, 1).getActualMaximum(Calendar.DAY_OF_MONTH)
 
-    /** A parsed bound, or today when the author refused the other side of it. */
-    fun bound(parsed: Calendar?, untilToday: Boolean): Ymd? {
-        val c = parsed ?: if (untilToday) Calendar.getInstance() else return null
+    /**
+     * A parsed bound, or today when the author refused the other side of it. Today is the day [nowMs] falls on in
+     * [zone], the app's ([wheelZone]): the phone's today named another day near midnight in an app set to another zone.
+     */
+    fun bound(parsed: Calendar?, untilToday: Boolean, zone: java.util.TimeZone = AnswerTime.zone, nowMs: Long = System.currentTimeMillis()): Ymd? {
+        val c = parsed ?: if (untilToday) Calendar.getInstance(zone).apply { timeInMillis = nowMs } else return null
         return Ymd(c.get(Calendar.YEAR), c.get(Calendar.MONTH) + 1, c.get(Calendar.DAY_OF_MONTH))
     }
+
+    /**
+     * The days a wheel may be set to: the authored `min_date` / `max_date` (read by [parseDateWheelSeed] on the
+     * calendar of [zone]), narrowed to today by `allow_past` / `allow_future` == false. iOS `DateWheelPickerBlockView.dateRange`.
+     */
+    fun bounds(minDate: String?, maxDate: String?, allowPast: Boolean?, allowFuture: Boolean?, zone: java.util.TimeZone, nowMs: Long): Pair<Ymd?, Ymd?> =
+        bound(parseDateWheelSeed(null, minDate, zone, nowMs), allowPast == false, zone, nowMs) to
+            bound(parseDateWheelSeed(null, maxDate, zone, nowMs), allowFuture == false, zone, nowMs)
+
+    /**
+     * The zone a wheel draws, takes and stores in, whatever its mode: the app's ([AnswerTime.zone], UTC unless set in
+     * the console). A date-only wheel used the phone's, so near midnight it named another day than a date-and-time wheel
+     * on the same screen. iOS `DateWheelPickerBlockView.wheelZone(mode:)`.
+     */
+    @Suppress("UNUSED_PARAMETER")
+    fun wheelZone(mode: String): java.util.TimeZone = AnswerTime.zone
 
     /**
      * Where a wheel with no saved answer and no `default_date_value` opens: today in [zone] at 12:00, as iOS opens
