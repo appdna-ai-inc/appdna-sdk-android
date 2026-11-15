@@ -40,7 +40,7 @@ class MainActivity : ComponentActivity() {
         // Deep-link and push-tap handoff on cold start. The intent that launched the activity may carry
         // a deep-link URI from the OS launcher, or the data of a tapped background push.
         intent?.let { handleDeepLinkIntent(it) }
-        intent?.let { consentWalkIfAsked(it); forwardedDisplayIfAsked(it) }
+        intent?.let { consentWalkIfAsked(it); forwardedDisplayIfAsked(it); deferredLinkWalkIfAsked(it) }
 
         setContent {
             MaterialTheme {
@@ -112,6 +112,36 @@ class MainActivity : ComponentActivity() {
         val value = intent.getStringExtra("appdnaSdkDisplaysForwarded") ?: return
         AppDNA.push.setSdkDisplaysForwardedMessages(value == "true")
         android.util.Log.i("AppDNA-E2E", "AppDNA-E2E sdk-displays-forwarded=${value == "true"}")
+    }
+
+    /*
+     * A DEFERRED-LINK WALK: put text on the clipboard, forget the first-launch flag, and run the first-launch
+     * deferred-link check, logging what the clip's description says and what the check answered.
+     *
+     *     adb shell am start -n ai.appdna.sample/.MainActivity --es appdnaDdlClip 'https://links.example.com/?appdna_visitor=v1'
+     *
+     * The check runs 2s after the SDK is ready, so the system has had time to classify the clip.
+     */
+    private fun deferredLinkWalkIfAsked(intent: Intent) {
+        val clip = intent.getStringExtra("appdnaDdlClip") ?: return
+        val cm = getSystemService(CLIPBOARD_SERVICE) as android.content.ClipboardManager
+        cm.setPrimaryClip(android.content.ClipData.newPlainText("walk", clip))
+        getSharedPreferences("ai.appdna.sdk", MODE_PRIVATE).edit()
+            .remove("ai.appdna.sdk.first_launch_completed").remove("ai.appdna.sdk.ddl_failed_attempts").commit()
+        AppDNA.onReady {
+            android.os.Handler(mainLooper).postDelayed({
+                val d = cm.primaryClipDescription
+                val cls = if (android.os.Build.VERSION.SDK_INT >= 31 && d != null) {
+                    "status=${d.classificationStatus} url=${runCatching { d.getConfidenceScore(android.view.textclassifier.TextClassifier.TYPE_URL) }.getOrNull()}"
+                } else "pre-S"
+                android.util.Log.i("AppDNA-E2E", "AppDNA-E2E ddl clip classification $cls")
+                AppDNA.checkDeferredDeepLink { link ->
+                    val text = link?.let { "deferred link -> ${it.screen} visitor=${it.visitorId}" } ?: "deferred link -> none"
+                    android.util.Log.i("AppDNA-E2E", "AppDNA-E2E $text")
+                    runOnUiThread { android.widget.Toast.makeText(this, text, android.widget.Toast.LENGTH_LONG).show() }
+                }
+            }, 2000)
+        }
     }
 
     /*

@@ -45,11 +45,11 @@ class DeferredDeepLinkRetryTest {
      * failure of the one under test. The clipboard route is also the real first-launch path: the
      * web page writes it before the store redirect.
      */
-    private fun seedVisitorId() {
-        val clipboard = ctx.getSystemService(Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
-        clipboard.setPrimaryClip(
-            android.content.ClipData.newPlainText("", "appdna:visitor:v-test-1234"),
-        )
+    private fun seededClipboard(): ClipboardReading = object : ClipboardReading {
+        override fun hasText() = true
+        override fun isProbableWebUrl() = true
+        override fun readText() = "https://links.example.com/?appdna_visitor=v-test-1234"
+        override fun clear() {}
     }
 
     /**
@@ -61,9 +61,8 @@ class DeferredDeepLinkRetryTest {
      * of this test reported. Idle in a loop until the latch trips instead.
      */
     private fun check(): Boolean {
-        seedVisitorId()
         val latch = java.util.concurrent.CountDownLatch(1)
-        DeferredDeepLinkManager(ctx, "org", "app", null).checkDeferredDeepLink { latch.countDown() }
+        DeferredDeepLinkManager(ctx, "org", "app", null, seededClipboard()).checkDeferredDeepLink { latch.countDown() }
         val deadline = System.currentTimeMillis() + 10_000
         while (System.currentTimeMillis() < deadline) {
             ShadowLooper.idleMainLooper()

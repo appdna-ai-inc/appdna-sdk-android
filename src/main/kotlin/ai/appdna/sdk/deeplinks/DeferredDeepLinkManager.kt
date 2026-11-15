@@ -53,7 +53,9 @@ internal class DeferredDeepLinkManager(
     private val context: Context,
     private val orgId: String,
     private val appId: String,
-    private val eventTracker: EventTracker?
+    private val eventTracker: EventTracker?,
+    /** Where the visitor id copied by the web page is read from. A test passes its own. */
+    private val clipboard: ClipboardReading = SystemClipboard(context),
 ) {
     companion object {
         private const val FIRST_LAUNCH_KEY = "ai.appdna.sdk.first_launch_completed"
@@ -188,19 +190,19 @@ internal class DeferredDeepLinkManager(
     }
 
     private suspend fun resolveVisitorId(): String? {
-        // Strategy 1: Check clipboard for visitor ID (web page sets it before store redirect)
+        // Strategy 1: the clipboard (the web page sets it before the store redirect) — read only when
+        // the system can tell, WITHOUT the read, that it holds a web link. See [ClipboardReading].
         try {
-            val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as? android.content.ClipboardManager
-            val clipData = clipboard?.primaryClip
-            if (clipData != null && clipData.itemCount > 0) {
-                val text = clipData.getItemAt(0).text?.toString()
-                if (text != null && text.startsWith("appdna:visitor:")) {
-                    val visitorId = text.removePrefix("appdna:visitor:")
-                    // Clear clipboard
-                    clipboard.setPrimaryClip(android.content.ClipData.newPlainText("", ""))
+            if (DeferredLinkPasteboard.shouldRead(clipboard.hasText(), clipboard.isProbableWebUrl())) {
+                val visitorId = DeferredLinkPasteboard.visitorId(clipboard.readText())
+                if (visitorId != null) {
+                    // Clear only OUR marker: someone else's link stays where they put it.
+                    clipboard.clear()
                     Log.debug("DeferredDeepLink: resolved visitor ID from clipboard")
                     return visitorId
                 }
+            } else {
+                Log.debug("DeferredDeepLink: clipboard holds no link — not read, so no 'pasted' toast")
             }
         } catch (e: Throwable) {
             Log.warning("DeferredDeepLink: clipboard probe failed: ${e.message}")
@@ -329,4 +331,120 @@ internal class DeferredDeepLinkManager(
     internal fun shutdown() {
         scope.cancel()
     }
+}
+
+/**
+ * The clipboard the deferred deep link reads its visitor id from.
+ *
+ * [hasText] and [isProbableWebUrl] read only the clip's DESCRIPTION, which Android never announces;
+ * [readText] reads the content, which on Android 12+ shows the system "<App> pasted from your
+ * clipboard" toast.
+ */
+internal interface ClipboardReading {
+    fun hasText(): Boolean
+    fun isProbableWebUrl(): Boolean
+    fun readText(): String?
+    fun clear()
+}
+
+/**
+ * 🔴 READ THE CLIPBOARD ONLY WHEN IT HOLDS A LINK.
+ *
+ * This read `primaryClip` on every first launch, looking for the visitor id a web page may have
+ * copied before the store redirect. On Android 12+ every content read shows a "pasted from your
+ * clipboard" toast — so every first launch of every host app whose user had copied anything showed
+ * it, for a feature almost no install uses. iOS showed a blocking paste alert for the same read.
+ *
+ * Android 12+ classifies clip text itself (`ClipDescription.getConfidenceScore(TYPE_URL)`), and
+ * reading the description does not toast — so the content is read only when that classification
+ * is complete and says URL. Before Android 12 there is no toast and no classification, so the
+ * content is read as before, and only our own marker is used or cleared.
+ */
+internal class SystemClipboard(private val context: Context) : ClipboardReading {
+    private val manager: android.content.ClipboardManager?
+        get() = context.getSystemService(Context.CLIPBOARD_SERVICE) as? android.content.ClipboardManager
+
+    override fun hasText(): Boolean {
+        val m = manager ?: return false
+        if (!m.hasPrimaryClip()) return false
+        val d = m.primaryClipDescription ?: return false
+        return d.hasMimeType(android.content.ClipDescription.MIMETYPE_TEXT_PLAIN) ||
+            d.hasMimeType(android.content.ClipDescription.MIMETYPE_TEXT_URILIST) ||
+            d.hasMimeType("text/*")
+    }
+
+    override fun isProbableWebUrl(): Boolean {
+        if (android.os.Build.VERSION.SDK_INT < android.os.Build.VERSION_CODES.S) return true
+        val d = manager?.primaryClipDescription ?: return false
+        return isUrlClassified(d)
+    }
+
+    @androidx.annotation.RequiresApi(android.os.Build.VERSION_CODES.S)
+    private fun isUrlClassified(d: android.content.ClipDescription): Boolean {
+        if (d.classificationStatus != android.content.ClipDescription.CLASSIFICATION_COMPLETE) return false
+        return try {
+            d.getConfidenceScore(android.view.textclassifier.TextClassifier.TYPE_URL) >= URL_CONFIDENCE
+        } catch (_: IllegalStateException) {
+            false
+        }
+    }
+
+    override fun readText(): String? {
+        val clip = manager?.primaryClip ?: return null
+        if (clip.itemCount == 0) return null
+        return clip.getItemAt(0).text?.toString()
+    }
+
+    override fun clear() {
+        val m = manager ?: return
+        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.P) {
+            m.clearPrimaryClip()
+        } else {
+            m.setPrimaryClip(android.content.ClipData.newPlainText("", ""))
+        }
+    }
+
+    private companion object {
+        const val URL_CONFIDENCE = 0.5f
+    }
+}
+
+/**
+ * WHETHER the deferred deep link may read the clipboard, and what it accepts from it. Mirror of iOS
+ * `DeferredLinkPasteboard`, pinned by the shared `deferred_link_pasteboard` fixture.
+ *
+ * Accepted content: a http(s) URL carrying an `appdna_visitor` query parameter (the key the Install
+ * Referrer carries too), or the legacy `appdna:visitor:<id>` marker. A visitor id is 1-128 ASCII
+ * letters, digits, `-` or `_`, because it becomes a Firestore document path segment.
+ */
+internal object DeferredLinkPasteboard {
+    const val LEGACY_PREFIX = "appdna:visitor:"
+    const val QUERY_PARAM = "appdna_visitor"
+
+    fun shouldRead(hasText: Boolean, probableWebUrl: Boolean): Boolean = hasText && probableWebUrl
+
+    fun visitorId(text: String?): String? {
+        val raw = text?.trim().orEmpty()
+        if (raw.isEmpty()) return null
+        if (raw.startsWith(LEGACY_PREFIX)) {
+            val id = raw.removePrefix(LEGACY_PREFIX)
+            return id.takeIf(::isVisitorIdShaped)
+        }
+        val uri = try { java.net.URI(raw) } catch (_: Exception) { return null }
+        val scheme = uri.scheme?.lowercase() ?: return null
+        if (scheme != "https" && scheme != "http") return null
+        val query = uri.rawQuery ?: return null
+        val id = query.split('&').firstNotNullOfOrNull { pair ->
+            val i = pair.indexOf('=')
+            val key = if (i < 0) pair else pair.substring(0, i)
+            if (decode(key) == QUERY_PARAM) decode(if (i < 0) "" else pair.substring(i + 1)) else null
+        } ?: return null
+        return id.takeIf(::isVisitorIdShaped)
+    }
+
+    fun isVisitorIdShaped(id: String): Boolean =
+        id.length in 1..128 && id.all { (it in 'a'..'z') || (it in 'A'..'Z') || (it in '0'..'9') || it == '-' || it == '_' }
+
+    private fun decode(s: String): String =
+        try { java.net.URLDecoder.decode(s, "UTF-8") } catch (_: Exception) { s }
 }

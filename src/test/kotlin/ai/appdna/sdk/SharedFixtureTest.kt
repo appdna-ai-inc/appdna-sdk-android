@@ -354,6 +354,7 @@ class SharedFixtureTest(
             "resolve_banner_icon" -> runBannerIcon(action, spy)
             "resolve_celebration_palette" -> runCelebrationPalette(action, spy)
             "resolve_google_mark_chip" -> runGoogleMarkChip(action, spy)
+            "resolve_deferred_link_pasteboard" -> runDeferredLinkPasteboard(action, spy)
             "resolve_survey_sentiment" -> runSurveySentiment(action, spy)
             "resolve_likert_bounds" -> runLikertBounds(action, spy)
             "resolve_compact_picker_height" -> runCompactPickerHeight(action, spy)
@@ -2560,6 +2561,24 @@ class SharedFixtureTest(
                 backgroundHex = v.optStringOrNull("bg"),
                 iconStyle = v.optStringOrNull("icon_style"),
             )
+        }
+    }
+
+    /**
+     * WHETHER the first-launch deferred-link check may read the clipboard, and what it takes from it,
+     * through the REAL `DeferredLinkPasteboard` the manager calls. "unread" when the gate refuses —
+     * the read is what shows Android 12+'s "pasted" toast — otherwise the visitor id or "none".
+     */
+    private fun runDeferredLinkPasteboard(action: JSONObject, spy: Spy) {
+        val cases = action.optJSONArray("cases") ?: unsupported("resolve_deferred_link_pasteboard without cases")
+        spy.state["results"] = (0 until cases.length()).map { i ->
+            val v = cases.getJSONObject(i).optJSONObject("value") ?: JSONObject()
+            val gate = ai.appdna.sdk.deeplinks.DeferredLinkPasteboard
+            if (!gate.shouldRead(v.optBoolean("has_strings", false), v.optBoolean("probable_url", false))) {
+                "unread"
+            } else {
+                gate.visitorId(v.optStringOrNull("text")) ?: "none"
+            }
         }
     }
 

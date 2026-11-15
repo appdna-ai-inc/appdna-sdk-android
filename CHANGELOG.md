@@ -34,6 +34,13 @@ the project uses [Semantic Versioning](https://semver.org/).
 
 ### Changed
 
+- **The first-launch deferred-link check no longer shows Android 12+'s "pasted from your clipboard" toast for text
+  that is not a link.** It read the clipboard's content on every first launch. It now reads it only when Android has
+  classified the clip as a URL, which it checks from the clip's description without reading the content (Android 11
+  and below have no toast and no classification, and read as before). The visitor id is taken from a link carrying
+  `appdna_visitor`, or the older `appdna:visitor:<id>` text, and only that content is cleared; anything else is left
+  where the user put it.
+
 - **Every date picker works in the app's time zone, a date-only one too.** A `date_wheel_picker` or `input_date` in
   `date` mode, its calendar, and a form step's `date` field number their days in the time zone set for the app in the
   console (UTC unless changed), as the time and date-and-time pickers already did. So the day a picker opens on,
