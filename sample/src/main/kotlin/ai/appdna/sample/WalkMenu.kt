@@ -114,7 +114,11 @@ internal object WalkLog : ai.appdna.sdk.generated.AppDNALifecycleDelegate, AppDN
     private val clock = SimpleDateFormat("HH:mm:ss", Locale.US)
     private val keys = listOf("flow_id", "paywall_id", "survey_id", "product_id", "placement", "step_id", "error", "reason", "url", "responses")
 
-    fun install() {
+    /** Read by the test validator: a real backend check fails without a network, so it gives no answer then. */
+    private var connectivity: android.net.ConnectivityManager? = null
+
+    fun install(context: android.content.Context? = null) {
+        connectivity = context?.getSystemService(android.content.Context.CONNECTIVITY_SERVICE) as? android.net.ConnectivityManager
         AppDNA.setLifecycleDelegate(this)
         AppDNA.deepLinks.setDelegate(this)
         AppDNA.onboarding.setDelegate(this)
@@ -158,7 +162,7 @@ internal object WalkLog : ai.appdna.sdk.generated.AppDNALifecycleDelegate, AppDN
 
     // A test validator for live text-input validation (synthetic rules, for a walk): a value containing "taken" is
     // refused with "Already taken"; "slow" answers after 8 s (past the 5 s default timeout); "boom" throws (no answer);
-    // anything else is accepted after 0.4 s. The walk menu's `validator` item swaps in a delegate without this hook.
+    // anything else is accepted after 0.4 s. Offline, like a real backend call, it gives no answer. The walk menu's `validator` item swaps in a delegate without this hook.
     override suspend fun onValidateInput(
         flowId: String,
         stepId: String,
@@ -171,6 +175,11 @@ internal object WalkLog : ai.appdna.sdk.generated.AppDNALifecycleDelegate, AppDN
             return ai.appdna.sdk.onboarding.InputValidationResult.Valid("Slow answer")
         }
         if ("boom" in value) throw IllegalStateException("walk validator: boom")
+        if (connectivity?.activeNetwork == null && connectivity != null) {
+            kotlinx.coroutines.delay(300)
+            note("validate offline value=$value")
+            return null
+        }
         try {
             kotlinx.coroutines.delay(400)
         } catch (e: kotlinx.coroutines.CancellationException) {

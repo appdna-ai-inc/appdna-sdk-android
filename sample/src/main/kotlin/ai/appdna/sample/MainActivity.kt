@@ -35,7 +35,7 @@ class MainActivity : ComponentActivity() {
         // A device-walk build opens on its menu (`-PappdnaWalkMenu`, see WalkMenu.kt). Its observers go in
         // BEFORE the launching intent is handled, so a deep link that cold-starts the app is seen.
         val walk = WalkMenu.parse(SampleConfig.walkMenu(this))
-        if (walk != null) WalkLog.install()
+        if (walk != null) WalkLog.install(applicationContext)
 
         // Deep-link and push-tap handoff on cold start. The intent that launched the activity may carry
         // a deep-link URI from the OS launcher, or the data of a tapped background push.
