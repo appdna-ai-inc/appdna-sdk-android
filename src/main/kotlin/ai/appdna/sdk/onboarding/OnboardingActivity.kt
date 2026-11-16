@@ -437,10 +437,12 @@ class OnboardingActivity : ComponentActivity() {
             abandonResume("the user closed it while it was being restored")
             return
         }
+        // Where the flow draws its back arrow, Back goes to the previous step exactly as the arrow does.
+        OnboardingSystemBack.stepBack?.let { it(); return }
         // Respect `flow.settings.dismiss_allowed` (canDismiss)
         // when handling the system back button. When dismissal is disallowed
         // the flow intercepts back, mirroring iOS force-flow behavior.
-        // (allow_back gates step-back navigation, not the global dismiss.)
+        // Reached only where the back arrow is not shown: the first step, allow_back off, or hide_back.
         val flow = viewModel.flow
         val canDismiss = flow?.settings?.dismiss_allowed ?: true
         if (!canDismiss) {
@@ -1381,6 +1383,40 @@ internal fun OnboardingFlowHost(
     }
 
     /**
+     * The step-back the flow's own back arrow performs: haptic, then the step the user came FROM.
+     * Android's system Back calls the same function wherever the arrow is shown ([OnboardingSystemBack]).
+     */
+    fun stepBack() {
+        // Back navigation reuses
+        // `on_step_advance` haptic style.
+        HapticEngine.triggerIfEnabled(hostView, hapticConfig?.triggers?.on_step_advance, hapticConfig)
+        // Jump to the popped step's
+        // index, NOT currentIndex-1. iOS uses the popped
+        // index (OnboardingRenderer.swift:259-262) so
+        // non-linear flows (rule-skip, paywall continue,
+        // analytics→target) back-nav lands on the step
+        // the user actually came FROM. The old
+        // `currentIndex--` path landed on whatever step
+        // sat at index-1 even if the user had skipped
+        // over it. Android tracks step IDs (not Ints)
+        // so we look up the index by id; if the id no
+        // longer resolves (e.g. flow rebuilt), fall
+        // back to currentIndex-1.
+        val previousId = navigationHistory.lastOrNull()
+        val previousIndex = previousId
+            ?.let { id -> flow.steps.indexOfFirst { it.id == id }.takeIf { it >= 0 } }
+            ?: maxOf(currentIndex - 1, 0)
+        // 🔴 Discard a completion waiting on an in-flight hook — going back means
+        // the user did NOT complete this step; the next applyOutcome would otherwise
+        // record a completion for the step they just abandoned. iOS does the same.
+        pendingStepCompletion = null
+        if (navigationHistory.isNotEmpty()) {
+            navigationHistory.removeAt(navigationHistory.lastIndex)
+        }
+        currentIndex = previousIndex
+    }
+
+    /**
      * THE STEP'S TAP-ANYWHERE ADVANCE, in one place.
      *
      * 🔴 The guard takes the index it is asked about rather than reading `currentIndex`, because
@@ -1448,6 +1484,15 @@ internal fun OnboardingFlowHost(
     fun resultName(result: StepAdvanceResult): String = stepAdvanceResultName(result)
 
     val currentStep = if (currentIndex < flow.steps.size) flow.steps[currentIndex] else null
+    // Android's system Back does what the back arrow does wherever the arrow is shown (allow_back, a step to
+    // go back to, not hide_back). While a step is processing the arrow is disabled, so Back is swallowed.
+    // Elsewhere the activity keeps its dismiss behaviour.
+    val systemBackGoesBack = flow.settings.allow_back && navigationHistory.isNotEmpty() && currentStep?.hide_back != true
+    val latestStepBack by rememberUpdatedState(newValue = { if (!isProcessing) stepBack() })
+    DisposableEffect(systemBackGoesBack) {
+        OnboardingSystemBack.stepBack = if (systemBackGoesBack) ({ latestStepBack() }) else null
+        onDispose { OnboardingSystemBack.stepBack = null }
+    }
 
     // Adapt status bar icon tint to onboarding background
     // luminance. With edge-to-edge layout, the system status bar paints over
@@ -1816,35 +1861,7 @@ internal fun OnboardingFlowHost(
                 if (flow.settings.allow_back && navigationHistory.isNotEmpty() && currentStep?.hide_back != true) {
                     val backCd = stringResource(R.string.appdna_a11y_onboarding_back)
                     IconButton(
-                        onClick = {
-                            // Back navigation reuses
-                            // `on_step_advance` haptic style.
-                            HapticEngine.triggerIfEnabled(hostView, hapticConfig?.triggers?.on_step_advance, hapticConfig)
-                            // Jump to the popped step's
-                            // index, NOT currentIndex-1. iOS uses the popped
-                            // index (OnboardingRenderer.swift:259-262) so
-                            // non-linear flows (rule-skip, paywall continue,
-                            // analytics→target) back-nav lands on the step
-                            // the user actually came FROM. The old
-                            // `currentIndex--` path landed on whatever step
-                            // sat at index-1 even if the user had skipped
-                            // over it. Android tracks step IDs (not Ints)
-                            // so we look up the index by id; if the id no
-                            // longer resolves (e.g. flow rebuilt), fall
-                            // back to currentIndex-1.
-                            val previousId = navigationHistory.lastOrNull()
-                            val previousIndex = previousId
-                                ?.let { id -> flow.steps.indexOfFirst { it.id == id }.takeIf { it >= 0 } }
-                                ?: maxOf(currentIndex - 1, 0)
-                            // 🔴 Discard a completion waiting on an in-flight hook — going back means
-                            // the user did NOT complete this step; the next applyOutcome would otherwise
-                            // record a completion for the step they just abandoned. iOS does the same.
-                            pendingStepCompletion = null
-                            if (navigationHistory.isNotEmpty()) {
-                                navigationHistory.removeAt(navigationHistory.lastIndex)
-                            }
-                            currentIndex = previousIndex
-                        },
+                        onClick = { stepBack() },
                         enabled = !isProcessing,
                         // Back arrow rendered as Text glyph
                         // (no semantic icon); attach contentDescription so
@@ -5397,3 +5414,8 @@ private fun warmGoogleMapsRenderer(context: android.content.Context) {
  */
 internal fun systemBarsUseDarkIcons(behind: GoogleMapsAttribution.Backdrop, themeIsDark: Boolean): Boolean =
     !GoogleMapsAttribution.needsLightInk(behind, themeIsDark)
+
+/** The step-back that Android's system Back performs while the flow's back arrow is shown; null elsewhere. */
+internal object OnboardingSystemBack {
+    @Volatile var stepBack: (() -> Unit)? = null
+}

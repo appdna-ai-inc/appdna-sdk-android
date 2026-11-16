@@ -18,7 +18,11 @@ import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
+import org.junit.Rule
 import org.junit.Test
+import androidx.compose.ui.test.junit4.createEmptyComposeRule
+import androidx.compose.ui.test.onNodeWithContentDescription
+import androidx.compose.ui.test.performClick
 import org.junit.runner.RunWith
 import org.robolectric.Robolectric
 import org.robolectric.RobolectricTestRunner
@@ -46,6 +50,9 @@ import java.util.concurrent.TimeUnit
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [34])
 class OnboardingProcessDeathResumeTest {
+
+    @get:Rule
+    val compose = createEmptyComposeRule()
 
     private val ctx: Context get() = ApplicationProvider.getApplicationContext()
     private lateinit var events: BillingTestPipeline
@@ -212,8 +219,10 @@ class OnboardingProcessDeathResumeTest {
 
         val late = RecordingDelegate()
         AppDNA.onboarding.setDelegate(late)
-        @Suppress("DEPRECATION")
-        restored.get().onBackPressed()
+        // The user closes the flow with its ✕. (System Back on step 3 now goes to step 2, as the back arrow does.)
+        compose.waitForIdle()
+        compose.onNodeWithContentDescription("Close onboarding").performClick()
+        compose.waitForIdle()
 
         assertTrue("the dismissal must reach the delegate registered now", late.calls.contains("dismissed:$FLOW:2"))
         assertTrue(restored.get().isFinishing)

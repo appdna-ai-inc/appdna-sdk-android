@@ -106,6 +106,10 @@ the project uses [Semantic Versioning](https://semver.org/).
 
 ### Fixed
 
+- **System Back on an onboarding step goes to the previous step, as the flow's back arrow does.** It closed the
+  whole flow from any step, losing every answer. Where the arrow is not drawn (the first step, `allow_back` off,
+  `hide_back`) Back still closes the flow when `dismiss_allowed` is on, and an open step sheet still takes it first.
+
 - **Onboarding links open in a Custom Tab, over the app.** A `link` button, a link in rich text or an option's title, an
   Agreement's links and a warning banner's link opened the external browser and left the app; they now open in a Custom
   Tab (a plain browser intent only when the device has no Custom Tabs provider), and Back returns to the flow. Matches
