@@ -347,6 +347,9 @@ class SharedFixtureTest(
             // Live validation through the host (RemoteValidationFixtureDriver.kt).
             "remote_validation_script" -> spy.state.putAll(ai.appdna.sdk.onboarding.RemoteValidationFixtureDriver.runScript(fixtureName, config, sessionData, action, fixtureJson))
             "decode_validation_result" -> spy.state.putAll(ai.appdna.sdk.onboarding.RemoteValidationFixtureDriver.decode(action))
+            // A segmented answer's line limit: the constant FormInputSegmentedBlock draws with
+            // (SegmentedLabelWrapRenderTest proves the view draws it).
+            "resolve_segmented_label" -> spy.state["max_lines"] = ai.appdna.sdk.onboarding.SEGMENTED_LABEL_MAX_LINES
             "measure_block_placement" -> runBlockPlacement(action, spy)
             "parse_colour" -> runParseColour(action, spy)
             "unfold_blockquotes" -> runUnfoldBlockquotes(action, spy)

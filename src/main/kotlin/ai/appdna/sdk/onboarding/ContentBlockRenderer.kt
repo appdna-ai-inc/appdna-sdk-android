@@ -13336,6 +13336,9 @@ private fun selectDefaultValueString(v: Any?): String? = when (v) {
 }
 
 /** Segmented picker input. */
+/** A segmented answer's label wraps to at most this many lines, then is cut. Mirrors iOS `segmentedLabelMaxLines`. */
+internal const val SEGMENTED_LABEL_MAX_LINES = 2
+
 @Composable
 private fun FormInputSegmentedBlock(
     block: ContentBlock,
@@ -13430,11 +13433,16 @@ private fun FormInputSegmentedBlock(
                             // The full option, for `{{selected.<field_id>.…}}` on a later screen.
                             SelectedOptionStore.record(fieldId, option)
                         }
-                        .padding(vertical = 10.dp),
+                        .padding(vertical = 10.dp, horizontal = 4.dp),
                     contentAlignment = Alignment.Center,
                 ) {
                     Text(
                         text = option.label,
+                        // A long answer wraps to at most two lines, centred, then is cut;
+                        // the row is as tall as its tallest segment. Shared with iOS: SEGMENTED_LABEL_MAX_LINES.
+                        maxLines = SEGMENTED_LABEL_MAX_LINES,
+                        overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
+                        textAlign = androidx.compose.ui.text.style.TextAlign.Center,
                         // Theme-aware unselected
                         // text. Was Color.DarkGray which is invisible against
                         // MaterialTheme.colorScheme.surface in dark mode.

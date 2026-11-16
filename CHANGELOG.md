@@ -119,6 +119,10 @@ the project uses [Semantic Versioning](https://semver.org/).
   as the 22-point box does; a link inside the text still opens the link and does not tick. On a step and inside a step's
   sheet alike.
 
+- **A long segmented answer stops at two lines, centred.** An `input_segmented` label wrapped to any number of lines,
+  aligned to the start, while iOS cut it to one. A label now wraps to at most two lines, centred, as on iOS, and a longer
+  one is cut there. The selected fill already covers the whole cell.
+
 - **A bare-number `element_width` / `element_height` is dp, as iOS and the console preview draw it.** A width
   written without a unit (`120` or `"120"`) was ignored, so the block filled its row. Both forms are now 120 dp, and an
   aligned block with a bare-number width is placed by its alignment, as one with `120px` is.
