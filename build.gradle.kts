@@ -256,6 +256,8 @@ dependencies {
     implementation(libs.compose.material.icons.ext)
     implementation(libs.compose.ui.tooling.preview)
     implementation(libs.activity.compose)
+    // Custom Tabs for every onboarding link (button, option-sheet link, rich text, agreement, warning banner).
+    implementation(libs.browser)
     // Fold posture and hinge bounds (WindowInfoTracker → FoldingFeature) for the two-pane layout.
     implementation(libs.window)
     debugImplementation(libs.compose.ui.tooling)

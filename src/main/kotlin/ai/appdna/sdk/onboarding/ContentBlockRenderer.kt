@@ -3248,17 +3248,9 @@ private fun ButtonBlock(
                 // Android previously called `onAction("next")` after
                 // launching the browser, double-jumping the user away from
                 // the step. Removed the auto-advance to match iOS behavior.
-                // Browser launch path uses ACTION_VIEW for now (Chrome Custom
-                // Tabs would be a polish followup once androidx.browser dep
-                // is added).
-                block.action_value?.let { url ->
-                    // Config-driven URL — scheme-checked before the OS sees it.
-                    ai.appdna.sdk.core.URLSafety.sanitized(url, context)?.let { uri ->
-                        try {
-                            context.startActivity(Intent(Intent.ACTION_VIEW, uri))
-                        } catch (_: Exception) {}
-                    }
-                }
+                // A Custom Tab over the app (the in-app browser iOS opens), scheme-checked first; a plain VIEW only
+                // when the device has no Custom Tabs provider.
+                ai.appdna.sdk.core.InAppLinks.open(context, block.action_value)
                 // No auto-advance — mirrors iOS InAppBrowser.present semantics.
             }
             // Open the share sheet with the button's own text and link, and STAY. Opened HERE,
@@ -3787,7 +3779,7 @@ private fun WarningBannerBlock(block: ContentBlock, loc: ((String, String) -> St
                             // config-driven URL is attacker-influenced, and `UrlAllowlistCallSites`
                             // fails the build for exactly the intent this used to construct.
                             else Modifier.clickable {
-                                if (!ai.appdna.sdk.core.URLSafety.open(context, linkUrl)) {
+                                if (!ai.appdna.sdk.core.InAppLinks.open(context, linkUrl)) {
                                     Log.warning("warning_banner link refused by the scheme allowlist")
                                 }
                             }
@@ -6054,13 +6046,7 @@ private fun RichTextBlock(block: ContentBlock, loc: ((String, String) -> String)
             annotatedString.getStringAnnotations(tag = "URL", start = offset, end = offset)
                 .firstOrNull()?.let { annotation ->
                     // A link inside authored rich text is config-driven too.
-                    ai.appdna.sdk.core.URLSafety.sanitized(annotation.item, context)?.let { uri ->
-                        try {
-                            context.startActivity(Intent(Intent.ACTION_VIEW, uri))
-                        } catch (_: Exception) {
-                            // No browser — silently ignore
-                        }
-                    }
+                    ai.appdna.sdk.core.InAppLinks.open(context, annotation.item)
                 }
         },
     )
@@ -11176,9 +11162,7 @@ internal fun OptionMarkdownTitle(markdown: String, modifier: Modifier, style: Te
         if (url == null) {
             onPlainTap()
         } else {
-            ai.appdna.sdk.core.URLSafety.sanitized(url, context)?.let { uri ->
-                try { context.startActivity(Intent(Intent.ACTION_VIEW, uri)) } catch (_: Exception) { /* no handler */ }
-            }
+            ai.appdna.sdk.core.InAppLinks.open(context, url)
         }
     })
 }
@@ -13112,9 +13096,7 @@ private fun ConsentRow(
             onClick = { offset ->
                 val link = annotated.getStringAnnotations(tag = "URL", start = offset, end = offset).firstOrNull()
                 if (link == null) toggle()
-                else ai.appdna.sdk.core.URLSafety.sanitized(link.item, context)?.let { uri ->
-                    try { context.startActivity(Intent(Intent.ACTION_VIEW, uri)) } catch (_: Exception) {}
-                }
+                else ai.appdna.sdk.core.InAppLinks.open(context, link.item)
             },
         )
     }
@@ -13176,15 +13158,7 @@ private fun SingleConsentAgreement(
             onClick = { offset ->
                 val link = annotatedString.getStringAnnotations(tag = "URL", start = offset, end = offset).firstOrNull()
                 if (link == null) toggle()
-                link?.let { annotation ->
-                        ai.appdna.sdk.core.URLSafety.sanitized(annotation.item, context)?.let { uri ->
-                            try {
-                                context.startActivity(Intent(Intent.ACTION_VIEW, uri))
-                            } catch (_: Exception) {
-                                // No browser — silently ignore
-                            }
-                        }
-                    }
+                link?.let { ai.appdna.sdk.core.InAppLinks.open(context, it.item) }
             },
         )
     }

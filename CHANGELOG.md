@@ -106,6 +106,11 @@ the project uses [Semantic Versioning](https://semver.org/).
 
 ### Fixed
 
+- **Onboarding links open in a Custom Tab, over the app.** A `link` button, a link in rich text or an option's title, an
+  Agreement's links and a warning banner's link opened the external browser and left the app; they now open in a Custom
+  Tab (a plain browser intent only when the device has no Custom Tabs provider), and Back returns to the flow. Matches
+  iOS's in-app browser. **New dependency:** `androidx.browser:browser:1.8.0`.
+
 - **A consent ticks from its words, not only its box.** A tap anywhere on an Agreement consent's text ticks or unticks it,
   as the 22-point box does; a link inside the text still opens the link and does not tick. On a step and inside a step's
   sheet alike.
