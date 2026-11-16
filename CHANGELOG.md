@@ -90,6 +90,10 @@ the project uses [Semantic Versioning](https://semver.org/).
 
 ### Fixed
 
+- **A consent ticks from its words, not only its box.** A tap anywhere on an Agreement consent's text ticks or unticks it,
+  as the 22-point box does; a link inside the text still opens the link and does not tick. On a step and inside a step's
+  sheet alike.
+
 - **A bare-number `element_width` / `element_height` is dp, as iOS and the console preview draw it.** A width
   written without a unit (`120` or `"120"`) was ignored, so the block filled its row. Both forms are now 120 dp, and an
   aligned block with a bare-number width is placed by its alignment, as one with `120px` is.

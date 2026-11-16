@@ -13004,7 +13004,13 @@ private fun ConsentRow(
     androidx.compose.runtime.LaunchedEffect(key) { if (inputValues[key] !is Boolean) inputValues[key] = checked }
     val baseTextStyle = TextStyle(fontSize = 13.sp, color = textColor)
     val annotated = parseMarkdownToAnnotatedString(consent.text, baseTextStyle, linkColor, underlineMarkers = false)
-    androidx.compose.foundation.layout.Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.Top) {
+    // The box AND the words toggle (users tap the words first); a link inside the words opens the link instead
+    // (the label's onClick below).
+    val toggle: () -> Unit = { checked = !checked; inputValues[key] = checked }
+    androidx.compose.foundation.layout.Row(
+        modifier = Modifier.fillMaxWidth(),
+        verticalAlignment = Alignment.Top,
+    ) {
         androidx.compose.foundation.layout.Box(
             modifier = Modifier
                 .padding(top = 1.dp, end = 10.dp)
@@ -13013,11 +13019,7 @@ private fun ConsentRow(
                 .background(if (checked) checkboxColor else Color.Transparent)
                 .border(1.5.dp, if (checked) checkboxColor else borderColor, RoundedCornerShape(6.dp))
                 .testTag("agreement.consent.${consent.id}")
-                .toggleable(
-                    value = checked,
-                    role = androidx.compose.ui.semantics.Role.Checkbox,
-                    onValueChange = { checked = it; inputValues[key] = it },
-                ),
+                .toggleable(value = checked, role = androidx.compose.ui.semantics.Role.Checkbox, onValueChange = { toggle() }),
             contentAlignment = Alignment.Center,
         ) {
             if (checked) {
@@ -13029,10 +13031,10 @@ private fun ConsentRow(
             style = baseTextStyle,
             modifier = Modifier.weight(1f),
             onClick = { offset ->
-                annotated.getStringAnnotations(tag = "URL", start = offset, end = offset).firstOrNull()?.let { a ->
-                    ai.appdna.sdk.core.URLSafety.sanitized(a.item, context)?.let { uri ->
-                        try { context.startActivity(Intent(Intent.ACTION_VIEW, uri)) } catch (_: Exception) {}
-                    }
+                val link = annotated.getStringAnnotations(tag = "URL", start = offset, end = offset).firstOrNull()
+                if (link == null) toggle()
+                else ai.appdna.sdk.core.URLSafety.sanitized(link.item, context)?.let { uri ->
+                    try { context.startActivity(Intent(Intent.ACTION_VIEW, uri)) } catch (_: Exception) {}
                 }
             },
         )
@@ -13063,6 +13065,8 @@ private fun SingleConsentAgreement(
     // An agreement's copy draws no `++underline++`, as on iOS.
     val annotatedString = parseMarkdownToAnnotatedString(agreementText, baseTextStyle, linkColor, underlineMarkers = false)
 
+    // The box and the words toggle; a link inside the words opens the link instead.
+    val toggle: () -> Unit = { checked = !checked; inputValues[fieldId] = checked }
     androidx.compose.foundation.layout.Row(
         modifier = Modifier.fillMaxWidth(),
         verticalAlignment = Alignment.Top,
@@ -13074,14 +13078,7 @@ private fun SingleConsentAgreement(
                 .clip(RoundedCornerShape(6.dp))
                 .background(if (checked) checkboxColor else Color.Transparent)
                 .border(1.5.dp, if (checked) checkboxColor else borderColor, RoundedCornerShape(6.dp))
-                .toggleable(
-                    value = checked,
-                    role = androidx.compose.ui.semantics.Role.Checkbox,
-                    onValueChange = {
-                        checked = it
-                        inputValues[fieldId] = it
-                    },
-                ),
+                .toggleable(value = checked, role = androidx.compose.ui.semantics.Role.Checkbox, onValueChange = { toggle() }),
             contentAlignment = Alignment.Center,
         ) {
             if (checked) {
@@ -13098,8 +13095,9 @@ private fun SingleConsentAgreement(
             style = baseTextStyle,
             modifier = Modifier.weight(1f),
             onClick = { offset ->
-                annotatedString.getStringAnnotations(tag = "URL", start = offset, end = offset)
-                    .firstOrNull()?.let { annotation ->
+                val link = annotatedString.getStringAnnotations(tag = "URL", start = offset, end = offset).firstOrNull()
+                if (link == null) toggle()
+                link?.let { annotation ->
                         ai.appdna.sdk.core.URLSafety.sanitized(annotation.item, context)?.let { uri ->
                             try {
                                 context.startActivity(Intent(Intent.ACTION_VIEW, uri))
