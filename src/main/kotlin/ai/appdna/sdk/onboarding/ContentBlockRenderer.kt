@@ -13272,6 +13272,9 @@ private fun FormInputSegmentedBlock(
         Row(
             modifier = Modifier
                 .fillMaxWidth()
+                // Every cell is as tall as the tallest label, so the selected fill covers its whole cell when a
+                // neighbour's label wraps to a second line (the fill used to keep its own one-line height).
+                .height(androidx.compose.foundation.layout.IntrinsicSize.Min)
                 .clip(RoundedCornerShape(8.dp))
                 // Theme-adaptive segmented border (was Color.Gray).
                 .border(1.dp, MaterialTheme.colorScheme.onSurface.copy(alpha = 0.3f), RoundedCornerShape(8.dp)),
@@ -13281,6 +13284,7 @@ private fun FormInputSegmentedBlock(
                 Box(
                     modifier = Modifier
                         .weight(1f)
+                        .fillMaxHeight()
                         .background(if (isSelected) fillCol else Color.Transparent)
                         .clickable {
                             selectedValue = option.value

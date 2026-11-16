@@ -79,6 +79,10 @@ the project uses [Semantic Versioning](https://semver.org/).
 
 ### Fixed
 
+- **A selected segment's fill covers its whole cell when a neighbour's label wraps.** In an `input_segmented` row
+  where one option's label runs to two lines, the selected segment's fill kept the height of its own (one-line) label
+  and covered only the top of its cell. Every cell is now as tall as the row, and the fill covers it.
+
 - **The rule for a button inside a bottom sheet is shared with iOS.** No behaviour change on Android: a `link` button in
   an option's `sheet_blocks` opens its URL and keeps the sheet open, and the "Add widget" how-to opens nothing. iOS
   now does the same.
