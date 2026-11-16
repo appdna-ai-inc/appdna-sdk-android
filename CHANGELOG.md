@@ -94,6 +94,11 @@ the project uses [Semantic Versioning](https://semver.org/).
   written without a unit (`120` or `"120"`) was ignored, so the block filled its row. Both forms are now 120 dp, and an
   aligned block with a bare-number width is placed by its alignment, as one with `120px` is.
 
+- **A rule on a later step that reads an earlier step's consent now matches.** A multi-consent Agreement answers each
+  consent under `<field_id>.<consent_id>`, so a later step addresses it as `<step_id>.<field_id>.<consent_id>`. The
+  key was split at its last dot, which named no step, so the rule never matched and the flow fell through to the next
+  step in order. Every dot is now tried, last first; keys that matched before match the same way.
+
 - **A text input draws its error border colour.** A single-line text input honoured `focused_border_color` and ignored
   `error_border_color`. It now strokes `error_border_color` while the field is in error, else `focused_border_color`
   while it has focus, else `border_color`, the same rule as iOS. Nothing puts a text input in error yet; the error

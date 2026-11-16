@@ -120,17 +120,24 @@ internal object NextStepRuleEvaluator {
         // a dot, and this keeps every pre-existing rule byte-identical.
         if (stepResponses[rawField] != null) return own
         if (allSteps == null) return own
-        val dot = rawField.lastIndexOf('.')
-        if (dot <= 0 || dot == rawField.length - 1) return own
-        val stepRef = rawField.substring(0, dot)
-        val leaf = rawField.substring(dot + 1)
-        // Id first, then authored name — an id is unambiguous, a name is what the console writes.
-        val source = allSteps.firstOrNull { it.id == stepRef }
-            ?: allSteps.firstOrNull { it.name == stepRef }
-            ?: return own
-        @Suppress("UNCHECKED_CAST")
-        val sourceResponses = (allResponses[source.id] as? Map<String, Any?>) ?: emptyMap()
-        return ConditionScope(leaf, sourceResponses, source)
+        // Every dot is tried, LAST first, and the first head that names a step wins: the field key may itself
+        // hold a dot (an Agreement consent is answered under `<field_id>.<consent_id>`), and trying the last
+        // dot first keeps every key that resolved before resolving the same way. Mirrors iOS.
+        var dot = rawField.lastIndexOf('.')
+        while (dot > 0) {
+            if (dot < rawField.length - 1) {
+                val stepRef = rawField.substring(0, dot)
+                // Id first, then authored name — an id is unambiguous, a name is what the console writes.
+                val source = allSteps.firstOrNull { it.id == stepRef } ?: allSteps.firstOrNull { it.name == stepRef }
+                if (source != null) {
+                    @Suppress("UNCHECKED_CAST")
+                    val sourceResponses = (allResponses[source.id] as? Map<String, Any?>) ?: emptyMap()
+                    return ConditionScope(rawField.substring(dot + 1), sourceResponses, source)
+                }
+            }
+            dot = rawField.lastIndexOf('.', dot - 1)
+        }
+        return own
     }
 
     private fun evaluateCondition(
