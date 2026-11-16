@@ -429,6 +429,31 @@ internal fun sanitizeSummaryStat(stat: Map<*, *>): Map<*, *>? {
     }
 }
 
+/**
+ * where an unaligned block narrower than its row sits. A flow carries the rules it was published under in
+ * `settings.placement_rules`; a flow published before the stamp existed has none and keeps rules 1 (leading, as this
+ * SDK always drew it), so an SDK update never moves a published flow. Rules 2 is the one rule on every surface: such a
+ * block is centred in its row (iOS has always drawn it there), and an offset nudges the block with its background.
+ * Shared fixture: `dto_parsing/block_placement` (every case under both rules).
+ */
+object PlacementRules {
+    const val LEGACY = 1
+    const val CENTRED = 2
+    fun of(stamp: Int?): Int = stamp ?: LEGACY
+    fun centres(rules: Int): Boolean = rules >= CENTRED
+
+    /** A width that is narrower than the row: `px`, a bare number (dp, as `parseSizeValue` reads it), or a percentage under 100. */
+    fun isConstrainedWidth(w: String?): Boolean {
+        val s = w?.trim() ?: return false
+        if (s.endsWith("px")) return s.dropLast(2).toFloatOrNull() != null
+        if (s.endsWith("%")) return (s.dropLast(1).toFloatOrNull() ?: 100f) < 100f
+        return s.toDoubleOrNull() != null
+    }
+}
+
+/** The placement rules of the flow being drawn. 1 outside a flow (screens, previews, tests that set nothing). */
+val LocalPlacementRules = androidx.compose.runtime.staticCompositionLocalOf { PlacementRules.LEGACY }
+
 internal fun mapBlockAlignment(horizontal: String?, vertical: String?): Alignment {
     val h = when (horizontal) {
         "left" -> Alignment.Start
@@ -2038,10 +2063,14 @@ fun ContentBlockRendererView(
         ) && !block.isHiddenByHostData(rawIds)
     }
     val gateBlocks = stepBlocks ?: blocks
+    // Placement rules: under rules 2 a child narrower than the column (a constrained width, a list, a badge, an `auto` button)
+    // is centred, as iOS's column centres it; a full-width child is unaffected. Rules 1 keeps the leading edge.
+    val centresNarrow = PlacementRules.centres(LocalPlacementRules.current)
 
     Column(
         modifier = Modifier.fillMaxWidth(),
         verticalArrangement = Arrangement.spacedBy(12.dp),
+        horizontalAlignment = if (centresNarrow) Alignment.CenterHorizontally else Alignment.Start,
     ) {
         var animationCount = 0
         visibleBlocks.forEach { rawBlock ->
@@ -2157,7 +2186,10 @@ internal fun BlockSizingBox(
             Box(modifier = sizingModifier) { content() }
         }
     } else {
-        Box(modifier = sizingModifier) { content() }
+        // Placement rules 2: a block that hugs its content (a badge, a lottie, a rating) inside an authored width sits in
+        // the middle of that width, as SwiftUI's `.frame(width:)` centres it. Rules 1 keeps the start that shipped.
+        val centre = block.horizontal_align == null && PlacementRules.centres(LocalPlacementRules.current)
+        Box(modifier = sizingModifier, contentAlignment = if (centre) Alignment.TopCenter else Alignment.TopStart) { content() }
     }
 }
 
@@ -2219,8 +2251,16 @@ internal fun RenderBlock(
         edgeBottom = edgeDistances.second,
     )
     val blockBleeds = !bleed.isZero
+    // Placement rules 2: the offset is applied OUTSIDE the block's style, so a nudged block moves with its background, as
+    // iOS and the preview draw it. Rules 1 keeps the order that shipped (the background stays, the content moves).
+    val offsetOutside = PlacementRules.centres(LocalPlacementRules.current)
     val contentModifier = with(StyleEngine) {
-        Modifier
+        (if (offsetOutside) Modifier.applyBlockPosition(
+            verticalAlign = null,
+            horizontalAlign = null,
+            verticalOffset = block.vertical_offset,
+            horizontalOffset = block.horizontal_offset,
+        ) else Modifier)
             // A test-only handle on the block's own box (no visual or accessibility effect): the placement harness
             // measures every block type by it, as iOS measures by pixels.
             .testTag("appdna_block_${block.id}")
@@ -2254,11 +2294,13 @@ internal fun RenderBlock(
                 clipContent = !blockBleeds &&
                     block.type != "pulsing_avatar" && block.type != "star_background",
             )
-            .applyBlockPosition(
-                verticalAlign = block.vertical_align,
-                horizontalAlign = block.horizontal_align,
-                verticalOffset = block.vertical_offset,
-                horizontalOffset = block.horizontal_offset,
+            .then(
+                if (offsetOutside) Modifier else Modifier.applyBlockPosition(
+                    verticalAlign = block.vertical_align,
+                    horizontalAlign = block.horizontal_align,
+                    verticalOffset = block.vertical_offset,
+                    horizontalOffset = block.horizontal_offset,
+                ),
             )
     }
 
@@ -5781,8 +5823,11 @@ private fun RatingBlock(
     val initial = RatingAnswer.initial(block, inputValues[fieldId])
     var selectedRating by remember { mutableStateOf(initial) }
 
+    // Placement rules 2: the block hugs its stars, as iOS's VStack does, and the step column centres it; so a block
+    // background is as wide as the stars on both. Rules 1 keeps the full-width column that shipped.
+    val ratingHugs = PlacementRules.centres(LocalPlacementRules.current)
     Column(
-        modifier = Modifier.fillMaxWidth(),
+        modifier = if (ratingHugs) Modifier else Modifier.fillMaxWidth(),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
         // Optional label — iOS reads `rating_label ?? label`.
@@ -8386,12 +8431,20 @@ private fun RowBlock(
                 horizontalAlignment = hAlignment,
             ) {
                 LeadingIconSlot()
+                // Placement rules 2: a child with no `horizontal_align` that is narrower than the row (a constrained width,
+                // or a block that hugs its content) is centred in it, as iOS centres it. `row_child_fill`'s full-width
+                // box used to swallow a 60% width entirely and left a hugging child at the start.
+                val centreChildren = PlacementRules.centres(LocalPlacementRules.current)
                 childBlocks.forEach { child ->
-                    val childMod = if (childFill) Modifier.fillMaxWidth() else Modifier
+                    val sized = centreChildren && child.horizontal_align == null && PlacementRules.isConstrainedWidth(child.element_width)
+                    val childMod = if (childFill && !sized) Modifier.fillMaxWidth() else Modifier
                     val overflowMod = if (child.overflow == "visible") childMod.zIndex(1f) else childMod
                     // Apply per-child element_width/element_height (mirrors iOS + preview applyRelativeSizing); skip height for input_* like the top-level renderer.
                     val childSizeMod = overflowMod.applyRelativeSizing(child.element_width, if (child.type.startsWith("input_")) null else child.element_height)
-                    Box(modifier = childSizeMod) {
+                    Box(
+                        modifier = childSizeMod,
+                        contentAlignment = if (centreChildren && child.horizontal_align == null) Alignment.TopCenter else Alignment.TopStart,
+                    ) {
                         RenderBlock(
                             block = child,
                             onAction = onAction,

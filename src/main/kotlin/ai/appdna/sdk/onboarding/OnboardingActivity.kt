@@ -383,7 +383,10 @@ class OnboardingActivity : ComponentActivity() {
                 else
                     androidx.compose.material3.lightColorScheme(),
             ) {
-                CompositionLocalProvider(LocalStepDrafts provides viewModel.stepDrafts) {
+                CompositionLocalProvider(
+                    LocalStepDrafts provides viewModel.stepDrafts,
+                    LocalPlacementRules provides PlacementRules.of(flow.settings.placement_rules),
+                ) {
                     OnboardingFlowHost(
                         flow = flow,
                         viewModel = viewModel,

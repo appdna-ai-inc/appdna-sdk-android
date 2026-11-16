@@ -159,6 +159,12 @@ data class OnboardingSettings(
      * iOS does at decode. Order: step background → this → `MaterialTheme.colorScheme.background`.
      */
     val background: ai.appdna.sdk.core.BackgroundStyleConfig? = null,
+    /**
+     * Which placement rules this flow was published under ([PlacementRules]). Written by the publisher, never by an
+     * author. Null (a flow published before the stamp existed) = 1, today's placement, so an SDK update never moves a
+     * published flow's blocks; 2 = an unaligned block narrower than its row is centred, as iOS has always drawn it.
+     */
+    val placement_rules: Int? = null,
 )
 
 /**
@@ -1203,6 +1209,7 @@ internal object OnboardingConfigParser {
             content_padding = (settingsMap.num(SURFACE, "settings", "content_padding"))?.toDouble(),
             block_spacing = (settingsMap.num(SURFACE, "settings", "block_spacing"))?.toDouble(),
             background = settingsMap.objMap(SURFACE, docPath, "background")?.let { parseBackgroundStyle(it, "$docPath.settings.background") },
+            placement_rules = (settingsMap.num(SURFACE, "settings", "placement_rules"))?.toInt(),
         )
 
         // Every step that authors no background draws the flow's. Shared fixture:

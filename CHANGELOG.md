@@ -51,6 +51,11 @@ the project uses [Semantic Versioning](https://semver.org/).
 
 ### Changed
 
+- **A block with no horizontal alignment that is narrower than its row is centred, as on iOS.** They sat at the leading edge; the console preview moves the same way. That covers
+  a width under 100% or in `px`, an `auto` button, a list, a badge, a rating and a lottie with a width, top level and
+  inside a vertical row. An offset now moves the block with its background. It applies only to flows the console has
+  published with `settings.placement_rules: 2`; a flow published before keeps the leading edge for these blocks until it is published again.
+
 - **The first-launch deferred-link check no longer shows Android 12+'s "pasted from your clipboard" toast for text
   that is not a link.** It read the clipboard's content on every first launch. It now reads it only when Android has
   classified the clip as a URL, which it checks from the clip's description without reading the content (Android 11

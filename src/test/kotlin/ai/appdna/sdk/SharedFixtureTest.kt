@@ -3779,10 +3779,15 @@ class SharedFixtureTest(
             var result = ""
             androidx.compose.ui.test.runComposeUiTest {
                 setContent {
-                    androidx.compose.foundation.layout.Box(androidx.compose.ui.Modifier.width(columnDp.dp).testTag("badge_column")) {
-                        ai.appdna.sdk.onboarding.ContentBlockRendererView(
-                            blocks = blocks, onAction = {}, toggleValues = mutableMapOf(),
-                        )
+                    // Placement rules: the flow's placement rules, as `settings.placement_rules` sets them (absent = 1).
+                    androidx.compose.runtime.CompositionLocalProvider(
+                        ai.appdna.sdk.onboarding.LocalPlacementRules provides action.optInt("placement_rules", 1),
+                    ) {
+                        androidx.compose.foundation.layout.Box(androidx.compose.ui.Modifier.width(columnDp.dp).testTag("badge_column")) {
+                            ai.appdna.sdk.onboarding.ContentBlockRendererView(
+                                blocks = blocks, onAction = {}, toggleValues = mutableMapOf(),
+                            )
+                        }
                     }
                 }
                 mainClock.advanceTimeBy(2_000)
@@ -3802,68 +3807,87 @@ class SharedFixtureTest(
     }
 
     /**
-     * Record mode: where a block lands across its row. The REAL step parser → the REAL
-     * `ContentBlockRendererView`, composed in a column `column_width` dp wide; the target (id "t") is measured by the
-     * bounds of its own block box (`appdna_block_t`, the renderer's test tag). Every case is printed; the
-     * `control_strict` cases (authored alignment on reference types) are asserted, so a harness that measured the
-     * wrong node cannot pass them.
+     * Placement rules: where a block lands across its row, under BOTH placement rules. The REAL step parser → the REAL
+     * `ContentBlockRendererView` with `LocalPlacementRules` set as a flow's `settings.placement_rules` sets it, composed in a
+     * column `column_width` dp wide; the target (id "t") is measured by the bounds of its own block box (`appdna_block_t`,
+     * the renderer's test tag) and classified by [PlacementClass]. Every case is printed (`r1` / `r2`). A case with
+     * `expect` is asserted: `rules_1.android` (today's placement, the compatibility branch) and `rules_2` (the one rule,
+     * unless `rules_2_on.android` names this surface's reason). The `control_strict` cases are asserted in both modes, so
+     * a harness that measured the wrong node cannot pass.
      */
     @OptIn(androidx.compose.ui.test.ExperimentalTestApi::class)
     private fun runBlockPlacement(action: JSONObject, spy: Spy) {
         val cases = action.optJSONArray("cases") ?: unsupported("measure_block_placement without cases")
         val columnDp = action.optDouble("column_width", 393.0).toFloat()
         var controlsSeen = 0
-        spy.state["results"] = (0 until cases.length()).map { i ->
+        var asserted = 0
+        val failures = mutableListOf<String>()
+        val results = mutableListOf<Map<String, Any>>()
+        for (i in 0 until cases.length()) {
             val c = cases.getJSONObject(i)
             val name = c.optString("name", "?")
+            val nudge = c.optDouble("nudge", 0.0).toFloat()
             val rawBlocks = c.optJSONArray("content_blocks") ?: unsupported("measure_block_placement case without content_blocks")
             @Suppress("UNCHECKED_CAST")
             val list = (0 until rawBlocks.length()).map { rawBlocks.getJSONObject(it).asMap().filterValues { v -> v != null } as Map<String, Any> }
             val step = mapOf("id" to "fixture_step", "type" to "custom", "content_blocks" to list)
             val blocks = ai.appdna.sdk.onboarding.OnboardingConfigParser.parseStepForTest(step)?.config?.content_blocks
-            var result = "undecodable"
-            var detail = ""
-            if (!blocks.isNullOrEmpty()) {
-                result = try {
-                    var r = "unmeasured"
-                    androidx.compose.ui.test.runComposeUiTest {
-                        setContent {
-                            androidx.compose.foundation.layout.Box(androidx.compose.ui.Modifier.width(columnDp.dp).testTag("placement_column")) {
-                                ai.appdna.sdk.onboarding.ContentBlockRendererView(blocks = blocks, onAction = {}, toggleValues = mutableMapOf())
+            for (rules in listOf(1, 2)) {
+                var result = "undecodable"
+                var detail = ""
+                if (!blocks.isNullOrEmpty()) {
+                    result = try {
+                        var r = "unmeasured"
+                        androidx.compose.ui.test.runComposeUiTest {
+                            setContent {
+                                androidx.compose.runtime.CompositionLocalProvider(ai.appdna.sdk.onboarding.LocalPlacementRules provides rules) {
+                                    androidx.compose.foundation.layout.Box(androidx.compose.ui.Modifier.width(columnDp.dp).testTag("placement_column")) {
+                                        ai.appdna.sdk.onboarding.ContentBlockRendererView(blocks = blocks, onAction = {}, toggleValues = mutableMapOf())
+                                    }
+                                }
+                            }
+                            mainClock.advanceTimeBy(500)
+                            waitForIdle()
+                            val nodes = onAllNodes(androidx.compose.ui.test.hasTestTag("appdna_block_t"), useUnmergedTree = true).fetchSemanticsNodes()
+                            if (nodes.isNotEmpty()) {
+                                val b = nodes.first().boundsInRoot
+                                val col = onNode(androidx.compose.ui.test.hasTestTag("placement_column")).fetchSemanticsNode().boundsInRoot
+                                val left = with(density) { (b.left - col.left).toDp().value }
+                                val right = with(density) { (col.right - b.right).toDp().value }
+                                val w = with(density) { b.width.toDp().value }
+                                val cw = with(density) { col.width.toDp().value }
+                                detail = "left=%.1f right=%.1f width=%.1f column=%.1f".format(left, right, w, cw)
+                                r = PlacementClass.classify(left, right, w, cw, nudge)
                             }
                         }
-                        mainClock.advanceTimeBy(500)
-                        waitForIdle()
-                        val nodes = onAllNodes(androidx.compose.ui.test.hasTestTag("appdna_block_t"), useUnmergedTree = true).fetchSemanticsNodes()
-                        if (nodes.isNotEmpty()) {
-                            val b = nodes.first().boundsInRoot
-                            val col = onNode(androidx.compose.ui.test.hasTestTag("placement_column")).fetchSemanticsNode().boundsInRoot
-                            val left = with(density) { (b.left - col.left).toDp().value }
-                            val right = with(density) { (col.right - b.right).toDp().value }
-                            val w = with(density) { b.width.toDp().value }
-                            val cw = with(density) { col.width.toDp().value }
-                            detail = "left=%.1f right=%.1f width=%.1f column=%.1f".format(left, right, w, cw)
-                            r = if (w <= 0f) "unmeasured" else if (w >= cw - 4f) "fill" else if (kotlin.math.abs(left - right) <= 4f) "center" else if (left < right) "leading" else "trailing"
-                        }
+                        r
+                    } catch (e: Throwable) {
+                        detail = "error=${e.javaClass.simpleName}"
+                        "error"
                     }
-                    r
-                } catch (e: Throwable) {
-                    detail = "error=${e.javaClass.simpleName}"
-                    "error"
                 }
-            }
-            println("[block-placement] $name $result $detail")
-            val control = c.optStringOrNull("control")
-            if (control != null) {
-                if (c.optBoolean("control_strict") && result != "unmeasured") {
-                    controlsSeen++
-                    assertEquals("[measure_block_placement] control $name: an authored alignment must read $control", control, result)
-                } else if (result != control) {
-                    println("[block-placement] CONTROL-MISMATCH $name expected=$control got=$result")
+                println("[block-placement] r$rules $name $result $detail")
+                val control = c.optStringOrNull("control")
+                if (control != null) {
+                    if (c.optBoolean("control_strict") && result != "unmeasured") {
+                        controlsSeen++
+                        assertEquals("[measure_block_placement] control $name (rules $rules): an authored alignment must read $control", control, result)
+                    } else if (result != control) {
+                        println("[block-placement] CONTROL-MISMATCH r$rules $name expected=$control got=$result")
+                    }
                 }
+                val expected = PlacementClass.expected(c.optJSONObject("expect"), rules, "android")
+                if (expected != null) {
+                    asserted++
+                    if (expected != result) failures += "r$rules $name expected=$expected got=$result $detail"
+                }
+                results += mapOf("name" to name, "rules" to rules, "result" to result)
             }
-            mapOf("name" to name, "result" to result)
         }
+        spy.state["results"] = results
+        failures.forEach { println("[block-placement] FAIL $it") }
+        assertTrue("[measure_block_placement] ${failures.size} case(s) placed differently from the fixture: ${failures.take(12)}", failures.isEmpty())
+        println("[block-placement] SUMMARY android asserted=$asserted failures=${failures.size} controls=$controlsSeen")
         assertTrue("[measure_block_placement] control: at least six authored-alignment controls were measured and read as authored ($controlsSeen)", controlsSeen >= 6)
     }
 
@@ -3889,6 +3913,26 @@ class SharedFixtureTest(
             val parsed = ai.appdna.sdk.onboarding.OnboardingConfigParser.parseStepForTest(step)?.config?.content_blocks?.firstOrNull()
                 ?: throw AssertionError("[resolve_element_size] case ${c.optString("name")}: the block did not parse")
             listOf(describe(ai.appdna.sdk.onboarding.parseSizeValue(parsed.element_width)), describe(ai.appdna.sdk.onboarding.parseSizeValue(parsed.element_height)))
+        }
+    }
+
+    /** Placement rules: the one classification every placement runner uses (iOS, Android, the preview). */
+    private object PlacementClass {
+        /** `nudge` is the target's authored `horizontal_offset`: the block is placed by the rule and then moved by it. */
+        fun classify(left: Float, right: Float, width: Float, column: Float, nudge: Float): String {
+            if (width <= 0f) return "unmeasured"
+            if (width >= column - 4f - kotlin.math.abs(nudge)) return "fill"
+            val l = left - nudge
+            val r = right + nudge
+            return if (kotlin.math.abs(l - r) <= 4f) "center" else if (l < r) "leading" else "trailing"
+        }
+
+        /** The expectation for one surface under one rule, or null when the case is record-only. */
+        fun expected(expect: JSONObject?, rules: Int, surface: String): String? {
+            expect ?: return null
+            fun JSONObject.str(k: String): String? = if (has(k) && !isNull(k)) getString(k) else null
+            return if (rules == 1) expect.optJSONObject("rules_1")?.str(surface)
+            else expect.optJSONObject("rules_2_on")?.str(surface) ?: expect.str("rules_2")
         }
     }
 
