@@ -333,6 +333,7 @@ class SharedFixtureTest(
             "resolve_block_container_style" -> runBlockContainerStyle(action, spy)
             "measure_badge_placement" -> runBadgePlacement(action, spy)
             "resolve_text_input_border" -> runTextInputBorder(action, spy)
+            "measure_block_placement" -> runBlockPlacement(action, spy)
             "parse_colour" -> runParseColour(action, spy)
             "unfold_blockquotes" -> runUnfoldBlockquotes(action, spy)
             "normalise_markdown" -> runUnfoldBlockquotes(action, spy)
@@ -3797,6 +3798,72 @@ class SharedFixtureTest(
             }
             result
         }
+    }
+
+    /**
+     * Record mode: where a block lands across its row. The REAL step parser → the REAL
+     * `ContentBlockRendererView`, composed in a column `column_width` dp wide; the target (id "t") is measured by the
+     * bounds of its own block box (`appdna_block_t`, the renderer's test tag). Every case is printed; the
+     * `control_strict` cases (authored alignment on reference types) are asserted, so a harness that measured the
+     * wrong node cannot pass them.
+     */
+    @OptIn(androidx.compose.ui.test.ExperimentalTestApi::class)
+    private fun runBlockPlacement(action: JSONObject, spy: Spy) {
+        val cases = action.optJSONArray("cases") ?: unsupported("measure_block_placement without cases")
+        val columnDp = action.optDouble("column_width", 393.0).toFloat()
+        var controlsSeen = 0
+        spy.state["results"] = (0 until cases.length()).map { i ->
+            val c = cases.getJSONObject(i)
+            val name = c.optString("name", "?")
+            val rawBlocks = c.optJSONArray("content_blocks") ?: unsupported("measure_block_placement case without content_blocks")
+            @Suppress("UNCHECKED_CAST")
+            val list = (0 until rawBlocks.length()).map { rawBlocks.getJSONObject(it).asMap().filterValues { v -> v != null } as Map<String, Any> }
+            val step = mapOf("id" to "fixture_step", "type" to "custom", "content_blocks" to list)
+            val blocks = ai.appdna.sdk.onboarding.OnboardingConfigParser.parseStepForTest(step)?.config?.content_blocks
+            var result = "undecodable"
+            var detail = ""
+            if (!blocks.isNullOrEmpty()) {
+                result = try {
+                    var r = "unmeasured"
+                    androidx.compose.ui.test.runComposeUiTest {
+                        setContent {
+                            androidx.compose.foundation.layout.Box(androidx.compose.ui.Modifier.width(columnDp.dp).testTag("placement_column")) {
+                                ai.appdna.sdk.onboarding.ContentBlockRendererView(blocks = blocks, onAction = {}, toggleValues = mutableMapOf())
+                            }
+                        }
+                        mainClock.advanceTimeBy(500)
+                        waitForIdle()
+                        val nodes = onAllNodes(androidx.compose.ui.test.hasTestTag("appdna_block_t"), useUnmergedTree = true).fetchSemanticsNodes()
+                        if (nodes.isNotEmpty()) {
+                            val b = nodes.first().boundsInRoot
+                            val col = onNode(androidx.compose.ui.test.hasTestTag("placement_column")).fetchSemanticsNode().boundsInRoot
+                            val left = with(density) { (b.left - col.left).toDp().value }
+                            val right = with(density) { (col.right - b.right).toDp().value }
+                            val w = with(density) { b.width.toDp().value }
+                            val cw = with(density) { col.width.toDp().value }
+                            detail = "left=%.1f right=%.1f width=%.1f column=%.1f".format(left, right, w, cw)
+                            r = if (w <= 0f) "unmeasured" else if (w >= cw - 4f) "fill" else if (kotlin.math.abs(left - right) <= 4f) "center" else if (left < right) "leading" else "trailing"
+                        }
+                    }
+                    r
+                } catch (e: Throwable) {
+                    detail = "error=${e.javaClass.simpleName}"
+                    "error"
+                }
+            }
+            println("[block-placement] $name $result $detail")
+            val control = c.optStringOrNull("control")
+            if (control != null) {
+                if (c.optBoolean("control_strict") && result != "unmeasured") {
+                    controlsSeen++
+                    assertEquals("[measure_block_placement] control $name: an authored alignment must read $control", control, result)
+                } else if (result != control) {
+                    println("[block-placement] CONTROL-MISMATCH $name expected=$control got=$result")
+                }
+            }
+            mapOf("name" to name, "result" to result)
+        }
+        assertTrue("[measure_block_placement] control: at least six authored-alignment controls were measured and read as authored ($controlsSeen)", controlsSeen >= 6)
     }
 
     /** A single-line text input's border: the REAL step parser's `field_style` → the core `textInputBorderHex`. */

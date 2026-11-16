@@ -2206,6 +2206,9 @@ internal fun RenderBlock(
     val blockBleeds = !bleed.isZero
     val contentModifier = with(StyleEngine) {
         Modifier
+            // A test-only handle on the block's own box (no visual or accessibility effect): the placement harness
+            // measures every block type by it, as iOS measures by pixels.
+            .testTag("appdna_block_${block.id}")
             .then(
                 if (needsEdge) {
                     Modifier.onGloballyPositioned { coords ->
