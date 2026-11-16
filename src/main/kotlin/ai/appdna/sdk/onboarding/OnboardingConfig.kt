@@ -371,7 +371,9 @@ data class StepConfig(
     // inner `layout` map only for safety.
     val permission_type: String? = null,
     val show_settings_fallback_on_denied: Boolean? = null,
-    val settings_fallback_label: String? = null
+    val settings_fallback_label: String? = null,
+    /** the step's sheets (`sheets`, beside `content_blocks`). See [StepSheets]. */
+    val sheets: ImmutableList<StepSheet>? = null,
 )
 
 @Immutable
@@ -1566,6 +1568,11 @@ internal object OnboardingConfigParser {
             permission_type = configMap.str(SURFACE, path, "permission_type"),
             show_settings_fallback_on_denied = configMap.bool(SURFACE, path, "show_settings_fallback_on_denied"),
             settings_fallback_label = configMap.str(SURFACE, path, "settings_fallback_label"),
+            // the same ladder as `content_blocks`: the config source first, the step root when it has none.
+            sheets = StepSheets.parse(
+                configMap.list(SURFACE, path, "sheets")?.takeIf { it.isNotEmpty() } ?: map.list(SURFACE, path, "sheets"),
+                "$path.sheets",
+            ) { bm, p -> decodeContentBlock(bm, p) }?.toImmutableList(),
         )
 
         // Parse hook config
@@ -2152,6 +2159,9 @@ internal object OnboardingConfigParser {
                 // 255-arg reason. Read by `ContentBlock.shareText` / `shareUrl`.
                 val shareText = bm.str(SURFACE, path, "share_text")
                 val shareUrl = bm.str(SURFACE, path, "share_url")
+                // `action: "open_sheet"`'s target, the id of a sheet on the same step. Folded here
+                // for the same 255-arg reason. Read by `ContentBlock.sheetId`.
+                val sheetId = bm.str(SURFACE, path, "sheet_id")
                 if (labelFormat == null && customLabel == null && videoControls == null &&
                     particleColor == null && particleOpacity == null && particleSpeed == null &&
                     timerVariant == null && labelPlacement == null && loadingTextAlign == null &&
@@ -2160,7 +2170,7 @@ internal object OnboardingConfigParser {
                     dotShape == null && galleryAutoscroll == null && galleryAutoscrollSpeed == null &&
                     galleryFill == null && particleMulticolor == null && timeFormat == null &&
                     timeTextSize == null && howtoIos == null && howtoAndroid == null &&
-                    shareText == null && shareUrl == null) {
+                    shareText == null && shareUrl == null && sheetId == null) {
                     base
                 } else {
                     val merged = base ?: mutableMapOf()
@@ -2189,6 +2199,7 @@ internal object OnboardingConfigParser {
                     if (howtoAndroid != null) merged[HOWTO_BLOCKS_ANDROID] = howtoAndroid
                     if (shareText != null) merged.putIfAbsent("share_text", shareText)
                     if (shareUrl != null) merged.putIfAbsent("share_url", shareUrl)
+                    if (sheetId != null) merged.putIfAbsent(StepSheets.SHEET_ID_KEY, sheetId)
                     merged
                 }
             },

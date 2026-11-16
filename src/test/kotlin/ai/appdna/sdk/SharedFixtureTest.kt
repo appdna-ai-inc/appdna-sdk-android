@@ -58,6 +58,14 @@ import ai.appdna.sdk.core.StyleEngine
 import ai.appdna.sdk.core.ShareAction
 import ai.appdna.sdk.onboarding.shareText
 import ai.appdna.sdk.onboarding.shareUrl
+import ai.appdna.sdk.onboarding.StepSheets
+import ai.appdna.sdk.onboarding.StepSheet
+import ai.appdna.sdk.onboarding.StepSheetController
+import ai.appdna.sdk.onboarding.StepSheetGateOutcome
+import ai.appdna.sdk.onboarding.StepSheetActionOutcome
+import ai.appdna.sdk.onboarding.OnboardingActionPair
+import ai.appdna.sdk.onboarding.sheetId
+import ai.appdna.sdk.onboarding.ContentBlock
 import ai.appdna.sdk.core.TemplateContext
 import ai.appdna.sdk.core.TemplateEngine
 import kotlin.math.roundToInt
@@ -239,6 +247,8 @@ class SharedFixtureTest(
             "tap_button" -> runTapButton(action, spy)
             // The "Add widget" attempt: the REAL WidgetPinAttempt, its stimuli fed in order.
             "add_widget_attempt" -> runAddWidgetAttempt(action, spy)
+            // a sheet inside a step: the REAL StepSheetController, the REAL gate and advance machine.
+            "step_sheet_scenario" -> runStepSheetScenario(action, spy)
             "tap_sheet_button" -> runTapSheetButton(action, spy)
             "submit_form" -> runSubmitForm(action, spy)
             "fire_hook" -> runFireHook(action, spy)
@@ -5676,6 +5686,112 @@ class SharedFixtureTest(
         // The fixture asserts the attempt's own events; the advance machine's step events are
         // asserted by the step_advance fixtures.
         spy.events += p.envelopes().map { it.toEventPair() }.filter { it.first.startsWith("widget_") }
+    }
+
+    // ---------------------------------------------------------------------------------------------
+    // step_sheet_scenario: the REAL StepSheetController with the step's REAL gate
+    // (RequiredFieldGate over StepSheets.gateBlocks), the REAL seeding, and the REAL advance machine.
+    // The renderer calls the controller at exactly these points (OnboardingActivity.handleAction's gate
+    // refusal, its open_sheet / close_sheet arms, StepSheetOverlay's onAction / onDismiss).
+    // ---------------------------------------------------------------------------------------------
+
+    private fun runStepSheetScenario(action: JSONObject, spy: Spy) {
+        val p = Pipeline(fixtureName).also { pipeline = it }
+        val flow = flowFromSetup()
+        val currentIndex = flow.steps.indexOfFirst { it.id == action.getString("step_id") }
+        if (currentIndex < 0) unsupported("step ${action.getString("step_id")} is not in the flow")
+        val step = flow.steps[currentIndex]
+        val stepBlocks = step.config.content_blocks.orEmpty()
+        val sheets = step.config.sheets.orEmpty()
+        val script = action.optJSONArray("sheet_script") ?: unsupported("step_sheet_scenario with no action.sheet_script")
+        val inputValues = mutableMapOf<String, Any>()
+        var toast: String? = null
+        var refusedGestures = 0
+        spy.state["current_step_id"] = step.id
+
+        // The decode the step sees, for the dto_parsing fixture.
+        spy.state["sheet_ids"] = sheets.map { it.id }
+        for (sh in sheets) {
+            spy.state["sheet.${sh.id}"] = mapOf(
+                "height" to sh.height, "dismissible" to sh.dismissible, "scrim_color" to sh.scrim_color,
+                "background_color" to sh.background_color, "corner_radius" to sh.corner_radius,
+                "drag_indicator" to sh.drag_indicator, "open_on_gate" to sh.open_on_gate,
+                "block_count" to sh.content_blocks.size,
+            )
+        }
+        for (b in stepBlocks) if (b.action == "open_sheet") spy.state["button.${b.id}.sheet_id"] = b.sheetId
+
+        StepSheets.seedDefaults(sheets, inputValues)
+
+        lateinit var dispatch: (String) -> Unit
+        val controller = StepSheetController(sheets, flow.id, step.id, object : StepSheetController.Effects {
+            override fun track(name: String, properties: Map<String, Any>) = p.tracker.track(name, properties)
+            override fun present(sheet: StepSheet?) {}
+            override fun rerun(action: String) = dispatch(action)
+            override fun skip() { spy.state["skipped"] = true }
+        })
+        // The step's dispatcher, as OnboardingActivity.handleAction runs it for these actions.
+        dispatch = { encoded ->
+            val (raw, value) = OnboardingActionPair.decode(encoded)
+            when (raw) {
+                StepSheets.OPEN_ACTION -> { controller.open(value, "button") }
+                StepSheets.CLOSE_ACTION -> { controller.onSheetAction(raw, value) }
+                "next", "continue" -> {
+                    val gate = RequiredFieldGate.evaluateDetailed(StepSheets.gateBlocks(stepBlocks, sheets), inputValues, emptySet())
+                    if (!gate.canAdvance) {
+                        val outcome = controller.onGateRefused(encoded, stepBlocks) {
+                            RequiredFieldGate.evaluateDetailed(it, inputValues, emptySet()).canAdvance
+                        }
+                        if (outcome == StepSheetGateOutcome.SHOW_TOAST) toast = "Please fill in ${gate.fieldLabel ?: "required fields"}"
+                    } else {
+                        val responses = responsesFromSetup().toMutableMap()
+                        StepAdvancePayload.build(inputValues, emptyMap(), emptyMap())?.let { responses[step.id] = it }
+                        applyAdvance(flow, currentIndex, responses, StepAdvanceResult.Proceed, spy, p.tracker, hookRan = false)
+                    }
+                }
+                else -> unsupported("step_sheet_scenario step action '$raw'")
+            }
+        }
+        fun findIn(blocks: List<ContentBlock>, id: String) = blocks.firstOrNull { it.id == id }
+        fun snapshot(): Map<String, Any?> = buildMap {
+            putAll(inputValues)
+            put("open_sheet_id", controller.openSheet?.id)
+            put("current_step_id", spy.state["current_step_id"])
+            put("toast", toast)
+            put("refused_gestures", refusedGestures)
+        }
+        for (i in 0 until script.length()) {
+            val cmd = script.getString(i)
+            val arg = cmd.substringAfter(':')
+            when (cmd.substringBefore(':')) {
+                // A button on the STEP: the encoding ButtonBlock forwards, into the step's dispatcher.
+                "tap" -> {
+                    val b = findIn(stepBlocks, arg) ?: unsupported("button $arg is not on the step")
+                    val a = b.action ?: "next"
+                    dispatch(if (a == StepSheets.OPEN_ACTION) OnboardingActionPair.encode(a, b.sheetId) else a)
+                }
+                // A button inside the OPEN sheet: StepSheetOverlay's onAction.
+                "sheet_tap" -> {
+                    val open = controller.openSheet ?: unsupported("sheet_tap:$arg with no sheet open")
+                    val b = findIn(open.content_blocks, arg) ?: unsupported("button $arg is not in sheet ${open.id}")
+                    val encoded = if (b.action == StepSheets.OPEN_ACTION) OnboardingActionPair.encode(b.action!!, b.sheetId) else (b.action ?: "next")
+                    val (a, v) = OnboardingActionPair.decode(encoded)
+                    if (controller.onSheetAction(a, v) == StepSheetActionOutcome.PASS_TO_STEP) dispatch(encoded)
+                }
+                // A consent row's toggle writes the step's map (AgreementConsentRow's onValueChange).
+                "tick" -> {
+                    if (controller.openSheet == null) unsupported("tick:$arg with no sheet open")
+                    inputValues[arg] = true
+                }
+                "dismiss" -> if (!controller.onDismissGesture(arg)) refusedGestures++
+                "snapshot" -> spy.state["snapshot.$arg"] = snapshot()
+                else -> unsupported("step_sheet_scenario command '$cmd'")
+            }
+        }
+        spy.state["open_sheet_id"] = controller.openSheet?.id
+        spy.state["toast"] = toast
+        spy.state["step_answers"] = inputValues.toMap()
+        spy.events += p.envelopes().map { it.toEventPair() }.filter { it.first.startsWith("onboarding_sheet_") }
     }
 
     // ---------------------------------------------------------------------------------------------

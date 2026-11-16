@@ -3299,6 +3299,9 @@ private fun ButtonBlock(
             // destination would be silently dropped — the exact shape of the `permission` bug.
             PendingCompletionRoute.ACTION_NAME ->
                 onAction(OnboardingActionPair.encode(PendingCompletionRoute.ACTION_NAME, block.action_value))
+            // a sheet inside the step: the button's own `sheet_id` reaches the step only through the
+            // pair encoding, as `flag`'s value does.
+            StepSheets.OPEN_ACTION -> onAction(OnboardingActionPair.encode(StepSheets.OPEN_ACTION, block.sheetId))
             else -> onAction(action)
         }
     }

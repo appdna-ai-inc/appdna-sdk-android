@@ -35,6 +35,10 @@ internal object OnboardingPressedButton {
     @Synchronized
     fun take(): String? = buttonId.also { buttonId = null }
 
+    /** the press without consuming it: a refused CTA that opened a sheet is re-run as itself. */
+    @Synchronized
+    fun peek(): String? = buttonId
+
     /** A press the required-field gate refused, or a new flow presented. */
     @Synchronized
     fun clear() {

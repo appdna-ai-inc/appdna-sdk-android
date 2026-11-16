@@ -3869,8 +3869,11 @@ private fun BlockBasedStepView(
     val backdropMap = layeredBlocks.firstOrNull { it.type == "map" && it.mapPlacement() == MapPlacement.BACKDROP }
     val topMap = layeredBlocks.firstOrNull { it.type == "map" && it.mapPlacement() == MapPlacement.ANCHOR_TOP }
     val bottomMap = layeredBlocks.firstOrNull { it.type == "map" && it.mapPlacement() == MapPlacement.ANCHOR_BOTTOM }
-    // The gate reads the WHOLE layered step, lifted maps included.
-    val gateBlocks = layeredBlocks
+    // The gate reads the WHOLE layered step, lifted maps included — and every sheet inside the step:
+    // a sheet's answers are the step's, so its required consents gate the step's CTA (and the consent-reactive CTA,
+    // which reads `LocalStepGateBlocks`).
+    val stepSheets = effectiveConfig.sheets
+    val gateBlocks = StepSheets.gateBlocks(layeredBlocks, stepSheets)
     @Suppress("NAME_SHADOWING")
     val blocks = layeredBlocks.filterNot { it === backdropMap || it === topMap || it === bottomMap }
     val interactionScope = rememberCoroutineScope()
@@ -3921,8 +3924,28 @@ private fun BlockBasedStepView(
     // reply would otherwise advance past the now-unanswered field).
     val interactionGate = remember(stepId) { arrayOfNulls<ResolvedHostDataStep>(1) }
     fun canAdvance(): RequiredFieldGate.Result = interactionGate[0]?.let {
-        RequiredFieldGate.evaluateDetailed(it.blocks, inputValues, it.rawResolvedIds)
+        RequiredFieldGate.evaluateDetailed(StepSheets.gateBlocks(it.blocks, stepSheets), inputValues, it.rawResolvedIds)
     } ?: RequiredFieldGate.evaluateDetailed(gateBlocks, inputValues, hostResolved?.rawResolvedIds.orEmpty())
+
+    // the step's sheets: which is open, and the action its Continue refused. The sheets' agreement
+    // defaults are seeded into the step's answers as the step appears, as an on-step agreement seeds itself.
+    var shownSheet by remember(stepId) { mutableStateOf<StepSheet?>(null) }
+    val stepActionRef = remember(stepId) { arrayOfNulls<(String) -> Unit>(1) }
+    val refusedPress = remember(stepId) { arrayOfNulls<String>(1) }
+    val sheetController = remember(stepId, stepSheets) {
+        StepSheetController(stepSheets.orEmpty(), flowId, stepId, object : StepSheetController.Effects {
+            override fun track(name: String, properties: Map<String, Any>) = AppDNA.track(name, properties)
+            override fun present(sheet: StepSheet?) { shownSheet = sheet }
+            override fun rerun(action: String) {
+                // The re-run is the refused CTA's press, not the sheet button's that triggered it.
+                refusedPress[0]?.let { OnboardingPressedButton.record(it, "next") }
+                refusedPress[0] = null
+                stepActionRef[0]?.invoke(action)
+            }
+            override fun skip() { onSkip?.invoke() }
+        })
+    }
+    LaunchedEffect(stepId, stepSheets) { StepSheets.seedDefaults(stepSheets, inputValues) }
 
     val activityCtx = androidx.compose.ui.platform.LocalContext.current
 
@@ -4083,6 +4106,10 @@ private fun BlockBasedStepView(
         // passthrough test mirrors the dispatch table instead of driving it.
         val (rawAction, actionValue) = OnboardingActionPair.decode(action)
 
+        // a sheet inside the step: `open_sheet` opens one (no gate, no advance); `close_sheet` closes it.
+        if (rawAction == StepSheets.OPEN_ACTION) { sheetController.open(actionValue, "button"); return }
+        if (rawAction == StepSheets.CLOSE_ACTION) { sheetController.onSheetAction(rawAction, actionValue); return }
+
         // A permission step whose CTA is authored as plain `action:"next"` runs the
         // permission pipeline (prompt) BEFORE the required-field validation gate below, matching
         // iOS (OnboardingRenderer.swift `case "next"` short-circuits before `guard canAdvance`).
@@ -4117,7 +4144,18 @@ private fun BlockBasedStepView(
             val gate = canAdvance()
             if (!gate.canAdvance) {
                 // The press did not advance, so a later advance must not route on it.
+                val refused = OnboardingPressedButton.peek()
                 OnboardingPressedButton.clear()
+                // when what is missing is in a sheet that opens on the gate, Continue opens that sheet
+                // instead of the toast, and the sheet's `next` re-runs this action.
+                if (gate.toastKind != "loading") {
+                    val ownBlocks = interactionGate[0]?.blocks ?: layeredBlocks
+                    val rawIds = interactionGate[0]?.rawResolvedIds ?: hostResolved?.rawResolvedIds.orEmpty()
+                    val outcome = sheetController.onGateRefused(action, ownBlocks) {
+                        RequiredFieldGate.evaluateDetailed(it, inputValues, rawIds).canAdvance
+                    }
+                    if (outcome == StepSheetGateOutcome.OPENED_SHEET) { refusedPress[0] = refused; return }
+                }
                 // Match iOS toast copy at
                 // OnboardingRenderer.swift:1393 `"Please fill in <field>"`.
                 // Was Android-bespoke `"<field> is required"` — analytics
@@ -4342,6 +4380,8 @@ private fun BlockBasedStepView(
     }
     // What nested renderers (row, stack, section_background, carousel pages) read.
     val stepInteraction = rememberStepInteraction(coordinator, ::handleInteract) { liveParamsState.value.pending }
+    // what a sheet's `next` re-runs: this composition's dispatcher (it gates again).
+    stepActionRef[0] = ::handleAction
 
     // "Add widget" — the step's pin attempt, which an `add_widget` button at any depth reaches through
     // [LocalWidgetAction]. The required-field gate runs FIRST (a refusal starts nothing), and the one
@@ -4660,6 +4700,25 @@ private fun BlockBasedStepView(
         // and iOS draw it. A Skip link laid over the step used to sit on top of a bottom-zone button and
         // take its taps, so tapping Continue skipped the step and dropped its answers. A step's
         // `skip_enabled` keeps drawing Skip on the legacy step types ([OnboardingStepBody]).
+
+        // the open sheet, over the step (the step stays drawn under its scrim).
+        shownSheet?.let { sheet ->
+            StepSheetOverlay(
+                sheet = sheet,
+                stepBackgroundHex = effectiveConfig.background?.takeIf { it.type == "color" }?.color,
+                stepGateBlocks = gateBlocks,
+                toggleValues = toggleValues,
+                inputValues = inputValues,
+                loc = ::loc,
+                responses = responses,
+                hookData = hookData,
+                onAction = { encoded ->
+                    val (a, v) = OnboardingActionPair.decode(encoded)
+                    if (sheetController.onSheetAction(a, v) == StepSheetActionOutcome.PASS_TO_STEP) handleAction(encoded)
+                },
+                onDismiss = { via -> sheetController.onDismissGesture(via) },
+            )
+        }
 
         // In-app validation pill. Mirrors iOS
         // bottom-pill at OnboardingRenderer.swift:1383-1402 — `.background(
