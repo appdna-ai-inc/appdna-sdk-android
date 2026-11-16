@@ -79,6 +79,10 @@ the project uses [Semantic Versioning](https://semver.org/).
 
 ### Fixed
 
+- **The rule for a button inside a bottom sheet is shared with iOS.** No behaviour change on Android: a `link` button in
+  an option's `sheet_blocks` opens its URL and keeps the sheet open, and the "Add widget" how-to opens nothing. iOS
+  now does the same.
+
 - **"Maybe later" on a permission step no longer raises the OS permission prompt.** On a `permission` step that has a
   button with the `permission` action, a second button authored as `next` (a "Maybe later" or "Not now") ran the
   permission request too, so the user who declined saw the OS sheet anyway, and on iOS the app's one notification ask

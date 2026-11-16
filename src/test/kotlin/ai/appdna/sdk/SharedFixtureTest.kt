@@ -87,6 +87,8 @@ import ai.appdna.sdk.onboarding.PERMISSION_ACTION_VALUE_KEY
 import ai.appdna.sdk.onboarding.PermissionActionDecision
 import ai.appdna.sdk.onboarding.emitPermissionAction
 import ai.appdna.sdk.onboarding.permissionTypeForNext
+import ai.appdna.sdk.onboarding.BlockSheetRoute
+import ai.appdna.sdk.onboarding.blockSheetButtonRoute
 import ai.appdna.sdk.onboarding.RuleTarget
 import ai.appdna.sdk.onboarding.classifyRuleTarget
 import ai.appdna.sdk.onboarding.OnboardingConfigParser
@@ -237,6 +239,7 @@ class SharedFixtureTest(
             "tap_button" -> runTapButton(action, spy)
             // The "Add widget" attempt: the REAL WidgetPinAttempt, its stimuli fed in order.
             "add_widget_attempt" -> runAddWidgetAttempt(action, spy)
+            "tap_sheet_button" -> runTapSheetButton(action, spy)
             "submit_form" -> runSubmitForm(action, spy)
             "fire_hook" -> runFireHook(action, spy)
             "show_screen" -> runShowScreen(action, spy)
@@ -652,6 +655,29 @@ class SharedFixtureTest(
         val result = parseWebhookResponse(body, hookCfg)
         applyAdvance(flow, currentIndex, responsesFromSetup(), result, spy, p.tracker)
         spy.events += p.envelopes().map { it.toEventPair() }
+    }
+
+    /**
+     * `tap_sheet_button`: REAL [blockSheetButtonRoute], the rule for a button inside a sheet. An option
+     * sheet opens a `link` (the button renderer opens it itself, outside the how-to); the "Add widget"
+     * how-to forwards every action and opens nothing.
+     */
+    private fun runTapSheetButton(action: JSONObject, spy: Spy) {
+        val cfg = config ?: JSONObject()
+        val button = cfg.optJSONObject("button") ?: JSONObject()
+        val sheet = action.optString("sheet", "").ifEmpty { cfg.optString("sheet", "") }
+        val route = blockSheetButtonRoute(
+            action = button.optString("action", ""),
+            value = button.optStringOrNull("action_value"),
+            opensLinks = sheet == "option",
+        )
+        spy.state["sheet_route"] = when (route) {
+            BlockSheetRoute.Done -> "done"
+            BlockSheetRoute.Close -> "close"
+            is BlockSheetRoute.OpenLink -> "open_link"
+            BlockSheetRoute.Ignored -> "ignored"
+        }
+        spy.state["opened_url"] = (route as? BlockSheetRoute.OpenLink)?.url
     }
 
     private fun runTapButton(action: JSONObject, spy: Spy) {

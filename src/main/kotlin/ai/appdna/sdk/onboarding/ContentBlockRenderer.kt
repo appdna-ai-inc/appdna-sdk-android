@@ -14388,6 +14388,29 @@ private fun OptionBottomSheetBody(option: InputOption, parentBlockId: String, on
     )
 }
 
+/** What a button inside a [BlockSheet] does. Mirrors iOS `BlockSheetView.Route`. */
+internal sealed class BlockSheetRoute {
+    object Done : BlockSheetRoute()
+    object Close : BlockSheetRoute()
+    /** Open [url] and keep the sheet open, as a `link` button on a step does. */
+    data class OpenLink(val url: String) : BlockSheetRoute()
+    object Ignored : BlockSheetRoute()
+}
+
+/**
+ * The one rule for a button inside a sheet: `next` / `continue` → Done, `dismiss` → Close, and `link` →
+ * open its URL only where [opensLinks] (an option sheet; the "Add widget" how-to never opens a browser).
+ * A `link` whose URL `URLSafety` refuses, and every other action, is ignored. Mirrors iOS
+ * `BlockSheetView.route(_:value:opensLinks:)`.
+ */
+internal fun blockSheetButtonRoute(action: String, value: String?, opensLinks: Boolean): BlockSheetRoute = when {
+    action == "next" || action == "continue" -> BlockSheetRoute.Done
+    action == "dismiss" -> BlockSheetRoute.Close
+    action == "link" && opensLinks ->
+        ai.appdna.sdk.core.URLSafety.sanitized(value)?.let { BlockSheetRoute.OpenLink(it.toString()) } ?: BlockSheetRoute.Ignored
+    else -> BlockSheetRoute.Ignored
+}
+
 /**
  * A modal bottom sheet of ordinary content blocks — the one engine behind an option's
  * `sheet_blocks` and the "Add widget" how-to (`howto_blocks_android` here; `howto_blocks_ios` is the
@@ -14401,7 +14424,8 @@ private fun OptionBottomSheetBody(option: InputOption, parentBlockId: String, on
  * under the step, and a `refresh_step` or `add_widget` button in it must not reach the step.
  *
  * [forwardEveryAction] (the how-to) sends every button action here, `link` included, so the button
- * renderer's own handling never runs inside it. The option sheet keeps today's behaviour.
+ * renderer's own handling never runs inside it. In the option sheet a `link` button opens its URL itself
+ * ([blockSheetButtonRoute]'s `OpenLink`), as on a step.
  */
 @OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
 @Composable
@@ -14525,9 +14549,11 @@ internal fun BlockSheet(
             ContentBlockRendererView(
                 blocks = blocks,
                 onAction = { action ->
-                    when (action) {
-                        "next", "continue" -> onDone()
-                        "dismiss" -> onClose("dismiss")
+                    // Only what the button forwards reaches here. In an option sheet a `link` never
+                    // does: the button opens it itself, which is the `OpenLink` route below.
+                    when (blockSheetButtonRoute(action, value = null, opensLinks = !forwardEveryAction)) {
+                        BlockSheetRoute.Done -> onDone()
+                        BlockSheetRoute.Close -> onClose("dismiss")
                         else -> ai.appdna.sdk.Log.debug("Sheet: ignored button action \"$action\"")
                     }
                 },
