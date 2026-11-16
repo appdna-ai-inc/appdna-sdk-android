@@ -1026,6 +1026,10 @@ data class FormFieldBlockStyle(
     val option_text_wrap: Boolean? = null,       // true → option text wraps fully; false → single-line truncate
     val option_image_scale: String? = null,      // "contain" (default) | "cover" | "fit" for per-option images
     val checkmark_color: String? = null,         // radio/checkmark indicator color, decoupled from fill/accent
+    // Live validation — live validation through the host: the valid border, the in-progress border, the valid message.
+    val valid_border_color: String? = null,
+    val checking_border_color: String? = null,
+    val valid_text_color: String? = null,
 )
 
 /**
@@ -2408,12 +2412,12 @@ private fun RenderBlockContent(
         // Pricing card
         "pricing_card" -> PricingCardBlock(block, onAction, inputValues)
         // Form input block renderers (22 types)
-        "input_text" -> FormInputTextBlock(block, inputValues, keyboardType = android.text.InputType.TYPE_CLASS_TEXT)
+        "input_text" -> FormInputTextBlock(block, inputValues, keyboardType = android.text.InputType.TYPE_CLASS_TEXT, loc = loc)
         "input_textarea" -> FormInputTextAreaBlock(block, inputValues)
-        "input_number" -> FormInputTextBlock(block, inputValues, keyboardType = android.text.InputType.TYPE_CLASS_NUMBER)
-        "input_email" -> FormInputTextBlock(block, inputValues, keyboardType = android.text.InputType.TYPE_TEXT_VARIATION_EMAIL_ADDRESS)
-        "input_phone" -> FormInputTextBlock(block, inputValues, keyboardType = android.text.InputType.TYPE_CLASS_PHONE)
-        "input_url" -> FormInputTextBlock(block, inputValues, keyboardType = android.text.InputType.TYPE_TEXT_VARIATION_URI)
+        "input_number" -> FormInputTextBlock(block, inputValues, keyboardType = android.text.InputType.TYPE_CLASS_NUMBER, loc = loc)
+        "input_email" -> FormInputTextBlock(block, inputValues, keyboardType = android.text.InputType.TYPE_TEXT_VARIATION_EMAIL_ADDRESS, loc = loc)
+        "input_phone" -> FormInputTextBlock(block, inputValues, keyboardType = android.text.InputType.TYPE_CLASS_PHONE, loc = loc)
+        "input_url" -> FormInputTextBlock(block, inputValues, keyboardType = android.text.InputType.TYPE_TEXT_VARIATION_URI, loc = loc)
         "input_password" -> FormInputPasswordBlock(block, inputValues)
         "input_date" -> FormInputDateBlock(block, inputValues, mode = "date")
         "input_time" -> FormInputDateBlock(block, inputValues, mode = "time")
@@ -3172,17 +3176,19 @@ private fun ButtonBlock(
     // drawn in `cta_disabled_bg_color`, or its own colour faded when none is set. iOS parity.
     val hasDependencies = CtaDependencies.has(block)
     val dependenciesMet = !hasDependencies || CtaDependencies.met(block, stepBlocks, inputValues)
+    // Live validation — a field the host refused (or could not answer, under "block") draws the CTA disabled.
+    val remoteRefuses = LocalRemoteValidation.current?.blocksCta(stepBlocks, inputValues) ?: false
     val fadesInactive = hasDependencies && !dependenciesMet && ctaDisabledHex == null
     val fillHex = run {
         val fallback = block.bg_color ?: (ai.appdna.sdk.AppDNA.brandAccentHex ?: "#6366F1")
         if (hasDependencies) {
             val gateMet = (ctaEnabledHex == null && ctaDisabledHex == null) ||
-                RequiredFieldGate.evaluate(stepBlocks, inputValues, rawIds).first
+                (RequiredFieldGate.evaluate(stepBlocks, inputValues, rawIds).first && !remoteRefuses)
             if (dependenciesMet && gateMet) (ctaEnabledHex ?: fallback) else (ctaDisabledHex ?: fallback)
         } else if (ctaEnabledHex == null && ctaDisabledHex == null) {
             fallback
         } else {
-            val satisfied = RequiredFieldGate.evaluate(stepBlocks, inputValues, rawIds).first
+            val satisfied = RequiredFieldGate.evaluate(stepBlocks, inputValues, rawIds).first && !remoteRefuses
             if (satisfied) (ctaEnabledHex ?: fallback) else (ctaDisabledHex ?: ctaEnabledHex ?: fallback)
         }
     }
@@ -3218,7 +3224,10 @@ private fun ButtonBlock(
     val widgetChannel = if (onClickOverride == null && block.action == WidgetPinAttempt.ACTION_NAME) LocalWidgetAction.current else null
     // Inside an "Add widget" how-to every action goes to the sheet's own handler, `link` included.
     val forwardEveryAction = LocalForwardEveryButtonAction.current
-    val refreshLoading = stepInteraction != null && stepInteraction.loadingBlockId == block.id
+    // Live validation — a Continue tapped while a field is being checked waits for the answer, drawn as its loading state.
+    val remoteWaiting = onClickOverride == null && (block.action ?: "next") in setOf("next", "continue") &&
+        LocalRemoteValidation.current?.ctaWaiting == true
+    val refreshLoading = (stepInteraction != null && stepInteraction.loadingBlockId == block.id) || remoteWaiting
     val refreshTappable = stepInteraction?.isTappable(block.id) ?: true
 
     val actOnClick: () -> Unit = onClickOverride ?: {
@@ -10264,8 +10273,15 @@ internal fun FormInputTextBlock(
     // The field is in error. Nothing on a step sets it yet: remote validation, when it ships, is the first state that
     // will. The border already draws it, so the error colour has a state to apply to.
     hasError: Boolean = false,
+    /** The step's localiser, for the field's validation texts. */
+    loc: ((String, String) -> String)? = null,
 ) {
     val fieldId = block.field_id ?: block.id
+    // Live validation — the step's live validation, read only for a block whose author turned it on.
+    val remoteValidation = LocalRemoteValidation.current
+    val validationConfig = remember(block, remoteValidation) {
+        if (remoteValidation == null) null else RemoteValidationConfig.of(block, loc)
+    }
     // OB-6 — restore saved value on back nav.
     // iOS pre-populates `_inputValues = State(initialValue: savedResponses ?? [:])`
     // (`OnboardingRenderer.swift:1326`); Android previously initialized to ""
@@ -10329,11 +10345,27 @@ internal fun FormInputTextBlock(
         // container outline (block_style.border_width > 0 — e.g. login capsule
         // inputs), skip the outer border so the two outlines don't stack.
         val hasBlockBorder = (block.block_style?.border_width ?: 0.0) > 0.0
+        // The validation state applies only to the value it was reached for (a stale state never paints a new value).
+        val vstate = validationConfig?.let { remoteValidation?.state(fieldId) }?.takeIf { it.value == text }
+        val borderHex = if (vstate == null) textInputBorderHex(block.field_style, focused = isFocused, hasError = hasError)
+            else remoteValidationBorderHex(block.field_style, focused = isFocused, phase = vstate.phase)
+        // Return / leaving the field checks at once (the `confirm` trigger's moment; skips the rest of a debounce).
+        var wasFocused by remember { mutableStateOf(false) }
+        LaunchedEffect(isFocused) {
+            if (wasFocused && !isFocused && validationConfig != null) remoteValidation?.confirm(fieldId)
+            wasFocused = isFocused
+        }
+        // A restored value is checked again (results are not kept across presentations).
+        LaunchedEffect(remoteValidation, validationConfig) {
+            if (validationConfig != null && text.isNotEmpty()) {
+                remoteValidation?.valueChanged(fieldId, text, validationConfig, immediate = true)
+            }
+        }
         Box(
             modifier = if (hasBlockBorder) Modifier.fillMaxWidth()
                 else Modifier.fillMaxWidth().border(
                     width = if (isFocused) focusedBorderWidth else borderWidth,
-                    color = StyleEngine.parseColor(textInputBorderHex(block.field_style, focused = isFocused, hasError = hasError)),
+                    color = StyleEngine.parseColor(borderHex),
                     shape = RoundedCornerShape(cornerRadius),
                 ),
         ) {
@@ -10342,7 +10374,13 @@ internal fun FormInputTextBlock(
                 onValueChange = {
                     text = it
                     inputValues[fieldId] = it
+                    validationConfig?.let { c -> remoteValidation?.valueChanged(fieldId, it, c) }
                 },
+                trailingIcon = if (vstate == null) null else ({ RemoteValidationIndicator(vstate.phase, StyleEngine.parseColor(borderHex)) }),
+                keyboardActions = androidx.compose.foundation.text.KeyboardActions(onDone = {
+                    validationConfig?.let { remoteValidation?.confirm(fieldId) }
+                    defaultKeyboardAction(androidx.compose.ui.text.input.ImeAction.Done)
+                }),
                 placeholder = {
                     Text(
                         text = block.field_placeholder ?: "",
@@ -10373,6 +10411,38 @@ internal fun FormInputTextBlock(
                 ),
             )
         }
+        val message = vstate?.message
+        if (vstate != null && validationConfig != null && message != null) {
+            Text(
+                text = message,
+                fontSize = 12.sp,
+                color = StyleEngine.parseColor(remoteValidationMessageHex(block.field_style, vstate.phase, validationConfig.blocksWhenUnavailable)),
+                modifier = Modifier
+                    .testTag("appdna.validation.$fieldId")
+                    // TalkBack hears each result once, politely.
+                    .semantics { liveRegion = androidx.compose.ui.semantics.LiveRegionMode.Polite },
+            )
+        }
+    }
+}
+
+/** The spinner or check mark at the trailing edge of a validated field. */
+@Composable
+internal fun RemoteValidationIndicator(phase: RemoteValidationCoordinator.Phase, tint: Color) {
+    when (phase) {
+        RemoteValidationCoordinator.Phase.WAITING, RemoteValidationCoordinator.Phase.CHECKING ->
+            androidx.compose.material3.CircularProgressIndicator(
+                modifier = Modifier.size(18.dp).semantics { contentDescription = "Checking" },
+                strokeWidth = 2.dp,
+                color = tint,
+            )
+        RemoteValidationCoordinator.Phase.VALID ->
+            androidx.compose.material3.Icon(
+                imageVector = androidx.compose.material.icons.Icons.Filled.CheckCircle,
+                contentDescription = null,
+                tint = tint,
+            )
+        else -> {}
     }
 }
 

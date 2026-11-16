@@ -3949,6 +3949,38 @@ private fun BlockBasedStepView(
     }
     LaunchedEffect(stepId, stepSheets) { StepSheets.seedDefaults(stepSheets, inputValues) }
 
+    // Live validation — the step's live validation of text inputs through the host (`onValidateInput`). One coordinator per
+    // presentation; the host is read live, like every other hook on this step.
+    val currentDelegate = rememberUpdatedState(delegate)
+    val remoteValidation = remember(stepId, myPresentation) {
+        RemoteValidationCoordinator.forStep(
+            scope = interactionScope,
+            delegate = { currentDelegate.value },
+            flowId = flowId,
+            stepId = stepId,
+            isOnline = { ai.appdna.sdk.AppDNA.connectivity?.isConnected ?: true },
+            track = { props -> ai.appdna.sdk.AppDNA.trackInternal("input_validation_result", props) },
+        )
+    }
+    // A field that ended offline checks again, once, when the connection returns.
+    DisposableEffect(remoteValidation) {
+        val monitor = ai.appdna.sdk.AppDNA.connectivity
+        val main = android.os.Handler(android.os.Looper.getMainLooper())
+        val observer: () -> Unit = { main.post { remoteValidation.connectivityRegained() } }
+        monitor?.addRegainedObserver(observer)
+        onDispose {
+            monitor?.removeRegainedObserver(observer)
+            remoteValidation.presentationEnded()
+        }
+    }
+    /** The step's fields under live validation, with their current values, in step order. */
+    fun remoteValidationEntries(): List<RemoteValidationCoordinator.Entry> =
+        (interactionGate[0]?.let { StepSheets.gateBlocks(it.blocks, stepSheets) } ?: gateBlocks).mapNotNull { b ->
+            val config = RemoteValidationConfig.of(b, ::loc) ?: return@mapNotNull null
+            val id = b.field_id ?: b.id
+            RemoteValidationCoordinator.Entry(id, inputValues[id] as? String ?: "", config)
+        }
+
     val activityCtx = androidx.compose.ui.platform.LocalContext.current
 
     // Runtime permission pipeline plumbing. The ActivityResultLauncher MUST be registered
@@ -4094,7 +4126,7 @@ private fun BlockBasedStepView(
         }
     }
 
-    fun handleAction(action: String) {
+    fun handleAction(action: String, remoteChecked: Boolean = false) {
         // Strict-typed auth/account action cases mirror iOS
         // `OnboardingRenderer.swift:1531-1545`. Action strings travel as either
         // a bare token ("login", "logout", ...) OR as a colon-encoded pair
@@ -4168,6 +4200,20 @@ private fun BlockBasedStepView(
                 // Surface as in-app pill instead of system
                 // Toast (iOS OnboardingRenderer.swift:1383-1402).
                 validationMessage = msg
+                return
+            }
+            // Live validation — then live validation: an invalid value blocks with its message; a tap
+            // while a check runs waits for the answer (then this action runs again, required gate included); no
+            // answer continues unless the field blocks. A sign-up action cannot send a value the host refused.
+            if (!remoteChecked && remoteValidationEntries().isNotEmpty()) {
+                remoteValidation.tap({ remoteValidationEntries() }) { decision ->
+                    if (decision is RemoteValidationCoordinator.Decision.Block) {
+                        OnboardingPressedButton.clear()
+                        validationMessage = decision.message
+                    } else {
+                        handleAction(action, remoteChecked = true)
+                    }
+                }
                 return
             }
         }
@@ -4397,7 +4443,15 @@ private fun BlockBasedStepView(
         gatePasses = {
             val gate = canAdvance()
             if (!gate.canAdvance) validationMessage = widgetGateMessage(gate)
-            gate.canAdvance
+            // Live validation too: the attempt cannot wait, so a check in progress refuses the tap with
+            // "Checking…" (the check starts at once) and the user taps again on its answer.
+            val remote = if (gate.canAdvance) remoteValidation.decideNow(remoteValidationEntries()) else null
+            when (remote) {
+                is RemoteValidationCoordinator.Decision.Block -> validationMessage = remote.message
+                RemoteValidationCoordinator.Decision.Wait -> validationMessage = "Checking…"
+                else -> {}
+            }
+            gate.canAdvance && (remote == null || remote == RemoteValidationCoordinator.Decision.Allow)
         },
         advance = { status ->
             // Nothing on the step can change while a dialog or modal sheet is up, so this passes the
@@ -4434,6 +4488,7 @@ private fun BlockBasedStepView(
         LocalStepGateBlocks provides gateBlocks,
         LocalStepInteraction provides stepInteraction,
         LocalWidgetAction provides widgetWiring.channel,
+        LocalRemoteValidation provides remoteValidation,
     ) {
     WidgetHowtoSheet(widgetWiring, ::loc)
     Box(modifier = modifier.entryAnimation(effectiveConfig.animation?.entry_animation, effectiveConfig.animation?.entry_duration_ms)) {

@@ -84,11 +84,24 @@ internal object WalkMenu {
             "identify" -> { AppDNA.identify(userId = item.value); WalkLog.note("identify(${item.value})") }
             "reset" -> { AppDNA.reset(); WalkLog.note("reset()") }
             "consent" -> { val on = item.value == "true"; AppDNA.setConsent(analytics = on); WalkLog.note("setConsent(analytics: $on)") }
+            // "on": the walk log validates text inputs (`onValidateInput`); "off": a delegate that does not implement it.
+            "validator" -> {
+                val on = item.value != "off"
+                AppDNA.onboarding.setDelegate(if (on) WalkLog else PlainOnboardingDelegate)
+                WalkLog.note("onboarding delegate → ${if (on) "validating" else "plain (no onValidateInput)"}")
+            }
             "push" -> AppDNA.push.requestPermissionFuture(activity).whenComplete { granted, _ ->
                 WalkLog.note("notification permission → ${if (granted == true) "granted" else "denied"}")
             }
             else -> WalkLog.note("unknown walk item kind ${item.kind}")
         }
+    }
+}
+
+/** An onboarding delegate WITHOUT `onValidateInput`: a host that has not shipped the hook (walk menu `validator` off). */
+internal object PlainOnboardingDelegate : ai.appdna.sdk.onboarding.AppDNAOnboardingDelegate {
+    override fun onOnboardingStepChanged(flowId: String, stepId: String, stepIndex: Int, totalSteps: Int) {
+        WalkLog.note("step ${stepIndex + 1}/$totalSteps $stepId (plain delegate)")
     }
 }
 
@@ -141,6 +154,31 @@ internal object WalkLog : ai.appdna.sdk.generated.AppDNALifecycleDelegate, AppDN
     ): ai.appdna.sdk.onboarding.ElementInteractionResult? {
         note("element blockId=$blockId action=$action value=${value ?: "null"}")
         return null
+    }
+
+    // A test validator for live text-input validation (synthetic rules, for a walk): a value containing "taken" is
+    // refused with "Already taken"; "slow" answers after 8 s (past the 5 s default timeout); "boom" throws (no answer);
+    // anything else is accepted after 0.4 s. The walk menu's `validator` item swaps in a delegate without this hook.
+    override suspend fun onValidateInput(
+        flowId: String,
+        stepId: String,
+        fieldId: String,
+        value: String,
+    ): ai.appdna.sdk.onboarding.InputValidationResult? {
+        note("validate field=$fieldId value=$value")
+        if ("slow" in value) {
+            kotlinx.coroutines.delay(8_000)
+            return ai.appdna.sdk.onboarding.InputValidationResult.Valid("Slow answer")
+        }
+        if ("boom" in value) throw IllegalStateException("walk validator: boom")
+        try {
+            kotlinx.coroutines.delay(400)
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            note("validate cancelled value=$value")
+            throw e
+        }
+        return if ("taken" in value) ai.appdna.sdk.onboarding.InputValidationResult.Invalid("Already taken")
+            else ai.appdna.sdk.onboarding.InputValidationResult.Valid()
     }
 
     override fun onDeepLinkReceived(url: String, params: Map<String, String>) {

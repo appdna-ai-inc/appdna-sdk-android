@@ -35,10 +35,22 @@ internal class ConnectivityMonitor(context: Context) {
     @Volatile
     var onConnectivityRegained: (() -> Unit)? = null
 
+    /** Further listeners for a regained connection (an onboarding step re-checking a field that ended offline). */
+    private val regainedObservers = java.util.concurrent.CopyOnWriteArrayList<() -> Unit>()
+
+    fun addRegainedObserver(observer: () -> Unit) { regainedObservers.add(observer) }
+
+    fun removeRegainedObserver(observer: () -> Unit) { regainedObservers.remove(observer) }
+
     private fun regainedIfWasNone(wasNone: Boolean) {
         if (!wasNone) return
         try { onConnectivityRegained?.invoke() } catch (e: Throwable) {
             Log.warning("Connectivity-regained listener threw: ${e.message}")
+        }
+        for (observer in regainedObservers) {
+            try { observer() } catch (e: Throwable) {
+                Log.warning("Connectivity-regained observer threw: ${e.message}")
+            }
         }
     }
 

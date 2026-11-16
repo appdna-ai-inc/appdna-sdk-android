@@ -575,6 +575,8 @@ object AppDNA {
     // Scale Layer 1 components
     private var eventDatabase: ai.appdna.sdk.storage.EventDatabase? = null
     private var connectivityMonitor: ai.appdna.sdk.network.ConnectivityMonitor? = null
+    /** The SDK's connectivity monitor once configured (an onboarding step watches it for live validation). */
+    internal val connectivity: ai.appdna.sdk.network.ConnectivityMonitor? get() = connectivityMonitor
     private var appContext: Context? = null
 
     // ── the analytics-consent signal ─────────────────────────────────────────────────────

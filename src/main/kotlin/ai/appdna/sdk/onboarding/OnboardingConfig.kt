@@ -1087,6 +1087,20 @@ interface AppDNAOnboardingDelegate {
         inputValues: Map<String, Any>,
     ): ElementInteractionResult? = null
 
+    // Live validation of a text input whose author turned on "Check with your app" (`field_config.remote_validation`).
+    // Called on the main dispatcher after the field's debounce (or on the IME action / focus lost), at most once in
+    // flight per field: a newer value cancels the coroutine of the older call and a late reply is discarded. Return
+    // InputValidationResult.Valid or .Invalid, each with an optional message shown under the field; null means "no
+    // answer", and so does a throw. The SDK waits up to the field's timeout (5 s by default). With no answer the user
+    // can continue unless the author chose "block". The default body tells the SDK the host does not validate, so the
+    // field behaves like a plain text input and a warning is logged once per field.
+    suspend fun onValidateInput(
+        flowId: String,
+        stepId: String,
+        fieldId: String,
+        value: String,
+    ): InputValidationResult? = InputValidationResult.NotImplemented
+
     // Runtime permission hooks for onboarding permission steps.
     // Optional pre-hook — return PermissionHandling.HandledByHost(granted) to short-circuit the OS
     // prompt, or PermissionHandling.Proceed/null to let the SDK run the native flow.
@@ -2471,6 +2485,9 @@ internal object OnboardingConfigParser {
                     label_font_family = fs.str(SURFACE, path, "label_font_family"),
                     error_border_color = fs.str(SURFACE, path, "error_border_color"),
                     error_text_color = fs.str(SURFACE, path, "error_text_color"),
+                    valid_border_color = fs.str(SURFACE, path, "valid_border_color"),
+                    checking_border_color = fs.str(SURFACE, path, "checking_border_color"),
+                    valid_text_color = fs.str(SURFACE, path, "valid_text_color"),
                     track_color = fs.str(SURFACE, path, "track_color"),
                     fill_color = fs.str(SURFACE, path, "fill_color"),
                     thumb_color = fs.str(SURFACE, path, "thumb_color"),

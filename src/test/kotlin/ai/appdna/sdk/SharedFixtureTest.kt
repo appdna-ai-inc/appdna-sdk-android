@@ -344,6 +344,9 @@ class SharedFixtureTest(
             "measure_badge_placement" -> runBadgePlacement(action, spy)
             "resolve_text_input_border" -> runTextInputBorder(action, spy)
             "resolve_element_size" -> runElementSize(action, spy)
+            // Live validation through the host (RemoteValidationFixtureDriver.kt).
+            "remote_validation_script" -> spy.state.putAll(ai.appdna.sdk.onboarding.RemoteValidationFixtureDriver.runScript(fixtureName, config, sessionData, action, fixtureJson))
+            "decode_validation_result" -> spy.state.putAll(ai.appdna.sdk.onboarding.RemoteValidationFixtureDriver.decode(action))
             "measure_block_placement" -> runBlockPlacement(action, spy)
             "parse_colour" -> runParseColour(action, spy)
             "unfold_blockquotes" -> runUnfoldBlockquotes(action, spy)

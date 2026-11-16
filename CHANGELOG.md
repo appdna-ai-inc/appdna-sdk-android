@@ -14,6 +14,18 @@ the project uses [Semantic Versioning](https://semver.org/).
   it without declining anything. Drawn inside the step's composable, not a `ModalBottomSheet`. Events
   `onboarding_sheet_opened` and `onboarding_sheet_closed`. `close_sheet` closes it from inside.
 
+- **A text input can be checked by your app while the user types (`onValidateInput`).** Turn on "Check with your app"
+  on a Text, Email, Phone, Number or URL input in the console, and the SDK calls
+  `suspend fun AppDNAOnboardingDelegate.onValidateInput(flowId, stepId, fieldId, value): InputValidationResult?` after the
+  field's debounce (600 ms by default) or on the IME action / leaving the field. Answer `InputValidationResult.Valid(message)` or
+  `Invalid(message)` (null or a throw is no answer); the field draws a green or red border with the message. A newer value cancels the check in
+  flight, a late reply is discarded, and no answer within the field's timeout (5 s by default) means "no answer". An
+  invalid value blocks Continue; a tap while a check runs waits for the answer; with no answer the user continues
+  unless the author chose "Block until it's checked". Offline, the field says so and checks again when the connection
+  returns. An app that does not implement the hook gets a plain text input and one warning per field. Each check tracks
+  `input_validation_result` (never the value). New `field_style` keys `valid_border_color`, `checking_border_color`,
+  `valid_text_color`. For wrapper bridges, `InputValidationResult.decodeBridgeReply(reply)` and `bridgeTimeoutMs()`.
+
 - **Social Login draws Meta's official Facebook mark.** The `facebook` provider drew a bold letter "f". It now draws the
   Facebook logo from Meta's brand asset pack, unmodified: the blue mark on a light, outlined or minimal button, and the
   white mark on a dark fill (the default Facebook fill is dark). `icon_style: monochrome_light` gives the white mark and
