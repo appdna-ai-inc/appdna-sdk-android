@@ -57,6 +57,10 @@ the project uses [Semantic Versioning](https://semver.org/).
 
 ### Changed
 
+- **A stack child's width is honoured.** A child of a `stack` with an `element_width` (a percentage of the stack, `px` or
+  a bare number) is drawn at that width and placed by the stack's alignment, as the console preview draws it; it was drawn
+  full width. Flows published with `settings.placement_rules: 2` only.
+
 - **A block with no horizontal alignment that is narrower than its row is centred, as on iOS.** They sat at the leading edge; the console preview moves the same way. That covers
   a width under 100% or in `px`, an `auto` button, a list, a badge, a rating and a lottie with a width, top level and
   inside a vertical row. An offset now moves the block with its background. It applies only to flows the console has

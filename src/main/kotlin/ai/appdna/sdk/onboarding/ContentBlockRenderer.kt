@@ -8073,8 +8073,17 @@ private fun StackBlock(
         modifier = Modifier.fillMaxWidth().let { m -> block.height?.let { m.height(it.dp) } ?: m },
         contentAlignment = stackAlignment,
     ) {
+        // Placement rules 2: a stack child's `element_width` is honoured (a percentage of the stack, px or a bare number),
+        // as the console preview draws it. Rules 1 keeps the width ignored, as it always was.
+        val sizesChildren = PlacementRules.centres(LocalPlacementRules.current)
         childBlocks.forEach { child ->
-            Box(modifier = Modifier.zIndex((child.z_index ?: 0.0).toFloat())) {
+            Box(
+                modifier = Modifier.zIndex((child.z_index ?: 0.0).toFloat())
+                    .then(if (sizesChildren) Modifier.applyRelativeSizing(child.element_width, null) else Modifier),
+                // Inside its authored width a child that hugs its content sits where the stack aligns it, as SwiftUI's
+                // `.frame(width:)` inside the ZStack places it.
+                contentAlignment = if (sizesChildren) stackAlignment else Alignment.TopStart,
+            ) {
                 RenderBlock(
                     block = child,
                     onAction = onAction,
