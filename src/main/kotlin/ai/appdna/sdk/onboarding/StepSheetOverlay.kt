@@ -1,6 +1,5 @@
 package ai.appdna.sdk.onboarding
 
-import androidx.activity.compose.BackHandler
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
@@ -27,6 +26,14 @@ import androidx.compose.foundation.clickable
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.animation.core.animate
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
+import androidx.compose.ui.input.nestedscroll.NestedScrollSource
+import androidx.compose.ui.input.nestedscroll.nestedScroll
+import androidx.compose.ui.unit.Velocity
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -39,6 +46,7 @@ import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.launch
 import kotlin.math.roundToInt
+import androidx.compose.runtime.getValue
 
 /**
  * A sheet inside a step, drawn INSIDE the step's composable: the step stays drawn under the scrim and gets no
@@ -66,13 +74,51 @@ internal fun StepSheetOverlay(
 ) {
     val scope = rememberCoroutineScope()
     val density = LocalDensity.current
-    // The sheet slides up from below on open, and back down by a drag; released past a quarter of its
-    // height it is a swipe dismissal, otherwise it springs back.
-    val offsetY = remember(sheet.id) { Animatable(2000f) }
-    LaunchedEffect(sheet.id) { offsetY.animateTo(0f, tween(260)) }
+    // The sheet slides up from below on open (`enter`), and follows a downward drag (`drag`) — on the handle, or on
+    // the content once it is scrolled to the top (the nested-scroll connection below). Released past a quarter of
+    // the sheet's height, or flung down, it is a swipe dismissal; otherwise it springs back.
+    val enter = remember(sheet.id) { Animatable(2000f) }
+    LaunchedEffect(sheet.id) { enter.animateTo(0f, tween(260)) }
+    val drag = remember(sheet.id) { mutableFloatStateOf(0f) }
     val sheetHeightPx = remember { floatArrayOf(1f) }
+    val latestDismiss by androidx.compose.runtime.rememberUpdatedState(onDismiss)
+    fun settle(velocityY: Float) {
+        val past = drag.floatValue > sheetHeightPx[0] / 4f || velocityY > 2000f
+        if (past && latestDismiss("swipe")) return
+        scope.launch { animate(drag.floatValue, 0f, animationSpec = tween(180)) { v, _ -> drag.floatValue = v } }
+    }
+    val nested = remember(sheet.id) {
+        object : NestedScrollConnection {
+            // An upward drag first takes back a sheet that was pulled down.
+            override fun onPreScroll(available: Offset, source: NestedScrollSource): Offset {
+                if (available.y < 0f && drag.floatValue > 0f) {
+                    val used = maxOf(available.y, -drag.floatValue)
+                    drag.floatValue += used
+                    return Offset(0f, used)
+                }
+                return Offset.Zero
+            }
+            // What the content could not scroll (it is at its top) pulls the sheet down.
+            override fun onPostScroll(consumed: Offset, available: Offset, source: NestedScrollSource): Offset {
+                if (available.y > 0f && source == NestedScrollSource.Drag) {
+                    drag.floatValue += available.y
+                    return Offset(0f, available.y)
+                }
+                return Offset.Zero
+            }
+            override suspend fun onPreFling(available: Velocity): Velocity {
+                if (drag.floatValue > 0f) { settle(available.y); return available }
+                return Velocity.Zero
+            }
+        }
+    }
 
-    BackHandler(enabled = true) { onDismiss("back") }
+    // Back closes the sheet (or is consumed when it is not dismissible). The activity overrides
+    // onBackPressed, which bypasses the back dispatcher, so it asks this first.
+    DisposableEffect(sheet.id) {
+        StepSheetBack.handler = { latestDismiss("back") }
+        onDispose { StepSheetBack.handler = null }
+    }
 
     BoxWithConstraints(
         modifier = Modifier
@@ -93,7 +139,7 @@ internal fun StepSheetOverlay(
             modifier = Modifier
                 .align(Alignment.BottomCenter)
                 .fillMaxWidth()
-                .offset { IntOffset(0, offsetY.value.roundToInt().coerceAtLeast(0)) }
+                .offset { IntOffset(0, (enter.value + drag.floatValue).roundToInt().coerceAtLeast(0)) }
                 .then(heightMod)
                 .background(bg, shape)
                 // A tap inside the sheet is not a scrim tap.
@@ -102,15 +148,10 @@ internal fun StepSheetOverlay(
                 .semantics { contentDescription = "step-sheet:${sheet.id}" }
                 .draggable(
                     orientation = Orientation.Vertical,
-                    state = rememberDraggableState { delta ->
-                        scope.launch { offsetY.snapTo((offsetY.value + delta).coerceAtLeast(0f)) }
-                    },
-                    onDragStopped = {
-                        val past = offsetY.value > sheetHeightPx[0] / 4f
-                        if (past && onDismiss("swipe")) return@draggable
-                        offsetY.animateTo(0f, tween(180))
-                    },
+                    state = rememberDraggableState { delta -> drag.floatValue = (drag.floatValue + delta).coerceAtLeast(0f) },
+                    onDragStopped = { v -> settle(v) },
                 )
+                .nestedScroll(nested)
                 .navigationBarsPadding()
                 .imePadding(),
         ) {
@@ -146,4 +187,9 @@ internal fun StepSheetOverlay(
             }
         }
     }
+}
+
+/** The open step sheet's Back, which [OnboardingActivity.onBackPressed] asks before closing the flow. */
+internal object StepSheetBack {
+    @Volatile var handler: (() -> Boolean)? = null
 }

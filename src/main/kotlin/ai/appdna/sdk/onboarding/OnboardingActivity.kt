@@ -430,6 +430,8 @@ class OnboardingActivity : ComponentActivity() {
     }
 
     override fun onBackPressed() {
+        // An open sheet inside the step takes Back first: it closes (or, not dismissible, swallows it).
+        StepSheetBack.handler?.let { it(); return }
         // Back while a restored flow is still waiting for the SDK: the user chose to leave it.
         if (pendingResume != null) {
             abandonResume("the user closed it while it was being restored")
