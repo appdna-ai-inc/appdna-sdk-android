@@ -10160,12 +10160,27 @@ private fun FormFieldLabel(block: ContentBlock) {
     }
 }
 
+/**
+ * The border a single-line text input strokes, as a hex: `error_border_color` while the field is in error, else
+ * `focused_border_color` while it has focus, else `border_color`, else `#D1D5DB`. Each falls back to the next when
+ * unset. Shared with iOS (`textInputBorderHex`) and pinned by the `resolve_text_input_border` fixture.
+ */
+internal fun textInputBorderHex(style: FormFieldBlockStyle?, focused: Boolean, hasError: Boolean): String {
+    if (hasError) style?.error_border_color?.takeIf { it.isNotEmpty() }?.let { return it }
+    if (focused) style?.focused_border_color?.takeIf { it.isNotEmpty() }?.let { return it }
+    style?.border_color?.takeIf { it.isNotEmpty() }?.let { return it }
+    return "#D1D5DB"
+}
+
 /** Generic text-based input (text, number, email, phone, url). */
 @Composable
-private fun FormInputTextBlock(
+internal fun FormInputTextBlock(
     block: ContentBlock,
     inputValues: MutableMap<String, Any>,
     keyboardType: Int,
+    // The field is in error. Nothing on a step sets it yet: remote validation, when it ships, is the first state that
+    // will. The border already draws it, so the error colour has a state to apply to.
+    hasError: Boolean = false,
 ) {
     val fieldId = block.field_id ?: block.id
     // OB-6 — restore saved value on back nav.
@@ -10173,7 +10188,6 @@ private fun FormInputTextBlock(
     // (`OnboardingRenderer.swift:1326`); Android previously initialized to ""
     // so every back-press wiped typed answers. Read from inputValues map.
     var text by remember { mutableStateOf((inputValues[fieldId] as? String) ?: "") }
-    val borderColor = StyleEngine.parseColor(block.field_style?.border_color ?: "#D1D5DB")
     val cornerRadius = (block.field_style?.corner_radius ?: 8.0).dp
     // Honor field_config.input_text_size (preferred) / font_size
     // (default 14), mirroring preview + iOS precedence. Was no textStyle (M3 default).
@@ -10211,7 +10225,6 @@ private fun FormInputTextBlock(
         // .border() shows; the page gradient reads through cleanly like iOS.
         val bgColor = block.field_style?.background_color?.let { StyleEngine.parseColor(it) } ?: Color.Transparent
         val focusedBgColor = block.field_style?.focused_background_color?.let { StyleEngine.parseColor(it) } ?: bgColor
-        val focusedBorderColor = block.field_style?.focused_border_color?.let { StyleEngine.parseColor(it) } ?: borderColor
         // Honor field_style.border_width
         // (and focused_border_width) by drawing the border on an outer Box
         // and zeroing OutlinedTextField's built-in border colors. Compose's
@@ -10237,7 +10250,7 @@ private fun FormInputTextBlock(
             modifier = if (hasBlockBorder) Modifier.fillMaxWidth()
                 else Modifier.fillMaxWidth().border(
                     width = if (isFocused) focusedBorderWidth else borderWidth,
-                    color = if (isFocused) focusedBorderColor else borderColor,
+                    color = StyleEngine.parseColor(textInputBorderHex(block.field_style, focused = isFocused, hasError = hasError)),
                     shape = RoundedCornerShape(cornerRadius),
                 ),
         ) {

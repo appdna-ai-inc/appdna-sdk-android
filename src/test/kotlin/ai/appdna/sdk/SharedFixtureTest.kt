@@ -332,6 +332,7 @@ class SharedFixtureTest(
             "build_push_token_body" -> runPushTokenBody(action, spy)
             "resolve_block_container_style" -> runBlockContainerStyle(action, spy)
             "measure_badge_placement" -> runBadgePlacement(action, spy)
+            "resolve_text_input_border" -> runTextInputBorder(action, spy)
             "parse_colour" -> runParseColour(action, spy)
             "unfold_blockquotes" -> runUnfoldBlockquotes(action, spy)
             "normalise_markdown" -> runUnfoldBlockquotes(action, spy)
@@ -3795,6 +3796,20 @@ class SharedFixtureTest(
                 result = if (kotlin.math.abs(left - right) <= 4f) "center" else if (left < right) "leading" else "trailing"
             }
             result
+        }
+    }
+
+    /** A single-line text input's border: the REAL step parser's `field_style` → the core `textInputBorderHex`. */
+    private fun runTextInputBorder(action: JSONObject, spy: Spy) {
+        val cases = action.optJSONArray("cases") ?: unsupported("resolve_text_input_border without cases")
+        spy.state["results"] = (0 until cases.length()).map { i ->
+            val c = cases.getJSONObject(i)
+            val block = mutableMapOf<String, Any>("id" to "f", "type" to "input_text", "field_id" to "f")
+            c.optJSONObject("style")?.let { block["field_style"] = it.asMap().filterValues { v -> v != null } }
+            val step = mapOf("id" to "fixture_step", "type" to "custom", "content_blocks" to listOf(block))
+            val parsed = ai.appdna.sdk.onboarding.OnboardingConfigParser.parseStepForTest(step)?.config?.content_blocks?.firstOrNull()
+                ?: throw AssertionError("[resolve_text_input_border] case ${c.optString("name")}: the block did not parse")
+            ai.appdna.sdk.onboarding.textInputBorderHex(parsed.field_style, focused = c.optBoolean("focused"), hasError = c.optBoolean("has_error"))
         }
     }
 

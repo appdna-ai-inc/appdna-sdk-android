@@ -79,6 +79,11 @@ the project uses [Semantic Versioning](https://semver.org/).
 
 ### Fixed
 
+- **A text input draws its error border colour.** A single-line text input honoured `focused_border_color` and ignored
+  `error_border_color`. It now strokes `error_border_color` while the field is in error, else `focused_border_color`
+  while it has focus, else `border_color`, the same rule as iOS. Nothing puts a text input in error yet; the error
+  colour applies once a setting does.
+
 - **A selected segment's fill covers its whole cell when a neighbour's label wraps.** In an `input_segmented` row
   where one option's label runs to two lines, the selected segment's fill kept the height of its own (one-line) label
   and covered only the top of its cell. Every cell is now as tall as the row, and the fill covers it.
