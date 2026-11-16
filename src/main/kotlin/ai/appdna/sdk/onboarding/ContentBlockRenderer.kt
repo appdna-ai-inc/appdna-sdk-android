@@ -1657,35 +1657,49 @@ private fun applyBindingProperty(block: ContentBlock, property: String, value: A
 /**
  * Parses relative size strings.
  */
+/** One size value (`element_width` / `element_height`). Mirrors iOS `SizeValue`. */
+internal sealed class SizeValue {
+    object Fill : SizeValue()
+    object Auto : SizeValue()
+    data class Percent(val fraction: Float) : SizeValue()
+    data class Px(val value: Float) : SizeValue()
+}
+
+/**
+ * The size grammar, the same as iOS `SizeValue.parse`: `fill`, `auto`, `N%`, `Npx`, and a bare number `N` = N dp.
+ * The bare number was not read, so a width the preview draws (`120`) left the block full width.
+ */
+internal fun parseSizeValue(raw: String?): SizeValue? {
+    val s = raw?.trim()?.lowercase()?.takeIf { it.isNotEmpty() } ?: return null
+    return when {
+        s == "fill" -> SizeValue.Fill
+        s == "auto" -> SizeValue.Auto
+        s.endsWith("%") -> s.dropLast(1).toFloatOrNull()?.let { SizeValue.Percent(it / 100f) }
+        s.endsWith("px") -> s.dropLast(2).toFloatOrNull()?.let { SizeValue.Px(it) }
+        else -> s.toFloatOrNull()?.let { SizeValue.Px(it) }
+    }
+}
+
 fun Modifier.applyRelativeSizing(width: String?, height: String?, useMinHeight: Boolean = false): Modifier {
     var mod = this
-    when {
-        width == "fill" -> mod = mod.then(Modifier.fillMaxWidth())
-        width == "auto" -> { /* no-op, content-sized */ }
-        width?.endsWith("%") == true -> {
-            val fraction = width.dropLast(1).toFloatOrNull()?.div(100f)
-            if (fraction != null) mod = mod.then(Modifier.fillMaxWidth(fraction))
-        }
-        width?.endsWith("px") == true -> {
-            val px = width.dropLast(2).toFloatOrNull()
-            if (px != null) mod = mod.then(Modifier.width(px.dp))
-        }
+    when (val w = parseSizeValue(width)) {
+        SizeValue.Fill -> mod = mod.then(Modifier.fillMaxWidth())
+        SizeValue.Auto, null -> { /* no-op, content-sized */ }
+        is SizeValue.Percent -> mod = mod.then(Modifier.fillMaxWidth(w.fraction))
+        is SizeValue.Px -> mod = mod.then(Modifier.width(w.value.dp))
     }
-    when {
-        height == "fill" -> mod = mod.then(Modifier.fillMaxHeight())
-        height == "auto" -> { /* no-op */ }
-        height?.endsWith("%") == true -> {
-            val fraction = height.dropLast(1).toFloatOrNull()?.div(100f)
-            if (fraction != null) mod = mod.then(Modifier.fillMaxHeight(fraction))
-        }
-        height?.endsWith("px") == true -> {
-            val px = height.dropLast(2).toFloatOrNull()
+    when (val h = parseSizeValue(height)) {
+        SizeValue.Fill -> mod = mod.then(Modifier.fillMaxHeight())
+        SizeValue.Auto, null -> { /* no-op */ }
+        is SizeValue.Percent -> mod = mod.then(Modifier.fillMaxHeight(h.fraction))
+        is SizeValue.Px -> {
+            val px = h.value
             // useMinHeight → heightIn(min) so content TALLER than the authored height
             // (e.g. a 3-line heading inside element_height:100px) grows instead of being clipped.
             // iOS applies the same height via SwiftUI .frame(height:), which never clips overflow;
             // Compose .height() DOES clip → the therapist heading lost its last line ("relief?").
             // Fixed height kept for non-text blocks (images/spacers) that want an exact box.
-            if (px != null) mod = mod.then(
+            mod = mod.then(
                 if (useMinHeight) Modifier.heightIn(min = px.dp) else Modifier.height(px.dp),
             )
         }
@@ -2124,7 +2138,8 @@ fun ContentBlockRendererView(
 internal fun needsOuterAlignmentBox(elementWidth: String?, horizontalAlign: String?): Boolean {
     if (horizontalAlign == null) return false
     val w = elementWidth ?: return false
-    return w.endsWith("%") || w.endsWith("px")
+    // A bare number is dp (`parseSizeValue`), so it constrains the width as `px` does.
+    return w.endsWith("%") || w.endsWith("px") || w.trim().toDoubleOrNull() != null
 }
 
 /** Sizing wrapper that keeps `horizontal_align` meaningful for a width-constrained block. */

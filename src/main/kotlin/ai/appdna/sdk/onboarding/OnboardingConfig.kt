@@ -12,6 +12,7 @@ import ai.appdna.sdk.core.TypedRead
 import ai.appdna.sdk.core.bool
 import ai.appdna.sdk.core.num
 import ai.appdna.sdk.core.str
+import ai.appdna.sdk.core.sizeStr
 import ai.appdna.sdk.core.list
 import ai.appdna.sdk.core.listOfMaps
 import ai.appdna.sdk.core.obj
@@ -2213,8 +2214,8 @@ internal object OnboardingConfigParser {
                 )
             },
             bindings = (bm.obj(SURFACE, path, "bindings"))?.entries?.associate { (k, v) -> k.toString() to v.toString() },
-            element_width = bm.str(SURFACE, path, "element_width"),
-            element_height = bm.str(SURFACE, path, "element_height"),
+            element_width = bm.sizeStr(SURFACE, path, "element_width"),
+            element_height = bm.sizeStr(SURFACE, path, "element_height"),
             overflow = bm.str(SURFACE, path, "overflow"),
             // Row / stack container fields
             // Coalesce `children` and

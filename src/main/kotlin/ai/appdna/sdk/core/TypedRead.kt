@@ -58,6 +58,23 @@ internal fun Map<String, Any?>.str(surface: String, path: String, key: String): 
 }
 
 /**
+ * A size (`element_width`, `element_height`) as its string spelling: a string as written, or a number as its digits
+ * (`120` → `"120"`, `12.5` → `"12.5"`). The size grammar reads a bare number as dp, as iOS reads it as points and the
+ * console preview draws it; reading only strings dropped a number. Mirrors iOS `lenientSize`.
+ */
+internal fun Map<String, Any?>.sizeStr(surface: String, path: String, key: String): String? {
+    val raw = this[key] ?: return null
+    if (raw is String) return raw
+    if (raw is Number && raw !is Boolean) {
+        val d = raw.toDouble()
+        if (!d.isFinite()) return null
+        return if (d == kotlin.math.floor(d) && kotlin.math.abs(d) < 1e15) d.toLong().toString() else d.toString()
+    }
+    mismatch(surface, path, key, "a string or a number", raw)
+    return null
+}
+
+/**
  * A number, or null — reporting when the key is present and is something else.
  *
  * 🔴 A BOOLEAN IS NOT A NUMBER HERE, even though `true` would widen in some languages. JSON tells

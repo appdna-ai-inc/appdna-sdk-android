@@ -79,6 +79,10 @@ the project uses [Semantic Versioning](https://semver.org/).
 
 ### Fixed
 
+- **A bare-number `element_width` / `element_height` is dp, as iOS and the console preview draw it.** A width
+  written without a unit (`120` or `"120"`) was ignored, so the block filled its row. Both forms are now 120 dp, and an
+  aligned block with a bare-number width is placed by its alignment, as one with `120px` is.
+
 - **A text input draws its error border colour.** A single-line text input honoured `focused_border_color` and ignored
   `error_border_color`. It now strokes `error_border_color` while the field is in error, else `focused_border_color`
   while it has focus, else `border_color`, the same rule as iOS. Nothing puts a text input in error yet; the error

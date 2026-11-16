@@ -333,6 +333,7 @@ class SharedFixtureTest(
             "resolve_block_container_style" -> runBlockContainerStyle(action, spy)
             "measure_badge_placement" -> runBadgePlacement(action, spy)
             "resolve_text_input_border" -> runTextInputBorder(action, spy)
+            "resolve_element_size" -> runElementSize(action, spy)
             "measure_block_placement" -> runBlockPlacement(action, spy)
             "parse_colour" -> runParseColour(action, spy)
             "unfold_blockquotes" -> runUnfoldBlockquotes(action, spy)
@@ -3864,6 +3865,31 @@ class SharedFixtureTest(
             mapOf("name" to name, "result" to result)
         }
         assertTrue("[measure_block_placement] control: at least six authored-alignment controls were measured and read as authored ($controlsSeen)", controlsSeen >= 6)
+    }
+
+    /** A block's size: the REAL step parser (`sizeStr`) → the size grammar `parseSizeValue` that `applyRelativeSizing` draws. */
+    private fun runElementSize(action: JSONObject, spy: Spy) {
+        val cases = action.optJSONArray("cases") ?: unsupported("resolve_element_size without cases")
+        fun num(d: Float): String {
+            val r = kotlin.math.round(d * 1000.0) / 1000.0
+            return if (r == kotlin.math.floor(r)) r.toLong().toString() else r.toString()
+        }
+        fun describe(v: ai.appdna.sdk.onboarding.SizeValue?): String = when (v) {
+            ai.appdna.sdk.onboarding.SizeValue.Fill -> "fill"
+            ai.appdna.sdk.onboarding.SizeValue.Auto -> "auto"
+            is ai.appdna.sdk.onboarding.SizeValue.Percent -> "percent:${num(v.fraction)}"
+            is ai.appdna.sdk.onboarding.SizeValue.Px -> "px:${num(v.value)}"
+            null -> "none"
+        }
+        spy.state["results"] = (0 until cases.length()).map { i ->
+            val c = cases.getJSONObject(i)
+            val block = mutableMapOf<String, Any>("id" to "b", "type" to "text", "text" to "x")
+            for (k in listOf("element_width", "element_height")) if (c.has(k)) block[k] = c.get(k)
+            val step = mapOf("id" to "fixture_step", "type" to "custom", "content_blocks" to listOf(block))
+            val parsed = ai.appdna.sdk.onboarding.OnboardingConfigParser.parseStepForTest(step)?.config?.content_blocks?.firstOrNull()
+                ?: throw AssertionError("[resolve_element_size] case ${c.optString("name")}: the block did not parse")
+            listOf(describe(ai.appdna.sdk.onboarding.parseSizeValue(parsed.element_width)), describe(ai.appdna.sdk.onboarding.parseSizeValue(parsed.element_height)))
+        }
     }
 
     /** A single-line text input's border: the REAL step parser's `field_style` → the core `textInputBorderHex`. */
