@@ -86,6 +86,7 @@ import ai.appdna.sdk.onboarding.PERMISSION_ACTION
 import ai.appdna.sdk.onboarding.PERMISSION_ACTION_VALUE_KEY
 import ai.appdna.sdk.onboarding.PermissionActionDecision
 import ai.appdna.sdk.onboarding.emitPermissionAction
+import ai.appdna.sdk.onboarding.permissionTypeForNext
 import ai.appdna.sdk.onboarding.RuleTarget
 import ai.appdna.sdk.onboarding.classifyRuleTarget
 import ai.appdna.sdk.onboarding.OnboardingConfigParser
@@ -752,10 +753,28 @@ class SharedFixtureTest(
 
             // (c) natural advance / completion — the REAL OnboardingAdvance machine. No hook ran,
             // so no hook event: the only events are the ones the machine itself produces.
-            "next", "complete", "" -> applyAdvance(
-                flow, currentIndex, responsesFromSetup(), StepAdvanceResult.Proceed, spy, p.tracker,
-                hookRan = false,
-            )
+            "next", "complete", "" -> {
+                // REAL: permissionTypeForNext — the rule `handleAction("next")` runs first. A type
+                // means the renderer hands off to the OS permission pipeline, which owns the advance,
+                // so the step does not move here.
+                val prompted = if (buttonAction == "next") {
+                    permissionTypeForNext(
+                        configType = step.config.permission_type,
+                        layoutType = step.config.layout?.get("permission_type") as? String,
+                        blocks = step.config.content_blocks,
+                    )
+                } else null
+                spy.state["permission_prompted"] = prompted
+                if (prompted != null) {
+                    spy.state["current_step_index"] = currentIndex
+                    spy.state["current_step_id"] = step.id
+                } else {
+                    applyAdvance(
+                        flow, currentIndex, responsesFromSetup(), StepAdvanceResult.Proceed, spy, p.tracker,
+                        hookRan = false,
+                    )
+                }
+            }
 
             // (c2) flag CTA — records one key and advances. Drives the REAL `OnboardingCTAFlag`
             // (parse + the config-scanned `applyTo` fold) and then the REAL advance machine, which

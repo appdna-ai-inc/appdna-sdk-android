@@ -79,6 +79,13 @@ the project uses [Semantic Versioning](https://semver.org/).
 
 ### Fixed
 
+- **"Maybe later" on a permission step no longer raises the OS permission prompt.** On a `permission` step that has a
+  button with the `permission` action, a second button authored as `next` (a "Maybe later" or "Not now") ran the
+  permission request too, so the user who declined saw the OS sheet anyway, and on iOS the app's one notification ask
+  was spent on them. A `next` button now asks only when the step has no `permission` button, which is the case of a
+  step whose one CTA was authored as `next`. When the step has a `permission` button, `next` advances without asking
+  and records no `permission_<type>` outcome. A `permission` button inside a Multi-buttons, row or stack counts too.
+
 - **An in-app banner or tooltip is filled with exactly its `background_color`.** Material tinted a message card by its
   elevation whenever the card's colour was the theme's surface, which the message's own background always is, so an
   authored white banner or tooltip drew grey-purple and every other colour drew darker. The card keeps its shadow and

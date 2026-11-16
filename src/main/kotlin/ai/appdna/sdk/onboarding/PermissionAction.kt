@@ -119,3 +119,40 @@ internal fun permissionActionPayload(
     put("action", PERMISSION_ACTION)
     if (type.isNotBlank()) put(PERMISSION_ACTION_VALUE_KEY, type)
 }
+
+// ── `next` on a permission step ────────────────────────────────────────────────────────
+
+/**
+ * Does the step offer an explicit `action: "permission"` CTA anywhere in its blocks — top level, a
+ * `multi_buttons` / `row` / `stack` / `section_background` child, or a carousel page? Those all keep
+ * their nested blocks in `children` / `stack_children`, so the walk covers every depth a button can sit.
+ */
+internal fun stepHasPermissionCTA(blocks: List<ContentBlock>?): Boolean =
+    blocks.orEmpty().any { block ->
+        block.action == PERMISSION_ACTION ||
+            stepHasPermissionCTA(block.children) || stepHasPermissionCTA(block.stack_children)
+    }
+
+/**
+ * The permission type a bare `next` on this step must prompt for, or null when `next` is a plain advance.
+ *
+ * A step authored with `next` as its ONLY CTA still asks for the permission the step declares —
+ * otherwise a permission step whose primary button was authored as `next` never prompts at all.
+ *
+ * But when the step ALREADY offers an explicit `permission` CTA, `next` is that step's "continue
+ * without asking" — a "Maybe later" beside "Turn on reminders". Prompting there raised the OS
+ * sheet the user had just declined. So `next` prompts only when it is the step's sole way to the
+ * permission.
+ *
+ * Mirrors iOS `PermissionAction.swift` `permissionTypeForNext`.
+ */
+internal fun permissionTypeForNext(
+    configType: String?,
+    layoutType: String?,
+    blocks: List<ContentBlock>?,
+): String? {
+    if (stepHasPermissionCTA(blocks)) return null
+    // A bare `next` carries no action value — never treat the CTA label as a type.
+    val decision = decidePermissionAction(resolvePermissionType(configType, layoutType, actionValue = null))
+    return (decision as? PermissionActionDecision.RunPipeline)?.type
+}

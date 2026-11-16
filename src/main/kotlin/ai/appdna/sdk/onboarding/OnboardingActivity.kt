@@ -4084,21 +4084,18 @@ private fun BlockBasedStepView(
         // permission pipeline (prompt) BEFORE the required-field validation gate below, matching
         // iOS (OnboardingRenderer.swift `case "next"` short-circuits before `guard canAdvance`).
         // Permission steps skip required-field validation by design (the pipeline owns advance).
-        // The type + prompt/fallback call is the pure seam's now. A plain `next` on a
-        // permission step only diverts into the pipeline when the step really does declare a
-        // supported permission (RunPipeline); otherwise it falls through to the normal `next`
-        // handling below, exactly as before.
+        // The decision is the pure `permissionTypeForNext` seam, which the shared fixtures drive.
+        // A plain `next` diverts into the pipeline only when the step declares a supported
+        // permission AND offers no explicit `permission` CTA of its own. When it does offer one,
+        // `next` is the step's decline ("Maybe later") and advances without prompting.
         if (rawAction == "next") {
-            val nextDecision = decidePermissionAction(
-                resolvePermissionType(
-                    configType = effectiveConfig.permission_type,
-                    layoutType = effectiveConfig.layout?.get("permission_type") as? String,
-                    // A bare `next` carries no action value — never treat the CTA label as a type.
-                    actionValue = null,
-                ),
+            val nextPermissionType = permissionTypeForNext(
+                configType = effectiveConfig.permission_type,
+                layoutType = effectiveConfig.layout?.get("permission_type") as? String,
+                blocks = effectiveConfig.content_blocks,
             )
-            if (nextDecision is PermissionActionDecision.RunPipeline) {
-                runPermissionPipeline(nextDecision.type)
+            if (nextPermissionType != null) {
+                runPermissionPipeline(nextPermissionType)
                 return
             }
         }
