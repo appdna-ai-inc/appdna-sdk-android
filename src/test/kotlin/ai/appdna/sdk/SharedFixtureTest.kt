@@ -317,6 +317,7 @@ class SharedFixtureTest(
             "resolve_message_dismiss" -> runResolveMessageDismiss(action, spy)
             "resolve_paywall_image_alt" -> runPaywallImageAlt(action, spy)
             "resolve_paywall_trial_badge_color" -> runPaywallTrialBadgeColor(action, spy)
+            "resolve_paywall_comparison_table_style" -> runPaywallComparisonTableStyle(action, spy)
             "resolve_post_purchase_failure" -> runPostPurchaseFailure(action, spy)
             // A paywall media section's playback and a message's animation / video hero.
             "resolve_paywall_media_section" -> runPaywallMediaSection(action, spy)
@@ -4125,6 +4126,42 @@ class SharedFixtureTest(
      * The trial badge's colour and the paywall's accent, through the REAL `PaywallConfigParser.parseSinglePaywall`
      * and the REAL `PaywallAccent.trialBadgeHex` / `PaywallAccent.ctaHex` — the colours `PaywallActivity` draws.
      */
+    /**
+     * resolve_paywall_comparison_table_style REAL: `PaywallConfigParser.parseSinglePaywall` of a paywall with one
+     * comparison_table section, then `PaywallComparisonTableStyle.resolve(section, page)`; `cellKind` per cell_values entry.
+     */
+    private fun runPaywallComparisonTableStyle(action: JSONObject, spy: Spy) {
+        val cases = action.optJSONArray("cases") ?: unsupported("resolve_paywall_comparison_table_style without cases")
+        spy.state["results"] = (0 until cases.length()).map { i ->
+            val c = cases.getJSONObject(i)
+            val name = c.optString("name", "?")
+            @Suppress("UNCHECKED_CAST")
+            val section = (c.optJSONObject("section") ?: unsupported("resolve_paywall_comparison_table_style case without section"))
+                .asMap().filterValues { it != null } as Map<String, Any>
+            val paywall = ai.appdna.sdk.paywalls.PaywallConfigParser.parseSinglePaywall(
+                "pw_table_$name",
+                mapOf(
+                    "id" to "pw_table_$name",
+                    "layout" to mapOf("type" to "stack", "sections" to listOf(mapOf("id" to "s1", "type" to "comparison_table", "config" to section))),
+                ),
+            ) ?: throw AssertionError("[resolve_paywall_comparison_table_style] case $name: the paywall did not parse")
+            val table = paywall.sections.firstOrNull { it.type == "comparison_table" }
+            val page = if (c.isNull("page_background")) null else c.optString("page_background")
+            val t = ai.appdna.sdk.paywalls.PaywallComparisonTableStyle.resolve(table?.data, page)
+            mapOf(
+                "feature_header" to t.featureHeader, "header_bg" to t.headerBgHex, "header_text" to t.headerTextHex,
+                "header_font_size" to t.headerFontSize, "header_font_weight" to t.headerFontWeight,
+                "cell_text" to t.cellTextHex, "feature_text_alpha" to t.featureTextAlpha,
+                "cell_font_size" to t.cellFontSize, "cell_font_weight" to t.cellFontWeight,
+                "row_alt_bg" to t.rowAltBgHex, "cross" to t.crossHex, "partial" to t.partialHex, "border" to t.borderHex,
+                "highlight" to t.highlightHex, "corner_radius" to t.cornerRadius,
+                "columns" to t.columns.map { mapOf("label" to it.label, "highlighted" to it.highlighted, "header_text" to it.headerTextHex, "check" to it.checkHex) },
+            )
+        }
+        val values = action.optJSONArray("cell_values")
+        spy.state["cell_kinds"] = (0 until (values?.length() ?: 0)).map { ai.appdna.sdk.paywalls.PaywallComparisonTableStyle.cellKind(values!!.getString(it)) }
+    }
+
     private fun runPaywallTrialBadgeColor(action: JSONObject, spy: Spy) {
         val cases = action.optJSONArray("cases") ?: unsupported("resolve_paywall_trial_badge_color without cases")
         spy.state["results"] = (0 until cases.length()).map { i ->

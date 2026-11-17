@@ -5830,94 +5830,94 @@ private fun PaywallComparisonTableSection(
     section: PaywallSection,
     loc: (String, String) -> String,
 ) {
-    val cols = section.data?.table_columns ?: return
-    val rows = section.data.rows ?: return
-    val checkColor = section.data.check_color?.let { parseHexColor(it) } ?: Color(0xFF22C55E)
-    // Defaults match iOS PaywallRenderer.swift:
-    // 1397-1399. Cross was bright red `#EF4444`; iOS uses muted gray `#D1D5DB`.
-    // Border was 20%-white (invisible on light paywall); iOS uses `#E5E7EB`.
-    val crossColor = section.data.cross_color?.let { parseHexColor(it) } ?: parseHexColor("#D1D5DB")
-    val highlightClr = section.data.highlight_color?.let { parseHexColor(it) } ?: ai.appdna.sdk.AppDNA.brandAccentColor()
-    val borderClr = section.data.border_color?.let { parseHexColor(it) } ?: parseHexColor("#E5E7EB")
-    // Theme-adaptive label colors matching iOS
-    // `.foregroundColor(.primary)` / `.secondary`. Was hardcoded white,
-    // invisible on light-themed paywalls.
-    val tablePrimaryText = MaterialTheme.colorScheme.onSurface
-    val tableSecondaryText = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
-    // Header background `#F9FAFB` matching iOS
-    // PaywallRenderer.swift:1421. Was 5%-white (invisible on white paywall).
-    val tableHeaderBg = parseHexColor("#F9FAFB")
-    val radius = section.data.corner_radius ?: 12f
+    val rows = section.data?.rows ?: return
+    // every colour, size and label comes from the one resolver; nothing here is a constant. The header row
+    // was a fixed `#F9FAFB` and the text the Material theme's, so a dark paywall could draw its headers on near-white.
+    val pageHex = LocalPaywallPageHex.current
+    val t = PaywallComparisonTableStyle.resolve(section.data, pageHex)
+    // The cells are positional: with no columns there is nothing to line them up against (docs, both platforms).
+    if (t.columns.isEmpty()) return
+    val highlightClr = t.highlightHex?.let { parseHexColor(it) } ?: ai.appdna.sdk.AppDNA.brandAccentColor()
+    val borderClr = parseHexColor(t.borderHex)
+    val headerBg = t.headerBgHex?.let { parseHexColor(it) }
+        ?: PaywallTextDefaults.readable(pageHex).copy(alpha = PaywallComparisonTableStyle.DEFAULT_HEADER_ALPHA)
+    val headerWeight = FontWeight(t.headerFontWeight)
+    val cellWeight = FontWeight(t.cellFontWeight)
+    val cellText = parseHexColor(t.cellTextHex)
+    val altBg = t.rowAltBgHex?.let { parseHexColor(it) }
+    val radius = t.cornerRadius.toFloat()
 
     Column(
         modifier = Modifier
             .fillMaxWidth()
+            .testTag("paywall-comparison-table")
             .clip(RoundedCornerShape(radius.dp))
             .border(1.dp, borderClr, RoundedCornerShape(radius.dp))
             .run { with(StyleEngine) { applyContainerStyle(section.style?.container) } },
     ) {
         // Header row
         Row(
-            modifier = Modifier.fillMaxWidth().background(tableHeaderBg),
+            modifier = Modifier.fillMaxWidth().background(headerBg),
+            verticalAlignment = Alignment.CenterVertically,
         ) {
-            // Feature label column header
-            Box(modifier = Modifier.weight(1f).padding(vertical = 10.dp))
-            cols.forEachIndexed { _, col ->
+            Text(
+                text = t.featureHeader,
+                fontWeight = headerWeight,
+                fontSize = t.headerFontSize.sp,
+                color = parseHexColor(t.headerTextHex).copy(alpha = 0.7f),
+                modifier = Modifier.weight(1f).padding(horizontal = 8.dp, vertical = 10.dp),
+            )
+            t.columns.forEach { col ->
                 Box(
                     modifier = Modifier
                         .weight(1f)
-                        .background(if (col.highlighted == true) highlightClr.copy(alpha = 0.15f) else Color.Transparent)
+                        .background(if (col.highlighted) highlightClr.copy(alpha = 0.15f) else Color.Transparent)
                         .padding(vertical = 10.dp),
                     contentAlignment = Alignment.Center,
                 ) {
                     Text(
                         text = col.label,
-                        fontWeight = FontWeight.Bold,
-                        fontSize = 12.sp,
-                        color = tablePrimaryText,
+                        fontWeight = headerWeight,
+                        fontSize = t.headerFontSize.sp,
+                        color = parseHexColor(col.headerTextHex),
                         textAlign = TextAlign.Center,
                     )
                 }
             }
         }
-        Divider(color = borderClr, thickness = 0.5.dp)
+        Divider(color = borderClr, thickness = 1.dp)
 
         // Data rows
         rows.forEachIndexed { rowIdx, row ->
             Row(
                 verticalAlignment = Alignment.CenterVertically,
-                modifier = Modifier.fillMaxWidth(),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .background(if (rowIdx % 2 == 1 && altBg != null) altBg else Color.Transparent),
             ) {
                 Text(
                     text = row.feature,
-                    fontSize = 12.sp,
-                    color = tableSecondaryText,
+                    fontSize = t.cellFontSize.sp,
+                    fontWeight = cellWeight,
+                    color = cellText.copy(alpha = t.featureTextAlpha.toFloat()),
                     modifier = Modifier.weight(1f).padding(horizontal = 8.dp, vertical = 8.dp),
                 )
-                row.values.forEachIndexed { valIdx, value ->
+                // Every column gets a cell, so a row with fewer values keeps its cells under their headers.
+                t.columns.forEachIndexed { valIdx, col ->
+                    val value = row.values.getOrNull(valIdx) ?: ""
                     Box(
                         modifier = Modifier
                             .weight(1f)
-                            .background(
-                                if (valIdx < cols.size && cols[valIdx].highlighted == true) highlightClr.copy(alpha = 0.08f)
-                                else Color.Transparent,
-                            )
+                            .background(if (col.highlighted) highlightClr.copy(alpha = 0.08f) else Color.Transparent)
                             .padding(vertical = 8.dp),
                         contentAlignment = Alignment.Center,
                     ) {
-                        // \u2014 accept the same
-                        // value aliases iOS does (PaywallRenderer.swift:1437-1445):
-                        //   check / true / yes / y / \u2713
-                        //   cross / false / no / n / - / \u2717
-                        //   partial / ~
-                        when (value.lowercase().trim()) {
-                            "check", "true", "yes", "y", "\u2713" ->
-                                Text("\u2713", color = checkColor, fontWeight = FontWeight.Bold, fontSize = 14.sp)
-                            "cross", "false", "no", "n", "-", "\u2715" ->
-                                Text("\u2715", color = crossColor, fontWeight = FontWeight.Bold, fontSize = 14.sp)
-                            "partial", "~" ->
-                                Text("\u2014", color = Color(0xFFFBBF24), fontWeight = FontWeight.Bold, fontSize = 14.sp)
-                            else -> Text(value, fontSize = 12.sp, color = tablePrimaryText, textAlign = TextAlign.Center)
+                        val iconSize = (t.cellFontSize + 2).sp
+                        when (PaywallComparisonTableStyle.cellKind(value)) {
+                            "check" -> Text("✓", color = parseHexColor(col.checkHex), fontWeight = FontWeight.Bold, fontSize = iconSize)
+                            "cross" -> Text("✕", color = parseHexColor(t.crossHex), fontWeight = FontWeight.Bold, fontSize = iconSize)
+                            "partial" -> Text("—", color = parseHexColor(t.partialHex), fontWeight = FontWeight.Bold, fontSize = iconSize)
+                            else -> Text(value, fontSize = t.cellFontSize.sp, fontWeight = cellWeight, color = cellText, textAlign = TextAlign.Center)
                         }
                     }
                 }

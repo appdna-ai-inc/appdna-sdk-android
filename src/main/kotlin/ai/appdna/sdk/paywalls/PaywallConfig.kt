@@ -374,6 +374,20 @@ data class PaywallSectionData(
     val cross_color: String? = null,
     val highlight_color: String? = null,
     val border_color: String? = null,
+    // the table's own styling, which the console authored and no renderer read. Resolved by
+    // [PaywallComparisonTableStyle], the only reader.
+    val feature_header: String? = null,
+    val header_bg_color: String? = null,
+    val header_text_color: String? = null,
+    val header_font_size: Float? = null,
+    val header_font_weight: String? = null,
+    val cell_text_color: String? = null,
+    val cell_font_size: Float? = null,
+    val cell_font_weight: String? = null,
+    val row_alt_bg_color: String? = null,
+    val partial_color: String? = null,
+    /** The console's corner key for this section; `corner_radius` wins when both are present. */
+    val border_radius: Float? = null,
 
     // Promo input section
     val placeholder: String? = null,
@@ -535,6 +549,8 @@ data class PaywallGenericItem(
 data class PaywallTableColumn(
     val label: String,
     val highlighted: Boolean? = null,
+    /** this column's header text and check marks (a "Premium" column in the brand colour). */
+    val color: String? = null,
 )
 
 data class PaywallTableRow(
@@ -1607,6 +1623,7 @@ internal object PaywallConfigParser {
                             PaywallTableColumn(
                                 label = cm.str(SURFACE, "$path.table_columns", "label") ?: "",
                                 highlighted = cm.bool(SURFACE, "$path.table_columns", "highlighted"),
+                                color = cm.str(SURFACE, "$path.table_columns", "color"),
                             )
                         }
                         is String -> PaywallTableColumn(label = colData, highlighted = null)
@@ -1625,6 +1642,17 @@ internal object PaywallConfigParser {
                 cross_color = d.str(SURFACE, path, "cross_color"),
                 highlight_color = d.str(SURFACE, path, "highlight_color"),
                 border_color = d.str(SURFACE, path, "border_color"),
+                feature_header = d.str(SURFACE, path, "feature_header"),
+                header_bg_color = d.str(SURFACE, path, "header_bg_color"),
+                header_text_color = d.str(SURFACE, path, "header_text_color"),
+                header_font_size = d.num(SURFACE, path, "header_font_size")?.toFloat(),
+                header_font_weight = d.str(SURFACE, path, "header_font_weight"),
+                cell_text_color = d.str(SURFACE, path, "cell_text_color"),
+                cell_font_size = d.num(SURFACE, path, "cell_font_size")?.toFloat(),
+                cell_font_weight = d.str(SURFACE, path, "cell_font_weight"),
+                row_alt_bg_color = d.str(SURFACE, path, "row_alt_bg_color"),
+                partial_color = d.str(SURFACE, path, "partial_color"),
+                border_radius = d.num(SURFACE, path, "border_radius")?.toFloat(),
                 // Promo input section
                 placeholder = d.str(SURFACE, path, "placeholder"),
                 button_text = d.str(SURFACE, path, "button_text"),
