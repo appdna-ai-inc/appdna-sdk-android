@@ -4,7 +4,9 @@ All notable changes to the AppDNA Android SDK are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and
 the project uses [Semantic Versioning](https://semver.org/).
 
-## [Unreleased]
+## [1.0.58] — unreleased
+
+Feature parity: iOS 1.0.86.
 
 ### Added
 
@@ -63,9 +65,16 @@ the project uses [Semantic Versioning](https://semver.org/).
   button (`action: "share"`, `share_text`, `url`; the paywall stays). Text and link are trimmed; with neither,
   nothing opens. No event is tracked, because Android cannot report whether a share was completed.
 
-- **A step that advances by itself can show a countdown.** `auto_advance_indicator` on the step (beside `auto_advance_seconds`): `show` (default false), `style` (`text`, `bar`, `both`), `text` (`{seconds}` = whole seconds left), `text_color`, `font_size`, `bar_color`, `track_color`, `bar_height`, `position` (`top`, `bottom`). Off by default, so published flows are unchanged.
+- **A step that advances by itself can show a countdown.** `auto_advance_indicator` on the step (beside `auto_advance_seconds`): `show` (default false), `style` (`text`, `bar`, `both`), `text` (`{seconds}` = whole seconds left), `text_color`, `font_size`, `bar_color`, `track_color`, `bar_height`, `position` (`top`, `bottom`). The countdown takes its own space above or below the step, so it never covers the heading or a pinned button. Off by default, so published flows are unchanged.
 
 - **An onboarding button can add the app's widget to the home screen.** A button with the `add_widget` action asks the launcher to pin the app's own home-screen widget (`AppWidgetManager.requestPinAppWidget`, Android 8 and later); the SDK ships no widget, it pins the one the app declares. With no code in the app, the SDK finds the app's widget provider; an app with several names one in the button's `action_value` (the class name, fully qualified or simple), otherwise the first by class name is used. Where the launcher cannot or will not show a pin dialog (Android 7, a launcher without pinning, a refused request, or no dialog within a short wait), the button's `howto_blocks_android` sheet is shown instead: its Done button ends the attempt, and closing it any other way (swipe, back, a tap outside, a `dismiss` button) returns to the step. The step then advances once with `widget_status` in its answers, `added`, `not_added` or `unavailable` (the app has no widget), so next-step rules can branch on it. A widget counts as added when the launcher confirms it or a new widget id of that provider appears. A widget with a configuration activity is pinned without that activity being shown, so it must draw a sensible default. Events: `widget_add_tapped`, `widget_pin_requested`, `widget_pin_unavailable`, `widget_howto_shown`, `widget_howto_dismissed`, `widget_added`, `widget_not_added` and `widget_add_unavailable`, each with `flow_id` and `step_id`. The library manifest declares one non-exported receiver for the launcher's success callback.
+
+- **A Select or segmented question can start with an answer chosen by the author.** `field_config.default_value` on
+  an `input_select` (single or multi, every display style) or an `input_segmented` names the option(s) drawn selected
+  when the question shows. The default is written as the answer at that moment, as a tap writes it, so a required
+  question with a default lets the user continue at once and a summary tile draws the option's label. A restored or
+  host-set answer wins over it, a value that names no option is ignored, a number is read as its string, and a
+  multi-select keeps the default's order and `max_selections`. Without a default nothing changes.
 
 ### Changed
 
@@ -103,6 +112,10 @@ the project uses [Semantic Versioning](https://semver.org/).
   paywall image section or a screen image section whose Alt text is blank or unset is now hidden from TalkBack
   (it was announced as "Image", or with no description); one with Alt text is read as that text, as an image. An
   in-app message's image and a survey question's image have no description field, so they are always skipped.
+
+- **A required segmented question starts with nothing selected.** An `input_segmented` with `field_required: true`
+  no longer preselects its first option, so Continue waits until the user picks one. An optional one still starts on
+  its first option, and an author-set `default_value` is drawn selected either way.
 
 ### Fixed
 
@@ -299,6 +312,60 @@ the project uses [Semantic Versioning](https://semver.org/).
 
 - **In-app messages and surveys trigger on the SDK's own events.** A message or survey whose trigger is an event the SDK tracks itself (`app_open`, which is the console's default message trigger, `session_start`, `onboarding_flow_completed`, the purchase events, and the others on the auto-tracked events page) never appeared: only events passed to `track()` were checked against triggers. Every tracked event is now checked once, message first. Events tracked before the SDK has its config, such as `app_open` on a cold launch, are held (up to 32) and checked once the config is ready; a config cached from an earlier launch, or bundled in the app, is used at once. A message never triggers on the `in_app_message_*` events and a survey never triggers on the `survey_*` events, so showing one cannot show another of the same kind.
 
+- **A select answer drawn in text shows the option's label, not its stored value.** A `{{responses.…}}`,
+  `{{onboarding.<step>.<field>}}`, step or input token that names a Select, Segmented or chips answer now draws the
+  picked option's label (a multi-select: the picked labels, comma-joined), where it drew the option id or the
+  token's fallback. This holds for an answer with no tap behind it (a resumed flow, a default, a host-set answer), on a
+  later launch's paywall, message or screen, and when two steps share a field id (each answer draws its own step's
+  option). A stored value, a URL and a hook's headers keep the option id.
+
+- **A list on its own card draws the card across the row.** A `list` with an `element_width` and a `block_style` card
+  hugged its longest row, so its card was narrower than the copy above it while the console preview drew it full width.
+  A list with an authored width now fills that width before its card is drawn; an unsized list still hugs.
+
+- **A summary tile keeps its words whole, and a row of tiles shares one height.** A word wider than its tile broke
+  mid-word. A tile's value now shrinks until its longest word fits (down to half size) and wraps between words, and
+  every tile in a row is as tall as the tallest.
+
+- **A paywall with no background draws a readable header.** With no authored background the paywall is drawn on the
+  theme's background, but its header text was judged against white, so it could be white on a light page. The header
+  now reads the page the paywall really paints.
+
+- **Unstyled controls follow the step's background, not the phone's theme.** Option labels, segmented controls,
+  chips and other unstyled parts of a step took the phone's theme while the step's background was authored, so a
+  light step on a phone in dark mode drew white labels on white. Each block now takes its theme from what is drawn
+  behind it; an option or dropdown with its own fill is judged by that fill, a sheet keeps the phone's theme, and
+  authored colours still win. Steps built without content blocks (the older step types) follow the same rule.
+
+- **The close control and Skip read on a light step in dark mode.** An unstyled close (X) and Skip followed the
+  phone's theme and drew pale grey on a white step in dark mode. They now use a fixed colour for a light step; an
+  authored `icon_color` still wins.
+
+- **The status-bar and navigation-bar icons follow the step's background.** They followed the phone's theme, so a dark
+  flow on a phone in light mode drew dark icons on dark, and a light flow in dark mode lost the clock. They now follow
+  the background the step draws (its own, else the flow's); only a step with no background follows the theme.
+
+- **A rule on a number answer matches however the number was written.** A rating answer is stored as a number, a
+  published rule value of `4` is read as a whole number, and the console can write `"4"`; they were compared by type, so
+  a 4-star answer could fall to the fallback rule. Next-step rules, block visibility, form dependencies, a survey's
+  `show_if` and event conditions on surveys and messages now compare numbers by value. Two pieces of text still compare
+  exactly.
+
+- **The paywall's close and back circles are the size iOS draws.** The circle took the button's 48dp touch target as
+  its size; it is now twice the glyph (32dp by default), inside the same 48dp touch target, so it no longer crowds the
+  header title.
+
+- **A plan card's selection circle has its own column, and its badge is drawn whole.** The layouts drawn on the shared
+  plan card put the circle over the end of the plan name and clipped a badge that straddles the card's edge. The circle
+  now sits beside the content, as on iOS and in the vertical stack, and the badge is not clipped.
+
+- **A paywall feature list draws its check in `icon_color`.** The feature list section drew its checks in the brand
+  accent whatever `icon_color` said; it now takes `icon_color` when set, as iOS and the console preview do.
+
+- **The date wheel's rows fade at its edges while it scrolls.** Rows were drawn at full ink up to the wheel's edge and
+  cut there, so a half-cut row slid along the top and bottom mid-drag. The rows now fade out at the wheel's top and
+  bottom and stay inside it; the band is not faded.
+
 ### Added
 
 - **A Date Picker can pick a range of days.** `field_config.selection_mode: "range"` (date mode) draws a month calendar where two taps pick a range, joined by a bar in `field_config.range_color` (unset: `highlight_color` at 20%). The answer is `<field_id>` = `start/end` (`2026-11-07/2026-11-15`) with `<field_id>_start`, `<field_id>_end` and `<field_id>_days` (both ends included); until both ends are picked `<field_id>` is unset. Tapping the month and year opens a list of years to jump to.
@@ -372,10 +439,6 @@ the project uses [Semantic Versioning](https://semver.org/).
   was picked on, as iOS reads it.
 
 - **A multi-select option's indicator is round.** With Radio Fill set to Circle or Checkmark, a multi-select draws a filled check-circle when picked and an empty circle when not, as iOS does. It used to draw a square checkbox.
-
-## [1.0.58] — 2026-11-09
-
-Feature parity: iOS 1.0.86.
 
 ### Added
 
