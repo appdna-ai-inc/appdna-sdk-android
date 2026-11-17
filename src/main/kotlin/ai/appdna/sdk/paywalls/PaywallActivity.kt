@@ -2525,7 +2525,8 @@ internal fun PaywallSectionView(
             // Device QA — default badge bg is the brand accent (matches iOS + the console editor
             // default), not the hardcoded green. Other accent defaults in this file use the same
             // accessor (e.g. selected-border/bg at :1595/:1597).
-            val badgeBg = section.data?.badge_bg_color?.let { parseHexColor(it) } ?: ai.appdna.sdk.AppDNA.brandAccentColor()
+            // A solid colour or a linear gradient, resolved once for every badge on the section (`PaywallBadgeFill`).
+            val badgeFill = PaywallBadgeFill.resolve(section.data?.badge_bg_color, section.data?.badge_gradient, ai.appdna.sdk.AppDNA.brandAccentHex)
             val badgeTxt = section.data?.badge_text_color?.let { parseHexColor(it) } ?: Color.White
             val badgeFontSize = (section.data?.badge_font_size ?: 11f).sp
             // Resolve the badge text style from the Style-tab element
@@ -2582,7 +2583,7 @@ internal fun PaywallSectionView(
             fun BadgeView(badgeText: String) {
                 Row(
                     modifier = Modifier
-                        .background(badgeBg, badgeCorner)
+                        .then(PaywallBadgeFill.modifier(badgeFill, badgeCorner))
                         .then(
                             // Border only when both width>0 and a color is set (iOS PlanCard.swift:332-335).
                             if (badgeBorderWidth > 0f && badgeBorderColor != null)

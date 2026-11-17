@@ -10,6 +10,11 @@ Feature parity: iOS 1.0.86.
 
 ### Added
 
+- **A plan badge can be a gradient.** `badge_gradient` on the `plans` section (`{ type, angle, stops: [{ color,
+  position }] }`, the `cta_gradient` shape) fills every plan badge with a linear gradient when it has two or more
+  coloured stops; otherwise the badge keeps the solid `badge_bg_color`, then the brand accent. `angle` is CSS degrees
+  (default 90, left to right). Shared fixture `dto_parsing/paywall_badge_fill`.
+
 - **Sheets inside a step.** A step's `sheets` slide up over it, opened by an `open_sheet` button or by Continue when
   a required answer it is missing is in a sheet (then no "Please fill in" pill; the sheet's `next` re-runs Continue).
   A sheet's inputs are the step's answers, live, and the step's gate counts them; a swipe, a scrim tap or Back closes

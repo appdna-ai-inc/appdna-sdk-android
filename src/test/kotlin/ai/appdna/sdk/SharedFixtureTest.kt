@@ -317,6 +317,7 @@ class SharedFixtureTest(
             "resolve_message_dismiss" -> runResolveMessageDismiss(action, spy)
             "resolve_paywall_image_alt" -> runPaywallImageAlt(action, spy)
             "resolve_paywall_trial_badge_color" -> runPaywallTrialBadgeColor(action, spy)
+            "resolve_paywall_badge_fill" -> runPaywallBadgeFill(action, spy)
             "resolve_paywall_comparison_table_style" -> runPaywallComparisonTableStyle(action, spy)
             "resolve_post_purchase_failure" -> runPostPurchaseFailure(action, spy)
             // A paywall media section's playback and a message's animation / video hero.
@@ -4160,6 +4161,32 @@ class SharedFixtureTest(
         }
         val values = action.optJSONArray("cell_values")
         spy.state["cell_kinds"] = (0 until (values?.length() ?: 0)).map { ai.appdna.sdk.paywalls.PaywallComparisonTableStyle.cellKind(values!!.getString(it)) }
+    }
+
+    /**
+     * resolve_paywall_badge_fill REAL: `PaywallConfigParser.parseSinglePaywall` of a paywall with one plans
+     * section, then `PaywallBadgeFill.resolve(badge_bg_color, badge_gradient, accent)`.
+     */
+    private fun runPaywallBadgeFill(action: JSONObject, spy: Spy) {
+        val cases = action.optJSONArray("cases") ?: unsupported("resolve_paywall_badge_fill without cases")
+        spy.state["results"] = (0 until cases.length()).map { i ->
+            val c = cases.getJSONObject(i)
+            val name = c.optString("name", "?")
+            @Suppress("UNCHECKED_CAST")
+            val section = (c.optJSONObject("section") ?: unsupported("resolve_paywall_badge_fill case without section"))
+                .asMap().filterValues { it != null } as Map<String, Any>
+            val paywall = ai.appdna.sdk.paywalls.PaywallConfigParser.parseSinglePaywall(
+                "pw_badge_fill_$name",
+                mapOf(
+                    "id" to "pw_badge_fill_$name",
+                    "layout" to mapOf("type" to "stack", "sections" to listOf(mapOf("id" to "s1", "type" to "plans", "config" to section))),
+                ),
+            ) ?: throw AssertionError("[resolve_paywall_badge_fill] case $name: the paywall did not parse")
+            val plans = paywall.sections.firstOrNull { it.type == "plans" }
+            val accent = if (c.isNull("accent")) null else c.optString("accent")
+            val r = ai.appdna.sdk.paywalls.PaywallBadgeFill.resolve(plans?.data?.badge_bg_color, plans?.data?.badge_gradient, accent)
+            mapOf("kind" to r.kind, "colors" to r.colors, "locations" to r.locations, "angle" to r.angle)
+        }
     }
 
     private fun runPaywallTrialBadgeColor(action: JSONObject, spy: Spy) {

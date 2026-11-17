@@ -434,6 +434,8 @@ data class PaywallSectionData(
     val badge_position: String? = null,       // top_right, top_left, top_center, inline
     val badge_shape: String? = null,          // pill, rounded, square
     val badge_bg_color: String? = null,
+    /** A two-or-more-stop fill for every plan badge; wins over `badge_bg_color` ([PaywallBadgeFill]). */
+    val badge_gradient: PaywallGradient? = null,
     val badge_text_color: String? = null,
     val badge_font_size: Float? = null,
 
@@ -1698,6 +1700,21 @@ internal object PaywallConfigParser {
                 // `badge_shape` as a back-compat fallback.
                 badge_shape = (d["badge_style"] ?: d["badge_shape"]) as? String,
                 badge_bg_color = d.str(SURFACE, path, "badge_bg_color"),
+                badge_gradient = (d.objMap(SURFACE, path, "badge_gradient"))?.let { g ->
+                    @Suppress("UNCHECKED_CAST")
+                    val stopsList = (g.list(SURFACE, path, "stops"))?.mapNotNull { s ->
+                        val sm = (s as? Map<String, Any>) ?: return@mapNotNull null
+                        PaywallGradientStop(
+                            color = sm.str(SURFACE, "$path.badge_gradient.stops", "color"),
+                            position = (sm.num(SURFACE, "$path.badge_gradient.stops", "position"))?.toDouble(),
+                        )
+                    }
+                    PaywallGradient(
+                        type = g.str(SURFACE, "$path.badge_gradient", "type"),
+                        angle = (g.num(SURFACE, "$path.badge_gradient", "angle"))?.toDouble(),
+                        stops = stopsList,
+                    )
+                },
                 badge_text_color = d.str(SURFACE, path, "badge_text_color"),
                 badge_font_size = d.num(SURFACE, path, "badge_font_size")?.toFloat(),
                 // Plan-card show-flags +
