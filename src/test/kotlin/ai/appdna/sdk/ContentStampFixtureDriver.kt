@@ -27,7 +27,7 @@ import org.robolectric.Robolectric
 import org.robolectric.Shadows.shadowOf
 
 /**
- * Drives `emit_surface_events` (SPEC-536 D1/D4 — `event_emission/content_stamp_*`) through the REAL managers:
+ * Drives `emit_surface_events` (`event_emission/content_stamp_*`) through the REAL managers:
  * the served item is parsed by the platform's own config parser, presented by the surface's own manager, and
  * every event is emitted by the SDK's own emission site into the caller's real pipeline. The driver only
  * plays the user (a step viewed, a CTA tapped, a store answering) — it never writes an event itself.

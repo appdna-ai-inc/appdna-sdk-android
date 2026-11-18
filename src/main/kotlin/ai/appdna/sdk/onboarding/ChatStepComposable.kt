@@ -60,7 +60,7 @@ fun ChatStepComposable(
     savedTranscript: Map<String, Any>? = null,
 ) {
     val chatConfig = step.config.chat_config ?: return
-    // SPEC-536: every chat event carries the flow's content (`content_version` / `content_source_id`).
+    // every chat event carries the flow's content (`content_version` / `content_source_id`).
     val contentStamp = ai.appdna.sdk.core.LocalContentStamp.current
     val style = chatConfig.style
     val persona = chatConfig.persona

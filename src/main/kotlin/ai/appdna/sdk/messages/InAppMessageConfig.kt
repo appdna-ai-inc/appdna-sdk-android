@@ -50,12 +50,12 @@ data class MessageConfig(
     val priority: Int = 0,
     val start_date: String? = null,
     val end_date: String? = null,
-    /** SPEC-536: the served message's version. Null from a server older than SPEC-536 P1. */
+    /** the served message's version. Null from an older server. */
     val version: Int? = null,
-    /** SPEC-536: the message whose content this one is serving (Serve instead); null when not swapped. */
+    /** the message whose content this one is serving (Serve instead); null when not swapped. */
     val served_from: ai.appdna.sdk.core.ServedFrom? = null,
 ) {
-    /** `content_version` + `content_source_id` for every event this message emits (SPEC-536 D1). */
+    /** `content_version` + `content_source_id` for every event this message emits. */
     internal val contentStamp: Map<String, Any>
         get() = ai.appdna.sdk.core.ContentStamp.of(version, served_from)
 }

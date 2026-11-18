@@ -386,7 +386,7 @@ class OnboardingActivity : ComponentActivity() {
                 CompositionLocalProvider(
                     LocalStepDrafts provides viewModel.stepDrafts,
                     LocalPlacementRules provides PlacementRules.of(flow.settings.placement_rules),
-                    // SPEC-536: every event a step emits carries the flow's content (chat, sheets,
+                    // every event a step emits carries the flow's content (chat, sheets,
                     // permissions, widget pins and remote validation read it from here).
                     ai.appdna.sdk.core.LocalContentStamp provides flow.contentStamp,
                 ) {
@@ -3959,7 +3959,7 @@ private fun BlockBasedStepView(
     // the step's sheets: which is open, and the action its Continue refused. The sheets' agreement
     // defaults are seeded into the step's answers as the step appears, as an on-step agreement seeds itself.
     var shownSheet by remember(stepId) { mutableStateOf<StepSheet?>(null) }
-    // SPEC-536: the flow's content, on every event this step emits.
+    // the flow's content, on every event this step emits.
     val contentStamp = ai.appdna.sdk.core.LocalContentStamp.current
     val stepActionRef = remember(stepId) { arrayOfNulls<(String) -> Unit>(1) }
     val refusedPress = remember(stepId) { arrayOfNulls<String>(1) }

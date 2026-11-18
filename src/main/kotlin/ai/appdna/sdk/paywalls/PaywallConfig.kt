@@ -62,10 +62,10 @@ data class PaywallConfig(
     // `config.cta?.text` before falling back to section-data CTA
     // (`PaywallRenderer.swift:146`).
     val cta: PaywallCTA? = null,
-    /** SPEC-536: the item whose content this paywall is serving (Serve instead); null when not swapped. */
+    /** the item whose content this paywall is serving (Serve instead); null when not swapped. */
     val served_from: ai.appdna.sdk.core.ServedFrom? = null,
 ) {
-    /** `content_version` + `content_source_id` for every event this paywall emits (SPEC-536 D1). */
+    /** `content_version` + `content_source_id` for every event this paywall emits. */
     internal val contentStamp: Map<String, Any>
         get() = ai.appdna.sdk.core.ContentStamp.of(version, served_from)
 }

@@ -33,10 +33,10 @@ internal class SurveyManager(
     @Volatile private var surveyConfigs: Map<String, SurveyConfig> = emptyMap()
     private val isPresenting = AtomicBoolean(false)
     private var currentSurveyId: String? = null
-    /** SPEC-536: the content of the survey on screen, on every event it emits. Set with [currentSurveyId]. */
+    /** the content of the survey on screen, on every event it emits. Set with [currentSurveyId]. */
     @Volatile private var currentContentStamp: Map<String, Any> = emptyMap()
 
-    /** SPEC-536: the served survey's stamp, for the process-death path that lost the presented config. */
+    /** the served survey's stamp, for the process-death path that lost the presented config. */
     internal fun servedContentStamp(surveyId: String): Map<String, Any> =
         surveyConfigs[surveyId]?.contentStamp.orEmpty()
 
@@ -437,7 +437,7 @@ internal class SurveyManager(
      * arrives is worse than an absent one, because the query looks right.
      */
     private fun presentFeedbackForm(message: String?, surveyId: String?) {
-        // SPEC-536: captured NOW, while the survey that asked for the form is still the current one — the
+        // captured NOW, while the survey that asked for the form is still the current one — the
         // dialog is answered later, after another survey may have been shown.
         val contentStamp = currentContentStamp
         scope.launch(Dispatchers.Main) {

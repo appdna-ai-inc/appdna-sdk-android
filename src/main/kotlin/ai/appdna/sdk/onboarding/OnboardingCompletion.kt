@@ -42,7 +42,7 @@ internal object OnboardingCompletion {
         totalSteps: Int,
         durationMs: Int,
         responses: Map<String, Any>,
-        /** SPEC-536: the flow's `content_version` / `content_source_id` ([OnboardingFlowConfig.contentStamp]). */
+        /** the flow's `content_version` / `content_source_id` ([OnboardingFlowConfig.contentStamp]). */
         contentStamp: Map<String, Any> = emptyMap(),
     ): OnboardingAdvance.TrackedEvent = OnboardingAdvance.TrackedEvent(
         ONBOARDING_FLOW_COMPLETED_EVENT,
@@ -79,7 +79,7 @@ internal object OnboardingCompletion {
          * fire later against a different flow.
          */
         openRoute: ((String) -> Boolean)? = null,
-        /** SPEC-536: the flow's `content_version` / `content_source_id` ([OnboardingFlowConfig.contentStamp]). */
+        /** the flow's `content_version` / `content_source_id` ([OnboardingFlowConfig.contentStamp]). */
         contentStamp: Map<String, Any> = emptyMap(),
     ) {
         val event = completionEvent(flowId, totalSteps, durationMs, responses, contentStamp)

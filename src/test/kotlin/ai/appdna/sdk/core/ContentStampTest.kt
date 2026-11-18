@@ -14,7 +14,7 @@ import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
 
 /**
- * SPEC-536: the four served models read `version` and `served_from` through their REAL parsers, an old
+ * the four served models read `version` and `served_from` through their REAL parsers, an old
  * config (no `served_from`, and for messages and surveys no `version`) still parses with both absent, and the
  * one helper writes `content_source_id` only for a swapped item.
  */

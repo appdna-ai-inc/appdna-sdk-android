@@ -238,7 +238,7 @@ class NativeBillingManager internal constructor(
     internal var currentPaywallMetadata: Map<String, Any> = emptyMap()
 
     /**
-     * SPEC-536 D4: the `content_version` / `content_source_id` of the paywall that started the purchase in
+     * the `content_version` / `content_source_id` of the paywall that started the purchase in
      * flight, so every purchase event is credited to the content that sold it. Written with
      * [currentPaywallId] by `PaywallManager.handlePurchase`; purchase-scoped like it.
      */
@@ -461,7 +461,7 @@ class NativeBillingManager internal constructor(
         paywallId: String? = currentPaywallId,
         experimentId: String? = currentExperimentId,
         paywallMetadata: Map<String, Any> = currentPaywallMetadata,
-        /** SPEC-536 D4: the selling paywall's content; captured by the caller with [paywallId]. */
+        /** the selling paywall's content; captured by the caller with [paywallId]. */
         contentStamp: Map<String, Any> = paywallContentStampFor(paywallId),
     ) {
         val props = mutableMapOf<String, Any>(

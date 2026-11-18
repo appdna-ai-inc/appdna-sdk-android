@@ -58,7 +58,7 @@ internal fun rememberWidgetStepWiring(
 ): WidgetStepWiring {
     val gate = rememberUpdatedState(gatePasses)
     val adv = rememberUpdatedState(advance)
-    // SPEC-536: every widget event carries the flow's content (`content_version` / `content_source_id`).
+    // every widget event carries the flow's content (`content_version` / `content_source_id`).
     val contentStamp = ai.appdna.sdk.core.LocalContentStamp.current
     val wiring = remember(stepId) {
         val howto = mutableStateOf<List<ContentBlock>?>(null)

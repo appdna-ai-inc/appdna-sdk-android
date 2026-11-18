@@ -25,7 +25,7 @@ import org.robolectric.android.controller.ActivityController
 import org.robolectric.annotation.Config
 
 /**
- * SPEC-536 D1, through the REAL onboarding activity: a served flow with `version: 7` and
+ * through the REAL onboarding activity: a served flow with `version: 7` and
  * `served_from: {id: "src_1"}` stamps `content_version` and `content_source_id` on EVERY event it emits —
  * the manager's (started, step viewed / completed, flow completed) and the ones written deep inside a
  * step, which only know the flow by its id (a step sheet opened and closed reads the stamp from

@@ -4,12 +4,11 @@ import androidx.compose.runtime.Immutable
 import androidx.compose.runtime.staticCompositionLocalOf
 
 /**
- * `served_from` on a served onboarding flow, paywall, in-app message or survey (SPEC-536 D2).
+ * `served_from` on a served onboarding flow, paywall, in-app message or survey.
  *
  * Present only while the item is serving ANOTHER item's content (Serve instead): [id] is the source
  * item, [version] the source's version that was copied. The server owns it; the SDK only copies it
  * onto events. Absent on every item that is not swapped, and on every config from a server older than
- * SPEC-536 P1.
  */
 @Immutable
 @androidx.annotation.Keep
@@ -28,13 +27,13 @@ data class ServedFrom(
 }
 
 /**
- * The ONE place the content keys are written (SPEC-536 D1).
+ * The ONE place the content keys are written.
  *
  * Every event an onboarding flow, a paywall (and a purchase started from one), an in-app message from
  * the served set, or a survey emits carries the content that was on screen:
  *
  *  - `content_version` — the served item's `version`, the counter that moves only when the served copy
- *    changes. Absent only when the served item carries no version (a server older than SPEC-536 P1 for
+ *    changes. Absent only when the served item carries no version (an older server for
  *    messages and surveys).
  *  - `content_source_id` — `served_from.id`, present ONLY while the item is serving another item's
  *    content, so analytics never blend a swapped item's numbers with its own.
@@ -65,6 +64,6 @@ internal object ContentStamp {
 /**
  * The stamp of the onboarding flow on screen, for the composables deep inside a step (chat, step sheets,
  * permission prompts, widget pins, remote validation) that only know the flow by its id. Provided by
- * `OnboardingFlowHost`; empty anywhere else (screens reuse step views and are not a SPEC-536 surface).
+ * `OnboardingFlowHost`; empty anywhere else (screens reuse step views and are not a stamped surface).
  */
 internal val LocalContentStamp = staticCompositionLocalOf<Map<String, Any>> { emptyMap() }

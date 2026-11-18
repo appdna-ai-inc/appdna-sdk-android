@@ -398,7 +398,7 @@ class MessageManager internal constructor(
         // see the updated counter via `canShow`.
         frequencyTracker.recordShown(messageId, config.trigger_rules.frequency)
 
-        // SPEC-536: the message's content on every event it emits. Empty for a journey delivery
+        // the message's content on every event it emits. Empty for a journey delivery
         // (PendingMessageListener builds its config with no version), which Serve instead never touches.
         val contentStamp = config.contentStamp
         AppDNA.trackInternal(

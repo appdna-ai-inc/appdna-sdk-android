@@ -441,7 +441,7 @@ class SharedFixtureTest(
             "dispatch_triggers" -> runDispatchTriggers(action, spy)
             "resolve_rive_input_kind" -> runRiveInputKind(action, spy)
             "track_events_with_observer" -> runEventObserver(action, spy)
-            // SPEC-536 — content_version / content_source_id on every surface event (ContentStampFixtureDriver).
+            // content_version / content_source_id on every surface event (ContentStampFixtureDriver).
             "emit_surface_events" -> runEmitSurfaceEvents(action, spy)
             // WHICH copy of content_blocks the real parser resolves, per step shape.
             "resolve_content_blocks" -> runResolveContentBlocks(action, spy)
@@ -479,7 +479,7 @@ class SharedFixtureTest(
     }
 
     // ---------------------------------------------------------------------------------------------
-    // emit_surface_events — SPEC-536: the REAL managers emit, the driver only plays the user
+    // emit_surface_events — the REAL managers emit, the driver only plays the user
     // ---------------------------------------------------------------------------------------------
 
     /**

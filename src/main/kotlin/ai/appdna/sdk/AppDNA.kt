@@ -1740,7 +1740,7 @@ object AppDNA {
     }
 
     /**
-     * SPEC-536: the served paywall's / survey's `content_version` / `content_source_id`, for the
+     * the served paywall's / survey's `content_version` / `content_source_id`, for the
      * process-death paths that lost the config they presented. Empty when the config is not loaded.
      */
     internal fun servedPaywallContentStamp(paywallId: String): Map<String, Any> =

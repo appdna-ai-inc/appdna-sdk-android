@@ -287,7 +287,7 @@ internal class PaywallManager(
                 viewProps["price_source"] = sources.joinToString(",")
                 viewProps["store_prices_resolved"] = sources.count { it == "store" }
             }
-            // SPEC-536: the content on screen, applied LAST so no custom data can stand in for it.
+            // the content on screen, applied LAST so no custom data can stand in for it.
             eventTracker.track("paywall_view", ContentStamp.apply(viewProps, presented.contentStamp))
             launchPaywallActivity(activity, id, withPrices, context, listener)
         }
@@ -462,7 +462,7 @@ internal class PaywallManager(
         AppDNA.billing.manager?.takeIf { !it.purchaseInFlight }?.let { mgr ->
             mgr.currentPaywallMetadata = metadata
             mgr.currentPaywallId = paywallId
-            // SPEC-536 D4: the purchase is credited to the content that sold it.
+            // the purchase is credited to the content that sold it.
             mgr.currentPaywallContentStamp = config.contentStamp
         }
 
@@ -691,7 +691,7 @@ internal class PaywallManager(
     internal fun handleRestore(
         paywallId: String,
         listener: AppDNAPaywallDelegate?,
-        /** SPEC-536: the paywall's `content_version` / `content_source_id`, on every restore event it emits. */
+        /** the paywall's `content_version` / `content_source_id`, on every restore event it emits. */
         contentStamp: Map<String, Any> = emptyMap(),
     ) {
         val policy = AppDNA.billing.ownershipPolicy
