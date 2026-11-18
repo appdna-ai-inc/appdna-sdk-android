@@ -36,7 +36,15 @@ data class SurveyConfig(
     val followUpActions: SurveyFollowUpActions?,
     /** A name an app can ask for this survey by, instead of its id. Several surveys may share one. */
     val placement: String? = null,
+    /** SPEC-536: the served survey's version. Null from a server older than SPEC-536 P1. */
+    val version: Int? = null,
+    /** SPEC-536: the survey whose content this one is serving (Serve instead); null when not swapped. */
+    val servedFrom: ai.appdna.sdk.core.ServedFrom? = null,
 ) {
+    /** `content_version` + `content_source_id` for every event this survey emits (SPEC-536 D1). */
+    internal val contentStamp: Map<String, Any>
+        get() = ai.appdna.sdk.core.ContentStamp.of(version, servedFrom)
+
     companion object {
         fun fromMap(data: Map<String, Any>): SurveyConfig? {
             return try {
@@ -61,6 +69,8 @@ data class SurveyConfig(
                     appearance = SurveyAppearance.fromMap(appearanceData),
                     followUpActions = followUpData?.let { SurveyFollowUpActions.fromMap(it) },
                     placement = data["placement"] as? String,
+                    version = (data["version"] as? Number)?.toInt(),
+                    servedFrom = ai.appdna.sdk.core.ServedFrom.parse(data["served_from"]),
                 )
             } catch (e: Exception) {
                 null

@@ -62,7 +62,13 @@ data class PaywallConfig(
     // `config.cta?.text` before falling back to section-data CTA
     // (`PaywallRenderer.swift:146`).
     val cta: PaywallCTA? = null,
-)
+    /** SPEC-536: the item whose content this paywall is serving (Serve instead); null when not swapped. */
+    val served_from: ai.appdna.sdk.core.ServedFrom? = null,
+) {
+    /** `content_version` + `content_source_id` for every event this paywall emits (SPEC-536 D1). */
+    internal val contentStamp: Map<String, Any>
+        get() = ai.appdna.sdk.core.ContentStamp.of(version, served_from)
+}
 
 @Immutable
 data class PaywallLayout(
@@ -979,7 +985,7 @@ data class PaywallContext(
 ) {
     companion object {
         /** Reserved `paywall_view` property names. [customData] may not shadow them. */
-        internal val RESERVED_EVENT_KEYS = setOf("paywall_id", "placement")
+        internal val RESERVED_EVENT_KEYS = setOf("paywall_id", "placement") + ai.appdna.sdk.core.ContentStamp.KEYS
     }
 }
 
@@ -1386,6 +1392,7 @@ internal object PaywallConfigParser {
             // Top-level plans + cta.
             plans = topLevelPlans,
             cta = topLevelCta,
+            served_from = ai.appdna.sdk.core.ServedFrom.parse(map["served_from"]),
         )
     }
 

@@ -441,6 +441,8 @@ class SharedFixtureTest(
             "dispatch_triggers" -> runDispatchTriggers(action, spy)
             "resolve_rive_input_kind" -> runRiveInputKind(action, spy)
             "track_events_with_observer" -> runEventObserver(action, spy)
+            // SPEC-536 — content_version / content_source_id on every surface event (ContentStampFixtureDriver).
+            "emit_surface_events" -> runEmitSurfaceEvents(action, spy)
             // WHICH copy of content_blocks the real parser resolves, per step shape.
             "resolve_content_blocks" -> runResolveContentBlocks(action, spy)
             "countdown_initial_seconds" -> runCountdownInitialSeconds(action, spy)
@@ -474,6 +476,36 @@ class SharedFixtureTest(
             else -> unsupported("no driver for action.kind=$kind")
         }
         assertExpectations(spy)
+    }
+
+    // ---------------------------------------------------------------------------------------------
+    // emit_surface_events — SPEC-536: the REAL managers emit, the driver only plays the user
+    // ---------------------------------------------------------------------------------------------
+
+    /**
+     * Each served item in `setup.config.items`, in order, presented and driven through
+     * [ContentStampFixtureDriver]; what is observed is the envelopes the SDK persisted for that item,
+     * narrowed to the event names its `drive` list asks about (the fixture's stated contract).
+     */
+    private fun runEmitSurfaceEvents(action: JSONObject, spy: Spy) {
+        val p = Pipeline(fixtureName).also { pipeline = it }
+        // The paywall close, permission, message and billing sites emit through the static AppDNA tracker.
+        AppDNA.installEventTrackerForTest(p.tracker)
+        val items = config?.optJSONArray("items") ?: unsupported("emit_surface_events without setup.config.items")
+        val drive = action.optJSONObject("drive") ?: unsupported("emit_surface_events without action.drive")
+        val surface = action.getString("surface")
+        val driver = ContentStampFixtureDriver(ctx, p.tracker, action) { unsupported(it) }
+        var seen = 0
+        for (i in 0 until items.length()) {
+            val item = items.getJSONObject(i).asMap().filterValues { it != null }.mapValues { it.value!! }
+            val id = item["id"] as? String ?: unsupported("emit_surface_events: items[$i] has no id")
+            val names = drive.optJSONArray(id)?.let { a -> (0 until a.length()).map { a.getString(it) } }
+                ?: unsupported("emit_surface_events: action.drive has no list for $id")
+            driver.drive(surface, item, names)
+            val all = p.envelopes()
+            spy.events += all.drop(seen).map { it.toEventPair() }.filter { it.first in names }
+            seen = all.size
+        }
     }
 
     // ---------------------------------------------------------------------------------------------

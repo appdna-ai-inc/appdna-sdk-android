@@ -437,6 +437,7 @@ internal class PurchaseCompletion(
         val paywallId = if (continuation != null) mgr.currentPaywallId else null
         val experimentId = if (continuation != null) mgr.currentExperimentId else null
         val metadata = if (continuation != null) mgr.currentPaywallMetadata else emptyMap()
+        val contentStamp = if (continuation != null) mgr.paywallContentStampFor(paywallId) else emptyMap()
         val delivery = PendingDelivery(
             purchaseToken = op.token,
             transactionId = txId,
@@ -473,6 +474,7 @@ internal class PurchaseCompletion(
             paywallId = paywallId,
             experimentId = experimentId,
             paywallMetadata = metadata,
+            contentStamp = contentStamp,
         )
         result.reportedTokens += op.token
         result.reportedProducts += productId

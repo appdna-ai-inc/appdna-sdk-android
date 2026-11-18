@@ -386,6 +386,9 @@ class OnboardingActivity : ComponentActivity() {
                 CompositionLocalProvider(
                     LocalStepDrafts provides viewModel.stepDrafts,
                     LocalPlacementRules provides PlacementRules.of(flow.settings.placement_rules),
+                    // SPEC-536: every event a step emits carries the flow's content (chat, sheets,
+                    // permissions, widget pins and remote validation read it from here).
+                    ai.appdna.sdk.core.LocalContentStamp provides flow.contentStamp,
                 ) {
                     OnboardingFlowHost(
                         flow = flow,
@@ -601,6 +604,13 @@ class OnboardingActivity : ComponentActivity() {
         internal fun clearActiveLaunches() {
             pendingLaunchPayload = null
         }
+
+        /**
+         * Test seam: the payload [launch] queued, without consuming it — the manager's own event closures,
+         * so a test can drive them without composing the flow.
+         */
+        @Synchronized
+        internal fun peekPendingLaunchPayloadForTest(): LaunchPayload? = pendingLaunchPayload
 
         internal fun launch(context: Context, payload: LaunchPayload) {
             pendingLaunchPayload = payload
@@ -847,7 +857,7 @@ internal fun OnboardingFlowHost(
             "step_id" to step.id,
         )
         props.putAll(extra)
-        eventTracker?.track(event, props)
+        eventTracker?.track(event, ai.appdna.sdk.core.ContentStamp.apply(props, flow.contentStamp))
     }
 
     // Flow-host half of the element-interaction wiring. Awaits the host delegate's
@@ -1085,7 +1095,7 @@ internal fun OnboardingFlowHost(
                             "flow_id" to flow.id,
                             "paywall_id" to paywallId,
                             "reason" to reason,
-                        ),
+                        ) + flow.contentStamp,
                     )
                 }
                 "complete_flow", "" -> {
@@ -1095,7 +1105,7 @@ internal fun OnboardingFlowHost(
                             "flow_id" to flow.id,
                             "paywall_id" to paywallId,
                             "completed_via" to reason,
-                        ),
+                        ) + flow.contentStamp,
                     )
                     @Suppress("UNCHECKED_CAST")
                     onFlowCompleted(responses.toMap() as Map<String, Any>)
@@ -1121,7 +1131,7 @@ internal fun OnboardingFlowHost(
                                     "flow_id" to flow.id,
                                     "paywall_id" to paywallId,
                                     "completed_via" to reason,
-                                ),
+                                ) + flow.contentStamp,
                             )
                             @Suppress("UNCHECKED_CAST")
                             onFlowCompleted(responses.toMap() as Map<String, Any>)
@@ -1162,7 +1172,7 @@ internal fun OnboardingFlowHost(
                                 "flow_id" to flow.id,
                                 "paywall_id" to paywallId,
                                 "completed_via" to reason,
-                            ),
+                            ) + flow.contentStamp,
                         )
                         @Suppress("UNCHECKED_CAST")
                         onFlowCompleted(responses.toMap() as Map<String, Any>)
@@ -1228,7 +1238,7 @@ internal fun OnboardingFlowHost(
                     "flow_id" to flow.id,
                     "paywall_id" to paywallId,
                     "reason" to decision.reason,
-                ),
+                ) + flow.contentStamp,
             )
             routeOutcome(decision.target, decision.defaultBehavior, decision.reason)
             return
@@ -1314,7 +1324,7 @@ internal fun OnboardingFlowHost(
         }
         // Persist computed data for cross-module access.
         outcome.computedData?.let { ai.appdna.sdk.core.SessionDataStore.instance?.mergeComputedData(it) }
-        outcome.events.forEach { eventTracker?.track(it.name, it.props) }
+        outcome.events.forEach { eventTracker?.track(it.name, ai.appdna.sdk.core.ContentStamp.apply(it.props, flow.contentStamp)) }
         when (val banner = outcome.banner) {
             is OnboardingAdvance.Banner.Error -> {
                 errorMessage = banner.message
@@ -3949,11 +3959,14 @@ private fun BlockBasedStepView(
     // the step's sheets: which is open, and the action its Continue refused. The sheets' agreement
     // defaults are seeded into the step's answers as the step appears, as an on-step agreement seeds itself.
     var shownSheet by remember(stepId) { mutableStateOf<StepSheet?>(null) }
+    // SPEC-536: the flow's content, on every event this step emits.
+    val contentStamp = ai.appdna.sdk.core.LocalContentStamp.current
     val stepActionRef = remember(stepId) { arrayOfNulls<(String) -> Unit>(1) }
     val refusedPress = remember(stepId) { arrayOfNulls<String>(1) }
     val sheetController = remember(stepId, stepSheets) {
         StepSheetController(stepSheets.orEmpty(), flowId, stepId, object : StepSheetController.Effects {
-            override fun track(name: String, properties: Map<String, Any>) = AppDNA.track(name, properties)
+            override fun track(name: String, properties: Map<String, Any>) =
+                AppDNA.track(name, ai.appdna.sdk.core.ContentStamp.apply(properties, contentStamp))
             override fun present(sheet: StepSheet?) { shownSheet = sheet }
             override fun rerun(action: String) {
                 // The re-run is the refused CTA's press, not the sheet button's that triggered it.
@@ -3976,7 +3989,9 @@ private fun BlockBasedStepView(
             flowId = flowId,
             stepId = stepId,
             isOnline = { ai.appdna.sdk.AppDNA.connectivity?.isConnected ?: true },
-            track = { props -> ai.appdna.sdk.AppDNA.trackInternal("input_validation_result", props) },
+            track = { props ->
+                ai.appdna.sdk.AppDNA.trackInternal("input_validation_result", ai.appdna.sdk.core.ContentStamp.apply(props, contentStamp))
+            },
         )
     }
     // A field that ended offline checks again, once, when the connection returns.
@@ -4039,7 +4054,7 @@ private fun BlockBasedStepView(
 
     // Analytics props attached to every `permission_*` literal (parity with iOS permissionProps).
     fun permissionProps(type: String): Map<String, Any> =
-        mapOf("permission_type" to type, "flow_id" to flowId, "step_id" to stepId)
+        mapOf("permission_type" to type, "flow_id" to flowId, "step_id" to stepId) + contentStamp
 
     // Store the resolved value under `permission_{type}` (routable by next_step_rules) and fire the
     // observe-only delegate callback. Does NOT advance — callers advance explicitly.

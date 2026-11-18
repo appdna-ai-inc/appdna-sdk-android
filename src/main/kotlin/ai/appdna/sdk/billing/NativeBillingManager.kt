@@ -237,6 +237,20 @@ class NativeBillingManager internal constructor(
      */
     internal var currentPaywallMetadata: Map<String, Any> = emptyMap()
 
+    /**
+     * SPEC-536 D4: the `content_version` / `content_source_id` of the paywall that started the purchase in
+     * flight, so every purchase event is credited to the content that sold it. Written with
+     * [currentPaywallId] by `PaywallManager.handlePurchase`; purchase-scoped like it.
+     */
+    internal var currentPaywallContentStamp: Map<String, Any> = emptyMap()
+
+    /**
+     * The stamp for an event attributed to [paywallId]: the in-flight paywall's, and only when the event
+     * IS attributed to it. An unattributed report (`""` / null) and a direct purchase carry none.
+     */
+    internal fun paywallContentStampFor(paywallId: String?): Map<String, Any> =
+        if (!paywallId.isNullOrEmpty() && paywallId == currentPaywallId) currentPaywallContentStamp else emptyMap()
+
     internal fun hasLiveContinuation(): Boolean = purchaseContinuation?.isActive == true
 
     /**
@@ -259,6 +273,7 @@ class NativeBillingManager internal constructor(
         pendingProductId = null
         pendingProductType = null
         currentPaywallMetadata = emptyMap()
+        currentPaywallContentStamp = emptyMap()
         currentPaywallId = null
         currentExperimentId = null
         purchaseInFlight = false
@@ -311,6 +326,7 @@ class NativeBillingManager internal constructor(
                 AppDNA.trackBillingEvent("purchase_canceled", buildMap {
                     put("paywall_id", if (live) currentPaywallId ?: "" else "")
                     if (live) pendingProductId?.let { put("product_id", it) }
+                    if (live) putAll(paywallContentStampFor(currentPaywallId))
                 })
                 if (live) resumePurchase(PurchaseResult.Cancelled)
             }
@@ -386,7 +402,7 @@ class NativeBillingManager internal constructor(
             props["price"] = info.priceMicros / 1_000_000.0
             props["currency"] = info.currencyCode
         }
-        return props
+        return ai.appdna.sdk.core.ContentStamp.apply(props, paywallContentStampFor(currentPaywallId))
     }
 
     /**
@@ -409,6 +425,7 @@ class NativeBillingManager internal constructor(
             put("error_type", errorType)
             if (!debugMessage.isNullOrBlank()) put("debug_message", debugMessage)
             if (!productId.isNullOrBlank()) put("product_id", productId)
+            if (!omitPaywallId) putAll(paywallContentStampFor(paywallId))
         })
     }
 
@@ -416,7 +433,7 @@ class NativeBillingManager internal constructor(
         AppDNA.trackBillingEvent("purchase_pending", mapOf(
             "product_id" to productId,
             "paywall_id" to (if (live) currentPaywallId ?: "" else ""),
-        ))
+        ) + if (live) paywallContentStampFor(currentPaywallId) else emptyMap())
     }
 
     /** Kept for callers that classify by expiry; the SDK itself now uses the Play product type. */
@@ -444,6 +461,8 @@ class NativeBillingManager internal constructor(
         paywallId: String? = currentPaywallId,
         experimentId: String? = currentExperimentId,
         paywallMetadata: Map<String, Any> = currentPaywallMetadata,
+        /** SPEC-536 D4: the selling paywall's content; captured by the caller with [paywallId]. */
+        contentStamp: Map<String, Any> = paywallContentStampFor(paywallId),
     ) {
         val props = mutableMapOf<String, Any>(
             "product_id" to productId,
@@ -462,7 +481,8 @@ class NativeBillingManager internal constructor(
                 props["currency"] = info.currencyCode
             }
         } catch (_: Throwable) { /* best-effort */ }
-        val envelope: Map<String, Any> = props.withPaywallMetadata(paywallMetadata)
+        // The stamp goes on LAST: paywall metadata cannot stand in for the content that sold the purchase.
+        val envelope: Map<String, Any> = ai.appdna.sdk.core.ContentStamp.apply(props.withPaywallMetadata(paywallMetadata), contentStamp)
         AppDNA.trackBillingEvent("purchase_completed", envelope)
         if (isSubscription) {
             AppDNA.trackBillingEvent("subscription_started", envelope)
@@ -888,11 +908,11 @@ class NativeBillingManager internal constructor(
         purchaseActivity = java.lang.ref.WeakReference(activity)
         relaunchUsed = false
         // THE ONE `purchase_started` for this purchase — paywall-driven or direct.
-        AppDNA.trackBillingEvent("purchase_started", mutableMapOf<String, Any>(
+        AppDNA.trackBillingEvent("purchase_started", ai.appdna.sdk.core.ContentStamp.apply(mutableMapOf<String, Any>(
             "product_id" to productId,
             "paywall_id" to (currentPaywallId ?: ""),
             "experiment_id" to (currentExperimentId ?: ""),
-        ).withPaywallMetadata())
+        ).withPaywallMetadata(), paywallContentStampFor(currentPaywallId)))
 
         // Every exit clears the scope. The returns below clear it themselves
         // ([failPurchase], [resumePurchase]); an exception — above all the caller's cancellation while

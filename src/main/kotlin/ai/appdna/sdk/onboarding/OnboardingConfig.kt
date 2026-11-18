@@ -71,7 +71,13 @@ data class OnboardingFlowConfig(
     val audience_rules: Any? = null,
     /** A name an app can ask for this flow by, instead of its id. Several flows may share one. */
     val placement: String? = null,
-)
+    /** SPEC-536: the item whose content this flow is serving (Serve instead); null when not swapped. */
+    val served_from: ai.appdna.sdk.core.ServedFrom? = null,
+) {
+    /** `content_version` + `content_source_id` for every event this flow emits (SPEC-536 D1). */
+    internal val contentStamp: Map<String, Any>
+        get() = ai.appdna.sdk.core.ContentStamp.of(version, served_from)
+}
 
 /**
  * How the DISMISS control looks — the ✕ that closes the flow.
@@ -1252,6 +1258,7 @@ internal object OnboardingConfigParser {
             graph_nodes = graphNodes,
             audience_rules = map["audience_rules"],
             placement = map.str(SURFACE, docPath, "placement"),
+            served_from = ai.appdna.sdk.core.ServedFrom.parse(map["served_from"]),
         )
     }
 

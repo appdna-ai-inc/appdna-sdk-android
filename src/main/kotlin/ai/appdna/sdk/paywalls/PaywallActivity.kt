@@ -253,7 +253,7 @@ class PaywallActivity : ComponentActivity() {
                     AppDNA.track("paywall_close", mapOf(
                         "paywall_id" to paywallId,
                         "dismiss_reason" to "process_death",
-                    ))
+                    ) + AppDNA.servedPaywallContentStamp(paywallId))
                     AppDNA.paywall.listener?.onPaywallDismissed(paywallId)
                 } catch (e: Throwable) {
                     Log.warning { "Process-death recovery delegate fire failed: ${e.message}" }

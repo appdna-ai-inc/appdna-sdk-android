@@ -50,7 +50,15 @@ data class MessageConfig(
     val priority: Int = 0,
     val start_date: String? = null,
     val end_date: String? = null,
-)
+    /** SPEC-536: the served message's version. Null from a server older than SPEC-536 P1. */
+    val version: Int? = null,
+    /** SPEC-536: the message whose content this one is serving (Serve instead); null when not swapped. */
+    val served_from: ai.appdna.sdk.core.ServedFrom? = null,
+) {
+    /** `content_version` + `content_source_id` for every event this message emits (SPEC-536 D1). */
+    internal val contentStamp: Map<String, Any>
+        get() = ai.appdna.sdk.core.ContentStamp.of(version, served_from)
+}
 
 enum class MessageType(val value: String) {
     BANNER("banner"),
@@ -477,6 +485,8 @@ internal object MessageConfigParser {
             priority = (map["priority"] as? Number)?.toInt() ?: 0,
             start_date = map["start_date"] as? String,
             end_date = map["end_date"] as? String,
+            version = (map["version"] as? Number)?.toInt(),
+            served_from = ai.appdna.sdk.core.ServedFrom.parse(map["served_from"]),
         )
     }
 }

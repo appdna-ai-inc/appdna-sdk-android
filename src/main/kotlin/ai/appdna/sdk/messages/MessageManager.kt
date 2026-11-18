@@ -398,13 +398,16 @@ class MessageManager internal constructor(
         // see the updated counter via `canShow`.
         frequencyTracker.recordShown(messageId, config.trigger_rules.frequency)
 
+        // SPEC-536: the message's content on every event it emits. Empty for a journey delivery
+        // (PendingMessageListener builds its config with no version), which Serve instead never touches.
+        val contentStamp = config.contentStamp
         AppDNA.trackInternal(
             "in_app_message_shown",
             mapOf(
                 "message_id" to messageId,
                 "message_type" to config.message_type.value,
                 "trigger_event" to triggerEvent,
-            ),
+            ) + contentStamp,
         )
 
         // Fire onMessageShown
@@ -422,7 +425,7 @@ class MessageManager internal constructor(
                     val ctaActionType = config.content.cta_action?.type ?: "dismiss"
                     AppDNA.trackInternal(
                         "in_app_message_clicked",
-                        mapOf("message_id" to messageId, "cta_action" to ctaActionType),
+                        mapOf("message_id" to messageId, "cta_action" to ctaActionType) + contentStamp,
                     )
                     // onMessageAction with action type + cta data
                     val ctaData: Map<String, Any>? = config.content.cta_action?.url?.let { mapOf("url" to it) }
@@ -437,7 +440,7 @@ class MessageManager internal constructor(
                 onDismiss = {
                     AppDNA.trackInternal(
                         "in_app_message_dismissed",
-                        mapOf("message_id" to messageId),
+                        mapOf("message_id" to messageId) + contentStamp,
                     )
                 },
                 onClosed = {

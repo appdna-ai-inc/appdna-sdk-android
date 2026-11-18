@@ -1,5 +1,6 @@
 package ai.appdna.sdk.paywalls
 
+import ai.appdna.sdk.core.ContentStamp
 import android.app.Activity
 import ai.appdna.sdk.AppDNA
 import ai.appdna.sdk.Log
@@ -286,7 +287,8 @@ internal class PaywallManager(
                 viewProps["price_source"] = sources.joinToString(",")
                 viewProps["store_prices_resolved"] = sources.count { it == "store" }
             }
-            eventTracker.track("paywall_view", viewProps)
+            // SPEC-536: the content on screen, applied LAST so no custom data can stand in for it.
+            eventTracker.track("paywall_view", ContentStamp.apply(viewProps, presented.contentStamp))
             launchPaywallActivity(activity, id, withPrices, context, listener)
         }
     }
@@ -316,7 +318,7 @@ internal class PaywallManager(
                     mapOf(
                         "paywall_id" to id,
                         "dismiss_reason" to reason.value,
-                    ),
+                    ) + config.contentStamp,
                 )
                 listener?.onPaywallDismissed(paywallId = id)
             },
@@ -351,7 +353,7 @@ internal class PaywallManager(
             } else null,
             // Wire restore lifecycle
             onRestore = {
-                handleRestore(paywallId = id, listener = listener)
+                handleRestore(paywallId = id, listener = listener, contentStamp = config.contentStamp)
             },
         )
     }
@@ -403,7 +405,7 @@ internal class PaywallManager(
                     "reason" to "not_configured",
                     "error" to message,
                     "error_type" to "unknown",
-                )),
+                ) + config.contentStamp),
             )
             listener?.onPaywallPurchaseFailed(
                 paywallId = paywallId,
@@ -430,7 +432,7 @@ internal class PaywallManager(
                     "product_id" to plan.product_id,
                     "error" to message,
                     "error_type" to "providerNotAvailable",
-                )),
+                ) + config.contentStamp),
             )
             listener?.onPaywallPurchaseFailed(
                 paywallId = paywallId,
@@ -460,6 +462,8 @@ internal class PaywallManager(
         AppDNA.billing.manager?.takeIf { !it.purchaseInFlight }?.let { mgr ->
             mgr.currentPaywallMetadata = metadata
             mgr.currentPaywallId = paywallId
+            // SPEC-536 D4: the purchase is credited to the content that sold it.
+            mgr.currentPaywallContentStamp = config.contentStamp
         }
 
         scope.launch {
@@ -684,7 +688,12 @@ internal class PaywallManager(
      *
      * `internal` (not private) so a test can drive the refusal paths directly.
      */
-    internal fun handleRestore(paywallId: String, listener: AppDNAPaywallDelegate?) {
+    internal fun handleRestore(
+        paywallId: String,
+        listener: AppDNAPaywallDelegate?,
+        /** SPEC-536: the paywall's `content_version` / `content_source_id`, on every restore event it emits. */
+        contentStamp: Map<String, Any> = emptyMap(),
+    ) {
         val policy = AppDNA.billing.ownershipPolicy
         val nativeMgr = AppDNA.billing.manager
         val refusal: Exception? = when {
@@ -703,7 +712,7 @@ internal class PaywallManager(
                 "error_type" to ai.appdna.sdk.billing.billingErrorType(e),
             )
             if (!policy.isConfigured) props["reason"] = "not_configured"
-            eventTracker.track("purchase_restore_failed", ai.appdna.sdk.billing.BillingEventProps.marked(props))
+            eventTracker.track("purchase_restore_failed", ai.appdna.sdk.billing.BillingEventProps.marked(ContentStamp.apply(props, contentStamp)))
             listener?.onPaywallRestoreFailed(paywallId = paywallId, error = e)
             AppDNA.paywall.skipNextAutoDismissOnRestore = false
             Log.error("Restore refused for paywall $paywallId: ${e.message}")
@@ -723,7 +732,7 @@ internal class PaywallManager(
                 val detail = nativeMgr.restoreDetailed(trackFailure = false)
                 val productIds = detail.entitlements.map { it.productId }
                 val outcome = restoreOutcome(paywallId, productIds, hostRequestedSkip = false, justReported = detail.reportedProducts)
-                outcome.events.forEach { (name, props) -> eventTracker.track(name, props) }
+                outcome.events.forEach { (name, props) -> eventTracker.track(name, ContentStamp.apply(props, contentStamp)) }
                 listener?.onPaywallRestoreCompleted(
                     paywallId = paywallId,
                     productIds = outcome.restoredProductIds,
@@ -764,7 +773,7 @@ internal class PaywallManager(
                         "paywall_id" to paywallId,
                         "error" to (e.message ?: "unknown"),
                         "error_type" to ai.appdna.sdk.billing.billingErrorType(e),
-                    )),
+                    ) + contentStamp),
                 )
                 listener?.onPaywallRestoreFailed(paywallId = paywallId, error = e)
                 // Symmetric clear on failure too so

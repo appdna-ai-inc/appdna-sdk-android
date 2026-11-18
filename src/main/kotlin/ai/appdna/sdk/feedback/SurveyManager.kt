@@ -33,6 +33,12 @@ internal class SurveyManager(
     @Volatile private var surveyConfigs: Map<String, SurveyConfig> = emptyMap()
     private val isPresenting = AtomicBoolean(false)
     private var currentSurveyId: String? = null
+    /** SPEC-536: the content of the survey on screen, on every event it emits. Set with [currentSurveyId]. */
+    @Volatile private var currentContentStamp: Map<String, Any> = emptyMap()
+
+    /** SPEC-536: the served survey's stamp, for the process-death path that lost the presented config. */
+    internal fun servedContentStamp(surveyId: String): Map<String, Any> =
+        surveyConfigs[surveyId]?.contentStamp.orEmpty()
 
     /**
      * `true` means "no feedback form is outstanding", which is the state before one is ever shown.
@@ -147,7 +153,7 @@ internal class SurveyManager(
             "question_id" to questionId,
             "question_type" to questionType,
             "answer" to answer
-        ))
+        ) + currentContentStamp)
     }
 
     private fun presentSurvey(surveyId: String, activeConfig: SurveyConfig, triggerEvent: String) {
@@ -180,11 +186,12 @@ internal class SurveyManager(
             }
         }
 
+        currentContentStamp = config.contentStamp
         eventTracker.track("survey_shown", mapOf(
             "survey_id" to surveyId,
             "survey_type" to config.surveyType,
             "trigger_event" to triggerEvent
-        ))
+        ) + currentContentStamp)
 
         // Fire onSurveyPresented to the host's
         // AppDNASurveyDelegate. Mirrors iOS Feedback/SurveyManager.swift:100.
@@ -211,7 +218,7 @@ internal class SurveyManager(
                     eventTracker.track("survey_dismissed", mapOf(
                         "survey_id" to surveyId,
                         "questions_answered" to result.answeredCount
-                    ))
+                    ) + config.contentStamp)
                     // Fire onSurveyDismissed.
                     fireOnSurveyDismissed(surveyId)
                 }
@@ -268,7 +275,7 @@ internal class SurveyManager(
             "survey_id" to surveyId,
             "survey_type" to config.surveyType,
             "answers" to answers.map { it.toMap() }
-        ))
+        ) + config.contentStamp)
     }
 
     private fun submitResponse(surveyId: String, config: SurveyConfig, answers: List<SurveyAnswer>) {
@@ -383,7 +390,7 @@ internal class SurveyManager(
             eventTracker.track("survey_followup_prompt_review", mapOf(
                 "survey_id" to surveyId,
                 "sentiment" to sentiment.name.lowercase(),
-            ))
+            ) + config.contentStamp)
         }
 
         // Gap #22 — Wire follow-up actions with event tracking so the host app
@@ -397,7 +404,7 @@ internal class SurveyManager(
                 eventTracker.track("survey_followup_prompt_review", mapOf(
                     "survey_id" to surveyId,
                     "sentiment" to sentiment.name.lowercase(),
-                ))
+                ) + config.contentStamp)
             }
             "show_feedback_form" -> {
                 // Present the built-in feedback dialog.
@@ -406,7 +413,7 @@ internal class SurveyManager(
                 eventTracker.track("survey_followup_feedback_form", mapOf(
                     "survey_id" to surveyId,
                     "sentiment" to sentiment.name.lowercase(),
-                ))
+                ) + config.contentStamp)
             }
             "trigger_winback" -> {
                 // Fire a trackable event for the host app to launch a winback campaign.
@@ -414,7 +421,7 @@ internal class SurveyManager(
                     "survey_id" to surveyId,
                     "sentiment" to sentiment.name.lowercase(),
                     "message" to (action.message ?: ""),
-                ))
+                ) + config.contentStamp)
             }
             "dismiss" -> { /* No-op */ }
         }
@@ -430,6 +437,9 @@ internal class SurveyManager(
      * arrives is worse than an absent one, because the query looks right.
      */
     private fun presentFeedbackForm(message: String?, surveyId: String?) {
+        // SPEC-536: captured NOW, while the survey that asked for the form is still the current one — the
+        // dialog is answered later, after another survey may have been shown.
+        val contentStamp = currentContentStamp
         scope.launch(Dispatchers.Main) {
             val activity = getCurrentActivity() ?: run {
                 Log.warning("No activity available for feedback form presentation")
@@ -455,7 +465,7 @@ internal class SurveyManager(
                     eventTracker.track("survey_feedback_submitted", mapOf(
                         "survey_id" to (surveyId ?: ""),
                         "feedback" to feedback
-                    ))
+                    ) + contentStamp)
                     // Emit canonical `feedback_form_submitted`
                     // event so backend Growth Memory + reports surface it
                     // independently of the survey-followup tracking shape.

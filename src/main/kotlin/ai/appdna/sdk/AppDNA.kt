@@ -1739,6 +1739,16 @@ object AppDNA {
         return out.map { it.name to it.properties }
     }
 
+    /**
+     * SPEC-536: the served paywall's / survey's `content_version` / `content_source_id`, for the
+     * process-death paths that lost the config they presented. Empty when the config is not loaded.
+     */
+    internal fun servedPaywallContentStamp(paywallId: String): Map<String, Any> =
+        remoteConfigManager?.getPaywallConfig(paywallId)?.contentStamp.orEmpty()
+
+    internal fun servedSurveyContentStamp(surveyId: String): Map<String, Any> =
+        surveyManager?.servedContentStamp(surveyId).orEmpty()
+
     /** End a flow that could not be resumed after process death as dismissed: event and delegate. */
     internal fun reportOnboardingResumeAbandoned(flowId: String, lastStepId: String, lastStepIndex: Int) {
         val listener = resolveOnboardingListener(null)
@@ -1750,7 +1760,7 @@ object AppDNA {
                 "flow_id" to flowId,
                 "last_step_id" to lastStepId,
                 "last_step_index" to lastStepIndex,
-            ))
+            ) + remoteConfigManager?.getOnboardingFlow(flowId)?.contentStamp.orEmpty())
             listener?.onOnboardingDismissed(flowId = flowId, atStep = lastStepIndex)
         }
     }

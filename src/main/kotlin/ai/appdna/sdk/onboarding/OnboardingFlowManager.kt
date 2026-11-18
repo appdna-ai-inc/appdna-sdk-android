@@ -67,7 +67,7 @@ internal class OnboardingFlowManager(
         eventTracker.track("onboarding_flow_started", mapOf(
             "flow_id" to flow.id,
             "flow_version" to flow.version
-        ))
+        ) + flow.contentStamp)
 
         val startTime = System.currentTimeMillis()
 
@@ -138,11 +138,14 @@ internal class OnboardingFlowManager(
         lastStepIndex: Int,
         listener: AppDNAOnboardingDelegate?,
     ) {
+        // The flow could not be resumed, so the one on screen is gone: the served copy, when the
+        // config still has it, is the best record of what the user was shown.
+        val stamp = remoteConfigManager.getOnboardingFlow(flowId)?.contentStamp.orEmpty()
         eventTracker.track("onboarding_flow_dismissed", mapOf(
             "flow_id" to flowId,
             "last_step_id" to lastStepId,
             "last_step_index" to lastStepIndex
-        ))
+        ) + stamp)
         listener?.onOnboardingDismissed(flowId = flowId, atStep = lastStepIndex)
     }
 
@@ -182,7 +185,7 @@ internal class OnboardingFlowManager(
                     "step_id" to stepId,
                     "step_index" to stepIndex,
                     "step_type" to (flow.steps.getOrNull(stepIndex)?.type?.value ?: "unknown")
-                ))
+                ) + flow.contentStamp)
                 listener()?.onOnboardingStepChanged(flowId = flow.id, stepId = stepId, stepIndex = stepIndex, totalSteps = flow.steps.size)
             },
             onStepCompleted = { stepId, stepIndex, data ->
@@ -191,14 +194,14 @@ internal class OnboardingFlowManager(
                     "step_id" to stepId,
                     "step_index" to stepIndex,
                     "selection_data" to (data ?: emptyMap<String, Any>())
-                ))
+                ) + flow.contentStamp)
             },
             onStepSkipped = { stepId, stepIndex ->
                 eventTracker.track("onboarding_step_skipped", mapOf(
                     "flow_id" to flow.id,
                     "step_id" to stepId,
                     "step_index" to stepIndex
-                ))
+                ) + flow.contentStamp)
             },
             onFlowCompleted = { responses ->
                 // Emit as Int matching iOS
@@ -218,6 +221,7 @@ internal class OnboardingFlowManager(
                     responses = responses,
                     track = { name, props -> eventTracker.track(name, props) },
                     delegate = listener(),
+                    contentStamp = flow.contentStamp,
                     // Scheme-checked before the OS sees it — the URL comes from remote config.
                     openRoute = { raw ->
                         ai.appdna.sdk.core.URLSafety.sanitized(raw, activity)?.let { uri ->
@@ -234,7 +238,7 @@ internal class OnboardingFlowManager(
                     "flow_id" to flow.id,
                     "last_step_id" to lastStepId,
                     "last_step_index" to lastStepIndex
-                ))
+                ) + flow.contentStamp)
                 listener()?.onOnboardingDismissed(flowId = flow.id, atStep = lastStepIndex)
             },
         )

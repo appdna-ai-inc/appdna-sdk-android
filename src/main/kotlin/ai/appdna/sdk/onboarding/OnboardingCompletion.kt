@@ -42,6 +42,8 @@ internal object OnboardingCompletion {
         totalSteps: Int,
         durationMs: Int,
         responses: Map<String, Any>,
+        /** SPEC-536: the flow's `content_version` / `content_source_id` ([OnboardingFlowConfig.contentStamp]). */
+        contentStamp: Map<String, Any> = emptyMap(),
     ): OnboardingAdvance.TrackedEvent = OnboardingAdvance.TrackedEvent(
         ONBOARDING_FLOW_COMPLETED_EVENT,
         mapOf(
@@ -51,7 +53,7 @@ internal object OnboardingCompletion {
             // warehouse schema is typed off it.
             "total_duration_ms" to durationMs,
             "responses" to responses,
-        ),
+        ) + contentStamp,
     )
 
     /**
@@ -77,8 +79,10 @@ internal object OnboardingCompletion {
          * fire later against a different flow.
          */
         openRoute: ((String) -> Boolean)? = null,
+        /** SPEC-536: the flow's `content_version` / `content_source_id` ([OnboardingFlowConfig.contentStamp]). */
+        contentStamp: Map<String, Any> = emptyMap(),
     ) {
-        val event = completionEvent(flowId, totalSteps, durationMs, responses)
+        val event = completionEvent(flowId, totalSteps, durationMs, responses, contentStamp)
         track(event.name, event.props)
         // Persist onboarding responses for cross-module access.
         ai.appdna.sdk.core.SessionDataStore.instance?.setOnboardingResponses(responses)

@@ -60,6 +60,8 @@ fun ChatStepComposable(
     savedTranscript: Map<String, Any>? = null,
 ) {
     val chatConfig = step.config.chat_config ?: return
+    // SPEC-536: every chat event carries the flow's content (`content_version` / `content_source_id`).
+    val contentStamp = ai.appdna.sdk.core.LocalContentStamp.current
     val style = chatConfig.style
     val persona = chatConfig.persona
     val scope = rememberCoroutineScope()
@@ -255,7 +257,7 @@ fun ChatStepComposable(
                             "flow_id" to flowId, "step_id" to step.id, "turn" to userTurnCount,
                             "http_status" to result.statusCode,
                             "response_body" to result.bodyPreview,
-                        ))
+                        ) + contentStamp)
                         null
                     }
                     is WebhookResult.NetworkError -> {
@@ -264,7 +266,7 @@ fun ChatStepComposable(
                         ai.appdna.sdk.AppDNA.track("chat_webhook_error", mapOf(
                             "flow_id" to flowId, "step_id" to step.id, "turn" to userTurnCount,
                             "error" to result.message,
-                        ))
+                        ) + contentStamp)
                         null
                     }
                 }
@@ -276,7 +278,7 @@ fun ChatStepComposable(
                     ai.appdna.sdk.AppDNA.track("chat_message_received", mapOf(
                         "flow_id" to flowId, "step_id" to step.id, "turn" to userTurnCount,
                         "message_count" to (response.messages?.size ?: 0)
-                    ))
+                    ) + contentStamp)
                     // Add AI messages
                     response.messages?.forEachIndexed { i, msg ->
                         messages = messages + ChatMessage(id = "msg_a${userTurnCount}_$i", role = ChatRole.AI, content = msg.content ?: "", media = msg.media)
@@ -302,7 +304,7 @@ fun ChatStepComposable(
                             "flow_id" to flowId, "step_id" to step.id, "user_turn_count" to userTurnCount,
                             "total_messages" to messages.size, "completion_reason" to "ai_completed",
                             "duration_ms" to (System.currentTimeMillis() - startTime).toInt()
-                        ))
+                        ) + contentStamp)
                     }
                     // Max turns
                     if (turnsRemaining <= 0 && !isCompleted) {
@@ -316,7 +318,7 @@ fun ChatStepComposable(
                             "flow_id" to flowId, "step_id" to step.id, "user_turn_count" to userTurnCount,
                             "total_messages" to messages.size, "completion_reason" to "max_turns",
                             "duration_ms" to (System.currentTimeMillis() - startTime).toInt()
-                        ))
+                        ) + contentStamp)
                     }
                 }
             } catch (e: kotlinx.coroutines.CancellationException) {
@@ -334,7 +336,7 @@ fun ChatStepComposable(
                 messages = messages + ChatMessage(id = "err_$userTurnCount", role = ChatRole.SYSTEM, content = errMsg)
                 ai.appdna.sdk.AppDNA.track("chat_webhook_error", mapOf(
                     "flow_id" to flowId, "step_id" to step.id, "turn" to userTurnCount, "error" to (e.message ?: "unknown")
-                ))
+                ) + contentStamp)
             }
         }
     }
@@ -361,7 +363,7 @@ fun ChatStepComposable(
         // Track message sent
         ai.appdna.sdk.AppDNA.track("chat_message_sent", mapOf(
             "flow_id" to flowId, "step_id" to step.id, "turn" to userTurnCount, "message_length" to trimmed.length
-        ))
+        ) + contentStamp)
 
         if (!chatConfig.isHardLimit && turnsRemaining == 1) showSoftLimitWarning = true
 
@@ -655,7 +657,7 @@ fun ChatStepComposable(
                                         "step_id" to step.id,
                                         "rating" to star,
                                         "turn" to userTurnCount,
-                                    ))
+                                    ) + contentStamp)
                                 }
                         )
                     }
@@ -684,7 +686,7 @@ fun ChatStepComposable(
                         onClick = {
                             ai.appdna.sdk.AppDNA.track("chat_quick_reply_tapped", mapOf(
                                 "flow_id" to flowId, "step_id" to step.id, "quick_reply_id" to qr.id, "turn" to userTurnCount
-                            ))
+                            ) + contentStamp)
                             sendMessage(qr.text)
                         },
                         shape = RoundedCornerShape(20.dp),
@@ -744,7 +746,7 @@ fun ChatStepComposable(
                         // on this safety-net path → schema drift across the
                         // three chat_completed call sites.
                         "duration_ms" to (System.currentTimeMillis() - startTime).toInt(),
-                    ))
+                    ) + contentStamp)
                 }
             }
             // Completion CTA — styling mirrors the normal CTA button block.

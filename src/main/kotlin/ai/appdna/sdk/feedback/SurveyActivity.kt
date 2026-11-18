@@ -78,7 +78,7 @@ class SurveyActivity : ComponentActivity() {
                     ai.appdna.sdk.AppDNA.track("survey_dismissed", mapOf(
                         "survey_id" to surveyId,
                         "reason" to "process_death",
-                    ))
+                    ) + ai.appdna.sdk.AppDNA.servedSurveyContentStamp(surveyId))
                     ai.appdna.sdk.AppDNA.surveys.surveyListener?.onSurveyDismissed(surveyId)
                 } catch (e: Throwable) {
                     ai.appdna.sdk.Log.warning { "Survey process-death recovery delegate fire failed: ${e.message}" }
@@ -179,6 +179,14 @@ class SurveyActivity : ComponentActivity() {
         private const val EXTRA_SURVEY_ID = "survey_id"
         private var pendingSurveyConfig: SurveyConfig? = null
         private var pendingCallback: ((SurveyResult) -> Unit)? = null
+
+        /** Test seam: end the launched survey with [result], as the activity does, without composing it. */
+        internal fun finishLaunchedForTest(result: SurveyResult) {
+            val callback = pendingCallback
+            pendingSurveyConfig = null
+            pendingCallback = null
+            callback?.invoke(result)
+        }
         internal var questionAnsweredCallback: ((String, String, Any) -> Unit)? = null
 
         /**

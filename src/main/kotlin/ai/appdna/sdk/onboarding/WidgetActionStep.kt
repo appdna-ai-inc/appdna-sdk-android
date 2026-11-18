@@ -58,6 +58,8 @@ internal fun rememberWidgetStepWiring(
 ): WidgetStepWiring {
     val gate = rememberUpdatedState(gatePasses)
     val adv = rememberUpdatedState(advance)
+    // SPEC-536: every widget event carries the flow's content (`content_version` / `content_source_id`).
+    val contentStamp = ai.appdna.sdk.core.LocalContentStamp.current
     val wiring = remember(stepId) {
         val howto = mutableStateOf<List<ContentBlock>?>(null)
         WidgetPinTiming.enabled = (context.applicationInfo.flags and ApplicationInfo.FLAG_DEBUGGABLE) != 0
@@ -69,7 +71,7 @@ internal fun rememberWidgetStepWiring(
             }
             override fun track(name: String, properties: Map<String, Any>) {
                 WidgetPinTiming.event(name, properties)
-                ai.appdna.sdk.AppDNA.track(name, properties)
+                ai.appdna.sdk.AppDNA.track(name, ai.appdna.sdk.core.ContentStamp.apply(properties, contentStamp))
             }
             override fun advance(status: String) {
                 WidgetPinTiming.mark("advance status=$status")
