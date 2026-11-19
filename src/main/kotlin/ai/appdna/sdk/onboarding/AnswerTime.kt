@@ -20,6 +20,9 @@ internal object AnswerTime {
     val zone: TimeZone
         get() = ai.appdna.sdk.AppDNA.appTimeZoneId?.let(::zoneOf) ?: TimeZone.getTimeZone("UTC")
 
+    /** The locale a drawn date answer is formatted in: the device's. Settable so a test can pin it. iOS `displayLocale`. */
+    @Volatile var displayLocale: Locale? = null
+
     /** The zone an IANA id names, or null for an id this runtime does not know (never silently GMT). */
     fun zoneOf(id: String): TimeZone? = TimeZone.getTimeZone(id).takeIf { it.id == id }
 
@@ -46,6 +49,7 @@ internal object AnswerTime {
     private val timeRe = Regex("""^(\d{2}):(\d{2})(?::(\d{2}))?$OFFSET$""")
     private val localDateTimeRe = Regex("""^(\d{4})-(\d{2})-(\d{2})[ T](\d{2}):(\d{2})$""")
     private val localTimeRe = Regex("""^(\d{2}):(\d{2})$""")
+    private val dateRe = Regex("""^(\d{4})-(\d{2})-(\d{2})$""")
 
     /** Milliseconds east of UTC for `Z`, `+01:00` or `+0100`. */
     private fun offsetMs(s: String): Int? {
@@ -93,15 +97,33 @@ internal object AnswerTime {
 
     /**
      * The text a template draws for a stored answer: a date-and-time as `yyyy-MM-dd HH:mm` and a time as `HH:mm`, in
-     * [zone]. Null for anything else (a date, a phone-local older answer, any other text), which is drawn as stored.
+     * [zone]; a date (`yyyy-MM-dd`, a calendar day with no zone) in [locale]'s medium style on the Gregorian calendar
+     * ("Mar 15, 1990", "15.03.1990"). Null for anything else (a phone-local older answer, any other text), which is
+     * drawn as stored. The stored and sent value stays ISO. iOS `AnswerTime.display`.
      */
-    fun display(text: String, zone: TimeZone, nowMs: Long = System.currentTimeMillis()): String? {
+    fun display(text: String, zone: TimeZone, nowMs: Long = System.currentTimeMillis(), locale: Locale = displayLocale ?: Locale.getDefault()): String? {
         val s = text.trim()
+        dateRe.matchEntire(s)?.let { m ->
+            return dateText(m.groupValues[1].toInt(), m.groupValues[2].toInt(), m.groupValues[3].toInt(), locale)
+        }
         val isDateTime = dateTimeRe.matches(s)
         if (!isDateTime && !timeRe.matches(s)) return null
         val ms = epochMs(s, zone, nowMs) ?: return null
         val c = GregorianCalendar(zone, Locale.US).apply { timeInMillis = ms }
         val hm = String.format(Locale.US, "%02d:%02d", c.get(Calendar.HOUR_OF_DAY), c.get(Calendar.MINUTE))
         return if (isDateTime) String.format(Locale.US, "%04d-%02d-%02d ", c.get(Calendar.YEAR), c.get(Calendar.MONTH) + 1, c.get(Calendar.DAY_OF_MONTH)) + hm else hm
+    }
+
+    /**
+     * A calendar day in [locale]'s medium date style, or null for a day that does not exist (`2026-02-30`). The day is
+     * placed and formatted in UTC, so no zone can move it. iOS `AnswerTime.dateText`.
+     */
+    fun dateText(y: Int, mo: Int, d: Int, locale: Locale): String? {
+        val utc = TimeZone.getTimeZone("UTC")
+        val ms = moment(y, mo, d, 12, 0, 0, utc) ?: return null
+        val f = java.text.DateFormat.getDateInstance(java.text.DateFormat.MEDIUM, locale)
+        f.calendar = GregorianCalendar(utc, locale)
+        f.timeZone = utc
+        return f.format(java.util.Date(ms))
     }
 }

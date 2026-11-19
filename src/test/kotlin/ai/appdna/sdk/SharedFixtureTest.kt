@@ -1621,7 +1621,13 @@ class SharedFixtureTest(
         // The app's time zone (the console's app setting, published in the brand doc), restored after.
         val savedZone = ai.appdna.sdk.AppDNA.appTimeZoneId
         ai.appdna.sdk.AppDNA.appTimeZoneId = sessionData.optStringOrNull("app_time_zone")
-        val result = try { ai.appdna.sdk.onboarding.HostDataResolver.resolveRawBlock(raw, ctx) } finally { ai.appdna.sdk.AppDNA.appTimeZoneId = savedZone }
+        // The device locale a drawn date answer is formatted in (en_US when the fixture names none), restored after.
+        val savedLocale = ai.appdna.sdk.onboarding.AnswerTime.displayLocale
+        ai.appdna.sdk.onboarding.AnswerTime.displayLocale = java.util.Locale.forLanguageTag((sessionData.optStringOrNull("device_locale") ?: "en_US").replace('_', '-'))
+        val result = try { ai.appdna.sdk.onboarding.HostDataResolver.resolveRawBlock(raw, ctx) } finally {
+            ai.appdna.sdk.AppDNA.appTimeZoneId = savedZone
+            ai.appdna.sdk.onboarding.AnswerTime.displayLocale = savedLocale
+        }
         val expectedState = fixtureJson.getJSONObject("expect").optJSONObject("state_after") ?: JSONObject()
         expectedState.optJSONObject("resolved_block")?.let { exp ->
             assertStrictJson("[$fixtureName] resolved_block (log: ${result.log})", exp, result.block, "$")
@@ -4892,8 +4898,10 @@ class SharedFixtureTest(
                 }
                 // The wheel keeps the picked parts, so a store reads no clock; the zone matters only to a read of an older instant.
                 "store" -> m.answer(c.getString("mode"), ai.appdna.sdk.onboarding.DateWheelModel.Ymd(c.getInt("year"), c.getInt("month"), c.getInt("day")), c.optInt("hour"), c.optInt("minute"), java.util.TimeZone.getTimeZone(c.getString("zone")))
+                // A date is drawn in the case's locale (the device's in the app), en_US when the case names none.
                 "display" -> ai.appdna.sdk.onboarding.AnswerTime.display(c.getString("text"), java.util.TimeZone.getTimeZone(c.getString("zone")),
-                    ai.appdna.sdk.core.IsoInstant.parseEpochMs(c.getString("now")) ?: System.currentTimeMillis())
+                    ai.appdna.sdk.core.IsoInstant.parseEpochMs(c.getString("now")) ?: System.currentTimeMillis(),
+                    java.util.Locale.forLanguageTag(c.optString("locale", "en_US").replace('_', '-')))
                 "form_read" -> m.readFormAnswer(c.getString("saved"), c.getString("mode"), java.util.TimeZone.getTimeZone(c.getString("zone")))?.let {
                     val (y, mo, d) = Triple(it.get(java.util.Calendar.YEAR), it.get(java.util.Calendar.MONTH) + 1, it.get(java.util.Calendar.DAY_OF_MONTH))
                     val (h, mi) = it.get(java.util.Calendar.HOUR_OF_DAY) to it.get(java.util.Calendar.MINUTE)
