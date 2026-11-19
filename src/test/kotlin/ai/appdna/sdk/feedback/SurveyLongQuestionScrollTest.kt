@@ -15,7 +15,7 @@ import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
 
 /**
- * #1964 — a choice question taller than the survey sheet. The bottom sheet is 60% of the window, so a question with
+ * A choice question taller than the survey sheet. The bottom sheet is 60% of the window, so a question with
  * eight options does not fit on a phone. Back / Next / "Not now" must stay on screen with a real size, the options must
  * scroll so the LAST one can be picked, and Next must then move on. Before the fix the navigation row was clipped to
  * zero size and nothing scrolled, so the survey could not be finished.

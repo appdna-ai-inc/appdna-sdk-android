@@ -496,7 +496,7 @@ fun SurveyScreen(
             answerEvents.leaving(leaving.id)?.let { e -> onQuestionAnswered?.invoke(e.questionId, e.type, e.answer) }
         }
 
-        // #1964 — the question SCROLLS, and the navigation below it stays pinned. The question used to sit between two
+        // The question SCROLLS, and the navigation below it stays pinned. The question used to sit between two
         // `weight(1f)` spacers in a plain Column, so a question taller than the room (a 6-option choice in the 60% bottom
         // sheet, or a question image) pushed Back / Next / "Not now" off the sheet with nothing to scroll: the survey
         // could not be finished. It takes the room the spacers took, is centred in it while it fits (as before), and
