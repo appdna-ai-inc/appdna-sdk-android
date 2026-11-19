@@ -21,6 +21,8 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.ui.platform.testTag
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.*
@@ -488,14 +490,29 @@ fun SurveyScreen(
             )
         }
 
-        Spacer(Modifier.weight(1f))
-
         // The question on screen, left forward (Next / Submit): its typed answer is tracked now, once.
         fun trackLeaving() {
             val leaving = visibleQuestions.getOrNull(currentIndex) ?: return
             answerEvents.leaving(leaving.id)?.let { e -> onQuestionAnswered?.invoke(e.questionId, e.type, e.answer) }
         }
 
+        // #1964 — the question SCROLLS, and the navigation below it stays pinned. The question used to sit between two
+        // `weight(1f)` spacers in a plain Column, so a question taller than the room (a 6-option choice in the 60% bottom
+        // sheet, or a question image) pushed Back / Next / "Not now" off the sheet with nothing to scroll: the survey
+        // could not be finished. It takes the room the spacers took, is centred in it while it fits (as before), and
+        // scrolls once it does not.
+        androidx.compose.foundation.layout.BoxWithConstraints(
+            modifier = Modifier.weight(1f).fillMaxWidth().testTag("appdna_survey_question_area"),
+        ) {
+        val questionAreaMinHeight = maxHeight
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .verticalScroll(rememberScrollState())
+                .heightIn(min = questionAreaMinHeight),
+            verticalArrangement = Arrangement.Center,
+            horizontalAlignment = Alignment.CenterHorizontally,
+        ) {
         // Current question
         if (currentIndex < visibleQuestions.size && !showCompletion) {
             val question = visibleQuestions[currentIndex]
@@ -586,8 +603,8 @@ fun SurveyScreen(
                 "likert", "scale" -> LikertQuestionView(q, answer, onAnswer, questionTextStyle)
             }
         }
-
-        Spacer(Modifier.weight(1f))
+        }
+        }
 
         // Navigation
         if (!showCompletion) {

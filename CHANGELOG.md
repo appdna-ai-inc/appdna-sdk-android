@@ -10,6 +10,8 @@ the project uses [Semantic Versioning](https://semver.org/).
 - An onboarding flow no longer crashes a debug host built with Android Gradle Plugin 8.2 (`VerifyError` in
   `WidgetActionChannelKt.withHowtoBlocks`). D8 8.2 mis-dexed that one method; every flow was affected, release builds
   and newer AGP were not (#1962).
+- A survey question taller than the survey now scrolls, and Back / Next / "Not now" stay on screen. A bottom-sheet
+  survey with a long choice question used to push them off the sheet, so it could not be finished (#1964).
 
 ## [1.0.59] — 2026-11-19
 
