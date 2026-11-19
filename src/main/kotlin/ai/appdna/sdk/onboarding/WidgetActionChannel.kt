@@ -49,5 +49,11 @@ internal fun ContentBlock.withHowtoBlocks(ios: List<ContentBlock>?, android: Lis
     fc.remove(HOWTO_BLOCKS_IOS); fc.remove(HOWTO_BLOCKS_ANDROID)
     ios?.let { fc[HOWTO_BLOCKS_IOS] = kotlinx.collections.immutable.persistentListOf<ContentBlock>().addAll(it) }
     android?.let { fc[HOWTO_BLOCKS_ANDROID] = kotlinx.collections.immutable.persistentListOf<ContentBlock>().addAll(it) }
-    return copy(field_config = fc.takeIf { it.isNotEmpty() })
+    // #1962 — NOT `copy(...)` here. `ContentBlock.copy$default` takes 254 JVM argument slots, and in this method's
+    // frame (the map, two `let` lambdas, two persistent lists) D8 8.2 (a host on AGP 8.2, debug) allocated a move from
+    // an undefined register (`copy1 v236<-v256 type=Undefined`): ART rejected the whole class, and since every step
+    // references it, ANY onboarding flow crashed the host with a VerifyError. The one-line `withFieldConfig` keeps that
+    // call in a frame with nothing else in it, which every D8 dexes correctly. Proved by `cmd package compile -m verify`
+    // on an AGP 8.2.0 debug host: red on 1.0.59, green with this.
+    return withFieldConfig(fc.takeIf { it.isNotEmpty() })
 }
