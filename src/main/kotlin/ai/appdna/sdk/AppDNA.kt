@@ -1078,6 +1078,9 @@ object AppDNA {
                         messageManager?.onEvent(e, props ?: emptyMap())
                     ai.appdna.sdk.events.TriggerDispatcher.Surface.SURVEY ->
                         surveyManager?.onEvent(e, props)
+                    // Screen triggers. Nothing called them before, so no screen ever auto-presented.
+                    ai.appdna.sdk.events.TriggerDispatcher.Surface.SCREEN ->
+                        ai.appdna.sdk.screens.ScreenManager.shared.evaluateTriggers(e, props)
                 }
             }
             remoteCfg.onFetchSucceeded = { triggers.markConfigReady() }

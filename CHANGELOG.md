@@ -20,6 +20,12 @@ the project uses [Semantic Versioning](https://semver.org/).
   first: the SDK read the screen index but never the screens in it. The config load now loads every screen and flow
   the index lists (including slot and interception screens), and a cache miss fetches that one screen, or the flow
   and its screens, before giving up. Shared fixture `dto_parsing/screen_served_document`.
+- **Screen triggers run on both platforms, and their caps survive a restart.** No tracked event ever reached the
+  screen triggers, so a screen authored with a trigger never presented itself. Every tracked event (yours and the
+  SDK's own) now runs them after in-app messages and surveys, and a host screen appearing runs the `on_screen` ones.
+  A days-since-install trigger uses the app's real install time (it was always 0). Max impressions and cooldowns
+  are kept on the device. Shared fixtures
+  `event_emission/sdk_events_reach_message_and_survey_triggers` and `trigger_hold_is_bounded`.
 - An onboarding flow no longer crashes a debug host built with Android Gradle Plugin 8.2 (`VerifyError` in
   `WidgetActionChannelKt.withHowtoBlocks`). D8 8.2 mis-dexed that one method; every flow was affected, release builds
   and newer AGP were not.

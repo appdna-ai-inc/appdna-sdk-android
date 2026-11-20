@@ -95,6 +95,8 @@ class NavigationInterceptor private constructor() {
         // configured server-side via `screen_index.interceptions[*]`. Same
         // call site iOS uses (`ScreenManager.shared.evaluateInterceptions`).
         ScreenManager.shared.evaluateInterceptions(screenName, timing = "after")
+        // `on_screen` screen triggers, evaluated where the "after" interceptions are.
+        ScreenManager.shared.onScreenAppeared(screenName)
 
         return InterceptionResult.Allow
     }

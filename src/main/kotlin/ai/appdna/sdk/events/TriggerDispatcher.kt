@@ -29,7 +29,8 @@ package ai.appdna.sdk.events
  *    the caller's thread, where a host event has always been evaluated on this platform.
  */
 internal class TriggerDispatcher {
-    enum class Surface(val wire: String) { MESSAGE("message"), SURVEY("survey") }
+    /** SCREEN is the server-driven screen triggers (`ScreenManager.evaluateTriggers`), after the other two. */
+    enum class Surface(val wire: String) { MESSAGE("message"), SURVEY("survey"), SCREEN("screen") }
 
     fun interface Evaluator {
         fun evaluate(surface: Surface, event: String, properties: Map<String, Any>?)
@@ -163,9 +164,10 @@ internal class TriggerDispatcher {
         /** Which surfaces evaluate [event], in evaluation order: message, then survey (iOS order). */
         fun surfaces(event: String): List<Surface> {
             if (event.isEmpty() || event.startsWith("_")) return emptyList()
-            val out = ArrayList<Surface>(2)
+            val out = ArrayList<Surface>(3)
             if (event !in MESSAGE_OWN_EVENTS) out.add(Surface.MESSAGE)
             if (event !in SURVEY_OWN_EVENTS) out.add(Surface.SURVEY)
+            if (event !in ai.appdna.sdk.screens.ScreenManager.OWN_EVENTS) out.add(Surface.SCREEN)
             return out
         }
     }

@@ -16,9 +16,10 @@ import kotlinx.coroutines.launch
 // register an `AppDNAScreenDelegate` via `ScreenManager.shared.setDelegate(...)`.
 // The class itself remains opaque — only the delegate-setter and a couple of
 // existing fan-out methods (`showScreen`/`showFlow`) form the public API.
-class ScreenManager private constructor() {
+class ScreenManager private constructor(frequencyStore: ScreenFrequencyStore? = null) {
     companion object {
-        val shared = ScreenManager()
+        // Only the live manager persists trigger impressions; a test manager starts clean.
+        val shared = ScreenManager(PrefsScreenFrequencyStore)
 
         /** The screens module's own events, which do not run screen triggers (see [evaluateTriggers]). */
         internal val OWN_EVENTS = setOf(
@@ -38,7 +39,8 @@ class ScreenManager private constructor() {
     private var nestingDepth = 0
     private val maxNestingDepth = 5
     private val lock = ReentrantLock()
-    private val autoTriggerEngine = AutoTriggerEngine()
+    // Impression counts and cooldowns survive a cold launch (for `shared`).
+    private val autoTriggerEngine = AutoTriggerEngine(frequencyStore)
     @Volatile private var interceptionEnabled = false
     @Volatile private var interceptionFilter: List<String>? = null
 
