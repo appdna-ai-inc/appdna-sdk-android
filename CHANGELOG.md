@@ -15,6 +15,11 @@ the project uses [Semantic Versioning](https://semver.org/).
   Shared fixtures `identity/anonymous_id_*`.
 
 ### Fixed
+- **Published screens and flows reach the device.** `showScreen`, `showFlow`, screen slots, navigation
+  interceptions and screen triggers used to end in `screen_not_found` unless the host had called `previewScreen`
+  first: the SDK read the screen index but never the screens in it. The config load now loads every screen and flow
+  the index lists (including slot and interception screens), and a cache miss fetches that one screen, or the flow
+  and its screens, before giving up. Shared fixture `dto_parsing/screen_served_document`.
 - An onboarding flow no longer crashes a debug host built with Android Gradle Plugin 8.2 (`VerifyError` in
   `WidgetActionChannelKt.withHowtoBlocks`). D8 8.2 mis-dexed that one method; every flow was affected, release builds
   and newer AGP were not.

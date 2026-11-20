@@ -327,6 +327,8 @@ class SharedFixtureTest(
             "resolve_onboarding_image_alt" -> runOnboardingImageAlt(action, spy)
             "resolve_screen_image_alt" -> runScreenImageAlt(action, spy)
             "resolve_screen_surface_ink" -> runScreenSurfaceInk(action, spy)
+            // A served screen / flow document through the REAL ScreenManager loader.
+            "load_served_screen" -> runLoadServedScreen(action, spy)
             "resolve_option_label_markdown" -> runOptionLabelMarkdown(action, spy)
             "resolve_date_wheel" -> runDateWheel(action, spy)
             "resolve_container_children" -> runContainerChildren(action, spy)
@@ -4365,6 +4367,51 @@ class SharedFixtureTest(
      * A screen's default ink, through the REAL `ScreenConfig.fromMap`, `GoogleMapsAttribution.backdrop(ofScreen)` /
      * `backdrop(ofSection, behind)` and `needsLightInk`, the call `SurfaceTheme` makes for the screen and each section.
      */
+    /**
+     * The REAL `ScreenManager.loadScreen` / `loadFlow`, reading through an injected document reader
+     * (the one `RemoteConfigManager` sets reads Firestore). Each case starts from an empty cache.
+     */
+    private fun runLoadServedScreen(action: JSONObject, spy: Spy) {
+        val cases = action.optJSONArray("cases") ?: unsupported("load_served_screen without cases")
+        val sm = ai.appdna.sdk.screens.ScreenManager.shared
+        val saved = sm.documentLoader
+        try {
+            spy.state["results"] = (0 until cases.length()).map { i ->
+                val c = cases.getJSONObject(i)
+                val id = c.getString("id")
+                val docs = mutableMapOf<String, Map<String, Any?>?>()
+                val kind = c.optString("kind", "screen")
+                docs[(if (kind == "flow") "flows/" else "screens/") + id] = c.optJSONObject("document")?.asMap()
+                c.optJSONObject("screens")?.let { s -> s.keys().forEach { k -> docs["screens/$k"] = s.getJSONObject(k).asMap() } }
+                val requests = mutableListOf<String>()
+                sm.reset()
+                sm.documentLoader = { k, docId, done -> requests.add("$k/$docId"); done(docs["$k/$docId"]) }
+                if (kind == "flow") {
+                    var got: ai.appdna.sdk.screens.FlowConfig? = null
+                    sm.loadFlow(id) { got = it }
+                    val f = got
+                    if (f == null) mapOf("found" to false, "requests" to requests) else mapOf(
+                        "found" to true, "id" to f.id, "name" to f.name, "start_screen_id" to f.startScreenId,
+                        "screens_cached" to f.screens.associate { it.screenId to (sm.getCachedScreen(it.screenId)?.sections?.size ?: -1) },
+                        "requests" to requests,
+                    )
+                } else {
+                    var got: ai.appdna.sdk.screens.ScreenConfig? = null
+                    sm.loadScreen(id) { got = it }
+                    val s = got
+                    if (s == null) mapOf("found" to false, "cached" to (sm.getCachedScreen(id) != null), "requests" to requests) else mapOf(
+                        "found" to true, "id" to s.id, "name" to s.name, "version" to s.version,
+                        "presentation" to s.presentation, "sections" to s.sections.size, "start_date" to s.startDate,
+                        "cached" to (sm.getCachedScreen(id) != null), "requests" to requests,
+                    )
+                }
+            }
+        } finally {
+            sm.reset()
+            sm.documentLoader = saved
+        }
+    }
+
     private fun runScreenSurfaceInk(action: JSONObject, spy: Spy) {
         val cases = action.optJSONArray("cases") ?: unsupported("resolve_screen_surface_ink without cases")
         spy.state["results"] = (0 until cases.length()).map { i ->

@@ -287,6 +287,17 @@ internal class RemoteConfigManager(
         fetchViaIndex(db, basePath, indexedSection("onboarding_index")) { ok -> markFetchComplete(ok) }
         fetchViaIndex(db, basePath, indexedSection("survey_index")) { ok -> markFetchComplete(ok) }
 
+        // Each screen and flow the index names lives in its own document under it. Set before the index
+        // parse, which prefetches them through this loader.
+        ai.appdna.sdk.screens.ScreenManager.shared.documentLoader = { kind, id, done ->
+            db.document("$basePath/screen_index/$kind/$id").get()
+                .addOnSuccessListener { snap -> done(snap.data) }
+                .addOnFailureListener { e ->
+                    Log.debug("No screen_index/$kind/$id: ${e.message}")
+                    done(null)
+                }
+        }
+
         // Fetch screen_index for server-driven UI
         db.document("$basePath/screen_index").get().addOnSuccessListener { snapshot ->
             snapshot.data?.let { data ->

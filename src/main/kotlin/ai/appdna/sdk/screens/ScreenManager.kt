@@ -70,11 +70,84 @@ class ScreenManager private constructor() {
      */
     private val vetoScope = CoroutineScope(Dispatchers.Main.immediate + SupervisorJob())
 
-    internal fun updateIndex(index: ScreenIndex) { lock.lock(); try { screenIndex = index } finally { lock.unlock() } }
+    internal fun updateIndex(index: ScreenIndex) {
+        lock.lock(); try { screenIndex = index } finally { lock.unlock() }
+        prefetch(index)
+    }
     internal fun cacheScreen(id: String, config: ScreenConfig) { lock.lock(); try { screenCache[id] = config } finally { lock.unlock() } }
     internal fun getCachedScreen(id: String): ScreenConfig? { lock.lock(); try { return screenCache[id] } finally { lock.unlock() } }
     internal fun cacheFlow(id: String, config: FlowConfig) { lock.lock(); try { flowCache[id] = config } finally { lock.unlock() } }
     internal fun getCachedFlow(id: String): FlowConfig? { lock.lock(); try { return flowCache[id] } finally { lock.unlock() } }
+
+    // ─── Loading served screens and flows ───
+    //
+    // The console publishes each screen to `config/screen_index/screens/{id}` and each flow to
+    // `config/screen_index/flows/{id}`. Nothing read them: the cache was only ever written by [previewScreen], so
+    // `showScreen`, slots, interceptions and triggers all ended in `screen_not_found`. Now the index load prefetches
+    // every screen and flow it names, and a cache miss fetches on demand before giving up.
+
+    /**
+     * Reads one served document: `kind` is `"screens"` or `"flows"`. Answers the raw document, or null when it is
+     * missing or unreadable. Set by `RemoteConfigManager` once Firestore is available; a test sets its own.
+     */
+    @Volatile internal var documentLoader: ((kind: String, id: String, done: (Map<String, Any?>?) -> Unit) -> Unit)? = null
+
+    /** A screen's config: from the cache, else fetched, decoded and cached. Null when neither has it. */
+    internal fun loadScreen(id: String, refresh: Boolean = false, done: (ScreenConfig?) -> Unit) {
+        if (!refresh) getCachedScreen(id)?.let { done(it); return }
+        val loader = documentLoader ?: run { done(getCachedScreen(id)); return }
+        loader("screens", id) { doc ->
+            val config = doc?.let {
+                try { ScreenConfig.fromMap(ScreenDocument.normalize(it, id)) } catch (e: Throwable) {
+                    ai.appdna.sdk.Log.error("Failed to parse screen config $id: ${e.message}")
+                    null
+                }
+            }
+            if (config != null) cacheScreen(id, config)
+            done(config ?: getCachedScreen(id))
+        }
+    }
+
+    /** A flow's config and every screen it references: cached or fetched. Null when the flow itself is not found. */
+    internal fun loadFlow(id: String, refresh: Boolean = false, done: (FlowConfig?) -> Unit) {
+        val cached = if (refresh) null else getCachedFlow(id)
+        if (cached != null) { loadFlowScreens(cached, refresh) { done(cached) }; return }
+        val loader = documentLoader ?: run { done(getCachedFlow(id)); return }
+        loader("flows", id) { doc ->
+            val config = doc?.let {
+                try { FlowConfig.fromMap(ScreenDocument.normalize(it, id)) } catch (e: Throwable) {
+                    ai.appdna.sdk.Log.error("Failed to parse flow config $id: ${e.message}")
+                    null
+                }
+            } ?: getCachedFlow(id)
+            if (config == null) { done(null); return@loader }
+            cacheFlow(id, config)
+            loadFlowScreens(config, refresh) { done(config) }
+        }
+    }
+
+    private fun loadFlowScreens(config: FlowConfig, refresh: Boolean, done: () -> Unit) {
+        val ids = config.screens.map { it.screenId }.filter { it.isNotEmpty() }.distinct()
+            .filter { refresh || getCachedScreen(it) == null }
+        if (ids.isEmpty()) { done(); return }
+        val remaining = java.util.concurrent.atomic.AtomicInteger(ids.size)
+        for (sid in ids) loadScreen(sid, refresh) { if (remaining.decrementAndGet() == 0) done() }
+    }
+
+    /**
+     * Every screen and flow the index names: its screens, its flows, its slot assignments and its interceptions.
+     * Fetched again on each index load, so a republished screen replaces the cached copy. Slots resolve
+     * synchronously from the cache, so this prefetch is what lets a slot render at all.
+     */
+    internal fun prefetch(index: ScreenIndex) {
+        if (documentLoader == null) return
+        val screenIds = linkedSetOf<String>()
+        index.screens?.forEach { if (it.id.isNotEmpty()) screenIds.add(it.id) }
+        index.slots?.forEach { s -> s.screenId.takeIf { it.isNotEmpty() }?.let { screenIds.add(it) } }
+        index.interceptions?.forEach { i -> i.screenId.takeIf { it.isNotEmpty() }?.let { screenIds.add(it) } }
+        for (sid in screenIds) loadScreen(sid, refresh = true) { }
+        index.flows?.forEach { f -> if (f.id.isNotEmpty()) loadFlow(f.id, refresh = true) { } }
+    }
 
     /**
      * Preview a screen from a raw JSON payload (host-side,
@@ -130,6 +203,15 @@ class ScreenManager private constructor() {
     internal fun parseIsoToEpochMs(iso: String): Long? = ai.appdna.sdk.core.IsoInstant.parseEpochMs(iso)
 
     fun showScreen(screenId: String, callback: ((ScreenResult) -> Unit)? = null) {
+        // A screen the prefetch has not cached yet is fetched before it is declared not found.
+        if (getCachedScreen(screenId) == null && documentLoader != null) {
+            loadScreen(screenId) { presentCachedScreen(screenId, callback) }
+            return
+        }
+        presentCachedScreen(screenId, callback)
+    }
+
+    private fun presentCachedScreen(screenId: String, callback: ((ScreenResult) -> Unit)?) {
         // Acquire lock once for the entire nesting check + config lookup + decrement
         val config: ScreenConfig?
         lock.lock()
@@ -296,6 +378,17 @@ class ScreenManager private constructor() {
     }
 
     fun showFlow(flowId: String, callback: ((FlowResult) -> Unit)? = null) {
+        // A flow (or a screen it references) the prefetch has not cached yet is fetched first.
+        val cached = getCachedFlow(flowId)
+        val missing = cached == null || cached.screens.any { getCachedScreen(it.screenId) == null }
+        if (missing && documentLoader != null) {
+            loadFlow(flowId) { presentCachedFlow(flowId, callback) }
+            return
+        }
+        presentCachedFlow(flowId, callback)
+    }
+
+    private fun presentCachedFlow(flowId: String, callback: ((FlowResult) -> Unit)?) {
         val config = getCachedFlow(flowId)
         if (config == null) {
             val errResult = FlowResult(flowId = flowId, error = ScreenError.SCREEN_NOT_FOUND)
