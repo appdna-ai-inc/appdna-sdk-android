@@ -74,6 +74,10 @@ data class AudienceRuleSet(
 
 internal object AudienceRuleEvaluator {
 
+    /** #2045 — an ordered comparison needs a number on both sides; anything else does not match. */
+    private fun bothNumeric(lhs: Any?, rhs: Any?): Boolean =
+        ConditionEvaluator.toDoubleOrNull(lhs) != null && ConditionEvaluator.toDoubleOrNull(rhs) != null
+
     fun evaluate(ruleSet: AudienceRuleSet?, userTraits: Map<String, Any>): Boolean {
         if (ruleSet == null || ruleSet.conditions.isEmpty()) return true
 
@@ -99,9 +103,11 @@ internal object AudienceRuleEvaluator {
             "equals", "eq" -> ConditionEvaluator.valuesEqual(traitValue, rule.value)
             "not_equals", "neq" -> !ConditionEvaluator.valuesEqual(traitValue, rule.value)
             "gt" -> ConditionEvaluator.compareNumeric(traitValue, rule.value) > 0
-            "gte" -> ConditionEvaluator.compareNumeric(traitValue, rule.value) >= 0
+            // #2045 — compareNumeric answers 0 when a side is not a number, so a missing or non-numeric trait used to
+            // MATCH gte / lte. Both sides must be numbers, as the server's segment SQL reads them.
+            "gte" -> bothNumeric(traitValue, rule.value) && ConditionEvaluator.compareNumeric(traitValue, rule.value) >= 0
             "lt" -> ConditionEvaluator.compareNumeric(traitValue, rule.value) < 0
-            "lte" -> ConditionEvaluator.compareNumeric(traitValue, rule.value) <= 0
+            "lte" -> bothNumeric(traitValue, rule.value) && ConditionEvaluator.compareNumeric(traitValue, rule.value) <= 0
             "contains" -> {
                 when {
                     traitValue is String && rule.value is String -> traitValue.contains(rule.value, ignoreCase = true)
