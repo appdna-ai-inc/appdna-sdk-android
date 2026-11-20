@@ -1187,7 +1187,14 @@ class SharedFixtureTest(
             traits["days_since_install"] = days
             spy.state["days_since_install"] = days
         }
-        spy.state["audience_match"] = AudienceRuleEvaluator.evaluate(ruleSet, traits)
+        // SPEC-542 P6b — `setup.attribution` is the payload the app handed `setAttribution` (standard fields, raw
+        // parameters under `raw`); absent, nothing is stored. Reset after, so no other fixture inherits it.
+        ai.appdna.sdk.core.AttributionTargeting.payload = setup.optJSONObject("attribution")?.asMap()
+        try {
+            spy.state["audience_match"] = AudienceRuleEvaluator.evaluate(ruleSet, traits)
+        } finally {
+            ai.appdna.sdk.core.AttributionTargeting.payload = null
+        }
     }
 
     // ---------------------------------------------------------------------------------------------

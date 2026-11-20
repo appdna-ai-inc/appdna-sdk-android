@@ -97,24 +97,30 @@ internal object AudienceRuleEvaluator {
     internal fun evaluateRule(rule: AudienceRule, userTraits: Map<String, Any>): Boolean {
         // A trait identify stored as null (`JSONObject.NULL`) is NOT SET, for every operator: it does not
         // `exists`, as the server's segment SQL and the journey evaluators read it.
-        val traitValue = userTraits[rule.trait]?.takeIf { it != org.json.JSONObject.NULL }
+        // SPEC-542 P6b — an `attribution.` key reads the stored attribution, folded for a case-insensitive compare.
+        val attribution = AttributionTargeting.isAttributionKey(rule.trait)
+        val traitValue = if (attribution) AttributionTargeting.fold(AttributionTargeting.resolve(rule.trait!!))
+            else userTraits[rule.trait]?.takeIf { it != org.json.JSONObject.NULL }
+        val ruleValue = if (attribution) AttributionTargeting.fold(rule.value) else rule.value
 
         return when (rule.operator) {
-            "equals", "eq" -> ConditionEvaluator.valuesEqual(traitValue, rule.value)
-            "not_equals", "neq" -> !ConditionEvaluator.valuesEqual(traitValue, rule.value)
-            "gt" -> ConditionEvaluator.compareNumeric(traitValue, rule.value) > 0
+            "equals", "eq" -> ConditionEvaluator.valuesEqual(traitValue, ruleValue)
+            "not_equals", "neq" -> !ConditionEvaluator.valuesEqual(traitValue, ruleValue)
+            "gt" -> ConditionEvaluator.compareNumeric(traitValue, ruleValue) > 0
             // #2045 — compareNumeric answers 0 when a side is not a number, so a missing or non-numeric trait used to
             // MATCH gte / lte. Both sides must be numbers, as the server's segment SQL reads them.
-            "gte" -> bothNumeric(traitValue, rule.value) && ConditionEvaluator.compareNumeric(traitValue, rule.value) >= 0
-            "lt" -> ConditionEvaluator.compareNumeric(traitValue, rule.value) < 0
-            "lte" -> bothNumeric(traitValue, rule.value) && ConditionEvaluator.compareNumeric(traitValue, rule.value) <= 0
+            "gte" -> bothNumeric(traitValue, ruleValue) && ConditionEvaluator.compareNumeric(traitValue, ruleValue) >= 0
+            "lt" -> ConditionEvaluator.compareNumeric(traitValue, ruleValue) < 0
+            "lte" -> bothNumeric(traitValue, ruleValue) && ConditionEvaluator.compareNumeric(traitValue, ruleValue) <= 0
             "contains" -> {
                 when {
-                    traitValue is String && rule.value is String -> traitValue.contains(rule.value, ignoreCase = true)
-                    traitValue is List<*> && rule.value is String -> traitValue.contains(rule.value)
+                    traitValue is String && ruleValue is String -> traitValue.contains(ruleValue, ignoreCase = true)
+                    traitValue is List<*> && ruleValue is String -> traitValue.contains(ruleValue)
                     else -> false
                 }
             }
+            // SPEC-542 P6b — a literal prefix (never a pattern), case-insensitive like `contains`.
+            "starts_with" -> traitValue is String && ruleValue is String && traitValue.startsWith(ruleValue, ignoreCase = true)
             "exists" -> traitValue != null
             // The server's operator (segment SQL, journeys): no non-null value, the negation of `exists`.
             "not_exists" -> traitValue == null
@@ -123,11 +129,11 @@ internal object AudienceRuleEvaluator {
             // ConditionEvaluator so numbers and their string spellings coerce like everywhere else.
             "in" -> {
                 if (traitValue == null) return false
-                val arr = rule.value as? List<*> ?: return false
+                val arr = ruleValue as? List<*> ?: return false
                 arr.any { ConditionEvaluator.valuesEqual(traitValue, it) }
             }
             "not_in" -> {
-                val arr = rule.value as? List<*> ?: return true
+                val arr = ruleValue as? List<*> ?: return true
                 arr.none { ConditionEvaluator.valuesEqual(traitValue, it) }
             }
             // `between` was never implemented, so it fell to the `else -> true` catch-all below
@@ -142,7 +148,7 @@ internal object AudienceRuleEvaluator {
                 // exact precedence; the old betweenBounds preferred the list unconditionally, so
                 // {min:18,max:65,value:[30,40]} used [30,40] on Android but [18,65] on iOS.
                 if (lo == null && hi == null) {
-                    val list = rule.value as? List<*>
+                    val list = ruleValue as? List<*>
                     if (list != null && list.size >= 2) {
                         lo = ConditionEvaluator.toDoubleOrNull(list[0])
                         hi = ConditionEvaluator.toDoubleOrNull(list[1])
