@@ -48,6 +48,19 @@ class ScreenContentBlocksComposeTest {
         assertEquals("another section's answer is untouched", "kept", responses["earlier"])
     }
 
+    /**
+     * A `{{…}}` token in a Screen's block resolves, as on iOS. It used to be drawn literally on Android.
+     * Red control: without the view pass in `ContentBlocksSectionRenderer` the literal token is on screen.
+     */
+    @Test
+    fun `a template token resolves against the screen's responses`() {
+        val ctx = SectionContext(screenId = "scr_blocks", responses = mutableMapOf("nickname" to "Robin"), onAction = {})
+        val s = section(listOf(mapOf("id" to "b_hi", "type" to "text", "text" to "Hi {{responses.nickname}}")))
+        compose.setContent { SectionRegistry.Render(s, ctx) }
+        compose.onNodeWithText("Hi Robin").assertExists()
+        compose.onNodeWithText("Hi {{responses.nickname}}").assertDoesNotExist()
+    }
+
     @Test
     fun `nothing typed reports nothing`() {
         val responses = mutableMapOf<String, Any>()

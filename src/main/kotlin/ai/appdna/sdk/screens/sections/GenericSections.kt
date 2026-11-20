@@ -160,7 +160,15 @@ internal fun ContentBlocksSectionRenderer(section: ScreenSection, context: Secti
     }
 
     Column(verticalArrangement = Arrangement.spacedBy(spacing.dp)) {
-        for (block in blocks) {
+        for (rawBlock in blocks) {
+            // The view-level template pass, as iOS runs it for a Screen (`ContentBlockRendererView` resolves
+            // `{{…}}` against the screen's responses, hook data and the live inputs). Without it a token was drawn
+            // literally on Android. A Screen is drawn off an onboarding step, so no Google credit: OTHER surface.
+            val block = ai.appdna.sdk.onboarding.viewPassBlock(
+                rawBlock, hookData = context.hookData, responses = context.responses, stepInputs = inputValues,
+                surface = ai.appdna.sdk.core.TemplateSurface.OTHER,
+                fieldConfigOverrides = emptyMap(), fieldOptionsOverrides = emptyMap(),
+            )
             RenderBlock(
                 block = block,
                 onAction = { action ->

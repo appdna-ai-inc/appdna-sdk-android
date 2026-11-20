@@ -29,6 +29,8 @@ the project uses [Semantic Versioning](https://semver.org/).
 - **What a user enters on a screen reaches your app.** Values typed or picked in a screen's content blocks stayed in
   the view, so `onScreenDismissed` and `onFlowCompleted` got empty `responses`. They are now keyed by the block's
   field ID, and a flow's navigation rules can branch on them.
+- **`{{…}}` tokens resolve in a screen's content blocks**, as on iOS: a block's text, labels and options now resolve
+  the screen's responses, hook data and live inputs. They used to be drawn literally, such as `Hi {{user.first_name}}`.
 - An onboarding flow no longer crashes a debug host built with Android Gradle Plugin 8.2 (`VerifyError` in
   `WidgetActionChannelKt.withHowtoBlocks`). D8 8.2 mis-dexed that one method; every flow was affected, release builds
   and newer AGP were not.
