@@ -106,6 +106,19 @@ private fun decodeContentBlock(map: Map<String, Any?>): ContentBlock = ContentBl
     max_lines = (map["max_lines"] as? Number)?.toInt(),
 )
 
+/**
+ * Mirror each snapshot of a content-block section's entered values into [into]: a new or changed value is
+ * set, a cleared one removed. Only keys this section reported are removed, so another section's answers stay.
+ */
+internal suspend fun reportEnteredValues(values: kotlinx.coroutines.flow.Flow<Map<String, Any>>, into: MutableMap<String, Any>) {
+    var previous = emptyMap<String, Any>()
+    values.collect { now ->
+        for ((k, v) in now) if (previous[k] != v) into[k] = v
+        for (k in previous.keys) if (k !in now) into.remove(k)
+        previous = now
+    }
+}
+
 @Composable
 internal fun ContentBlocksSectionRenderer(section: ScreenSection, context: SectionContext) {
     @Suppress("UNCHECKED_CAST")
@@ -114,6 +127,14 @@ internal fun ContentBlocksSectionRenderer(section: ScreenSection, context: Secti
     val spacing = (section.data["spacing"] as? Number)?.toDouble() ?: 12.0
     val toggleValues = remember { mutableStateMapOf<String, Boolean>() }
     val inputValues = remember { mutableStateMapOf<String, Any>() }
+    // Every value the user enters reaches the screen's responses (`ScreenResult.responses`, and in a flow
+    // `FlowResult.responses` and its navigation rules). It used to stay in this composable's state, so the host got {}.
+    androidx.compose.runtime.LaunchedEffect(context.responses) {
+        reportEnteredValues(
+            androidx.compose.runtime.snapshotFlow { inputValues.toMap() + toggleValues.toMap() },
+            context.responses,
+        )
+    }
 
     // Gate `next` action on required-field
     // validation. Mirrors iOS GenericSections.swift:58-88 validateFormFields()

@@ -26,6 +26,9 @@ the project uses [Semantic Versioning](https://semver.org/).
   A days-since-install trigger uses the app's real install time (it was always 0). Max impressions and cooldowns
   are kept on the device. Shared fixtures
   `event_emission/sdk_events_reach_message_and_survey_triggers` and `trigger_hold_is_bounded`.
+- **What a user enters on a screen reaches your app.** Values typed or picked in a screen's content blocks stayed in
+  the view, so `onScreenDismissed` and `onFlowCompleted` got empty `responses`. They are now keyed by the block's
+  field ID, and a flow's navigation rules can branch on them.
 - An onboarding flow no longer crashes a debug host built with Android Gradle Plugin 8.2 (`VerifyError` in
   `WidgetActionChannelKt.withHowtoBlocks`). D8 8.2 mis-dexed that one method; every flow was affected, release builds
   and newer AGP were not.

@@ -64,6 +64,8 @@ class ScreenHostActivity : ComponentActivity() {
     private var snapshotScreenId: String? = null
     private var flowToken: String? = null
     private var flowManager: FlowManager? = null
+    /** What the user entered on this single screen's content blocks; handed to the host on dismiss. */
+    private val screenResponses = mutableMapOf<String, Any>()
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -165,11 +167,13 @@ class ScreenHostActivity : ComponentActivity() {
                             ScreenResult(
                                 screenId = screenId,
                                 dismissed = true,
+                                responses = screenResponses.toMap(),
                                 durationMs = (System.currentTimeMillis() - slot.startedAtMs).toInt(),
                             )
                         )
                         cleanup()
                     },
+                    responses = screenResponses,
                 )
               }
             }
@@ -247,6 +251,7 @@ class ScreenHostActivity : ComponentActivity() {
             ScreenResult(
                 screenId = snapshotScreenId ?: "",
                 dismissed = true,
+                responses = screenResponses.toMap(),
             )
         )
         cleanup()
@@ -296,6 +301,7 @@ class ScreenHostActivity : ComponentActivity() {
                 ScreenResult(
                     screenId = snapshotScreenId ?: "",
                     dismissed = true,
+                    responses = screenResponses.toMap(),
                 )
             )
         }
