@@ -255,6 +255,7 @@ class SharedFixtureTest(
             "show_screen" -> runShowScreen(action, spy)
             "track_event" -> runTrackEvent(action, spy)
             "identify" -> runIdentify(action, spy)
+            "anonymous_id_lifecycle" -> runAnonymousIdLifecycle(action, spy)
             // the consent-signal fixtures: scripted SDK calls against a stub server (real AppDNA).
             "script" -> ai.appdna.sdk.consent.ConsentFixtureRunner(ctx).runAll(fixtureName, action)
             "report_paying_user" -> runReportPayingUser(action, spy)
@@ -1083,6 +1084,41 @@ class SharedFixtureTest(
 
     /** A host object that is not a JSON value, for `opaque_traits`. */
     private class OpaqueHostValue
+
+    /**
+     * `identity/anonymous_id_*`: the PUBLIC `AppDNA.getAnonymousId()` read across the steps a host
+     * goes through, over a REAL IdentityManager on the SDK's own storage. `relaunch` builds a new IdentityManager on
+     * the same storage; `reinstall` empties the identity keys first (what clearing app data does). The reads are
+     * reported as letters in order of first appearance, because the id itself is minted.
+     */
+    private fun runAnonymousIdLifecycle(action: JSONObject, spy: Spy) {
+        val steps = action.getJSONArray("calls").let { a -> (0 until a.length()).map { a.getString(it) } }
+        val storage = LocalStorage(ctx)
+        fun wipe() { storage.remove("anon_id"); storage.remove("user_id"); storage.remove("user_traits") }
+        wipe()
+        var manager = IdentityManager(storage)
+        AppDNA.setIdentityManagerForTest(manager)
+        val reads = mutableListOf<String>()
+        try {
+            for (step in steps) {
+                when (step) {
+                    "read" -> reads += (AppDNA.getAnonymousId() ?: unsupported("getAnonymousId() was null after configure"))
+                    "identify" -> manager.identify(action.optString("userId", "fixture_user"), null)
+                    "reset" -> manager.reset()
+                    "relaunch" -> { manager = IdentityManager(storage); AppDNA.setIdentityManagerForTest(manager) }
+                    "reinstall" -> { wipe(); manager = IdentityManager(storage); AppDNA.setIdentityManagerForTest(manager) }
+                    else -> unsupported("anonymous_id_lifecycle step '$step'")
+                }
+            }
+        } finally {
+            AppDNA.setIdentityManagerForTest(null)
+            wipe()
+        }
+        val letters = LinkedHashMap<String, String>()
+        spy.state["anonymous_id_reads"] = reads.map { id -> letters.getOrPut(id) { ('A' + letters.size).toString() } }
+        val uuid = Regex("^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$")
+        spy.state["anonymous_id_format"] = if (reads.all { uuid.matches(it) }) "uuid_lowercase" else "other"
+    }
 
     // ---------------------------------------------------------------------------------------------
     // audience_eval — REAL AudienceRuleSet + AudienceRuleEvaluator

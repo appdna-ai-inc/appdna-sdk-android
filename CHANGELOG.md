@@ -6,6 +6,14 @@ the project uses [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Added
+- `AppDNA.getAnonymousId(): String?`: the anonymous ID AppDNA keys this install's events by. Pass it to your mobile
+  measurement partner (AppsFlyer, Adjust, Singular) as its customer user ID before the MMP starts, so AppDNA can join
+  each install and its campaign to the person. Stable for the life of the install (it survives restarts, `identify`
+  and `reset()`); `null` until `configure` has been called. See
+  [Mobile measurement partners](https://docs.appdna.ai/sdks/android/api-reference#mobile-measurement-partners).
+  Shared fixtures `identity/anonymous_id_*`.
+
 ### Fixed
 - An onboarding flow no longer crashes a debug host built with Android Gradle Plugin 8.2 (`VerifyError` in
   `WidgetActionChannelKt.withHowtoBlocks`). D8 8.2 mis-dexed that one method; every flow was affected, release builds

@@ -1126,6 +1126,23 @@ object AppDNA {
     // MARK: - Public API: Identity
 
     /**
+     * The anonymous id AppDNA keys this install's events by before (and after) [identify].
+     *
+     * Give it to your mobile measurement partner as its customer user id **before the MMP's own start call**, so the
+     * MMP's install postback carries it and AppDNA can join the install to this person (AppsFlyer `setCustomerUserId`,
+     * Adjust global callback parameter `appdna_user_id`, Singular `setCustomUserId`).
+     *
+     * Stable for the life of the install: it survives app restarts, [identify] and [reset], and changes only when the
+     * app's data is cleared or it is installed again. `null` until [configure] has been called (the id lives in the
+     * SDK's storage, which needs the application context); call it right after [configure].
+     */
+    @JvmStatic
+    fun getAnonymousId(): String? = identityManager?.currentIdentity?.anonId
+
+    /** The shared fixture `identity/anonymous_id_*` drives [getAnonymousId] over an identity it builds. */
+    internal fun setIdentityManagerForTest(manager: IdentityManager?) { identityManager = manager }
+
+    /**
      * Link the anonymous device to a known user.
      */
     @JvmStatic
