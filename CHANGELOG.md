@@ -7,6 +7,9 @@ the project uses [Semantic Versioning](https://semver.org/).
 ## [1.0.60] — 2026-11-21
 
 ### Added
+- Every release is also published to a public fallback Maven repository, `https://us-east1-maven.pkg.dev/pure-tracer-487109-m9/appdna-sdk`, with the same signed files as
+  Maven Central. List it after `mavenCentral()` if Gradle cannot resolve a new version yet. See
+  [Fallback repository](https://docs.appdna.ai/sdks/android/installation#fallback-repository-artifact-registry).
 - In-app messages and surveys honour audience rules. A message's or survey's `audience_rules` (the same shape as an
   onboarding flow's or a paywall's: user traits, and `attribution.<field>` / `attribution.param.<key>` keys over the
   stored install attribution) decide whether it triggers for this user; a message or survey with no rules is shown to
