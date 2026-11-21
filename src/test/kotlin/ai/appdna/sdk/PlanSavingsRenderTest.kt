@@ -58,11 +58,16 @@ class PlanSavingsRenderTest {
         "premium_monthly" to StorePriceLookup.StoreFacts(price = "$14.99", periodIso = "P1M", amount = 14.99),
     )
 
-    private fun config(badge: String, localizations: Map<String, Any>? = null): PaywallConfig {
+    private fun config(
+        badge: String,
+        localizations: Map<String, Any>? = null,
+        annualPrice: String = "$39.99",
+        monthlyPrice: String = "$6.99",
+    ): PaywallConfig {
         val plans = listOf(
-            mapOf("product_id" to "premium_annual", "label" to "Premium Annual", "price_display" to "$39.99",
+            mapOf("product_id" to "premium_annual", "label" to "Premium Annual", "price_display" to annualPrice,
                 "is_default" to true, "badge" to badge, "sort_order" to 0),
-            mapOf("product_id" to "premium_monthly", "label" to "Premium Monthly", "price_display" to "$6.99",
+            mapOf("product_id" to "premium_monthly", "label" to "Premium Monthly", "price_display" to monthlyPrice,
                 "is_default" to false, "sort_order" to 1),
         )
         val doc = buildMap<String, Any> {
@@ -119,6 +124,19 @@ class PlanSavingsRenderTest {
 
         assertTrue("the badge must draw the figure the drawn prices give, to the pixel", computed.contentEquals(literalRight))
         assertFalse("negative control: the authored-price figure must look DIFFERENT", computed.contentEquals(literalStale))
+    }
+
+    @Test
+    fun `a per-month annual price is read as a month - the badge draws 74 percent, not 97`() {
+        fun cfg(badge: String) = config(badge, annualPrice = "\$5.00/mo, billed yearly", monthlyPrice = "\$19.99/mo")
+        val drawn = cfg("Save {{savings_percent}}").applyingStoreFacts(emptyMap())
+        assertEquals("1 − 5.00 / 19.99 is 74.99%, floored", "Save 74%", drawn.annualBadge())
+
+        val computed = render(drawn, "per_month_computed")
+        val literalRight = render(cfg("Save 74%").applyingStoreFacts(emptyMap()), "per_month_literal_right")
+        val literalWrong = render(cfg("Save 97%").applyingStoreFacts(emptyMap()), "per_month_literal_wrong")
+        assertTrue("the badge must draw the real saving, to the pixel", computed.contentEquals(literalRight))
+        assertFalse("negative control: the shipped 97% must look DIFFERENT", computed.contentEquals(literalWrong))
     }
 
     @Test

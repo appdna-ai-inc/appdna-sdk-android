@@ -15,7 +15,7 @@ import kotlin.math.floor
  * So a plan's `badge` or `savings_text` may carry the token `{{savings_percent}}`, filled here:
  *
  *  1. Each plan's price PER MONTH — a store price over the store's ISO period, an authored price over
- *     the period its own words name (`period`, label, price text, product id); each falls back to
+ *     the unit written right after its amount ("$5.00/mo"), else the period its own words name (`period`, label, price text, product id); each falls back to
  *     the other.
  *  2. The anchor is the most expensive per-month plan in the same list; a plan's saving is
  *     `1 − perMonth / anchor`, FLOORED to a whole percent, so the claim never rounds up.
@@ -75,6 +75,27 @@ internal object PlanSavings {
         }
     }
 
+    private val PRICE_UNIT_RE = Regex("""^\s*(?:\p{Sc}\s*)?(?:/|per\b|a\b|an\b|each\b|every\b)\s*(?:1\s*)?([A-Za-z]+)""", RegexOption.IGNORE_CASE)
+
+    /**
+     * Months in the unit written RIGHT AFTER a price's amount: "$5.00/mo", "$4.99 a week", "$59.99 per
+     * year". An authored annual plan's price is often a MONTHLY figure ("$5.00/mo, billed yearly"); read over the
+     * plan's twelve months it claimed "save 97%" against $19.99/mo instead of 74%. The unit beside the amount
+     * describes the amount. null when no unit follows it.
+     */
+    fun monthsFromPriceUnit(text: String?): Double? {
+        val m = text?.let { AMOUNT_RE.find(it) } ?: return null
+        val unit = PRICE_UNIT_RE.find(text.substring(m.range.last + 1))?.groupValues?.get(1)?.lowercase() ?: return null
+        return when (unit) {
+            "mo", "mos", "mon", "mth", "month", "months" -> 1.0
+            "yr", "yrs", "year", "years", "annum" -> 12.0
+            "wk", "wks", "week", "weeks" -> 12.0 / 52.0
+            "quarter", "qtr" -> 3.0
+            "day", "days" -> 12.0 / 365.0
+            else -> null
+        }
+    }
+
     /** Months a plan's own WORDS name. */
     fun monthsFromWords(vararg parts: String?): Double? {
         val words = " " + parts.filterNotNull().joinToString(" ").lowercase()
@@ -99,7 +120,7 @@ internal object PlanSavings {
             val words = monthsFromWords(p.period, p.label.ifBlank { p.name }, authored, p.product_id)
             val amount = if (store) p.resolvedStoreAmount else parseAmount(authored)
             val months = if (store) (monthsFromIso(p.resolvedStorePeriod) ?: words)
-                else (words ?: monthsFromIso(p.resolvedStorePeriod))
+                else (monthsFromPriceUnit(authored) ?: words ?: monthsFromIso(p.resolvedStorePeriod))
             val perMonth = if (amount != null && amount > 0 && months != null && months > 0) amount / months else null
             perMonth to store
         }
