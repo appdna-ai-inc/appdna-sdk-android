@@ -40,6 +40,12 @@ data class SurveyConfig(
     val version: Int? = null,
     /** the survey whose content this one is serving (Serve instead); null when not swapped. */
     val servedFrom: ai.appdna.sdk.core.ServedFrom? = null,
+    /**
+     * `audience_rules`: who may see this survey, evaluated against the user's traits and the stored install
+     * attribution (`attribution.<field>`, `attribution.param.<key>`). Either shape [ai.appdna.sdk.core.AudienceRuleSet.fromAny]
+     * reads. Null: everyone.
+     */
+    val audienceRules: Any? = null,
 ) {
     /** `content_version` + `content_source_id` for every event this survey emits. */
     internal val contentStamp: Map<String, Any>
@@ -71,6 +77,7 @@ data class SurveyConfig(
                     placement = data["placement"] as? String,
                     version = (data["version"] as? Number)?.toInt(),
                     servedFrom = ai.appdna.sdk.core.ServedFrom.parse(data["served_from"]),
+                    audienceRules = data["audience_rules"],
                 )
             } catch (e: Exception) {
                 null

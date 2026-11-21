@@ -27,7 +27,21 @@ internal object ItemPlacementResolver {
             }
     }
 
-    /** Surveys carry no audience rules, so the lowest `id` on the name wins. */
-    fun pickSurveyId(surveys: Map<String, SurveyConfig>, placement: String): String? =
-        surveys.filter { it.value.placement == placement }.keys.minOrNull()
+    /**
+     * The same order as [pickFlow]: higher audience priority, then a survey with audience conditions before a
+     * catch-all, then lowest `id`. The first whose `audience_rules` admit the user wins (the survey trigger's own
+     * audience gate, [ai.appdna.sdk.feedback.SurveyManager.audienceAllows]); a survey with no rules matches everyone.
+     */
+    fun pickSurveyId(surveys: Map<String, SurveyConfig>, placement: String, traits: Map<String, Any>): String? {
+        fun ruleSet(s: SurveyConfig) = AudienceRuleSet.fromAny(s.audienceRules)
+        return surveys.entries
+            .filter { it.value.placement == placement }
+            .sortedWith(
+                compareByDescending<Map.Entry<String, SurveyConfig>> { ruleSet(it.value)?.priority ?: 0 }
+                    .thenByDescending { ruleSet(it.value)?.conditions?.isNotEmpty() == true }
+                    .thenBy { it.key },
+            )
+            .firstOrNull { ai.appdna.sdk.feedback.SurveyManager.audienceAllows(it.value, traits) }
+            ?.key
+    }
 }

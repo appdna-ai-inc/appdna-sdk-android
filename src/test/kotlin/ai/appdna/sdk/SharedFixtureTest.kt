@@ -265,6 +265,8 @@ class SharedFixtureTest(
             "attribution_wait" -> runAttributionWait(action, spy)
             "set_attribution_bridge" -> runSetAttributionBridge(action, spy)
             "evaluate_screen_trigger" -> runEvaluateScreenTrigger(action, spy)
+            // A message's / survey's `audience_rules`, through the REAL trigger path and placement resolver.
+            "evaluate_content_audience" -> runEvaluateContentAudience(action, spy)
             "show_paywall" -> runShowPaywall(action, spy)
             "purchase" -> runPurchase(action, spy)
             "restore_purchases" -> runRestorePurchases(action, spy)
@@ -1258,6 +1260,75 @@ class SharedFixtureTest(
         spy.state["timers_scheduled"] = scheduled
     }
 
+    /**
+     * evaluate_content_audience — the `audience_rules` gate of in-app messages and surveys. `message`: the REAL
+     * MessageManager trigger path (onEvent) on a fresh manager, over a message from the REAL config parser, with the
+     * case's traits as the manager's trait source and no activity to draw on, so a message that passes every filter
+     * is HELD — held = admitted. `survey`: the REAL SurveyConfig parser and `SurveyManager.audienceAllows` (the step
+     * its onEvent runs). `survey_placement`: the REAL `ItemPlacementResolver.pickSurveyId`. Each case's `attribution`
+     * is the stored payload, reset after.
+     */
+    private fun runEvaluateContentAudience(action: JSONObject, spy: Spy) {
+        val cases = action.optJSONArray("cases") ?: unsupported("evaluate_content_audience needs action.cases")
+        @Suppress("UNCHECKED_CAST")
+        fun plain(o: JSONObject?): Map<String, Any> =
+            (o?.asMap() ?: emptyMap()).filterValues { it != null } as Map<String, Any>
+        spy.state["results"] = (0 until cases.length()).map { i ->
+            val c = cases.getJSONObject(i)
+            val traits = plain(c.optJSONObject("user_traits"))
+            ai.appdna.sdk.core.AttributionTargeting.payload = c.optJSONObject("attribution")?.asMap()
+            try {
+                when (val surface = c.getString("surface")) {
+                    "message" -> {
+                        val id = "fx_audience_msg_$i"
+                        ctx.getSharedPreferences("ai.appdna.sdk.msg_freq", Context.MODE_PRIVATE).edit().clear().commit()
+                        val messages = ai.appdna.sdk.messages.MessageConfigParser.parseMessages(
+                            mapOf("messages" to mapOf(id to plain(c.getJSONObject("item")))),
+                        )
+                        val config = messages[id] ?: unsupported("evaluate_content_audience: case $i message did not parse")
+                        val manager = MessageManager(
+                            ctx,
+                            { messages },
+                            surface = object : ai.appdna.sdk.messages.MessageSurface {
+                                override fun host(): android.app.Activity? = null
+                                override fun show(
+                                    messageId: String, activity: android.app.Activity, config: ai.appdna.sdk.messages.MessageConfig,
+                                    onCTATap: (android.app.Activity) -> Unit, onDismiss: () -> Unit, onClosed: () -> Unit,
+                                ) = Unit
+                                override fun observeActivation(block: () -> Unit): () -> Unit = {}
+                            },
+                            userTraits = { traits },
+                        )
+                        try {
+                            manager.onEvent(config.trigger_rules.event, emptyMap())
+                            idle()
+                            id in manager.heldMessageIds
+                        } finally {
+                            manager.shutdown()
+                        }
+                    }
+                    "survey" -> {
+                        val config = ai.appdna.sdk.feedback.SurveyConfig.fromMap(plain(c.getJSONObject("item")))
+                            ?: unsupported("evaluate_content_audience: case $i survey did not parse")
+                        ai.appdna.sdk.feedback.SurveyManager.audienceAllows(config, traits)
+                    }
+                    "survey_placement" -> {
+                        val items = c.getJSONArray("items")
+                        val surveys = (0 until items.length()).associate { k ->
+                            val m = plain(items.getJSONObject(k))
+                            (m["id"] as String) to (ai.appdna.sdk.feedback.SurveyConfig.fromMap(m)
+                                ?: unsupported("evaluate_content_audience: case $i survey ${m["id"]} did not parse"))
+                        }
+                        ai.appdna.sdk.core.ItemPlacementResolver.pickSurveyId(surveys, c.getString("placement"), traits) ?: "none"
+                    }
+                    else -> unsupported("evaluate_content_audience: unknown surface '$surface'")
+                }
+            } finally {
+                ai.appdna.sdk.core.AttributionTargeting.payload = null
+            }
+        }
+    }
+
     private fun runEvaluateAudience(spy: Spy) {
         val cfg = config ?: unsupported("evaluate_audience without setup.config")
         val ruleSet = AudienceRuleSet.fromAny(cfg.asMap())
@@ -2081,7 +2152,7 @@ class SharedFixtureTest(
                 val surveys = maps.associate { m ->
                     m["id"] as String to ai.appdna.sdk.feedback.SurveyConfig.fromMap(m + mapOf("trigger_rules" to emptyMap<String, Any>(), "appearance" to emptyMap<String, Any>()))!!
                 }
-                ai.appdna.sdk.core.ItemPlacementResolver.pickSurveyId(surveys, placement) ?: "none"
+                ai.appdna.sdk.core.ItemPlacementResolver.pickSurveyId(surveys, placement, traits) ?: "none"
             } else {
                 val flows = maps.map { m -> ai.appdna.sdk.onboarding.OnboardingConfigParser.parseSingleFlow(m["id"] as String, m)!! }
                 ai.appdna.sdk.core.ItemPlacementResolver.pickFlow(flows, placement, traits)?.id ?: "none"

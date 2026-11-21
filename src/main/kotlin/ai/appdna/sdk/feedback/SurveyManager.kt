@@ -28,7 +28,19 @@ internal class SurveyManager(
     // Consulted per-survey (inside the present path) for a
     // running survey experiment targeting the survey being shown.
     private val experimentManager: ai.appdna.sdk.config.ExperimentManager? = null,
+    /** The traits audience rules are evaluated against: the identified user's, as paywall and flow selection read them. */
+    private val userTraits: () -> Map<String, Any> = { AppDNA.getUserTraits() },
 ) {
+    internal companion object {
+        /**
+         * The audience step of trigger and placement selection: does [config]'s `audience_rules` admit a user with
+         * [traits]? No rules (or no conditions) admits everyone; `attribution.` keys read the stored install
+         * attribution; an operator the evaluator does not know fails closed. iOS `SurveyManager.audienceAllows`.
+         */
+        fun audienceAllows(config: SurveyConfig, traits: Map<String, Any>): Boolean =
+            ai.appdna.sdk.core.AudienceRuleEvaluator.evaluateAny(config.audienceRules, traits)
+    }
+
     private val frequencyTracker = SurveyFrequencyTracker(context)
     @Volatile private var surveyConfigs: Map<String, SurveyConfig> = emptyMap()
     private val isPresenting = AtomicBoolean(false)
@@ -78,12 +90,16 @@ internal class SurveyManager(
         // surveys match one event (mirrors iOS SurveyManager + MessageManager's id-asc tie-break).
         // The unordered map + `break` previously picked a nondeterministic survey that diverged
         // from iOS. SurveyConfig has no priority field, so surveyId is the tie-break.
+        val traits: Map<String, Any> by lazy { userTraits() }
         for ((surveyId, config) in surveyConfigs.toSortedMap()) {
             // 1. Event match
             if (config.triggerRules.event != eventName) continue
 
             // 2. Conditions
             if (!evaluateConditions(config.triggerRules.conditions, properties ?: emptyMap())) continue
+
+            // 2b. Audience rules (user traits + stored install attribution)
+            if (!audienceAllows(config, traits)) continue
 
             // 3. Frequency
             if (!frequencyTracker.canShow(surveyId, config.triggerRules.frequency, config.triggerRules.maxDisplays)) continue
@@ -110,7 +126,7 @@ internal class SurveyManager(
      */
     /** Present the survey answering a placement name. False when no survey has that name. */
     fun presentByPlacement(placement: String): Boolean {
-        val surveyId = ai.appdna.sdk.core.ItemPlacementResolver.pickSurveyId(surveyConfigs, placement)
+        val surveyId = ai.appdna.sdk.core.ItemPlacementResolver.pickSurveyId(surveyConfigs, placement, userTraits())
         if (surveyId == null) {
             Log.warning("No survey found for placement: $placement")
             return false

@@ -54,6 +54,11 @@ data class MessageConfig(
     val version: Int? = null,
     /** the message whose content this one is serving (Serve instead); null when not swapped. */
     val served_from: ai.appdna.sdk.core.ServedFrom? = null,
+    /**
+     * Who may see this message: `{priority, match_mode, conditions}` or a bare rule list, evaluated against the user's
+     * traits and the stored install attribution (`attribution.<field>`, `attribution.param.<key>`). Null: everyone.
+     */
+    val audience_rules: Any? = null,
 ) {
     /** `content_version` + `content_source_id` for every event this message emits. */
     internal val contentStamp: Map<String, Any>
@@ -487,6 +492,7 @@ internal object MessageConfigParser {
             end_date = map["end_date"] as? String,
             version = (map["version"] as? Number)?.toInt(),
             served_from = ai.appdna.sdk.core.ServedFrom.parse(map["served_from"]),
+            audience_rules = map["audience_rules"],
         )
     }
 }

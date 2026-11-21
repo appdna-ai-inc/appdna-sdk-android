@@ -90,7 +90,19 @@ class MessageManager internal constructor(
     // public for the `AppDNA.inAppMessages` namespace.
     private val experimentManager: ai.appdna.sdk.config.ExperimentManager? = null,
     surface: MessageSurface? = null,
+    /** The traits audience rules are evaluated against: the identified user's, as paywall and flow selection read them. */
+    private val userTraits: () -> Map<String, Any> = { AppDNA.getUserTraits() },
 ) {
+
+    internal companion object {
+        /**
+         * The audience step of trigger evaluation: does [config]'s `audience_rules` admit a user with [traits]? No rules
+         * (or no conditions) admits everyone; `attribution.` keys read the stored install attribution; an operator the
+         * evaluator does not know fails closed. iOS `MessageManager.audienceAllows`, same rule.
+         */
+        fun audienceAllows(config: MessageConfig, traits: Map<String, Any>): Boolean =
+            ai.appdna.sdk.core.AudienceRuleEvaluator.evaluateAny(config.audience_rules, traits)
+    }
 
     /**
      * Public delegate. Hosted by `AppDNA.inAppMessages` namespace —
@@ -162,9 +174,11 @@ class MessageManager internal constructor(
 
         var filteredByEvent = 0
         var filteredByConditions = 0
+        var filteredByAudience = 0
         var filteredByFrequency = 0
         var filteredByDateRange = 0
         val candidates: MutableList<Pair<String, MessageConfig>> = mutableListOf()
+        val traits: Map<String, Any> by lazy { userTraits() }
 
         for ((id, config) in messages) {
             val rules = config.trigger_rules
@@ -177,6 +191,11 @@ class MessageManager internal constructor(
             // 2. Conditions evaluation
             if (!evaluateConditions(rules.conditions, props)) {
                 filteredByConditions++
+                continue
+            }
+            // 2b. Audience rules (user traits + stored install attribution). Traits are read once per event.
+            if (!audienceAllows(config, traits)) {
+                filteredByAudience++
                 continue
             }
             // 3. Frequency check
@@ -193,7 +212,7 @@ class MessageManager internal constructor(
         }
 
         if (candidates.isEmpty()) {
-            Log.debug("[Messages] No candidates for '$eventName' — filtered: event=$filteredByEvent, conditions=$filteredByConditions, frequency=$filteredByFrequency, dateRange=$filteredByDateRange")
+            Log.debug("[Messages] No candidates for '$eventName' — filtered: event=$filteredByEvent, conditions=$filteredByConditions, audience=$filteredByAudience, frequency=$filteredByFrequency, dateRange=$filteredByDateRange")
             return
         }
 

@@ -88,6 +88,17 @@ internal object AudienceRuleEvaluator {
         }
     }
 
+    /**
+     * An item's raw `audience_rules` payload (either shape [AudienceRuleSet.fromAny] reads) against [userTraits].
+     * Null, absent, or no conditions: no targeting, so it matches. `attribution.` keys resolve from the stored
+     * attribution. The in-app message and survey audience gates read their rules through this, as iOS
+     * `AudienceRuleEvaluator.evaluate(rules:traits:)`.
+     */
+    fun evaluateAny(rules: Any?, userTraits: Map<String, Any>): Boolean {
+        val ruleSet = AudienceRuleSet.fromAny(rules) ?: return true
+        return evaluate(ruleSet, userTraits)
+    }
+
     fun evaluate(rules: List<AudienceRule>?, userTraits: Map<String, Any>): Boolean {
         if (rules.isNullOrEmpty()) return true
         return rules.all { evaluateRule(it, userTraits) }
