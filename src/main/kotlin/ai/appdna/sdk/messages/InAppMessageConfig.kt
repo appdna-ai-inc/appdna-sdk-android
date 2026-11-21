@@ -59,6 +59,12 @@ data class MessageConfig(
      * traits and the stored install attribution (`attribution.<field>`, `attribution.param.<key>`). Null: everyone.
      */
     val audience_rules: Any? = null,
+    /**
+     * Who may see this message by segment: shown only to people in at least one of `segments` (empty: everyone) and in
+     * none of `exclude_segments`. Membership is resolved by AppDNA for the current user; until it is known, a message
+     * with segments is not shown. Null: no segment targeting.
+     */
+    val audience: ai.appdna.sdk.core.SegmentAudience? = null,
 ) {
     /** `content_version` + `content_source_id` for every event this message emits. */
     internal val contentStamp: Map<String, Any>
@@ -493,6 +499,7 @@ internal object MessageConfigParser {
             version = (map["version"] as? Number)?.toInt(),
             served_from = ai.appdna.sdk.core.ServedFrom.parse(map["served_from"]),
             audience_rules = map["audience_rules"],
+            audience = ai.appdna.sdk.core.SegmentAudience.parse(map["audience"]),
         )
     }
 }

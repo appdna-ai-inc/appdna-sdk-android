@@ -92,6 +92,12 @@ class MessageManager internal constructor(
     surface: MessageSurface? = null,
     /** The traits audience rules are evaluated against: the identified user's, as paywall and flow selection read them. */
     private val userTraits: () -> Map<String, Any> = { AppDNA.getUserTraits() },
+    /** The current user's key for segment membership (`u:<userId>` / `a:<anonId>`). */
+    private val segmentUserKey: () -> String? = { AppDNA.segmentUserKey() },
+    /** The current segment membership answer. */
+    private val segmentAnswer: () -> ai.appdna.sdk.core.SegmentMembership.Answer? = { ai.appdna.sdk.core.SegmentMembership.answer },
+    /** Asks AppDNA for the membership of these ids when the answer does not cover them yet (async; never blocks). */
+    private val requestSegments: (Set<String>) -> Unit = { AppDNA.requestSegmentMembership(it) },
 ) {
 
     internal companion object {
@@ -102,6 +108,14 @@ class MessageManager internal constructor(
          */
         fun audienceAllows(config: MessageConfig, traits: Map<String, Any>): Boolean =
             ai.appdna.sdk.core.AudienceRuleEvaluator.evaluateAny(config.audience_rules, traits)
+
+        /**
+         * The segment step: does [config]'s `audience` admit the user? No segments admits everyone; otherwise the
+         * server-resolved membership for THIS user must cover every id (fail closed until it does). iOS
+         * `MessageManager.segmentsAllow`, same rule.
+         */
+        fun segmentsAllow(config: MessageConfig, userKey: String?, answer: ai.appdna.sdk.core.SegmentMembership.Answer?): Boolean =
+            ai.appdna.sdk.core.SegmentMembership.allows(config.audience, userKey, answer)
     }
 
     /**
@@ -175,10 +189,14 @@ class MessageManager internal constructor(
         var filteredByEvent = 0
         var filteredByConditions = 0
         var filteredByAudience = 0
+        var filteredBySegments = 0
         var filteredByFrequency = 0
         var filteredByDateRange = 0
         val candidates: MutableList<Pair<String, MessageConfig>> = mutableListOf()
         val traits: Map<String, Any> by lazy { userTraits() }
+        val segmentKey: String? by lazy { segmentUserKey() }
+        val answer by lazy { segmentAnswer() }
+        val segmentIdsMissing = mutableSetOf<String>()
 
         for ((id, config) in messages) {
             val rules = config.trigger_rules
@@ -198,6 +216,12 @@ class MessageManager internal constructor(
                 filteredByAudience++
                 continue
             }
+            // 2c. Segments (membership resolved by AppDNA for this user). Unknown → not shown, and asked for.
+            if (!segmentsAllow(config, segmentKey, answer)) {
+                filteredBySegments++
+                config.audience?.let { segmentIdsMissing += it.ids }
+                continue
+            }
             // 3. Frequency check
             if (!frequencyTracker.canShow(id, rules.frequency, rules.max_displays)) {
                 filteredByFrequency++
@@ -211,8 +235,11 @@ class MessageManager internal constructor(
             candidates.add(id to config)
         }
 
+        // A message held back only because the membership answer is missing or stale asks for it, for the next trigger.
+        if (segmentIdsMissing.isNotEmpty()) runCatching { requestSegments(segmentIdsMissing) }
+
         if (candidates.isEmpty()) {
-            Log.debug("[Messages] No candidates for '$eventName' — filtered: event=$filteredByEvent, conditions=$filteredByConditions, audience=$filteredByAudience, frequency=$filteredByFrequency, dateRange=$filteredByDateRange")
+            Log.debug("[Messages] No candidates for '$eventName' — filtered: event=$filteredByEvent, conditions=$filteredByConditions, audience=$filteredByAudience, segments=$filteredBySegments, frequency=$filteredByFrequency, dateRange=$filteredByDateRange")
             return
         }
 

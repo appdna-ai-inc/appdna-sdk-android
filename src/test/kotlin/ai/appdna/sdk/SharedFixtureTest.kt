@@ -1298,6 +1298,11 @@ class SharedFixtureTest(
                                 override fun observeActivation(block: () -> Unit): () -> Unit = {}
                             },
                             userTraits = { traits },
+                            // `segment_membership`: the server's answer, for this user unless
+                            // `for_current_user` is false; `asked` defaults to the message's ids. Absent: no answer.
+                            segmentUserKey = { "u:fixture-user" },
+                            segmentAnswer = { segmentAnswerOf(c.optJSONObject("segment_membership"), config) },
+                            requestSegments = { },
                         )
                         try {
                             manager.onEvent(config.trigger_rules.event, emptyMap())
@@ -1327,6 +1332,19 @@ class SharedFixtureTest(
                 ai.appdna.sdk.core.AttributionTargeting.payload = null
             }
         }
+    }
+
+    /** A fixture case's `segment_membership` as the membership answer the message gate reads. */
+    private fun segmentAnswerOf(o: JSONObject?, config: ai.appdna.sdk.messages.MessageConfig): ai.appdna.sdk.core.SegmentMembership.Answer? {
+        if (o == null) return null
+        fun set(k: String): Set<String>? = o.optJSONArray(k)?.let { a -> (0 until a.length()).map { a.getString(it) }.toSet() }
+        return ai.appdna.sdk.core.SegmentMembership.Answer(
+            userKey = if (o.optBoolean("for_current_user", true)) "u:fixture-user" else "u:someone-else",
+            asked = set("asked") ?: (config.audience?.ids ?: emptySet()),
+            memberOf = set("member_of") ?: emptySet(),
+            unresolved = set("unresolved") ?: emptySet(),
+            fetchedAtMs = System.currentTimeMillis(),
+        )
     }
 
     private fun runEvaluateAudience(spy: Spy) {

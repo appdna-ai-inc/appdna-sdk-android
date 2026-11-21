@@ -767,6 +767,8 @@ object AppDNA {
             ai.appdna.sdk.events.DroppedEventsCounter.init(context)
             // the install's attribution survives relaunch (setAttribution before configure persists now).
             ai.appdna.sdk.core.AttributionTargeting.attach(context)
+            // the previous launch's segment membership answer, for segment-targeted messages before the network answers.
+            ai.appdna.sdk.core.SegmentMembership.attach(context)
             val appContext = this.appContext ?: run {
                 Log.error("AppDNA not initialized — call configure() with valid context")
                 return
@@ -1085,7 +1087,11 @@ object AppDNA {
                         ai.appdna.sdk.screens.ScreenManager.shared.evaluateTriggers(e, props)
                 }
             }
-            remoteCfg.onFetchSucceeded = { triggers.markConfigReady() }
+            remoteCfg.onFetchSucceeded = {
+                triggers.markConfigReady()
+                // Segment-targeted messages need the user's membership; asked once the published messages are known.
+                requestSegmentMembership(segmentIdsOfActiveMessages())
+            }
             if (remoteCfg.hadDiskCache) triggers.markConfigReady()
 
             // NavigationInterceptor — observes Activity resume to
@@ -1234,6 +1240,8 @@ object AppDNA {
         identityManager?.identify(userId, traits)
         // a user change while analytics is declined re-signals with the new user (rows 1 / 2).
         if (previousUserId != userId) notifyConsentUserChanged()
+        // Segment membership is per user: the new user's is asked for (the old answer no longer applies to them).
+        if (previousUserId != userId) requestSegmentMembership(segmentIdsOfActiveMessages())
         // The push token's server row now names this user.
         pushTokenManager?.reregister()
 
@@ -1355,6 +1363,33 @@ object AppDNA {
         return identityManager?.currentIdentity?.traits ?: emptyMap()
     }
 
+    /** The key the segment membership answer is kept under for the current user (identified user, else anon id). */
+    internal fun segmentUserKey(): String? = identityManager?.currentIdentity?.let {
+        ai.appdna.sdk.core.SegmentMembership.userKey(it.anonId, it.userId)
+    }
+
+    /**
+     * Ask AppDNA which of [ids] the current user is in, unless a fresh answer for this user already covers them (one
+     * request at a time, off the main thread). Segment-targeted in-app messages are gated on the answer.
+     */
+    internal fun requestSegmentMembership(ids: Set<String>) {
+        if (ids.isEmpty()) return
+        val client = apiClient ?: return
+        val identity = identityManager?.currentIdentity ?: return
+        val ttlMs = (remoteConfigManager?.currentConfigTTL ?: 300L) * 1000L
+        scope.launch {
+            runCatching {
+                ai.appdna.sdk.core.SegmentMembership.refresh(ids, identity.anonId, identity.userId, ttlMs) { path, body ->
+                    client.postForResult(path, body).let { it.status to it.body }
+                }
+            }.onFailure { Log.debug("[Segments] membership refresh failed: ${it.message}") }
+        }
+    }
+
+    /** The segment ids the published in-app messages target. */
+    private fun segmentIdsOfActiveMessages(): Set<String> =
+        (remoteConfigManager?.getActiveMessages() ?: activeMessages).values.flatMap { it.audience?.ids ?: emptySet() }.toSet()
+
     /**
      * Points the journey in-app message listener at the ids a journey delivers to: the anon id, and the user
      * id when identified ([ai.appdna.sdk.messages.PendingMessageListener.listenIds]). Needs the bootstrap's org and app.
@@ -1385,6 +1420,9 @@ object AppDNA {
     fun reset() {
         val userBeforeReset = identityManager?.currentIdentity?.userId
         identityManager?.reset()
+        // The signed-out user's segment membership must never gate the next person's messages.
+        ai.appdna.sdk.core.SegmentMembership.clear()
+        requestSegmentMembership(segmentIdsOfActiveMessages())
         // the user became null; while analytics is declined that is re-signalled.
         if (userBeforeReset != null) notifyConsentUserChanged()
         // The push token's server row no longer names the signed-out user.
