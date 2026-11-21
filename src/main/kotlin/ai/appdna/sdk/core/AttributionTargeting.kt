@@ -1,7 +1,7 @@
 package ai.appdna.sdk.core
 
 /**
- * SPEC-542 P6b — audience rules on the install's attribution, on every surface that evaluates [AudienceRuleSet].
+ * audience rules on the install's attribution, on every surface that evaluates [AudienceRuleSet].
  *
  * An attribution rule is a trait-shaped condition whose key names the attribution instead of a trait:
  *   - `attribution.<field>`: a standard field — `network`, `channel`, `campaign`, `campaign_id`, `adset`, `adset_id`,

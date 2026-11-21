@@ -74,7 +74,7 @@ data class AudienceRuleSet(
 
 internal object AudienceRuleEvaluator {
 
-    /** #2045 — an ordered comparison needs a number on both sides; anything else does not match. */
+    /** an ordered comparison needs a number on both sides; anything else does not match. */
     private fun bothNumeric(lhs: Any?, rhs: Any?): Boolean =
         ConditionEvaluator.toDoubleOrNull(lhs) != null && ConditionEvaluator.toDoubleOrNull(rhs) != null
 
@@ -97,7 +97,7 @@ internal object AudienceRuleEvaluator {
     internal fun evaluateRule(rule: AudienceRule, userTraits: Map<String, Any>): Boolean {
         // A trait identify stored as null (`JSONObject.NULL`) is NOT SET, for every operator: it does not
         // `exists`, as the server's segment SQL and the journey evaluators read it.
-        // SPEC-542 P6b — an `attribution.` key reads the stored attribution, folded for a case-insensitive compare.
+        // an `attribution.` key reads the stored attribution, folded for a case-insensitive compare.
         val attribution = AttributionTargeting.isAttributionKey(rule.trait)
         val traitValue = if (attribution) AttributionTargeting.fold(AttributionTargeting.resolve(rule.trait!!))
             else userTraits[rule.trait]?.takeIf { it != org.json.JSONObject.NULL }
@@ -107,7 +107,7 @@ internal object AudienceRuleEvaluator {
             "equals", "eq" -> ConditionEvaluator.valuesEqual(traitValue, ruleValue)
             "not_equals", "neq" -> !ConditionEvaluator.valuesEqual(traitValue, ruleValue)
             "gt" -> ConditionEvaluator.compareNumeric(traitValue, ruleValue) > 0
-            // #2045 — compareNumeric answers 0 when a side is not a number, so a missing or non-numeric trait used to
+            // compareNumeric answers 0 when a side is not a number, so a missing or non-numeric trait used to
             // MATCH gte / lte. Both sides must be numbers, as the server's segment SQL reads them.
             "gte" -> bothNumeric(traitValue, ruleValue) && ConditionEvaluator.compareNumeric(traitValue, ruleValue) >= 0
             "lt" -> ConditionEvaluator.compareNumeric(traitValue, ruleValue) < 0
@@ -119,7 +119,7 @@ internal object AudienceRuleEvaluator {
                     else -> false
                 }
             }
-            // SPEC-542 P6b — a literal prefix (never a pattern), case-insensitive like `contains`.
+            // a literal prefix (never a pattern), case-insensitive like `contains`.
             "starts_with" -> traitValue is String && ruleValue is String && traitValue.startsWith(ruleValue, ignoreCase = true)
             "exists" -> traitValue != null
             // The server's operator (segment SQL, journeys): no non-null value, the negation of `exists`.
