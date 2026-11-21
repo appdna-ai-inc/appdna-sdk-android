@@ -765,6 +765,8 @@ object AppDNA {
             // deferred to the atomic publish block below (under preInitLock) so overflow drops that occur
             // DURING configure() — before eventTracker is published — are captured, not lost.
             ai.appdna.sdk.events.DroppedEventsCounter.init(context)
+            // the install's attribution survives relaunch (setAttribution before configure persists now).
+            ai.appdna.sdk.core.AttributionTargeting.attach(context)
             val appContext = this.appContext ?: run {
                 Log.error("AppDNA not initialized — call configure() with valid context")
                 return
@@ -1141,6 +1143,48 @@ object AppDNA {
      */
     @JvmStatic
     fun getAnonymousId(): String? = identityManager?.currentIdentity?.anonId
+
+    /**
+     * Hand AppDNA the install's attribution from your mobile measurement partner's on-device callback (AppsFlyer
+     * `onConversionDataSuccess`, Adjust's attribution callback, Singular's attribution / deferred deep link handler),
+     * so onboarding flows, paywalls, experiments and messages can target it at once, before any server postback.
+     *
+     * Standard fields (snake_case or camelCase): `network` (or `source` / `media_source`), `channel`, `campaign`,
+     * `campaign_id`, `adset`, `adset_id`, `ad`, `ad_id`, `creative`, `keyword`, `placement`, `site_id`, `is_organic`,
+     * `attribution_type`, `install_country`, `mmp`. Put the MMP's own parameters (`af_sub1`, `deep_link_value`, …)
+     * under `raw`; any other top-level key is kept under `raw` too. Audience rules read them as
+     * `attribution.<field>` and `attribution.param.<key>`.
+     *
+     * Stored on the device (it survives restarts and [reset]: it describes the install, not the user) and sent as the
+     * `attribution_set` event. A server postback from the MMP takes precedence over it in analytics. Calling it again
+     * replaces the stored attribution. Safe to call before [configure] (persisted once configure runs).
+     */
+    @JvmStatic
+    fun setAttribution(attribution: Map<String, Any?>) {
+        val stored = ai.appdna.sdk.core.AttributionTargeting.store(attribution)
+        @Suppress("UNCHECKED_CAST")
+        track("attribution_set", stored.filterValues { it != null } as Map<String, Any>)
+    }
+
+    /**
+     * Calls back `true` once attribution is stored (at once if [setAttribution] was already called, on this or an
+     * earlier launch), or `false` after [timeoutMs] (default 1500) when none arrived, so the first onboarding or paywall
+     * can wait briefly for the MMP before falling back to the default. Present inside the callback. A wait that runs
+     * out is remembered: a later launch with still no attribution answers `false` at once. Call it after [configure].
+     * The callback runs on the main thread.
+     */
+    @JvmStatic
+    @JvmOverloads
+    fun waitForAttribution(timeoutMs: Long = 1500L, callback: (Boolean) -> Unit) {
+        val main = android.os.Handler(android.os.Looper.getMainLooper())
+        ai.appdna.sdk.core.AttributionTargeting.whenReady(
+            timeoutMs,
+            schedule = { ms, fire -> main.postDelayed(fire, ms) },
+        ) { arrived ->
+            if (android.os.Looper.myLooper() == android.os.Looper.getMainLooper()) callback(arrived)
+            else main.post { callback(arrived) }
+        }
+    }
 
     /** The shared fixture `identity/anonymous_id_*` drives [getAnonymousId] over an identity it builds. */
     internal fun setIdentityManagerForTest(manager: IdentityManager?) { identityManager = manager }

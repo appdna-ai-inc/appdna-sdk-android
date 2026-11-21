@@ -268,24 +268,39 @@ internal class OnboardingFlowManager(
             return remoteConfigManager.getOnboardingFlow(flowId)
         }
 
-        val userTraits = AppDNA.getUserTraits()
-        if (userTraits.isNotEmpty()) {
-            val matches = remoteConfigManager.getAllOnboardingFlows().values
+        val best = audienceMatchedFlow(
+            remoteConfigManager.getAllOnboardingFlows().values,
+            AppDNA.getUserTraits(),
+            ai.appdna.sdk.core.AttributionTargeting.payload != null,
+        )
+        if (best != null) {
+            Log.info("[Onboarding] Audience-matched flow: ${best.id}")
+            return best
+        }
+
+        return remoteConfigManager.getOnboardingFlow(null)
+    }
+
+    internal companion object {
+        /**
+         * The highest-priority flow whose `audience_rules` match, or null (→ the active flow). Skipped only when there
+         * is nothing to target on: no traits AND no stored attribution. Before, an app that had not
+         * called identify() never reached the rules, so a flow targeted at `attribution.*` could not be selected.
+         */
+        fun audienceMatchedFlow(
+            flows: Collection<OnboardingFlowConfig>,
+            userTraits: Map<String, Any>,
+            hasAttribution: Boolean,
+        ): OnboardingFlowConfig? {
+            if (userTraits.isEmpty() && !hasAttribution) return null
+            return flows
                 .mapNotNull { flow ->
                     val (matched, priority) = evaluateAudienceRules(flow.audience_rules, userTraits)
                     if (matched) flow to priority else null
                 }
                 .sortedByDescending { it.second }
-
-            val best = matches.firstOrNull()
-            if (best != null) {
-                Log.info("[Onboarding] Audience-matched flow: ${best.first.id} (priority: ${best.second})")
-                return best.first
-            }
+                .firstOrNull()?.first
         }
-
-        return remoteConfigManager.getOnboardingFlow(null)
-    }
 
     /**
      * Evaluate `audience_rules` against [traits].
@@ -299,8 +314,8 @@ internal class OnboardingFlowManager(
      * `null` rules → `(false, 0)` so flows without targeting only become the fallback,
      * never an audience match. Mirrors iOS AudienceRuleEvaluator semantics.
      */
-    @Suppress("UNCHECKED_CAST")
-    private fun evaluateAudienceRules(rules: Any?, traits: Map<String, Any>): Pair<Boolean, Int> {
+        @Suppress("UNCHECKED_CAST")
+        private fun evaluateAudienceRules(rules: Any?, traits: Map<String, Any>): Pair<Boolean, Int> {
         return when (rules) {
             null -> false to 0
             is List<*> -> {
@@ -317,5 +332,6 @@ internal class OnboardingFlowManager(
             }
             else -> false to 0
         }
+    }
     }
 }

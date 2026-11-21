@@ -260,6 +260,10 @@ class SharedFixtureTest(
             "script" -> ai.appdna.sdk.consent.ConsentFixtureRunner(ctx).runAll(fixtureName, action)
             "report_paying_user" -> runReportPayingUser(action, spy)
             "evaluate_audience" -> runEvaluateAudience(spy)
+            // the REAL AppDNA.setAttribution (store + attribution_set) and the first-launch wait.
+            "set_attribution" -> runSetAttribution(action, spy)
+            "attribution_wait" -> runAttributionWait(action, spy)
+            "set_attribution_bridge" -> runSetAttributionBridge(action, spy)
             "evaluate_screen_trigger" -> runEvaluateScreenTrigger(action, spy)
             "show_paywall" -> runShowPaywall(action, spy)
             "purchase" -> runPurchase(action, spy)
@@ -1169,6 +1173,89 @@ class SharedFixtureTest(
             val steps = case.optJSONArray("steps")
             if (steps == null) step(case) else (0 until steps.length()).map { step(steps.getJSONObject(it)) }
         }
+    }
+
+    /**
+     * the host's calls in order through the PUBLIC facade: `set` → [AppDNA.setAttribution] (the events
+     * read back from the real pipeline), `relaunch` → memory dropped and storage re-attached as configure does,
+     * `reset` → [AppDNA.reset]. Then `action.rules` is evaluated over what is stored.
+     */
+    private fun runSetAttribution(action: JSONObject, spy: Spy) {
+        val p = Pipeline(fixtureName).also { pipeline = it }
+        AppDNA.installEventTrackerForTest(p.tracker)
+        val store = ai.appdna.sdk.core.AttributionTargeting
+        // a clean install: attach, wipe what an earlier fixture stored, attach again over empty storage.
+        store.attach(ctx); store.resetForTest(); store.attach(ctx)
+        try {
+            val calls = action.getJSONArray("calls")
+            for (i in 0 until calls.length()) {
+                val c = calls.getJSONObject(i)
+                when (val call = c.getString("call")) {
+                    "set" -> AppDNA.setAttribution(c.getJSONObject("attribution").asMap())
+                    "relaunch" -> store.relaunchForTest(ctx)
+                    "reset" -> AppDNA.reset()
+                    else -> unsupported("set_attribution call '$call'")
+                }
+            }
+            spy.events += p.envelopes().map { it.toEventPair() }
+            spy.state["stored_attribution"] = store.payload
+            action.optJSONObject("rules")?.let { cfg ->
+                val ruleSet = AudienceRuleSet.fromAny(cfg.asMap())
+                    ?: unsupported("set_attribution: action.rules is not a parseable audience rule set")
+                spy.state["audience_match"] = AudienceRuleEvaluator.evaluate(ruleSet, emptyMap())
+            }
+        } finally {
+            AppDNA.installEventTrackerForTest(null)
+            store.resetForTest()
+        }
+    }
+
+    /** the host's calls a wrapper forwards: the public setAttribution, then each wait (null = 1500 ms). */
+    private fun runSetAttributionBridge(action: JSONObject, spy: Spy) {
+        val p = Pipeline(fixtureName).also { pipeline = it }
+        AppDNA.installEventTrackerForTest(p.tracker)
+        val store = ai.appdna.sdk.core.AttributionTargeting
+        store.attach(ctx); store.resetForTest(); store.attach(ctx)
+        try {
+            AppDNA.setAttribution(action.getJSONObject("attribution").asMap())
+            val waits = action.getJSONArray("waits")
+            val results = mutableListOf<Boolean>()
+            for (i in 0 until waits.length()) {
+                val ms = if (waits.isNull(i)) 1500L else waits.getLong(i)
+                store.whenReady(ms, { _, _ -> unsupported("a wait scheduled a timer with a payload stored") }) { results += it }
+            }
+            spy.events += p.envelopes().map { it.toEventPair() }
+            spy.state["wait_results"] = results
+        } finally {
+            AppDNA.installEventTrackerForTest(null)
+            store.resetForTest()
+        }
+    }
+
+    /** the REAL wait: `elapse` fires every timer the SDK scheduled; `relaunch` re-attaches storage. */
+    private fun runAttributionWait(action: JSONObject, spy: Spy) {
+        val store = ai.appdna.sdk.core.AttributionTargeting
+        // a clean install: attach, wipe what an earlier fixture stored, attach again over empty storage.
+        store.attach(ctx); store.resetForTest(); store.attach(ctx)
+        val timers = mutableListOf<() -> Unit>()
+        var scheduled = 0
+        val results = mutableListOf<Boolean>()
+        try {
+            val calls = action.getJSONArray("calls")
+            for (i in 0 until calls.length()) {
+                when (val call = calls.getString(i)) {
+                    "wait" -> store.whenReady(action.optLong("timeoutMs", 1500L), { _, fire -> scheduled++; timers += fire }) { results += it }
+                    "elapse" -> { val due = timers.toList(); timers.clear(); due.forEach { it() } }
+                    "set" -> store.store(action.getJSONObject("attribution").asMap())
+                    "relaunch" -> { timers.clear(); store.relaunchForTest(ctx) }
+                    else -> unsupported("attribution_wait call '$call'")
+                }
+            }
+        } finally {
+            store.resetForTest()
+        }
+        spy.state["wait_results"] = results
+        spy.state["timers_scheduled"] = scheduled
     }
 
     private fun runEvaluateAudience(spy: Spy) {
