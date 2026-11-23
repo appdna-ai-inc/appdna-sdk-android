@@ -325,6 +325,8 @@ class SharedFixtureTest(
             "resolve_paywall_image_alt" -> runPaywallImageAlt(action, spy)
             "resolve_paywall_trial_badge_color" -> runPaywallTrialBadgeColor(action, spy)
             "resolve_paywall_badge_fill" -> runPaywallBadgeFill(action, spy)
+            // whether and where a plan layout draws a plan's badge.
+            "resolve_paywall_plan_badge" -> runPaywallPlanBadge(action, spy)
             "resolve_paywall_comparison_table_style" -> runPaywallComparisonTableStyle(action, spy)
             "resolve_post_purchase_failure" -> runPostPurchaseFailure(action, spy)
             // A paywall media section's playback and a message's animation / video hero.
@@ -4420,6 +4422,35 @@ class SharedFixtureTest(
         }
         val values = action.optJSONArray("cell_values")
         spy.state["cell_kinds"] = (0 until (values?.length() ?: 0)).map { ai.appdna.sdk.paywalls.PaywallComparisonTableStyle.cellKind(values!!.getString(it)) }
+    }
+
+    /**
+     * resolve_paywall_plan_badge REAL: `PaywallConfigParser.parseSinglePaywall` of a paywall with one plans
+     * section (its plans in the section config), then `PaywallPlanBadge.placement(plan_display_style, badge_position)`
+     * and `PaywallPlanBadge.text(badge)` per plan — the two calls the pill_selector, segmented_toggle and
+     * product_as_cta arms make.
+     */
+    private fun runPaywallPlanBadge(action: JSONObject, spy: Spy) {
+        val cases = action.optJSONArray("cases") ?: unsupported("resolve_paywall_plan_badge without cases")
+        spy.state["results"] = (0 until cases.length()).map { i ->
+            val c = cases.getJSONObject(i)
+            val name = c.optString("name", "?")
+            @Suppress("UNCHECKED_CAST")
+            val section = (c.optJSONObject("section") ?: unsupported("resolve_paywall_plan_badge case without section"))
+                .asMap().filterValues { it != null } as Map<String, Any>
+            val paywall = ai.appdna.sdk.paywalls.PaywallConfigParser.parseSinglePaywall(
+                "pw_plan_badge_$name",
+                mapOf(
+                    "id" to "pw_plan_badge_$name",
+                    "layout" to mapOf("type" to "stack", "sections" to listOf(mapOf("id" to "s1", "type" to "plans", "config" to section))),
+                ),
+            ) ?: throw AssertionError("[resolve_paywall_plan_badge] case $name: the paywall did not parse")
+            val plans = paywall.sections.firstOrNull { it.type == "plans" }
+            mapOf(
+                "placement" to ai.appdna.sdk.paywalls.PaywallPlanBadge.placement(plans?.data?.plan_display_style, plans?.data?.badge_position),
+                "drawn" to (plans?.data?.plans ?: emptyList()).map { ai.appdna.sdk.paywalls.PaywallPlanBadge.text(it.badge) != null },
+            )
+        }
     }
 
     /**

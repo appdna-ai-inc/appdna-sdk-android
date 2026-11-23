@@ -11,6 +11,11 @@ the project uses [Semantic Versioning](https://semver.org/).
   `selected_bg_color` was unset, so a light `selected_text_color` was unreadable. The unauthored selected tile
   is now the brand accent at 10% over the page, as on iOS and in the console preview; the accordion layout's
   unselected tile gets the 10% wash instead of white on the same pages.
+- A plan's badge is drawn in the `pill_selector`, `segmented_toggle` and `product_as_cta` plan layouts, with the same
+  badge styling as a plan card. `pill_selector` draws it inside the pill under the price. `segmented_toggle` draws it
+  centred above its segment. `product_as_cta` draws it on the button's top edge at `badge_position` (`inline`: under the
+  plan name). A blank badge draws nothing. Before this, Android drew it only in `pill_selector`, and also for a blank badge. See
+  [Paywalls](https://docs.appdna.ai/sdks/android/paywall). Shared fixtures `dto_parsing/paywall_plan_badge_*`.
 
 ## [1.0.61] — 2026-11-22
 

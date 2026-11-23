@@ -2583,6 +2583,7 @@ internal fun PaywallSectionView(
             fun BadgeView(badgeText: String) {
                 Row(
                     modifier = Modifier
+                        .testTag(PaywallPlanBadge.TEST_TAG)
                         .then(PaywallBadgeFill.modifier(badgeFill, badgeCorner))
                         .then(
                             // Border only when both width>0 and a color is set (iOS PlanCard.swift:332-335).
@@ -3324,6 +3325,21 @@ internal fun PaywallSectionView(
                             ),
                         )
                         val segInactiveText = planInk.copy(alpha = 0.7f)
+                        /*
+                         * each plan's badge, centred over its own segment in a row above the
+                         * control (`PaywallPlanBadge` "above_segment"), the shape iOS has to use because
+                         * `Picker(.segmented)` holds only a title. The slots are equal width, as the
+                         * segments are. A paywall whose plans carry no badge has no row.
+                         */
+                        if (plans.any { PaywallPlanBadge.text(it.badge) != null }) {
+                            Row(modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp)) {
+                                plans.forEachIndexed { planIdx, plan ->
+                                    Box(modifier = Modifier.weight(1f), contentAlignment = Alignment.Center) {
+                                        PaywallPlanBadge.text(plan.badge)?.let { BadgeView(loc("plan.$planIdx.badge", it)) }
+                                    }
+                                }
+                            }
+                        }
                         SingleChoiceSegmentedButtonRow(
                             modifier = Modifier.fillMaxWidth(),
                         ) {
@@ -3443,7 +3459,8 @@ internal fun PaywallSectionView(
                                             maxLines = 1,
                                             overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
                                         )
-                                        plan.badge?.let {
+                                        // `PaywallPlanBadge` "below_price"; a blank badge draws nothing, as on iOS.
+                                        PaywallPlanBadge.text(plan.badge)?.let {
                                             Spacer(Modifier.height(4.dp))
                                             BadgeView(loc("plan.$planIdx.badge", it))
                                         }
@@ -3789,8 +3806,20 @@ internal fun PaywallSectionView(
                         // immediate purchase. Render each plan as a
                         // full-width filled button row labeled with
                         // displayPrice + name.
+                        // the plan's badge straddles the button's top edge at the authored
+                        // `badge_position`, as it does on a card; `inline` puts it under the plan name.
+                        val ctaBadgePlacement = PaywallPlanBadge.placement("product_as_cta", section.data?.badge_position)
+                        val ctaBadgeOverhang = ((section.data?.badge_font_size ?: 11f) + 8f) / 2f
                         plans.forEachIndexed { planIdx, plan ->
                             val isSelected = selectedPlanId == plan.id
+                            val ctaBadge = PaywallPlanBadge.text(plan.badge)
+                            val ctaBadgeStraddles = ctaBadge != null && ctaBadgePlacement != "inline"
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(vertical = cardGap / 2)
+                                    .padding(top = if (ctaBadgeStraddles) maxOf(12f, ctaBadgeOverhang + 2f).dp else 0.dp),
+                            ) {
                             Button(
                                 onClick = {
                                     // iOS
@@ -3805,7 +3834,6 @@ internal fun PaywallSectionView(
                                 },
                                 modifier = Modifier
                                     .fillMaxWidth()
-                                    .padding(vertical = cardGap / 2)
                                     .planSelectionAnimation(config.animation?.plan_selection_animation, isSelected),
                                 shape = cardShape,
                                 /*
@@ -3849,7 +3877,30 @@ internal fun PaywallSectionView(
                                         style = priceStyle.copy(fontSize = 18.sp),
                                         modifier = priceElementModifier,
                                     )
+                                    if (ctaBadge != null && ctaBadgePlacement == "inline") {
+                                        Spacer(Modifier.height(4.dp))
+                                        BadgeView(loc("plan.$planIdx.badge", ctaBadge))
+                                    }
                                 }
+                            }
+                            if (ctaBadge != null && ctaBadgePlacement != "inline") {
+                                // A sibling of the Button, which clips its content to its shape. It takes
+                                // no clicks, so a tap on its lower half still reaches the button.
+                                Box(
+                                    modifier = Modifier
+                                        .align(
+                                            when (ctaBadgePlacement) {
+                                                "top_left" -> Alignment.TopStart
+                                                "top_center" -> Alignment.TopCenter
+                                                else -> Alignment.TopEnd
+                                            },
+                                        )
+                                        .offset(y = (-ctaBadgeOverhang).dp)
+                                        .padding(horizontal = 8.dp),
+                                ) {
+                                    BadgeView(loc("plan.$planIdx.badge", ctaBadge))
+                                }
+                            }
                             }
                         }
                     }
