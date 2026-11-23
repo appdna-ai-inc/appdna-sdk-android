@@ -6,6 +6,12 @@ the project uses [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Fixed
+- A paywall on a gradient, image or video background drew the SELECTED plan tile as a white block when
+  `selected_bg_color` was unset, so a light `selected_text_color` was unreadable. The unauthored selected tile
+  is now the brand accent at 10% over the page, as on iOS and in the console preview; the accordion layout's
+  unselected tile gets the 10% wash instead of white on the same pages.
+
 ## [1.0.61] — 2026-11-22
 
 ### Added

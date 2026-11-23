@@ -3557,7 +3557,7 @@ internal fun PaywallSectionView(
                                     // a light brand (e.g. white) collapses onto the white-10% unselected
                                     // fill and the selection becomes invisible. Brand drives foreground
                                     // accents (border/badge/check), not the card fill.
-                                    containerColor = if (isSelected) (customSelectedBg ?: StyleEngine.parseColor(selectedTileHex ?: "#FFFFFF")) else (unselectedBgColor ?: StyleEngine.parseColor(unselectedTileHex ?: "#FFFFFF"))
+                                    containerColor = if (isSelected) selectedPlanTileFill(customSelectedBg, selectedTileHex) else (unselectedBgColor ?: unselectedTileHex?.let { StyleEngine.parseColor(it) } ?: Color.White.copy(alpha = 0.1f))  // no flat page → the 10% wash, not white
                                 ),
                             ) {
                                 Column(modifier = Modifier.padding(cardPad)) {
@@ -4003,7 +4003,7 @@ internal fun PaywallSectionView(
                                         // through, giving a "strange gradient inside the card". Derive
                                         // an opaque subtle tone from the authored selected color (darker)
                                         // so it stays theme-aware + distinct; fall back to a subtle navy.
-                                        containerColor = if (isSelected) (customSelectedBg ?: StyleEngine.parseColor(selectedTileHex ?: "#FFFFFF"))
+                                        containerColor = if (isSelected) selectedPlanTileFill(customSelectedBg, selectedTileHex)
                                             else (unselectedBgColor
                                                 // The page's own 10% wash, opaque, so this
                                                 // tile matches iOS instead of a navy constant.
@@ -6779,3 +6779,17 @@ private fun PaywallSystemBarIcons(config: PaywallConfig) {
         controller.isAppearanceLightNavigationBars = darkIcons
     }
 }
+
+
+/**
+ * The SELECTED plan tile's fill when nobody authored `selected_bg_color`.
+ *
+ * `selectedTileHex` is composited over `pageBackgroundHex()`, which is null for a gradient, image or video page. The
+ * fallback used to be `#FFFFFF`, so every gradient paywall drew its selected plan as a white block, and a light
+ * `selected_text_color` (the generator's dark-theme shape) became unreadable on it. iOS `PlanCard.selectedTint` and the
+ * console preview fall back to the accent at 10% over whatever is beneath, so that is the fallback here too.
+ */
+internal fun selectedPlanTileFill(customSelectedBg: Color?, selectedTileHex: String?): Color =
+    customSelectedBg
+        ?: selectedTileHex?.let { StyleEngine.parseColor(it) }
+        ?: ai.appdna.sdk.AppDNA.brandAccentColor().copy(alpha = 0.1f)
