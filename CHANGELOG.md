@@ -4,7 +4,7 @@ All notable changes to the AppDNA Android SDK are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and
 the project uses [Semantic Versioning](https://semver.org/).
 
-## [Unreleased]
+## [1.0.62] — 2026-11-23
 
 ### Fixed
 - A paywall on a gradient, image or video background drew the SELECTED plan tile as a white block when
