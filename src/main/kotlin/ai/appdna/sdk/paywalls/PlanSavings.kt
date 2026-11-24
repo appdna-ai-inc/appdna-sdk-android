@@ -75,7 +75,7 @@ internal object PlanSavings {
         }
     }
 
-    private val PRICE_UNIT_RE = Regex("""^\s*(?:\p{Sc}\s*)?(?:/|per\b|a\b|an\b|each\b|every\b)\s*(?:1\s*)?([A-Za-z]+)""", RegexOption.IGNORE_CASE)
+    private val PRICE_UNIT_RE = Regex("""^\s*(?:(?:\p{Sc}|\p{L}{1,3}\.?)\s*)?(?:/|per\b|a\b|an\b|each\b|every\b)\s*(?:1\s*)?([A-Za-z]+)""", RegexOption.IGNORE_CASE)
 
     /**
      * Months in the unit written RIGHT AFTER a price's amount: "$5.00/mo", "$4.99 a week", "$59.99 per
