@@ -245,6 +245,12 @@ internal object OnboardingAdvance {
                 )
                 if (!matches) continue
 
+                // A target that names one of THIS flow's steps is that step, whatever its prefix.
+                // The console names custom steps `screen_<timestamp>`, and classifyRuleTarget sent every
+                // `screen_` target to the Screens marker, so a rule to such a step completed the flow
+                // instead of advancing. A graph node is never also a step.
+                val ownStep = flow.steps.indexOfFirst { it.id == rule.target_step_id }
+                if (rule.target_step_id.isNotBlank() && ownStep >= 0) return outcome(Navigation.GoToIndex(ownStep))
                 val rawClassified = classifyRuleTarget(rule.target_step_id)
                 // Upgrade short-id paywall_trigger / end / analytics graph nodes.
                 @Suppress("UNCHECKED_CAST")
