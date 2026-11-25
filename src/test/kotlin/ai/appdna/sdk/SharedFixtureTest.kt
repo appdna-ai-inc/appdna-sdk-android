@@ -564,6 +564,9 @@ class SharedFixtureTest(
             version = 1,
             steps = (steps + stubs).toImmutableList(),
             settings = OnboardingSettings(),
+            // The flow's graph nodes, as the device copy carries them: an `analytics_event` node's `event_name` and
+            // `next_target` are what a rule routed through it fires and lands on (the console's published shape for a rule to a `screen_` step).
+            graph_nodes = cfg.optJSONObject("graph_nodes")?.asMap(),
         )
     }
 
