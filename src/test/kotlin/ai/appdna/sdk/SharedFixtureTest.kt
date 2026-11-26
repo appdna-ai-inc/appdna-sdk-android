@@ -355,6 +355,7 @@ class SharedFixtureTest(
             "resolve_summary_tile_fit" -> runSummaryTileFit(action, spy)
             "resolve_gallery_title_ink" -> runGalleryTitleInk(action, spy)
             "build_push_token_body" -> runPushTokenBody(action, spy)
+            "build_push_token_fcm_project" -> runPushTokenFcmProject(action, spy)
             "resolve_block_container_style" -> runBlockContainerStyle(action, spy)
             "measure_badge_placement" -> runBadgePlacement(action, spy)
             "resolve_text_input_border" -> runTextInputBorder(action, spy)
@@ -4032,6 +4033,28 @@ class SharedFixtureTest(
                 block.gallery_title_color,
                 ai.appdna.sdk.onboarding.GoogleMapsAttribution.Backdrop.Plain(backdrop), c.optBoolean("dark_appearance"),
             )
+        }
+    }
+
+    /**
+     * Which Firebase project issued the token, through the REAL `PushTokenFcmProject` attribution and the REAL
+     * `PushTokenRegistration.body`: the body's `fcm_project_id` per case, or null when it is absent.
+     */
+    private fun runPushTokenFcmProject(action: JSONObject, spy: Spy) {
+        val cases = action.optJSONArray("cases") ?: unsupported("build_push_token_fcm_project without cases")
+        spy.state["results"] = (0 until cases.length()).map { i ->
+            val c = cases.getJSONObject(i)
+            val opt = { k: String -> if (c.isNull(k) || !c.has(k)) null else c.getString(k) }
+            val attribution = ai.appdna.sdk.integrations.PushTokenFcmProject(
+                defaultAppProject = { opt("default_app_project") },
+                sdkAppProject = { opt("sdk_app_project") },
+            )
+            if (!c.isNull("fetched_token")) attribution.fetched(c.getString("fetched_token"), if (c.isNull("fetched_project")) null else c.getString("fetched_project"))
+            val token = c.getString("registered_token")
+            val body = ai.appdna.sdk.integrations.PushTokenRegistration.body(
+                token, "android", "d", "1", "1", "1", null, null, fcmProjectId = attribution.projectOf(token),
+            )
+            if (body.has("fcm_project_id")) body.getString("fcm_project_id") else null
         }
     }
 

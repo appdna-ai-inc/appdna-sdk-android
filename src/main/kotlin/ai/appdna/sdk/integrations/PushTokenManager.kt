@@ -31,6 +31,11 @@ internal class PushTokenManager(
      */
     private val identity: () -> Pair<String?, String?> = { null to null },
 ) {
+    /** Which Firebase project issued the token being registered (only for tokens this manager fetched). */
+    private val fcmProject = PushTokenFcmProject(
+        defaultAppProject = { PushTokenFcmProject.projectOfApp(null) },
+        sdkAppProject = { PushTokenFcmProject.projectOfApp("appdna") },
+    )
     companion object {
         private const val KEY_PUSH_TOKEN = "push_token"
         /**
@@ -90,6 +95,20 @@ internal class PushTokenManager(
      * Store the push token, send a registration event, and register with backend.
      */
     fun setPushToken(token: String) {
+        // With google-services-appdna.json present, the SDK's own token (AppDNA's project, sent with no
+        // credential upload) is the one this device registers. A token the host hands in is its DEFAULT Firebase
+        // app's (the host's project): registering it too would replace the SDK's row for this device (one active
+        // token per device) with one only the host's uploaded key can send to. So it triggers a fresh fetch of the
+        // SDK's token instead; only when that fetch fails is the host's token registered, attributed to its project.
+        if (!fcmProject.isFetched(token) && appdnaScopedMessaging() != null) {
+            Log.info("Push: registering the SDK's own FCM token (google-services-appdna.json) instead of the one handed in")
+            registerToken(onFailure = { register(token) })
+            return
+        }
+        register(token)
+    }
+
+    private fun register(token: String) {
         val previousToken = storage.getString(KEY_PUSH_TOKEN)
         storage.setString(KEY_PUSH_TOKEN, token)
 
@@ -198,19 +217,27 @@ internal class PushTokenManager(
      * log loudly, matching the existing fallback contract elsewhere in the
      * SDK.
      */
-    fun registerToken() {
+    fun registerToken(onFailure: (() -> Unit)? = null) {
         try {
-            val messaging = appdnaScopedMessaging() ?: com.google.firebase.messaging.FirebaseMessaging.getInstance()
+            val scoped = appdnaScopedMessaging()
+            val messaging = scoped ?: com.google.firebase.messaging.FirebaseMessaging.getInstance()
+            // The project of the FirebaseApp this token comes from, reported with the registration.
+            val projectId = PushTokenFcmProject.projectOfApp(if (scoped != null) "appdna" else null)
             messaging.token.addOnCompleteListener { task ->
                 if (task.isSuccessful) {
                     val token = task.result
-                    if (token != null) setPushToken(token)
+                    if (token != null) {
+                        fcmProject.fetched(token, projectId)
+                        register(token)
+                    } else onFailure?.invoke()
                 } else {
                     Log.warning("Failed to get FCM token: ${task.exception?.message}")
+                    onFailure?.invoke()
                 }
             }
         } catch (e: Exception) {
             Log.warning("Firebase not available: ${e.message}")
+            onFailure?.invoke()
         }
     }
 
@@ -262,6 +289,7 @@ internal class PushTokenManager(
                     anonId = anonId,
                     userId = userId,
                     pushDisplay = PushDisplayProbe.pushDisplay(context),
+                    fcmProjectId = fcmProject.projectOf(token),
                 )
                 apiClient?.post("/api/v1/push/token", body.toString())
                 Log.info("Push token registered with backend")
@@ -298,6 +326,7 @@ internal object PushTokenRegistration {
         token: String, platform: String, deviceId: String, appVersion: String,
         sdkVersion: String, osVersion: String, anonId: String?, userId: String?,
         pushDisplay: String? = null,
+        fcmProjectId: String? = null,
     ): JSONObject = JSONObject().apply {
         put("token", token)
         put("platform", platform)
@@ -310,6 +339,45 @@ internal object PushTokenRegistration {
         // `sdk` when the SDK's own service receives FCM messages here, so the server may send data-only
         // messages that the SDK draws and confirms delivery for (also in the background). Absent otherwise.
         if (!pushDisplay.isNullOrEmpty()) put("push_display", pushDisplay)
+        // The Firebase project that issued this token; the server sends with that project's credential.
+        // Absent when the SDK did not fetch the token itself (a host-forwarded one): never guessed.
+        if (!fcmProjectId.isNullOrEmpty()) put("fcm_project_id", fcmProjectId)
+    }
+}
+
+/**
+ * Which Firebase project issued the token the SDK registers, reported as `fcm_project_id` so the server sends
+ * with that project's credential. Driven by the `push_token_fcm_project` fixture.
+ *
+ * - A token the SDK FETCHED is attributed to the FirebaseApp it came from (the `"appdna"` app of
+ *   `google-services-appdna.json`, or the default app on the fallback path).
+ * - Any other token was handed in by the host (`onNewToken` / `setPushToken`). Firebase issues those for the DEFAULT
+ *   app (`FirebaseMessagingService.onNewToken` is the default app's), so it is attributed to the default app's project
+ *   when one exists, else to the only app there is. Neither present: unattributed (absent, never guessed).
+ */
+internal class PushTokenFcmProject(
+    private val defaultAppProject: () -> String? = { null },
+    private val sdkAppProject: () -> String? = { null },
+) {
+    @Volatile private var last: Pair<String, String?>? = null
+
+    /** The SDK fetched [token] from a FirebaseApp whose project is [projectId]. */
+    fun fetched(token: String, projectId: String?) { last = token to projectId?.ifEmpty { null } }
+
+    /** Whether [token] is the one the SDK itself fetched last. */
+    fun isFetched(token: String): Boolean = last?.first == token
+
+    /** The project that issued [token], or null when it cannot be known. */
+    fun projectOf(token: String): String? {
+        last?.takeIf { it.first == token }?.let { return it.second }
+        return (defaultAppProject() ?: sdkAppProject())?.ifEmpty { null }
+    }
+
+    companion object {
+        /** The project of the named FirebaseApp (`null` = the default one), or null when it is not initialised. */
+        fun projectOfApp(name: String?): String? = try {
+            (if (name == null) com.google.firebase.FirebaseApp.getInstance() else com.google.firebase.FirebaseApp.getInstance(name)).options.projectId
+        } catch (_: Throwable) { null }
     }
 }
 

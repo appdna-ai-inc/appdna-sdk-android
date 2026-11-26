@@ -6,6 +6,18 @@ the project uses [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Added
+- The push token registration reports which Firebase project issued the FCM token (`fcm_project_id`). A token the
+  SDK fetched is attributed to the Firebase app it came from (the one built from `google-services-appdna.json`, or
+  your default app on the fallback path). A token your app hands in is attributed to your default app's project.
+  AppDNA sends every Android push with the credential for that token's project. Android push therefore needs no
+  credential upload, and a push is never sent with a key for a different project. See
+  [Push](https://docs.appdna.ai/sdks/android/push#prerequisites).
+- With `google-services-appdna.json` present, a token your app hands in (`AppDNA.setPushToken`, `onNewPushToken`)
+  makes the SDK fetch and register its own token (from AppDNA's project) instead. A device keeps one active token,
+  and your default app's token would have replaced the SDK's with one only your own uploaded key can send to. If
+  that fetch fails, the token you handed in is registered, as before.
+
 ### Fixed
 - A paywall page gradient (`layout.background` of type `gradient`) now follows CSS angles, as the Console
   preview draws it: `180` (the default) runs from top to bottom and `90` from left to right. It used to be turned
