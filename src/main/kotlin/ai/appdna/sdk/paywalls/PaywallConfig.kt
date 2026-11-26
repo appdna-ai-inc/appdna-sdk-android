@@ -913,6 +913,23 @@ data class PostPurchaseConfig(
     val on_failure: PostPurchaseFailureConfig? = null,
 )
 
+/**
+ * #2223 — what a successful purchase does to the paywall when NO `on_success` is authored (owner, 2026-11-26: "SDK
+ * 1.0.93 closes it safely"; Android 1.0.65). After [DEFAULT_CLOSE_DELAY_MS] the SDK finishes the paywall — only while
+ * it is still showing. An app that already closed it itself gets nothing extra; otherwise `onPaywallDismissed` fires,
+ * which also moves an onboarding flow on to its `on_success_target`. An authored action keeps its own branch.
+ * iOS `PostPurchaseSuccessPlan`; shared fixture `billing/paywall_success_absent_closes_if_presented`.
+ */
+data class PostPurchaseSuccessPlan(val closes: Boolean, val delayMs: Int, val reportsDismissed: Boolean) {
+    companion object {
+        const val DEFAULT_CLOSE_DELAY_MS = 2000
+
+        fun absentOnSuccess(paywallStillPresented: Boolean): PostPurchaseSuccessPlan =
+            if (paywallStillPresented) PostPurchaseSuccessPlan(true, DEFAULT_CLOSE_DELAY_MS, true)
+            else PostPurchaseSuccessPlan(false, DEFAULT_CLOSE_DELAY_MS, false)
+    }
+}
+
 data class PostPurchaseSuccessConfig(
     val action: String,            // "dismiss" | "show_message" | "deep_link" | "next_step"
     val message: String? = null,

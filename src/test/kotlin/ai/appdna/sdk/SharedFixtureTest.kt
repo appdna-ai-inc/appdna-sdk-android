@@ -329,6 +329,8 @@ class SharedFixtureTest(
             "resolve_paywall_plan_badge" -> runPaywallPlanBadge(action, spy)
             "resolve_paywall_comparison_table_style" -> runPaywallComparisonTableStyle(action, spy)
             "resolve_post_purchase_failure" -> runPostPurchaseFailure(action, spy)
+            // #2223 — no on_success: close only while still presented.
+            "resolve_post_purchase_success_absent" -> runPostPurchaseSuccessAbsent(action, spy)
             // A paywall media section's playback and a message's animation / video hero.
             "resolve_paywall_media_section" -> runPaywallMediaSection(action, spy)
             "resolve_message_hero_media" -> runMessageHeroMedia(action, spy)
@@ -4378,6 +4380,15 @@ class SharedFixtureTest(
             val section = paywall.sections.firstOrNull { it.type == "image" }
                 ?: throw AssertionError("[resolve_paywall_image_alt] case $name: the image section was dropped")
             ai.appdna.sdk.paywalls.PaywallImageAccessibility.label(section.data)
+        }
+    }
+
+    /** #2223 — no on_success: the REAL `PostPurchaseSuccessPlan.absentOnSuccess`, per "is the paywall still presented". */
+    private fun runPostPurchaseSuccessAbsent(action: JSONObject, spy: Spy) {
+        val cases = action.optJSONArray("cases") ?: unsupported("resolve_post_purchase_success_absent without cases")
+        spy.state["results"] = (0 until cases.length()).map { i ->
+            val plan = ai.appdna.sdk.paywalls.PostPurchaseSuccessPlan.absentOnSuccess(cases.getJSONObject(i).optBoolean("still_presented"))
+            if (plan.closes) "close@${plan.delayMs}" + (if (plan.reportsDismissed) "+dismissed" else "") else "none"
         }
     }
 

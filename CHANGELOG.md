@@ -11,6 +11,13 @@ the project uses [Semantic Versioning](https://semver.org/).
   preview draws it: `180` (the default) runs from top to bottom and `90` from left to right. It used to be turned
   90°, so a top-to-bottom gradient ran from right to left. See [Paywalls](https://docs.appdna.ai/sdks/android/paywall).
 
+### Changed
+- A paywall with no `post_purchase.on_success` now closes itself 2 s after a successful purchase. Before, it stayed
+  open until your app closed it. The SDK closes it only while it is still showing. If your app already closed it in
+  `onPaywallPurchaseCompleted`, nothing more happens. `onPaywallDismissed` fires when the SDK closes it, so an
+  onboarding flow that presented the paywall moves on to its `on_success_target`. See
+  [Paywalls](https://docs.appdna.ai/sdks/android/paywall).
+
 ## [1.0.64] — 2026-11-26
 
 ### Fixed

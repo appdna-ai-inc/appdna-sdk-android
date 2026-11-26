@@ -558,9 +558,19 @@ internal class PaywallManager(
         // `.paywallPurchaseCelebrate` at the top of its own handler.
         PaywallActivity.signalPurchaseCelebrate()
         if (config == null) {
-            // Legacy: delegate-only behavior — the paywall stays on screen for the host to close, so
-            // re-enable its CTA (without this it kept spinning after a success).
+            // The CTA stops spinning now, whatever happens next.
             PaywallActivity.signalPurchaseEnded()
+            // #2223 — no `on_success`: close it after the default delay, only if the app has not closed it itself.
+            scope.launch {
+                delay(PostPurchaseSuccessPlan.DEFAULT_CLOSE_DELAY_MS.toLong())
+                val plan = PostPurchaseSuccessPlan.absentOnSuccess(PaywallActivity.isStillShowing(paywallId))
+                if (!plan.closes) {
+                    Log.info("Paywall $paywallId: no on_success and the app already closed it — nothing to close")
+                    return@launch
+                }
+                PaywallActivity.dismissCurrent(suppressDismissCallback = true)
+                if (plan.reportsDismissed) listener?.onPaywallDismissed(paywallId = paywallId)
+            }
             return
         }
         val delayMs = (config.delay_ms ?: 2000).toLong()
