@@ -22,7 +22,7 @@ import org.robolectric.annotation.Config
 import java.time.Duration
 
 /**
- * #2223 (owner, 2026-11-26: "SDK 1.0.93 closes it safely"; Android 1.0.65). This covers a successful purchase on a
+ * Android 1.0.65. This covers a successful purchase on a
  * paywall with NO post_purchase.on_success. A real PaywallActivity is launched, the purchase goes through
  * PaywallManager.handlePurchase, and Play is faked at the BillingClient.
  *   - still showing: the SDK finishes it after the default delay, and onPaywallDismissed fires;

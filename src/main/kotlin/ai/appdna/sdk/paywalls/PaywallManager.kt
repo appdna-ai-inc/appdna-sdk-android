@@ -560,7 +560,7 @@ internal class PaywallManager(
         if (config == null) {
             // The CTA stops spinning now, whatever happens next.
             PaywallActivity.signalPurchaseEnded()
-            // #2223 — no `on_success`: close it after the default delay, only if the app has not closed it itself.
+            // no `on_success`: close it after the default delay, only if the app has not closed it itself.
             scope.launch {
                 delay(PostPurchaseSuccessPlan.DEFAULT_CLOSE_DELAY_MS.toLong())
                 val plan = PostPurchaseSuccessPlan.absentOnSuccess(PaywallActivity.isStillShowing(paywallId))

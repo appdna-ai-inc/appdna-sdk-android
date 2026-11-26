@@ -914,8 +914,8 @@ data class PostPurchaseConfig(
 )
 
 /**
- * #2223 — what a successful purchase does to the paywall when NO `on_success` is authored (owner, 2026-11-26: "SDK
- * 1.0.93 closes it safely"; Android 1.0.65). After [DEFAULT_CLOSE_DELAY_MS] the SDK finishes the paywall — only while
+ * what a successful purchase does to the paywall when NO `on_success` is authored (since
+ * Android 1.0.65). After [DEFAULT_CLOSE_DELAY_MS] the SDK finishes the paywall — only while
  * it is still showing. An app that already closed it itself gets nothing extra; otherwise `onPaywallDismissed` fires,
  * which also moves an onboarding flow on to its `on_success_target`. An authored action keeps its own branch.
  * iOS `PostPurchaseSuccessPlan`; shared fixture `billing/paywall_success_absent_closes_if_presented`.

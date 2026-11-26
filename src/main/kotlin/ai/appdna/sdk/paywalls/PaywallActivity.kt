@@ -456,7 +456,7 @@ class PaywallActivity : ComponentActivity() {
         internal fun activeInstance(paywallId: String): PaywallActivity? =
             activePaywallInstances[paywallId]?.get()
 
-        /** #2223 — the paywall is still on screen: a live, not-finishing activity for [paywallId]. */
+        /** the paywall is still on screen: a live, not-finishing activity for [paywallId]. */
         @JvmStatic
         internal fun isStillShowing(paywallId: String): Boolean =
             activePaywallInstances[paywallId]?.get()?.let { !it.isFinishing && !it.isDestroyed } ?: false
