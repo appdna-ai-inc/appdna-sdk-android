@@ -682,6 +682,19 @@ internal fun PurchaseFailureBanner(
 // The fallback is a PARAMETER because the countdown needs two of them: its label has
 // always drawn SemiBold and its digits Bold, so one shared default would have changed the pixels
 // of every countdown already in the field.
+/**
+ * the page gradient's ends as fractions of the page (from x, from y, to x, to y) for a CSS angle, the convention
+ * the console draws (`linear-gradient(<angle>deg, …)`) and `StyleEngine` uses: 0° runs bottom → top, 90° left → right,
+ * 180° top → bottom. This used the maths convention (`cos`, `sin`), which turned every page gradient 90°: the default
+ * 180° ran right → left. Same formula as iOS `PaywallRenderer.pageGradientPoints`.
+ */
+internal fun pageGradientFractions(angleDegrees: Double): List<Float> {
+    val rads = angleDegrees * Math.PI / 180.0
+    val dx = kotlin.math.sin(rads)
+    val dy = -kotlin.math.cos(rads)
+    return listOf((0.5 - dx / 2).toFloat(), (0.5 - dy / 2).toFloat(), (0.5 + dx / 2).toFloat(), (0.5 + dy / 2).toFloat())
+}
+
 fun resolveWeight(w: String?, fallback: FontWeight): FontWeight = when (w?.lowercase()) {
     "normal", "regular" -> FontWeight.Normal
     "medium" -> FontWeight.Medium
@@ -1773,13 +1786,10 @@ private fun PaywallBackground(background: PaywallBackground?) {
                         // clamped to a near-solid color. Use a size-aware ShaderBrush
                         // so the fractions map to real pixels = a true full-bleed
                         // gradient matching iOS PaywallRenderer.swift:394-412.
-                        val rads = angle * Math.PI / 180.0
+                        val ends = pageGradientFractions(angle)
                         object : androidx.compose.ui.graphics.ShaderBrush() {
                             override fun createShader(size: androidx.compose.ui.geometry.Size): android.graphics.Shader {
-                                val fx = (0.5 - kotlin.math.cos(rads) * 0.5).toFloat()
-                                val fy = (0.5 - kotlin.math.sin(rads) * 0.5).toFloat()
-                                val tx = (0.5 + kotlin.math.cos(rads) * 0.5).toFloat()
-                                val ty = (0.5 + kotlin.math.sin(rads) * 0.5).toFloat()
+                                val (fx, fy, tx, ty) = ends
                                 return androidx.compose.ui.graphics.LinearGradientShader(
                                     from = androidx.compose.ui.geometry.Offset(fx * size.width, fy * size.height),
                                     to = androidx.compose.ui.geometry.Offset(tx * size.width, ty * size.height),

@@ -369,6 +369,7 @@ class SharedFixtureTest(
             "normalise_markdown" -> runUnfoldBlockquotes(action, spy)
             "resolve_shadow" -> runResolveShadow(action, spy)
             "resolve_header_inset" -> runHeaderCloseInset(action, spy)
+            "resolve_page_gradient" -> runPageGradient(action, spy)
             "resolve_default_text_colour" -> runDefaultTextColour(action, spy)
             "bottom_zone_overflows" -> runBottomZoneOverflows(action, spy)
             "resolve_element_container" -> runElementContainer(action, spy)
@@ -3734,6 +3735,15 @@ class SharedFixtureTest(
      * A `null` case means no `dismiss` object at all, which is the common authored shape and the
      * one that must still reserve: absent means dismissable.
      */
+    /** the page gradient's ends, through the REAL `pageGradientFractions`. */
+    private fun runPageGradient(action: JSONObject, spy: Spy) {
+        val cases = action.optJSONArray("cases") ?: unsupported("resolve_page_gradient without cases")
+        spy.state["results"] = (0 until cases.length()).map { i ->
+            ai.appdna.sdk.paywalls.pageGradientFractions(cases.getJSONObject(i).optDouble("angle", 180.0))
+                .map { Math.round(it * 1000.0) / 1000.0 + 0.0 }
+        }
+    }
+
     private fun runHeaderCloseInset(action: JSONObject, spy: Spy) {
         val cases = action.optJSONArray("cases") ?: unsupported("resolve_header_inset without cases")
         spy.state["results"] = (0 until cases.length()).map { i ->
