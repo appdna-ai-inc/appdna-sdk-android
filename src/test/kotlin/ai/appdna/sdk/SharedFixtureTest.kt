@@ -360,6 +360,8 @@ class SharedFixtureTest(
             "measure_badge_placement" -> runBadgePlacement(action, spy)
             "resolve_text_input_border" -> runTextInputBorder(action, spy)
             "resolve_element_size" -> runElementSize(action, spy)
+            // Keys whose type depends on the element they sit on, through the real block and paywall decoders.
+            "decode_shared_type_keys" -> runSharedTypeKeys(action, spy)
             // Live validation through the host (RemoteValidationFixtureDriver.kt).
             "remote_validation_script" -> spy.state.putAll(ai.appdna.sdk.onboarding.RemoteValidationFixtureDriver.runScript(fixtureName, config, sessionData, action, fixtureJson))
             "decode_validation_result" -> spy.state.putAll(ai.appdna.sdk.onboarding.RemoteValidationFixtureDriver.decode(action))
@@ -4209,6 +4211,34 @@ class SharedFixtureTest(
     }
 
     /** A block's size: the REAL step parser (`sizeStr`) → the size grammar `parseSizeValue` that `applyRelativeSizing` draws. */
+    @Suppress("UNCHECKED_CAST")
+    private fun runSharedTypeKeys(action: JSONObject, spy: Spy) {
+        val cases = action.optJSONArray("cases") ?: unsupported("decode_shared_type_keys without cases")
+        spy.state["results"] = (0 until cases.length()).map { i ->
+            val c = cases.getJSONObject(i)
+            val name = c.optString("name")
+            c.optJSONObject("block")?.let { raw ->
+                val step = mapOf("id" to "fixture_step", "type" to "custom", "content_blocks" to listOf(raw.asMap()))
+                val block = ai.appdna.sdk.onboarding.OnboardingConfigParser.parseStepForTest(step)?.config?.content_blocks?.firstOrNull()
+                    ?: throw AssertionError("[decode_shared_type_keys] case $name: the block did not parse")
+                return@map mapOf("lottie_speed" to block.lottie_speed?.toDouble(), "speed" to block.speed)
+            }
+            val section = c.optJSONObject("section")?.asMap() ?: unsupported("decode_shared_type_keys case $name has neither block nor section")
+            val doc = mapOf<String, Any>("id" to "pw_fixture", "name" to "Fixture", "layout" to mapOf("type" to "stack", "sections" to listOf(section)))
+            val parsed = ai.appdna.sdk.paywalls.PaywallConfigParser.parseSinglePaywall("pw_fixture", doc)
+                ?: throw AssertionError("[decode_shared_type_keys] case $name: the paywall did not parse")
+            val kept = parsed.sections.firstOrNull { it.id == section["id"] }
+            val d = kept?.data
+            mapOf(
+                "section_kept" to (kept != null),
+                "column_count" to d?.columns,
+                "table_column_labels" to (d?.table_columns?.map { it.label } ?: emptyList<String>()),
+                "rating" to d?.rating,
+                "review_count" to d?.review_count,
+            )
+        }
+    }
+
     private fun runElementSize(action: JSONObject, spy: Spy) {
         val cases = action.optJSONArray("cases") ?: unsupported("resolve_element_size without cases")
         fun num(d: Float): String {

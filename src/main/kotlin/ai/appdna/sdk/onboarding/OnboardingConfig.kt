@@ -12,6 +12,8 @@ import ai.appdna.sdk.core.TypedRead
 import ai.appdna.sdk.core.bool
 import ai.appdna.sdk.core.num
 import ai.appdna.sdk.core.str
+import ai.appdna.sdk.core.strSharedWithNum
+import ai.appdna.sdk.core.numIfNumber
 import ai.appdna.sdk.core.sizeStr
 import ai.appdna.sdk.core.list
 import ai.appdna.sdk.core.listOfMaps
@@ -1938,7 +1940,9 @@ internal object OnboardingConfigParser {
             lottie_url = bm.str(SURFACE, path, "lottie_url"),
             lottie_autoplay = bm.bool(SURFACE, path, "lottie_autoplay"),
             lottie_loop = bm.bool(SURFACE, path, "lottie_loop"),
-            lottie_speed = (bm.num(SURFACE, path, "lottie_speed"))?.toFloat(),
+            // A Lottie block written before the rate moved to `lottie_speed` carries it under `speed`.
+            lottie_speed = (bm.num(SURFACE, path, "lottie_speed"))?.toFloat()
+                ?: if (bm["type"] == "lottie") bm.numIfNumber("speed")?.toFloat() else null,
             rive_url = bm.str(SURFACE, path, "rive_url"),
             rive_artboard = bm.str(SURFACE, path, "rive_artboard"),
             rive_state_machine = bm.str(SURFACE, path, "rive_state_machine"),
@@ -2399,7 +2403,8 @@ internal object OnboardingConfigParser {
             // data class; iOS reads the same shape.
             particle_type = bm.str(SURFACE, path, "particle_type"),
             density = bm.str(SURFACE, path, "density"),
-            speed = bm.str(SURFACE, path, "speed"),
+            // `speed` is also a Lottie block's legacy NUMBER rate (read into `lottie_speed` above), so a number is not reported here.
+            speed = bm.strSharedWithNum(SURFACE, path, "speed"),
             secondary_color = bm.str(SURFACE, path, "secondary_color"),
             size_range = (bm.list(SURFACE, path, "size_range"))?.mapNotNull { (it as? Number)?.toDouble() }?.toImmutableList(),
             fullscreen = bm.bool(SURFACE, path, "fullscreen"),

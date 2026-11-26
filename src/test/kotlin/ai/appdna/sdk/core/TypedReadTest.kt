@@ -156,4 +156,69 @@ class TypedReadTest {
         drain()
         assertTrue("a clean document must be silent; got: ${delegate.issues}", delegate.issues.isEmpty())
     }
+
+    // ── keys with two legitimate types ───────────────────────────────────────────────────────
+
+    @Test
+    fun `a comparison table's header list under columns is not reported, and its headers arrive`() {
+        // The shape a published comparison table carries; the icon-grid count reader used to call it a drop.
+        val map = mapOf(
+            "id" to "pw_3",
+            "name" to "Compare",
+            "layout" to mapOf(
+                "type" to "stack",
+                "sections" to listOf(
+                    mapOf("id" to "sec_table", "type" to "comparison_table", "config" to mapOf("columns" to listOf("Free", "Premium"))),
+                    mapOf("id" to "sec_grid", "type" to "icon_grid", "config" to mapOf("columns" to 3)),
+                ),
+            ),
+        )
+        val config = PaywallConfigParser.parseSinglePaywall("pw_3", map)
+        drain()
+        assertTrue("a header list is a legitimate `columns`; got: ${delegate.issues}", delegate.issues.isEmpty())
+        val table = config?.sections?.firstOrNull { it.id == "sec_table" }?.data
+        assertEquals(listOf("Free", "Premium"), table?.table_columns?.map { it.label })
+        assertNull("a list is not a column count", table?.columns)
+        assertEquals(3, config?.sections?.firstOrNull { it.id == "sec_grid" }?.data?.columns)
+    }
+
+    @Test
+    fun `a columns value that is neither a number nor a list is still reported`() {
+        // THE CONTROL: the shared-type reader must not have become a reader that accepts anything.
+        val m = mapOf<String, Any?>("columns" to "three")
+        assertNull(m.numSharedWithList("paywall", "p", "columns"))
+        drain()
+        assertEquals(1, delegate.issues.size)
+        assertTrue(delegate.issues.single().contains("p.columns"))
+    }
+
+    @Test
+    fun `a Lottie block's legacy numeric speed plays as its rate and is not reported`() {
+        val step = mapOf(
+            "id" to "s1",
+            "type" to "custom",
+            "content_blocks" to listOf(
+                mapOf("id" to "b_lottie", "type" to "lottie", "lottie_url" to "https://example.com/a.json", "speed" to 1L),
+                mapOf("id" to "b_fast", "type" to "lottie", "speed" to 2.5),
+                mapOf("id" to "b_stars", "type" to "star_background", "speed" to "fast"),
+            ),
+        )
+        val blocks = ai.appdna.sdk.onboarding.OnboardingConfigParser.parseStepForTest(step)?.config?.content_blocks.orEmpty()
+        drain()
+        assertTrue("a numeric `speed` is a Lottie rate, not a dropped token; got: ${delegate.issues}", delegate.issues.isEmpty())
+        assertEquals(1.0f, blocks.first { it.id == "b_lottie" }.lottie_speed)
+        assertEquals(2.5f, blocks.first { it.id == "b_fast" }.lottie_speed)
+        assertNull(blocks.first { it.id == "b_fast" }.speed)
+        assertEquals("fast", blocks.first { it.id == "b_stars" }.speed)
+        assertNull("a token is not a rate", blocks.first { it.id == "b_stars" }.lottie_speed)
+    }
+
+    @Test
+    fun `a speed that is neither a string nor a number is still reported`() {
+        val m = mapOf<String, Any?>("speed" to mapOf("x" to 1))
+        assertNull(m.strSharedWithNum("onboarding_flow", "b", "speed"))
+        drain()
+        assertEquals(1, delegate.issues.size)
+        assertTrue(delegate.issues.single().contains("b.speed"))
+    }
 }

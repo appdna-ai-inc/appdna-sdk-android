@@ -88,6 +88,42 @@ internal fun Map<String, Any?>.num(surface: String, path: String, key: String): 
     return null
 }
 
+/**
+ * A KEY WITH TWO LEGITIMATE TYPES. Some keys mean different things on different elements, so the
+ * published document legitimately holds either type under the same name. The readers below read
+ * the type THIS field wants and stay silent on the other one, because the other one is not a lost
+ * value: a sibling field reads it. Anything else is still reported.
+ *
+ * - `speed` on a content block: a particle token (`"slow"`, `"normal"`, `"fast"`) on a star
+ *   background, and the playback rate (`1.5`) on a Lottie block written before the rate moved to
+ *   `lottie_speed`. [numIfNumber] reads the rate for the Lottie fallback.
+ * - `columns` on a paywall section: the column count of an icon grid or a features list (`3`),
+ *   and the header labels of a comparison table (`["Free", "Premium"]`), which `table_columns`
+ *   reads as its fallback.
+ *
+ * Reading one of these with [str] or [num] reported the other spelling as a dropped value on every
+ * config fetch, although nothing was lost.
+ */
+internal fun Map<String, Any?>.strSharedWithNum(surface: String, path: String, key: String): String? {
+    val raw = this[key] ?: return null
+    if (raw is String) return raw
+    if (raw is Number) return null
+    mismatch(surface, path, key, "a string or a number", raw)
+    return null
+}
+
+/** The number twin of [strSharedWithNum]: a number, silent on a list, reported on anything else. */
+internal fun Map<String, Any?>.numSharedWithList(surface: String, path: String, key: String): Number? {
+    val raw = this[key] ?: return null
+    if (raw is Number) return raw
+    if (raw is List<*>) return null
+    mismatch(surface, path, key, "a number or a list", raw)
+    return null
+}
+
+/** The value when it is a number, and null without a report otherwise: the other half of [strSharedWithNum]. */
+internal fun Map<String, Any?>.numIfNumber(key: String): Number? = this[key] as? Number
+
 /** A boolean, or null — reporting when the key is present and is something else. */
 internal fun Map<String, Any?>.bool(surface: String, path: String, key: String): Boolean? {
     val raw = this[key] ?: return null

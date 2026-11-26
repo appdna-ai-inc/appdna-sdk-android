@@ -19,6 +19,13 @@ the project uses [Semantic Versioning](https://semver.org/).
   that fetch fails, the token you handed in is registered, as before.
 
 ### Fixed
+- A Lottie block saved before its playback rate moved to `lottie_speed` plays at the rate it carries as a number
+  under `speed`, and the SDK no longer logs `Config dropped [onboarding_flow]: …speed: expected a string` for it on
+  every config fetch. It used to play at 1×. An explicit `lottie_speed` still wins. See
+  [Rich media](https://docs.appdna.ai/sdks/android/rich-media).
+- A comparison table's `columns` written as a list of header labels no longer logs `Config dropped [paywall]:
+  …config.columns: expected a number` or sends an `sdk_decode_dropped` event. Nothing was lost: the table already
+  drew those headers. See [Paywalls](https://docs.appdna.ai/sdks/android/paywall).
 - A paywall page gradient (`layout.background` of type `gradient`) now follows CSS angles, as the Console
   preview draws it: `180` (the default) runs from top to bottom and `90` from left to right. It used to be turned
   90°, so a top-to-bottom gradient ran from right to left. See [Paywalls](https://docs.appdna.ai/sdks/android/paywall).

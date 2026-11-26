@@ -8,6 +8,7 @@ import ai.appdna.sdk.core.TypedRead
 import ai.appdna.sdk.core.bool
 import ai.appdna.sdk.core.looseStr
 import ai.appdna.sdk.core.num
+import ai.appdna.sdk.core.numSharedWithList
 import ai.appdna.sdk.core.str
 import ai.appdna.sdk.core.list
 import ai.appdna.sdk.core.listOfMaps
@@ -1624,7 +1625,8 @@ internal object PaywallConfigParser {
                 show_line = d.bool(SURFACE, path, "show_line"),
                 compact = d.bool(SURFACE, path, "compact"),
                 // Icon grid / comparison table
-                columns = d.num(SURFACE, path, "columns")?.toInt(),
+                // A comparison table's `columns` is a list of header labels, read by `table_columns` below.
+                columns = d.numSharedWithList(SURFACE, path, "columns")?.toInt(),
                 icon_size = d.num(SURFACE, path, "icon_size")?.toFloat(),
                 icon_color = d.str(SURFACE, path, "icon_color"),
                 spacing = d.num(SURFACE, path, "spacing")?.toFloat(),
