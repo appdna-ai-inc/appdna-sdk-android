@@ -4,7 +4,7 @@ All notable changes to the AppDNA Android SDK are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and
 the project uses [Semantic Versioning](https://semver.org/).
 
-## [Unreleased]
+## [1.0.65] — 2026-11-27
 
 ### Added
 - The push token registration reports which Firebase project issued the FCM token (`fcm_project_id`). A token the
